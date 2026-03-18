@@ -1,16 +1,14 @@
+use winit::event_loop::EventLoop;
+
+use crate::app::App;
+
 mod app;
+mod project;
+mod render;
+mod ui;
 
-fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 720.0])
-            .with_title("MusclEdit"),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "MusclEdit",
-        options,
-        Box::new(|_cc| Ok(Box::new(app::App::default()))),
-    )
+fn main() {
+    let event_loop = EventLoop::new().unwrap();
+    let mut app = App::new();
+    event_loop.run_app(&mut app).unwrap();
 }

@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 egui = "0.29"
-eframe = "0.29"
-wgpu = "0.20"
+winit = "0.30.3"
+egui-winit = "0.29"
+egui-wgpu = "0.29"
 cpal = "0.15"
+pollster = "0.3"
