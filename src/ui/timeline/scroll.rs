@@ -4,10 +4,9 @@ use crate::{
     project::timeline::Timeline,
     ui::timeline::{
         DEFAULT_FRAME_COUNT, DEFAULT_LAYER_LEN, LAYER_HEIGHT, RULER_HEIGHT, SCROLLBAR_SIZE,
+        TimelineWindow,
     },
 };
-
-use super::timeline::TimelineWindow;
 
 impl TimelineWindow {
     pub(super) fn wheel_scroll(&mut self, response: &egui::Response) {

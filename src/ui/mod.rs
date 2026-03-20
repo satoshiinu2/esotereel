@@ -9,8 +9,6 @@ use crate::{
 
 pub(super) mod preview;
 pub(super) mod timeline;
-mod timelinedrag;
-mod timelinescroll;
 pub(crate) mod wgpuutil;
 
 pub struct WindowState {

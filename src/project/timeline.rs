@@ -33,7 +33,28 @@ impl Timeline {
                         duration: 40,
                     }],
                 },
+                Layer {
+                    index: 2,
+                    name: "Layer 2".to_string(),
+                    clips: vec![],
+                },
+                Layer {
+                    index: 3,
+                    name: "Layer 3".to_string(),
+                    clips: vec![],
+                },
             ],
         }
+    }
+
+    pub fn find_clip_by_id(&self, clip_id: usize) -> Option<(usize, usize)> {
+        for (layer_idx, layer) in self.layers.iter().enumerate() {
+            for (clip_idx, clip) in layer.clips.iter().enumerate() {
+                if clip.id == clip_id {
+                    return Some((layer_idx, clip_idx));
+                }
+            }
+        }
+        None
     }
 }

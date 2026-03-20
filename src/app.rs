@@ -59,11 +59,11 @@ impl ApplicationHandler for App {
         let win_state = App::get_win_state_by(event_loop, behavior);
         self.windows.push(win_state);
 
-        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::MAIN);
+        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::Main);
         let win_state = App::get_win_state_by(event_loop, behavior);
         self.windows.push(win_state);
 
-        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::TEMP);
+        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::Temp);
         let win_state = App::get_win_state_by(event_loop, behavior);
         self.windows.push(win_state);
     }

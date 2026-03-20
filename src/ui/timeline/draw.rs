@@ -1,87 +1,15 @@
-use egui::{Pos2, Vec2};
+use egui::Vec2;
 
-use super::WindowBehavior;
-use crate::project::{Project, clip::ClipDragState, timeline::Timeline};
-
-pub const LAYER_HEIGHT: f32 = 32.0;
-pub const RULER_HEIGHT: f32 = 24.0;
-pub const LABEL_WIDTH: f32 = 80.0;
-pub const SCROLLBAR_SIZE: f32 = 12.0;
-
-pub const DEFAULT_FRAME_COUNT: i64 = 300;
-pub const DEFAULT_LAYER_LEN: i64 = 1;
-
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum TimelineType {
-    MAIN = 0,
-    TEMP = 1,
-}
-
-pub struct TimelineWindow {
-    pub(super) drag_state: Option<ClipDragState>,
-    pub timeline_type: TimelineType,
-    pub zoom: f32,
-    pub scroll_x: f32,
-    pub scroll_y: f32,
-}
+use crate::{
+    project::timeline::Timeline,
+    ui::{
+        Project,
+        timeline::{LABEL_WIDTH, LAYER_HEIGHT, RULER_HEIGHT, TimelineWindow},
+    },
+};
 
 impl TimelineWindow {
-    pub fn new(timeline_type: TimelineType) -> Self {
-        Self {
-            timeline_type,
-            zoom: 4.0,
-            scroll_x: 0.0,
-            scroll_y: 0.0,
-            drag_state: None,
-        }
-    }
-}
-
-impl WindowBehavior for TimelineWindow {
-    fn title(&self) -> String {
-        return match self.timeline_type {
-            TimelineType::MAIN => "Timeline".to_string(),
-            TimelineType::TEMP => "Temp Timeline".to_string(),
-        };
-    }
-
-    fn size(&self) -> [f32; 2] {
-        [800.0, 300.0]
-    }
-
-    fn update(&mut self, project: &mut Option<Project>, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label("Timeline");
-
-            let available = ui.available_size();
-
-            let timeline_size =
-                egui::vec2(available.x - SCROLLBAR_SIZE, available.y - SCROLLBAR_SIZE);
-
-            let (response, painter) =
-                ui.allocate_painter(timeline_size, egui::Sense::click_and_drag());
-            let rect = response.rect;
-
-            self.draw(project, timeline_size, &response, &painter, rect);
-        });
-    }
-}
-
-impl TimelineWindow {
-    pub fn frame_to_x(&self, frame: i64) -> f32 {
-        frame as f32 * self.zoom - self.scroll_x + LABEL_WIDTH
-    }
-
-    pub fn x_to_frame(&self, x: f32) -> i64 {
-        ((x - LABEL_WIDTH + self.scroll_x) / self.zoom) as i64
-    }
-
-    pub fn layer_to_y(&self, layer_idx: usize) -> f32 {
-        layer_idx as f32 * LAYER_HEIGHT + RULER_HEIGHT - self.scroll_y
-    }
-
-    pub fn draw(
+    pub(super) fn draw(
         &mut self,
         project: &mut Option<Project>,
         timeline_size: Vec2,
@@ -101,6 +29,9 @@ impl TimelineWindow {
             // レイヤーラベルと区切り線
             self.draw_layers(timeline, &painter, rect);
 
+            // 選択エリア
+            self.draw_selection_rect(painter, rect);
+
             // ゴースト
             self.draw_ghost(timeline, &painter, rect);
 
@@ -111,8 +42,11 @@ impl TimelineWindow {
             self.draw_scrollbar(timeline_size, Some(timeline), &painter, &response, rect);
 
             // ドラッグ処理
-            self.handle_drag(project, &response, rect);
+            self.handle_clip_ctrl(timeline, &response, rect);
         } else {
+            // 選択エリア
+            self.draw_selection_rect(painter, rect);
+
             // 再生ヘッド
             self.draw_playhead(0, &painter, rect);
 
@@ -124,7 +58,12 @@ impl TimelineWindow {
         self.wheel_scroll(response);
     }
 
-    fn draw_layers(&mut self, timeline: &Timeline, painter: &egui::Painter, rect: egui::Rect) {
+    pub(super) fn draw_layers(
+        &mut self,
+        timeline: &Timeline,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+    ) {
         for (i, layer) in timeline.layers.iter().enumerate() {
             let y = rect.top() + self.layer_to_y(i);
             let layer_rect = egui::Rect::from_min_size(
@@ -158,37 +97,56 @@ impl TimelineWindow {
 
             // クリップ描画
             for (clip_idx, clip) in layer.clips.iter().enumerate() {
-                let is_dragging = self
-                    .drag_state
-                    .as_mut()
-                    .map_or(false, |d| d.src_layer_idx == i && d.clip_idx == clip_idx);
-
-                // ドラッグ中は元の位置に半透明で残す
-                let color = if is_dragging {
-                    egui::Color32::from_rgba_premultiplied(70, 130, 180, 80)
-                } else {
-                    egui::Color32::from_rgb(70, 130, 180)
-                };
-
-                let border_color = if is_dragging {
-                    egui::Color32::from_rgba_premultiplied(100, 160, 210, 80)
-                } else {
-                    egui::Color32::from_rgb(100, 160, 210)
-                };
-
-                let x = rect.left() + self.frame_to_x(clip.position);
-                let w = clip.duration as f32 * self.zoom;
-                let clip_rect = egui::Rect::from_min_size(
-                    egui::pos2(x, y + 2.0),
-                    egui::vec2(w, LAYER_HEIGHT - 4.0),
-                );
-                painter.rect_filled(clip_rect, 3.0, color);
-                painter.rect_stroke(clip_rect, 3.0, egui::Stroke::new(1.0, border_color));
+                self.render_clip(i, clip_idx, clip, rect, y, painter);
             }
         }
     }
 
-    fn draw_playhead(&self, playhead_frame: i64, painter: &egui::Painter, rect: egui::Rect) {
+    pub(super) fn render_clip(
+        &mut self,
+        layer_idx: usize,
+        clip_idx: usize,
+        clip: &crate::project::clip::Clip,
+        rect: egui::Rect,
+        y: f32,
+        painter: &egui::Painter,
+    ) {
+        let is_selected = self.selected_clips.contains(&clip.id);
+        let is_dragging = self.drag_state.as_mut().map_or(false, |d| {
+            d.src_layer_idx == layer_idx && d.clip_idx == clip_idx
+        });
+
+        // ドラッグ中は元の位置に半透明で残す
+        let color = if is_dragging {
+            egui::Color32::from_rgba_premultiplied(70, 130, 180, 50)
+        } else if is_selected {
+            egui::Color32::from_rgb(100, 150, 200)
+        } else {
+            egui::Color32::from_rgb(70, 130, 180)
+        };
+
+        let border_color = if is_dragging {
+            egui::Color32::from_rgba_premultiplied(100, 160, 210, 50)
+        } else if is_selected {
+            egui::Color32::from_rgb(150, 200, 255)
+        } else {
+            egui::Color32::from_rgb(100, 160, 210)
+        };
+
+        let x = rect.left() + self.frame_to_x(clip.position);
+        let w = clip.duration as f32 * self.zoom;
+        let clip_rect =
+            egui::Rect::from_min_size(egui::pos2(x, y + 2.0), egui::vec2(w, LAYER_HEIGHT - 4.0));
+        painter.rect_filled(clip_rect, 3.0, color);
+        painter.rect_stroke(clip_rect, 3.0, egui::Stroke::new(1.0, border_color));
+    }
+
+    pub(super) fn draw_playhead(
+        &self,
+        playhead_frame: i64,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+    ) {
         let ph_x = rect.left() + self.frame_to_x(playhead_frame);
         painter.line_segment(
             [
@@ -199,7 +157,7 @@ impl TimelineWindow {
         );
     }
 
-    fn draw_ruler(&self, painter: &egui::Painter, rect: egui::Rect) {
+    pub(super) fn draw_ruler(&self, painter: &egui::Painter, rect: egui::Rect) {
         let ruler_rect = egui::Rect::from_min_size(
             egui::pos2(rect.left() + LABEL_WIDTH, rect.top()),
             egui::vec2(rect.width() - LABEL_WIDTH, RULER_HEIGHT),
@@ -231,5 +189,26 @@ impl TimelineWindow {
                 egui::Color32::from_rgb(180, 180, 180),
             );
         }
+    }
+    pub(super) fn draw_selection_rect(&self, painter: &egui::Painter, rect: egui::Rect) {
+        let Some(sel) = &self.selection_rect else {
+            return;
+        };
+
+        let sel_rect = egui::Rect::from_two_pos(
+            rect.min + sel.start.to_vec2(),
+            rect.min + sel.current.to_vec2(),
+        );
+
+        painter.rect_filled(
+            sel_rect,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(100, 150, 255, 64),
+        );
+        painter.rect_stroke(
+            sel_rect,
+            0.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 150, 255)),
+        );
     }
 }
