@@ -1,28 +1,22 @@
-use std::sync::{Arc, Mutex};
+use egui_wgpu::wgpu;
 
-use crate::render::{RenderState, start_render_thread};
-use crate::ui::wgpuutil;
-use crate::{project::Project, render::callback::WgpuRenderCallback, ui::WindowBehavior};
+use crate::{
+    project::{Project, clip::ClipDragState},
+    render::WgpuRenderResources,
+    ui::{WindowBehavior, wgpuutil::WGpuUtil},
+};
 
 pub struct PreviewWindow {
-    render_state: Option<Arc<RenderState>>,
-    texture: Option<egui::TextureHandle>,
+    render_res: Option<WgpuRenderResources>,
 }
 
 impl Default for PreviewWindow {
     fn default() -> Self {
-        Self {
-            render_state: None,
-            texture: None,
-        }
+        Self { render_res: None }
     }
 }
 
 impl WindowBehavior for PreviewWindow {
-    fn id(&self) -> egui::ViewportId {
-        egui::ViewportId::from_hash_of("preview")
-    }
-
     fn title(&self) -> String {
         "Preview".to_string()
     }
@@ -30,61 +24,28 @@ impl WindowBehavior for PreviewWindow {
     fn size(&self) -> [f32; 2] {
         [800.0, 300.0]
     }
-
-    fn update(
+    fn render_special(
         &mut self,
-        project: std::sync::Arc<std::sync::RwLock<Option<crate::project::Project>>>,
-        _drag_state: std::sync::Arc<std::sync::RwLock<Option<crate::project::clip::ClipDragState>>>,
-        ctx: &egui::Context,
+        _project: &mut Option<Project>,
+        rpass: &mut wgpu::RenderPass<'_>,
+        _wgpuutil: &WGpuUtil,
     ) {
-        let Some(render_state) = &self.render_state else {
+        let Some(render_res) = &self.render_res else {
             return;
         };
 
-        let fb = render_state.frame_buffer.lock().unwrap();
-        if let Some(fb) = fb.as_ref() {
-            self.texture = Some(ctx.load_texture(
-                "preview",
-                egui::ColorImage::from_rgba_unmultiplied(
-                    [fb.width as usize, fb.height as usize],
-                    &fb.data,
-                ),
-                egui::TextureOptions::default(),
-            ));
-        }
-        drop(fb);
+        rpass.set_pipeline(&render_res.pipeline);
+        // rpass.set_vertex_buffer(0, render_res.vertex_buffer.slice(..));
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(texture) = &self.texture {
-                ui.image(texture);
-            } else {
-                ui.label("No preview");
-            }
-        });
+        rpass.draw(0..3, 0..1);
     }
-}
 
-impl PreviewWindow {
-    fn draw(&mut self, project: Option<&mut Project>, ui: &mut egui::Ui) {
-        if ui.button("open project").clicked() {
-            // self.openproject();
-        }
-        let (rect, _response) = ui.allocate_exact_size(ui.available_size(), egui::Sense::hover());
-
-        ui.painter().add(egui_wgpu::Callback::new_paint_callback(
-            rect,
-            WgpuRenderCallback,
+    fn init_special_renderer(&mut self, wgpuutil: &WGpuUtil) {
+        self.render_res = Some(WgpuRenderResources::new(
+            &wgpuutil.device,
+            wgpuutil.config.format,
         ));
     }
 
-    pub(crate) fn init_render_state(&mut self, wgpuutil: &super::WGpuUtil) {
-        let render_state = Arc::new(RenderState {
-            device: Arc::clone(&wgpuutil.device),
-            queue: Arc::clone(&wgpuutil.queue),
-            frame_buffer: Arc::new(Mutex::new(None)),
-        });
-
-        start_render_thread(Arc::clone(&render_state));
-        self.render_state = Some(render_state);
-    }
+    fn update(&mut self, _project: &mut Option<Project>, _ctx: &egui::Context) {}
 }

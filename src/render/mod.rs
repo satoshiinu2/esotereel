@@ -1,40 +1,43 @@
-use std::sync::{Arc, Mutex};
-
 use egui_wgpu::wgpu;
 
-use crate::render::resources::WgpuRenderResources;
-
-pub mod callback;
-pub mod resources;
-
-pub struct RenderState {
-    pub device: Arc<wgpu::Device>,
-    pub queue: Arc<wgpu::Queue>,
-    pub frame_buffer: Arc<Mutex<Option<FrameBuffer>>>,
+pub struct WgpuRenderResources {
+    pub pipeline: wgpu::RenderPipeline,
 }
 
-pub struct FrameBuffer {
-    pub data: Vec<u8>,
-    pub width: u32,
-    pub height: u32,
-}
-pub fn start_render_thread(render_state: Arc<RenderState>) {
-    let format = wgpu::TextureFormat::Rgba8Unorm;
-    let resources = WgpuRenderResources::new(&render_state.device, format, 1920, 1080);
+impl WgpuRenderResources {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("triangle"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
+        });
 
-    std::thread::spawn(move || {
-        loop {
-            // wgpuでオフスクリーンレンダリング
-            let pixels = resources.render_to_buffer(&render_state.device, &render_state.queue);
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            // 既存のまま
+            label: Some("triangle"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
 
-            // フレームバッファに書き込む
-            *render_state.frame_buffer.lock().unwrap() = Some(FrameBuffer {
-                data: pixels,
-                width: 1920,
-                height: 1080,
-            });
-
-            std::thread::sleep(std::time::Duration::from_millis(16));
-        }
-    });
+        Self { pipeline }
+    }
 }

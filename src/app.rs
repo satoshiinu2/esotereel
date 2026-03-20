@@ -1,43 +1,33 @@
-use egui::FullOutput;
 use egui_wgpu::wgpu;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::dpi::PhysicalPosition;
+use winit::event::{MouseButton, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowAttributes;
 
-use crate::project;
 use crate::project::clip::ClipDragState;
-use crate::render::callback::WgpuRenderCallback;
 use crate::ui::preview::PreviewWindow;
 use crate::ui::timeline::TimelineWindow;
 use crate::ui::{WindowBehavior, WindowState, wgpuutil};
 use crate::{project::Project, ui::wgpuutil::WGpuUtil};
-use std::fmt::Error;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 
 pub struct App {
-    windows: Vec<WindowState>,
+    pub project: Option<Project>,
 
-    project: Arc<RwLock<Option<Project>>>,
-    drag_state: Arc<RwLock<Option<ClipDragState>>>,
-    prev_visible: Vec<bool>, // 前フレームの状態
+    pub(super) windows: Vec<WindowState>,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
             windows: vec![],
-            prev_visible: vec![true, true],
-            project: Arc::new(RwLock::new(None)),
-            drag_state: Arc::new(RwLock::new(None)),
+            project: None,
         }
     }
     fn openproject(&mut self) {
-        self.project = Arc::new(RwLock::new(Some(Project::new())));
-    }
-    unsafe fn to_static_rpass(rpass: wgpu::RenderPass<'_>) -> wgpu::RenderPass<'static> {
-        unsafe { std::mem::transmute(rpass) }
+        self.project = Some(Project::new());
     }
 
     fn get_attr_by<T: WindowBehavior>(behavior: &T) -> WindowAttributes {
@@ -53,12 +43,11 @@ impl App {
     }
     fn get_win_state_by<T: WindowBehavior + 'static>(
         event_loop: &ActiveEventLoop,
-        behavior: T,
+        mut behavior: T,
     ) -> WindowState {
-        WindowState::new(
-            App::get_wgpuutil_by(event_loop, &behavior),
-            Rc::new(Mutex::new(behavior)),
-        )
+        let wgpuutil = App::get_wgpuutil_by(event_loop, &behavior);
+        behavior.init_special_renderer(&wgpuutil);
+        WindowState::new(wgpuutil, Box::new(behavior))
     }
 }
 
@@ -66,20 +55,22 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.openproject();
 
-        let mut behavior = PreviewWindow::default();
-        let wgpuutil = App::get_wgpuutil_by(event_loop, &behavior);
-        behavior.init_render_state(&wgpuutil);
-        let win_state = WindowState::new(wgpuutil, Rc::new(Mutex::new(behavior)));
+        let behavior = PreviewWindow::default();
+        let win_state = App::get_win_state_by(event_loop, behavior);
         self.windows.push(win_state);
 
-        let behavior: TimelineWindow = TimelineWindow::default();
+        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::MAIN);
+        let win_state = App::get_win_state_by(event_loop, behavior);
+        self.windows.push(win_state);
+
+        let behavior: TimelineWindow = TimelineWindow::new(crate::ui::timeline::TimelineType::TEMP);
         let win_state = App::get_win_state_by(event_loop, behavior);
         self.windows.push(win_state);
     }
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
@@ -91,6 +82,10 @@ impl ApplicationHandler for App {
             return;
         };
 
+        if !win_state.visible {
+            return;
+        }
+
         if win_state
             .wgpuutil
             .egui_state
@@ -101,24 +96,34 @@ impl ApplicationHandler for App {
         }
 
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                win_state.visible = false;
+            }
             WindowEvent::Resized(size) => {
+                if size.width == 0 || size.height == 0 {
+                    return;
+                }
+
                 win_state.wgpuutil.config.width = size.width;
                 win_state.wgpuutil.config.height = size.height;
-                win_state
-                    .wgpuutil
-                    .surface
-                    .configure(&win_state.wgpuutil.device, &win_state.wgpuutil.config);
+                win_state.need_reconfigure = true;
             }
             WindowEvent::RedrawRequested => {
                 let wgpuutil = &mut win_state.wgpuutil;
                 let win = &wgpuutil.window;
                 let raw_input = wgpuutil.egui_state.take_egui_input(&win);
 
-                let mut behaivior = win_state.behavior.lock().unwrap();
+                if win_state.need_reconfigure {
+                    wgpuutil
+                        .surface
+                        .configure(&wgpuutil.device, &wgpuutil.config);
+                    win_state.need_reconfigure = false;
+
+                    wgpuutil.window.request_redraw();
+                }
 
                 let full_output = wgpuutil.egui_ctx.run(raw_input, |ctx| {
-                    behaivior.update(self.project.clone(), self.drag_state.clone(), &ctx);
+                    win_state.behavior.update(&mut self.project, &ctx);
                 });
 
                 wgpuutil
@@ -183,11 +188,15 @@ impl ApplicationHandler for App {
                     });
 
                     // 'staticに昇格
-                    let rpass = unsafe { App::to_static_rpass(rpass) };
+                    let mut rpass = unsafe { to_static_rpass(rpass) };
 
                     wgpuutil
                         .renderer
-                        .render(&mut { rpass }, &paint_jobs, &screen_desc);
+                        .render(&mut rpass, &paint_jobs, &screen_desc);
+
+                    win_state
+                        .behavior
+                        .render_special(&mut self.project, &mut rpass, &wgpuutil);
                 }
 
                 for id in &full_output.textures_delta.free {
@@ -201,9 +210,20 @@ impl ApplicationHandler for App {
         }
     }
 
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.windows.retain(|w| w.visible);
+        if self.windows.is_empty() {
+            event_loop.exit();
+            return;
+        }
+
         self.windows
             .iter()
+            .filter(|w| w.need_redraw && w.visible)
             .for_each(|w| w.wgpuutil.window.request_redraw());
     }
+}
+
+unsafe fn to_static_rpass(rpass: wgpu::RenderPass<'_>) -> wgpu::RenderPass<'static> {
+    unsafe { std::mem::transmute(rpass) }
 }

@@ -10,3 +10,10 @@ egui-winit = "0.29"
 egui-wgpu = "0.29"
 cpal = "0.15"
 pollster = "0.3"
+arc-swap = "1.8.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11 = { version = "2.3", features = ["xlib"] }

@@ -11,8 +11,8 @@ pub struct WGpuUtil {
     pub egui_ctx: egui::Context,
     pub egui_state: egui_winit::State,
     pub renderer: egui_wgpu::Renderer,
-    pub device: Arc<wgpu::Device>,
-    pub queue: Arc<wgpu::Queue>,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
 }
@@ -62,10 +62,6 @@ impl WGpuUtil {
             None,
             None,
         );
-
-        // wrap
-        let device = Arc::new(device);
-        let queue = Arc::new(queue);
 
         Self {
             egui_ctx,

@@ -1,16 +1,7 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, Mutex, RwLock},
-    time::{SystemTime, UNIX_EPOCH},
-};
-
-use egui::Vec2;
+use egui::{Pos2, Vec2};
 
 use super::WindowBehavior;
-use crate::{
-    project::{Project, clip::ClipDragState, timeline::Timeline},
-    ui::event::SubWindowEventQueue,
-};
+use crate::project::{Project, clip::ClipDragState, timeline::Timeline};
 
 pub const LAYER_HEIGHT: f32 = 32.0;
 pub const RULER_HEIGHT: f32 = 24.0;
@@ -28,40 +19,26 @@ pub enum TimelineType {
 }
 
 pub struct TimelineWindow {
+    pub(super) drag_state: Option<ClipDragState>,
     pub timeline_type: TimelineType,
     pub zoom: f32,
     pub scroll_x: f32,
     pub scroll_y: f32,
-    event_queue: SubWindowEventQueue,
 }
 
-impl Default for TimelineWindow {
-    fn default() -> Self {
+impl TimelineWindow {
+    pub fn new(timeline_type: TimelineType) -> Self {
         Self {
-            timeline_type: TimelineType::MAIN,
+            timeline_type,
             zoom: 4.0,
             scroll_x: 0.0,
             scroll_y: 0.0,
-            event_queue: Arc::new(Mutex::new(VecDeque::new())),
+            drag_state: None,
         }
     }
 }
 
-impl TimelineWindow {
-    pub fn set_timeline_type(mut self, ttype: TimelineType) -> Self {
-        self.timeline_type = ttype;
-        return self;
-    }
-}
-
 impl WindowBehavior for TimelineWindow {
-    fn id(&self) -> egui::ViewportId {
-        return match self.timeline_type {
-            TimelineType::MAIN => egui::ViewportId::from_hash_of("timeline"),
-            TimelineType::TEMP => egui::ViewportId::from_hash_of("timeline temp"),
-        };
-    }
-
     fn title(&self) -> String {
         return match self.timeline_type {
             TimelineType::MAIN => "Timeline".to_string(),
@@ -73,17 +50,9 @@ impl WindowBehavior for TimelineWindow {
         [800.0, 300.0]
     }
 
-    fn update(
-        &mut self,
-        project: Arc<RwLock<Option<Project>>>,
-        drag_state: Arc<RwLock<Option<ClipDragState>>>,
-        ctx: &egui::Context,
-    ) {
+    fn update(&mut self, project: &mut Option<Project>, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Timeline");
-
-            let mut project = project.write().unwrap();
-            let mut drag = drag_state.write().unwrap();
 
             let available = ui.available_size();
 
@@ -94,14 +63,7 @@ impl WindowBehavior for TimelineWindow {
                 ui.allocate_painter(timeline_size, egui::Sense::click_and_drag());
             let rect = response.rect;
 
-            self.draw(
-                project.as_mut(),
-                &mut drag,
-                timeline_size,
-                &response,
-                &painter,
-                rect,
-            );
+            self.draw(project, timeline_size, &response, &painter, rect);
         });
     }
 }
@@ -121,8 +83,7 @@ impl TimelineWindow {
 
     pub fn draw(
         &mut self,
-        project: Option<&mut Project>,
-        drag_state: &mut Option<ClipDragState>,
+        project: &mut Option<Project>,
         timeline_size: Vec2,
         response: &egui::Response,
         painter: &egui::Painter,
@@ -138,10 +99,10 @@ impl TimelineWindow {
             let playhead_frame = project.playhead;
             let timeline = project.get_timeline_by(self.timeline_type);
             // レイヤーラベルと区切り線
-            self.draw_layers(timeline, drag_state.as_ref(), &painter, rect);
+            self.draw_layers(timeline, &painter, rect);
 
             // ゴースト
-            self.draw_ghost(timeline, drag_state.as_ref(), &painter, rect);
+            self.draw_ghost(timeline, &painter, rect);
 
             // 再生ヘッド
             self.draw_playhead(playhead_frame, &painter, rect);
@@ -150,7 +111,7 @@ impl TimelineWindow {
             self.draw_scrollbar(timeline_size, Some(timeline), &painter, &response, rect);
 
             // ドラッグ処理
-            self.handle_drag(project, drag_state, &response, rect);
+            self.handle_drag(project, &response, rect);
         } else {
             // 再生ヘッド
             self.draw_playhead(0, &painter, rect);
@@ -163,13 +124,7 @@ impl TimelineWindow {
         self.wheel_scroll(response);
     }
 
-    fn draw_layers(
-        &mut self,
-        timeline: &Timeline,
-        drag_state: Option<&ClipDragState>,
-        painter: &egui::Painter,
-        rect: egui::Rect,
-    ) {
+    fn draw_layers(&mut self, timeline: &Timeline, painter: &egui::Painter, rect: egui::Rect) {
         for (i, layer) in timeline.layers.iter().enumerate() {
             let y = rect.top() + self.layer_to_y(i);
             let layer_rect = egui::Rect::from_min_size(
@@ -178,7 +133,8 @@ impl TimelineWindow {
             );
 
             // 背景色
-            let is_drop_target = drag_state
+            let is_drop_target = self
+                .drag_state
                 .as_ref()
                 .map_or(false, |d| d.current_layer_idx == i && d.src_layer_idx != i);
 
@@ -202,8 +158,10 @@ impl TimelineWindow {
 
             // クリップ描画
             for (clip_idx, clip) in layer.clips.iter().enumerate() {
-                let is_dragging =
-                    drag_state.map_or(false, |d| d.src_layer_idx == i && d.clip_idx == clip_idx);
+                let is_dragging = self
+                    .drag_state
+                    .as_mut()
+                    .map_or(false, |d| d.src_layer_idx == i && d.clip_idx == clip_idx);
 
                 // ドラッグ中は元の位置に半透明で残す
                 let color = if is_dragging {
