@@ -1,4 +1,4 @@
-use egui_wgpu::wgpu;
+use egui_wgpu::wgpu::{self, SurfaceError};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
 use winit::event::{MouseButton, WindowEvent};
@@ -81,6 +81,7 @@ impl ApplicationHandler for App {
         else {
             return;
         };
+        // println!("window_event: {:?} {:?}", event, win_state.behavior.title());
 
         if !win_state.visible {
             return;
@@ -92,7 +93,7 @@ impl ApplicationHandler for App {
             .on_window_event(&win_state.wgpuutil.window, &event)
             .consumed
         {
-            return;
+            // return;
         }
 
         match event {
@@ -100,28 +101,24 @@ impl ApplicationHandler for App {
                 win_state.visible = false;
             }
             WindowEvent::Resized(size) => {
-                if size.width == 0 || size.height == 0 {
-                    return;
-                }
+                let wgpuutil = &mut win_state.wgpuutil;
 
-                win_state.wgpuutil.config.width = size.width;
-                win_state.wgpuutil.config.height = size.height;
-                win_state.need_reconfigure = true;
+                wgpuutil.config.width = size.width.max(1);
+                wgpuutil.config.height = size.height.max(1);
+                wgpuutil
+                    .surface
+                    .configure(&wgpuutil.device, &wgpuutil.config);
             }
             WindowEvent::RedrawRequested => {
                 let wgpuutil = &mut win_state.wgpuutil;
                 let win = &wgpuutil.window;
                 let raw_input = wgpuutil.egui_state.take_egui_input(&win);
 
-                if win_state.need_reconfigure {
-                    wgpuutil
-                        .surface
-                        .configure(&wgpuutil.device, &wgpuutil.config);
-                    win_state.need_reconfigure = false;
-
-                    wgpuutil.window.request_redraw();
+                if wgpuutil.config.width == 0 || wgpuutil.config.height == 0 {
+                    return;
                 }
 
+                win_state.need_redraw = true;
                 let full_output = wgpuutil.egui_ctx.run(raw_input, |ctx| {
                     win_state.behavior.update(&mut self.project, &ctx);
                 });
@@ -135,8 +132,24 @@ impl ApplicationHandler for App {
                     .egui_ctx
                     .tessellate(full_output.shapes, wgpuutil.window.scale_factor() as f32);
 
-                let frame = wgpuutil.surface.get_current_texture().unwrap();
-
+                let frame = match wgpuutil.surface.get_current_texture() {
+                    Ok(frame) => frame,
+                    Err(SurfaceError::Lost) => {
+                        wgpuutil
+                            .surface
+                            .configure(&wgpuutil.device, &wgpuutil.config);
+                        return;
+                    }
+                    Err(SurfaceError::Outdated) => {
+                        return;
+                    }
+                    Err(SurfaceError::Timeout) => {
+                        return;
+                    }
+                    Err(e) => {
+                        panic!("Surface error: {:?}", e);
+                    }
+                };
                 let view = frame
                     .texture
                     .create_view(&wgpu::TextureViewDescriptor::default());
@@ -187,8 +200,10 @@ impl ApplicationHandler for App {
                         timestamp_writes: None,
                     });
 
-                    // 'staticに昇格
-                    let mut rpass = unsafe { to_static_rpass(rpass) };
+                    // SAFETY:
+                    // egui_wgpu::Renderer::render requires 'static, but it does not store
+                    // the RenderPass beyond this call. So it's safe to extend lifetime here.
+                    let mut rpass = unsafe { std::mem::transmute(rpass) };
 
                     wgpuutil
                         .renderer
@@ -206,24 +221,45 @@ impl ApplicationHandler for App {
                 wgpuutil.queue.submit(Some(encoder.finish()));
                 frame.present();
             }
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position: _,
+            } => {
+                win_state.need_redraw = true;
+            }
+            WindowEvent::MouseInput {
+                device_id: _,
+                state: _,
+                button: _,
+            } => {
+                win_state.need_redraw = true;
+            }
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event: _,
+                is_synthetic: _,
+            } => {
+                win_state.need_redraw = true;
+            }
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
         self.windows.retain(|w| w.visible);
         if self.windows.is_empty() {
             event_loop.exit();
             return;
         }
 
+        // request_redraw
         self.windows
-            .iter()
-            .filter(|w| w.need_redraw && w.visible)
-            .for_each(|w| w.wgpuutil.window.request_redraw());
+            .iter_mut()
+            .filter(|w| w.can_render())
+            .for_each(|w| {
+                w.need_redraw = false;
+                w.wgpuutil.window.request_redraw();
+            });
     }
-}
-
-unsafe fn to_static_rpass(rpass: wgpu::RenderPass<'_>) -> wgpu::RenderPass<'static> {
-    unsafe { std::mem::transmute(rpass) }
 }

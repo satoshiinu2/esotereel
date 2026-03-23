@@ -2,6 +2,7 @@ use crate::project::layer::Layer;
 
 pub struct Timeline {
     pub layers: Vec<Layer>,
+    pub playhead: i64,
 }
 
 impl Timeline {
@@ -44,6 +45,7 @@ impl Timeline {
                     clips: vec![],
                 },
             ],
+            playhead: 0,
         }
     }
 

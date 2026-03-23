@@ -11,6 +11,7 @@ egui-wgpu = "0.29"
 cpal = "0.15"
 pollster = "0.3"
 arc-swap = "1.8.2"
+bytemuck = "1.25.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_Foundation"] }

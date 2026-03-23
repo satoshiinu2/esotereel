@@ -5,16 +5,13 @@ pub(super) mod select;
 
 use std::collections::{HashMap, HashSet};
 
-use egui::{Pos2, Vec2};
+use egui::{Pos2, Rect};
 
 use super::WindowBehavior;
-use crate::{
-    project::{
-        Project,
-        clip::{Clip, ClipDragState},
-        timeline::Timeline,
-    },
-    ui::timeline::drag::ClipGrabResult,
+use crate::project::{
+    Project,
+    clip::{Clip, ClipDragState},
+    timeline::Timeline,
 };
 
 pub const LAYER_HEIGHT: f32 = 32.0;
@@ -33,7 +30,6 @@ pub enum TimelineType {
 }
 
 pub struct TimelineWindow {
-    pub(super) drag_state: Option<ClipDragState>,
     pub timeline_type: TimelineType,
     pub zoom: f32,
     pub scroll_x: f32,
@@ -41,6 +37,10 @@ pub struct TimelineWindow {
 
     pub selected_clips: HashSet<usize>, // (layer_idx, clip_idx)
     pub(super) selection_rect: Option<SelectionRect>,
+    pub(super) drag_state: Option<ClipDragState>,
+    pub is_wrong: bool,
+
+    was_primary_down: bool,
 }
 pub(super) struct SelectionRect {
     pub start: Pos2,
@@ -56,6 +56,8 @@ impl TimelineWindow {
             scroll_y: 0.0,
             drag_state: None,
             selected_clips: HashSet::new(),
+            was_primary_down: false,
+            is_wrong: false,
             selection_rect: None,
         }
     }
@@ -136,13 +138,23 @@ impl TimelineWindow {
             return;
         };
 
+        let primary_down = response.ctx.input(|i| i.pointer.primary_down());
         let delete = response.ctx.input(|i| i.key_pressed(egui::Key::Delete));
         let ctrl = response.ctx.input(|i| i.modifiers.ctrl);
         let local = (pos - rect.min).to_pos2();
 
+        let is_primary_up = self.was_primary_down && !primary_down;
+        self.was_primary_down = primary_down;
+
+        if self.drag_state.is_some() {
+            self.check_edge_scroll(local, rect);
+        } else if primary_down {
+            self.handle_ctrl_playhead(timeline, local);
+        }
+
         if response.drag_started() {
-            let result = self.handle_drag_grab(timeline, local);
-            if result == ClipGrabResult::None {
+            let result = self.handle_drag_grab(timeline, local, ctrl);
+            if !result {
                 self.handle_area_sel_start(local, ctrl);
             }
         }
@@ -155,7 +167,7 @@ impl TimelineWindow {
             }
         }
 
-        if response.drag_stopped() {
+        if response.drag_stopped() || is_primary_up {
             if self.selection_rect.is_none() {
                 self.handle_drag_drop(timeline, local);
             } else {
@@ -192,5 +204,28 @@ impl TimelineWindow {
         }
 
         self.selected_clips.clear();
+    }
+
+    fn handle_ctrl_playhead(&self, timeline: &mut Timeline, local: Pos2) {
+        if local.y > RULER_HEIGHT {
+            return;
+        }
+
+        let frame = self.x_to_frame(local.x);
+        timeline.playhead = frame;
+    }
+
+    fn check_edge_scroll(&mut self, local: Pos2, rect: egui::Rect) {
+        let edge_zone = 40.0; // エッジから何px以内でスクロールするか
+        let max_speed = 8.0;
+
+        if local.x < edge_zone {
+            let speed = (edge_zone - local.x) / edge_zone * max_speed;
+            self.scroll_x = (self.scroll_x - speed).max(0.0);
+        }
+        if local.x > rect.width() - edge_zone {
+            let speed = (local.x - (rect.width() - edge_zone)) / edge_zone * max_speed;
+            self.scroll_x += speed;
+        }
     }
 }

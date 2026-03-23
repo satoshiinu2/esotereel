@@ -10,7 +10,6 @@ pub mod timeline;
 pub struct Project {
     pub timeline: Timeline,
     pub timeline_temp: Timeline,
-    pub playhead: i64,
     pub next_clip_id: usize,
 }
 
@@ -18,7 +17,6 @@ impl Project {
     pub(crate) fn new() -> Self {
         Self {
             next_clip_id: 0,
-            playhead: 0,
             timeline: Timeline::new(),
             timeline_temp: Timeline::new(),
         }

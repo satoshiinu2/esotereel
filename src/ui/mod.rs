@@ -1,11 +1,6 @@
-use egui::Pos2;
 use egui_wgpu::wgpu;
-use winit::dpi::PhysicalPosition;
 
-use crate::{
-    project::{Project, clip::ClipDragState},
-    ui::wgpuutil::WGpuUtil,
-};
+use crate::{project::Project, ui::wgpuutil::WGpuUtil};
 
 pub(super) mod preview;
 pub(super) mod timeline;
@@ -16,8 +11,6 @@ pub struct WindowState {
     pub behavior: Box<dyn WindowBehavior>,
     pub visible: bool,
     pub need_redraw: bool,
-    pub cursor_pos: Option<PhysicalPosition<f64>>,
-    pub(crate) need_reconfigure: bool,
 }
 
 impl WindowState {
@@ -27,53 +20,29 @@ impl WindowState {
             behavior: behaivior,
             visible: true,
             need_redraw: true,
-            cursor_pos: None,
-            need_reconfigure: false,
         }
+    }
+
+    pub(crate) fn can_render(&self) -> bool {
+        let size = self.wgpuutil.window.inner_size();
+        self.need_redraw && self.visible && size.width != 0 && size.height != 0
     }
 }
 
+#[allow(unused_variables)]
 pub trait WindowBehavior {
     fn title(&self) -> String;
     fn size(&self) -> [f32; 2];
 
     fn update(&mut self, project: &mut Option<Project>, ctx: &egui::Context);
 
-    #[allow(unused_variables)]
     fn init_special_renderer(&mut self, wgpuutil: &WGpuUtil) {}
 
-    #[allow(unused_variables)]
-    fn render_special(
+    fn render_special<'a>(
         &mut self,
         project: &mut Option<Project>,
-        rpass: &mut wgpu::RenderPass<'_>,
+        rpass: &mut wgpu::RenderPass<'a>,
         wgpuutil: &WGpuUtil,
-    ) {
-    }
-
-    #[allow(unused_variables)]
-    fn on_drag_grab(
-        &mut self,
-        project: Option<&mut Project>,
-        drag: &mut Option<ClipDragState>,
-        local: Pos2,
-    ) {
-    }
-    #[allow(unused_variables)]
-    fn on_drag_continue(
-        &mut self,
-        project: Option<&mut Project>,
-        drag: &mut Option<ClipDragState>,
-        local: Pos2,
-    ) {
-    }
-
-    #[allow(unused_variables)]
-    fn on_drag_drop(
-        &mut self,
-        project: Option<&mut Project>,
-        drag: &mut Option<ClipDragState>,
-        local: Pos2,
     ) {
     }
 }

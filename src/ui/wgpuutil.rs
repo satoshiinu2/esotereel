@@ -28,19 +28,21 @@ impl WGpuUtil {
             compatible_surface: Some(&surface),
             ..Default::default()
         }))
-        .unwrap();
+        .expect("Could not get an adapter (GPU).");
 
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None))
-                .unwrap();
+                .expect("Failed to get device");
 
         let size = window.inner_size();
+        let width = size.width.max(1);
+        let height = size.height.max(1);
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface.get_capabilities(&adapter).formats[0],
-            width: size.width,
-            height: size.height,
+            width,
+            height,
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],

@@ -24,7 +24,6 @@ impl TimelineWindow {
         self.draw_ruler(&painter, rect);
 
         if let Some(project) = project {
-            let playhead_frame = project.playhead;
             let timeline = project.get_timeline_by(self.timeline_type);
             // レイヤーラベルと区切り線
             self.draw_layers(timeline, &painter, rect);
@@ -36,7 +35,7 @@ impl TimelineWindow {
             self.draw_ghost(timeline, &painter, rect);
 
             // 再生ヘッド
-            self.draw_playhead(playhead_frame, &painter, rect);
+            self.draw_playhead(timeline.playhead, &painter, rect);
 
             //スクロールバー
             self.draw_scrollbar(timeline_size, Some(timeline), &painter, &response, rect);
@@ -125,7 +124,7 @@ impl TimelineWindow {
             egui::Color32::from_rgb(70, 130, 180)
         };
 
-        let border_color = if is_dragging {
+        let stroke_color = if is_dragging {
             egui::Color32::from_rgba_premultiplied(100, 160, 210, 50)
         } else if is_selected {
             egui::Color32::from_rgb(150, 200, 255)
@@ -138,7 +137,7 @@ impl TimelineWindow {
         let clip_rect =
             egui::Rect::from_min_size(egui::pos2(x, y + 2.0), egui::vec2(w, LAYER_HEIGHT - 4.0));
         painter.rect_filled(clip_rect, 3.0, color);
-        painter.rect_stroke(clip_rect, 3.0, egui::Stroke::new(1.0, border_color));
+        painter.rect_stroke(clip_rect, 3.0, egui::Stroke::new(1.0, stroke_color));
     }
 
     pub(super) fn draw_playhead(

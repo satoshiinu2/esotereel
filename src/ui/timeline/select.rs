@@ -1,7 +1,7 @@
 use egui::Pos2;
 
 use crate::{
-    project::{Project, timeline::Timeline},
+    project::timeline::Timeline,
     ui::timeline::{LAYER_HEIGHT, SelectionRect, TimelineWindow},
 };
 
