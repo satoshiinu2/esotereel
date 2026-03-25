@@ -1,0 +1,8 @@
+cpp_compat = true
+language = "C++"
+namespace = "muscedit_lib"
+header = "#pragma once"
+
+[parse]
+parse_deps = false
+clean = true

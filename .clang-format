@@ -1,0 +1,4 @@
+BasedOnStyle: LLVM # または Google, Mozilla などベースのスタイル
+IndentWidth: 4
+UseTab: Never
+ColumnLimit: 0 # 必要に応じて列制限を変更

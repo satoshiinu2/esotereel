@@ -1,2 +1,18 @@
-/target
-/.vscode
+# ide
+**/.vscode/
+**/.cache/
+
+# rust
+**/target/
+target/
+*.rs.bk
+
+# dist
+**/build/
+build/
+
+# old src
+/base/
+
+# rich pc
+.DS_Store
