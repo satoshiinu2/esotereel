@@ -1,4 +1,3 @@
-#include "../util.h"
 #include "timeline.h"
 #include <QEvent>
 #include <algorithm>
@@ -7,6 +6,7 @@
 #include <qevent.h>
 #include <qpainter.h>
 #include <qpair.h>
+#include <qwidget.h>
 
 void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
     if (mousePos.y() > RULER_HEIGHT) {
@@ -32,12 +32,16 @@ void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
 }
 
 void TimelineWidget::mousePressEvent(QMouseEvent *e) {
+    QWidget::mousePressEvent(e);
+
     if (e->button() & Qt::LeftButton) {
         this->handleCtrlPlayhead(e->pos());
     }
 }
 
 void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
+    QWidget::mouseMoveEvent(e);
+
     if (this->isDragging) {
         this->onDragContinue(e);
     }
@@ -54,6 +58,8 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
+    QWidget::mouseReleaseEvent(e);
+
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
     // ドラッグしていないなら１つセレクト
@@ -116,6 +122,8 @@ areasel:
 }
 
 void TimelineWidget::wheelEvent(QWheelEvent *e) {
+    QWidget::wheelEvent(e);
+
     QPoint delta = e->angleDelta(); // 1ノッチ = 120
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
@@ -136,4 +144,6 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
     e->accept();
 }
 
-void TimelineWidget::mouseDoubleClickEvent(QMouseEvent *e) {}
+void TimelineWidget::mouseDoubleClickEvent(QMouseEvent *e) {
+    QWidget::mouseDoubleClickEvent(e);
+}

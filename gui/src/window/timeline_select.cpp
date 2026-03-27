@@ -1,4 +1,3 @@
-#include "../util.h"
 #include "timeline.h"
 #include <QEvent>
 #include <cmath>

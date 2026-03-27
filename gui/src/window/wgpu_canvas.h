@@ -22,22 +22,15 @@ class WgpuCanvasWidget : public QWidget {
     WgpuCanvasWidget &operator=(WgpuCanvasWidget &&) = delete;
 
   protected:
-    void showEvent(QShowEvent *event) override;
-    void paintEvent(QPaintEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *e) override;
+    void paintEvent(QPaintEvent *e) override;
+    void resizeEvent(QResizeEvent *e) override;
 
     QPaintEngine *paintEngine() const override {
         return nullptr;
     }
-    bool event(QEvent *event) override {
-        if (event->type() == QEvent::WinIdChange) {
-            updateWgpuSurface();
-        }
-        return QWidget::event(event);
-    }
 
   private:
     std::optional<WWGpuUtil> wgpuutil;
-
-    void updateWgpuSurface();
+    WId lastWinId = 0;
 };

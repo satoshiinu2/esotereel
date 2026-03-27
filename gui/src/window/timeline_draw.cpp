@@ -7,6 +7,7 @@
 #include <qline.h>
 #include <qpainter.h>
 #include <qvariant.h>
+#include <qwidget.h>
 
 void TimelineWidget::drawLayers(const MTimeline &timeline, QPainter &p, const QRect &r) const {
     size_t layerIdx = 0;
@@ -117,7 +118,9 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
     }
 }
 
-void TimelineWidget::paintEvent(QPaintEvent *) {
+void TimelineWidget::paintEvent(QPaintEvent *e) {
+    QWidget::paintEvent(e);
+
     QPainter p(this);
     QRect r = rect();
     // 背景

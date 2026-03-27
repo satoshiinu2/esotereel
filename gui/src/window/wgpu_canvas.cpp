@@ -18,6 +18,12 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
 }
 
 void WgpuCanvasWidget::paintEvent(QPaintEvent *event) {
+    WId currentId = winId();
+    if (currentId != lastWinId) {
+        this->wgpuutil->updateSurface(this->winId(), getNativeDisplay());
+        lastWinId = currentId;
+    }
+
     this->wgpuutil->renderFrame();
 }
 
@@ -29,11 +35,5 @@ void WgpuCanvasWidget::resizeEvent(QResizeEvent *event) {
 
     if (this->wgpuutil.has_value()) {
         this->wgpuutil->updateSize(w, h);
-    }
-}
-
-void WgpuCanvasWidget::updateWgpuSurface() {
-    if (this->wgpuutil.has_value()) {
-        this->wgpuutil->updateSurface(this->winId(), getNativeDisplay());
     }
 }

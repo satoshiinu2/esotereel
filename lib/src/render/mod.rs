@@ -2,7 +2,6 @@ use wgpu::CurrentSurfaceTexture;
 
 use crate::render::{vertex::Vertex, wgpuutil::WGpuUtil};
 
-pub mod init;
 pub mod pipeline;
 pub mod surfacetarget;
 pub mod uniform;
@@ -34,7 +33,7 @@ pub fn render_frame(util: &mut WGpuUtil) {
 
     // 仮のplayheadとデータ構造でのループ例
     // 本来は project ポインタなどから取得してください
-    let playhead = 0.0;
+    // let playhead = 0.0;
     let layer_height = 80.0;
 
     // (あなたのロジックで vertices を作成...)

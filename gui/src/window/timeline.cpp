@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <qpoint.h>
+#include <qwidget.h>
 
 TimelineWidget::TimelineWidget(size_t timelineType) : timelineType(timelineType) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
@@ -18,7 +19,9 @@ TimelineWidget::TimelineWidget(size_t timelineType) : timelineType(timelineType)
     });
 }
 
-void TimelineWidget::resizeEvent(QResizeEvent *) {
+void TimelineWidget::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+
     int sw = SCROLLBAR_SIZE;
     hScrollBar->setGeometry(0, height() - sw, width() - sw, sw);
     vScrollBar->setGeometry(width() - sw, 0, sw, height() - sw);

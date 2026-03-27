@@ -69,6 +69,8 @@ impl WGpuUtil {
     }
 
     pub fn update_surface(&mut self, target: impl HasWindowHandle + HasDisplayHandle) {
-        self.surface = WGpuUtil::get_surface(&self.instance, target)
+        self.surface = WGpuUtil::get_surface(&self.instance, target);
+
+        self.surface.configure(&self.device, &self.config);
     }
 }
