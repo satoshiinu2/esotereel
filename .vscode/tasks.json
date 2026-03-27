@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build debug",
+      "type": "shell",
+      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Debug && cmake --build gui/build",
+      "group": "build"
+    },
+    {
+      "label": "build release",
+      "type": "shell",
+      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Release && cmake --build gui/build",
+      "group": "build"
+    }
+  ]
+}
