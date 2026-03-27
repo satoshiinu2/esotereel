@@ -4,14 +4,44 @@
     {
       "label": "build debug",
       "type": "shell",
-      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Debug && cmake --build gui/build",
-      "group": "build"
+      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Debug ; cmake --build gui/build",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "dependsOn": ["deploy debug"]
     },
     {
       "label": "build release",
       "type": "shell",
-      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Release && cmake --build gui/build",
-      "group": "build"
+      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Release ; cmake --build gui/build",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "dependsOn": ["deploy release"]
+    },
+    {
+      "label": "deploy debug",
+      "type": "shell",
+      "command": "",
+      "windows": {
+        "command": "powershell -ExecutionPolicy Bypass -File ./deploybuild.ps1"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "deploy release",
+      "type": "shell",
+      "command": "",
+      "windows": {
+        "command": "powershell -ExecutionPolicy Bypass -File ./deploydist.ps1"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
     }
   ]
 }

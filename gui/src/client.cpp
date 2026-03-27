@@ -6,7 +6,7 @@
 Client::Client() {
     connect(&socket, &QTcpSocket::readyRead, this, [&]() {
         QByteArray data = socket.readAll();
-        const u_int8_t *ptr = reinterpret_cast<const uint8_t *>(data.constData());
+        const uint8_t *ptr = reinterpret_cast<const uint8_t *>(data.constData());
         nomyoedit_gui_helper::parse_responce(ptr, data.length());
         // qDebug() << "recv:" << data;
     });

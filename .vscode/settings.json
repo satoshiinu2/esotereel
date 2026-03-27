@@ -1,5 +1,5 @@
 {
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": ["--compile-commands-dir=build"],
-  "cmake.sourceDirectory": "/home/satoshiinu/Documents/muscedit/gui"
+  "cmake.sourceDirectory": "C:/Users/satos/Documents/nomyoedit/gui"
 }

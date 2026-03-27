@@ -11,7 +11,7 @@
       "stopAtEntry": false,
 
       "MIMode": "gdb",
-      "miDebuggerPath": "/usr/bin/gdb",
+      "miDebuggerPath": "gdb",
 
       "externalConsole": false,
 
@@ -23,16 +23,24 @@
           "ignoreFailures": true
         }
       ],
+      
       "environment": [
         {
           "name": "RUST_BACKTRACE",
           "value": "1"
-        },
-        {
-          "name": "QT_QPA_PLATFORM",
-          "value": "xcb"
         }
-      ]
+      ],
+      "windows": {
+        "environment": [
+          { "name": "RUST_BACKTRACE", "value": "1" }
+        ]
+      },
+      "linux": {
+        "environment": [
+          { "name": "RUST_BACKTRACE", "value": "1" },
+          { "name": "QT_QPA_PLATFORM", "value": "xcb" } 
+        ]
+      }
     }
   ]
 }

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(VideoEditorGUI)
 
+if(WIN32 AND NOT CMAKE_PREFIX_PATH)
+    set(CMAKE_PREFIX_PATH "C:/program/Qt/6.11.0/mingw_64")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -15,9 +19,20 @@ else()
     set(RUST_FLAG "--release")
 endif()
 
+# ライブラリの拡張子とか
+if(WIN32)
+    set(DLIB_EXT "dll")
+    set(RLIB_PREFIX "")
+    elseif(APPLE)
+    set(DLIB_EXT "dylib")
+    set(RLIB_PREFIX "lib")
+else()
+    set(DLIB_EXT "so")
+    set(RLIB_PREFIX "lib")
+endif()
 
 # Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network)  
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Gui)  
 
 # qt ads
 include(FetchContent)
@@ -32,7 +47,7 @@ FetchContent_MakeAvailable(ads)
 
 # ライブラリとコア
 set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/../target/${RUST_PROFILE}")
-set(GUI_HLP_LIB "${RUST_TARGET_DIR}/libnomyoedit_gui_helper.so")
+set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}nomyoedit_gui_helper.${DLIB_EXT}")
 set(CORE_EXE "${RUST_TARGET_DIR}/nomyoedit_core")
 
 # ビルドするやつ
@@ -51,7 +66,11 @@ file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
 add_executable(gui ${SRC_FILES})
 
 # ポート使ってるやつ消す
-add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
+if(UNIX AND NOT APPLE)
+    add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
+else()
+    add_custom_target(cleanup_port COMMAND cd .)
+endif()
 
 # 依存関係
 add_dependencies(gui rust_workspace cleanup_port)
@@ -62,7 +81,6 @@ target_link_libraries(gui PRIVATE
     Qt6::Widgets 
     Qt6::Network 
     Qt6::Gui       
-    Qt6::GuiPrivate
     qt6advanceddocking 
     ${GUI_HLP_LIB}
 )

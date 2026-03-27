@@ -23,6 +23,7 @@ impl HasDisplayHandle for SurfaceTarget {
     }
 }
 
+#[warn(unused)]
 pub fn get_surface_target(
     window_ptr: *mut c_void,
     display_ptr: *mut c_void,
@@ -32,8 +33,10 @@ pub fn get_surface_target(
     let window_handle = {
         #[cfg(target_os = "windows")]
         {
+            use std::num::NonZeroIsize;
+
             let h = raw_window_handle::Win32WindowHandle::new(
-                NonNull::new(window_ptr).expect("window_ptr is zero"),
+                NonZeroIsize::new(window_ptr as isize).expect("window_ptr is zero"),
             );
             RawWindowHandle::Win32(h)
         }
@@ -77,9 +80,19 @@ pub fn get_surface_target(
             }
         }
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "windows")]
         {
-            // Windows/macOS では通常不要なのでダミー
+            RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::new())
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            RawDisplayHandle::AppKit(raw_window_handle::AppKitDisplayHandle::new())
+        }
+
+        // それ以外（もしあれば）
+        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+        {
             RawDisplayHandle::UiKit(raw_window_handle::UiKitDisplayHandle::new())
         }
     };

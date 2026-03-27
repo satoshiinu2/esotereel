@@ -7,7 +7,6 @@
 #include <qnativeinterface.h>
 #include <set>
 #include <vector>
-#include <wayland-client.h>
 
 template <typename T>
 bool contains(const std::vector<T> &vec, const T &value) {
@@ -29,12 +28,10 @@ T sat_sub(T a, T b) {
     return res;
 }
 
-#include <QGuiApplication>
-#include <qnativeinterface.h>
-#include <qpa/qplatformnativeinterface.h>
-#include <wayland-client.h>
 inline void *getNativeDisplay() {
 #if defined(Q_OS_LINUX)
+    #include <qpa/qplatformnativeinterface.h>
+    #include <wayland-client.h>
     auto *x11App = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
     if (x11App) {
         return x11App->display();

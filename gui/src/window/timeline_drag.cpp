@@ -46,7 +46,7 @@ void TimelineWidget::handleDragContinue(const MTimeline &timeline, const QPoint 
         return;
     }
 
-    drag->curFrame = std::max((frame), 0l);
+    drag->curFrame = std::max(frame, (int64_t)0);
     drag->curLayerIdx = ((mousePos.y() - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
     drag->ghostPos = mousePos;
 
