@@ -2,6 +2,7 @@ use std::sync::OnceLock;
 
 pub mod command;
 pub mod project;
+pub mod render;
 pub mod responce;
 pub mod types;
 

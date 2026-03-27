@@ -1,7 +1,4 @@
 #include "../util.h"
-#include "../wrapper/clip.h"
-#include "../wrapper/project.h"
-#include "../wrapper/timeline.h"
 #include "timeline.h"
 #include <cmath>
 #include <cstdint>

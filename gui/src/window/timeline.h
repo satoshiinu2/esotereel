@@ -1,8 +1,8 @@
 #pragma once
 
-#include "../wrapper/clip.h"
-#include "../wrapper/project.h"
-#include "../wrapper/timeline.h"
+#include "../wrapper/project/clip.h"
+#include "../wrapper/project/project.h"
+#include "../wrapper/project/timeline.h"
 #include <QEvent>
 #include <QPainter>
 #include <QScrollBar>

@@ -18,6 +18,8 @@ struct Project;
 
 struct Timeline;
 
+struct WGpuUtil;
+
 struct GuiCallbacks {
   void (*on_test)();
   void (*on_update_timeline)(uintptr_t timeline_type);
@@ -43,12 +45,6 @@ void set_send_callback(OnSendFn callback);
 
 const Project *get_project();
 
-uint64_t clip_get_id(const Clip *ptr);
-
-uint64_t clip_get_position(const Clip *ptr);
-
-uint64_t clip_get_duration(const Clip *ptr);
-
 void cmd_test();
 
 void cmd_new_project();
@@ -58,6 +54,14 @@ void cmd_clip_move_mul(uintptr_t timeline_type,
                        uintptr_t len,
                        int32_t frame_moved,
                        int32_t layer_moved);
+
+const Timeline *project_get_timeline(const Project *ptr, uintptr_t idx);
+
+uint64_t clip_get_id(const Clip *ptr);
+
+uint64_t clip_get_position(const Clip *ptr);
+
+uint64_t clip_get_duration(const Clip *ptr);
 
 ClipLocation layer_find_clip_at_frame(const Layer *ptr, uint64_t frame, uintptr_t layer_idx);
 
@@ -75,8 +79,6 @@ const Clip *clip_iter_next(ClipIterator *iter);
 
 void clip_iter_free(ClipIterator *iter);
 
-const Timeline *project_get_timeline(const Project *ptr, uintptr_t idx);
-
 const Layer *timeline_get_layer_at(const Timeline *ptr, uintptr_t l_idx);
 
 uintptr_t timeline_get_layers_count(const Timeline *ptr);
@@ -91,6 +93,20 @@ bool timeline_would_clip_overlap(const Timeline *ptr,
                                  uint64_t duration,
                                  const uint64_t *exclude_ids_ptr,
                                  uintptr_t exclude_ids_len);
+
+WGpuUtil *wgpuutil_init_surface(void *window_ptr,
+                                void *display_ptr,
+                                uint32_t width,
+                                uint32_t height,
+                                bool is_wayland);
+
+void wgpuutil_drop(WGpuUtil *ptr);
+
+void wgpuutil_update_surface(WGpuUtil *ptr, void *window_ptr, void *display_ptr, bool is_wayland);
+
+void wgpuutil_update_size(WGpuUtil *ptr, uint32_t width, uint32_t height);
+
+void render_frame(WGpuUtil *ptr);
 
 }  // extern "C"
 

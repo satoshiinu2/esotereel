@@ -61,6 +61,8 @@ target_include_directories(gui PRIVATE "${CMAKE_SOURCE_DIR}/../guihlp/include")
 target_link_libraries(gui PRIVATE 
     Qt6::Widgets 
     Qt6::Network 
+    Qt6::Gui       
+    Qt6::GuiPrivate
     qt6advanceddocking 
     ${GUI_HLP_LIB}
 )

@@ -36,7 +36,7 @@ fn on_responce_recveve(responce: &ArchivedResponse) {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
             let real_project: Project = project.deserialize(&mut rkyv::Infallible).unwrap();
-            dbg!(real_project.clone());
+            // dbg!(real_project.clone());
             *PROJECT.write().unwrap() = Some(real_project);
         }
         ArchivedResponse::ClipUpdates {

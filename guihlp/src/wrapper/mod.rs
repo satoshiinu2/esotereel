@@ -2,11 +2,9 @@ use nomyoedit_lib::{OnSendFn, project::Project};
 
 use crate::PROJECT;
 
-pub mod clip;
 pub mod command;
-pub mod layer;
 pub mod project;
-pub mod timeline;
+pub mod render;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse_responce(ptr: *const u8, len: usize) {
