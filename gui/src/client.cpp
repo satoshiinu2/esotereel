@@ -1,5 +1,5 @@
 #include "client.h"
-#include "muscedit_lib.h"
+#include "nomyoedit_gui_helper.h"
 #include <QDebug>
 #include <sys/types.h>
 
@@ -7,11 +7,11 @@ Client::Client() {
     connect(&socket, &QTcpSocket::readyRead, this, [&]() {
         QByteArray data = socket.readAll();
         const u_int8_t *ptr = reinterpret_cast<const uint8_t *>(data.constData());
-        muscedit_lib::on_responce_recveve(ptr, data.length());
+        nomyoedit_gui_helper::parse_responce(ptr, data.length());
         // qDebug() << "recv:" << data;
     });
     connect(&socket, &QTcpSocket::connected, this, []() {
-        muscedit_lib::cmd_new_project();
+        nomyoedit_gui_helper::cmd_new_project();
     });
 }
 void Client::connectToCore() {

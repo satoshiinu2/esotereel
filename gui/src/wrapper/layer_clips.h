@@ -1,56 +1,84 @@
 #pragma once
 
 #include "clip.h"
-#include "muscedit_lib.h"
+#include "nomyoedit_gui_helper.h"
 #include <iterator>
 
-using RawLayer = muscedit_lib::Layer;
-
+using RawLayer = nomyoedit_gui_helper::Layer;
+using RawClipIterator = nomyoedit_gui_helper::ClipIterator;
 class MClipsIterator {
-    const RawLayer *raw_ptr;
-    size_t index;
+    nomyoedit_gui_helper::ClipIterator *rust_iter_ptr;
+    const nomyoedit_gui_helper::Clip *cur_ptr;
 
   public:
-    // 必須の型定義（標準ライブラリとの互換性のため）
     using iterator_category = std::forward_iterator_tag;
-    using value_type = MClipsIterator;
-    using difference_type = std::ptrdiff_t;
-    using pointer = MClipsIterator *;
-    using reference = MClipsIterator;
+    using value_type = MClip;
+    // ... (other traits)
 
-    MClipsIterator(const RawLayer *t, size_t i) : raw_ptr(t), index(i) {}
+    // begin用
+    MClipsIterator(const RawLayer *t) noexcept
+        : rust_iter_ptr(nomyoedit_gui_helper::layer_clips_begin(t)), cur_ptr(nullptr) {
+        advance();
+    }
 
-    // インクリメント (++it)
-    MClipsIterator &operator++() {
-        index++;
+    // end用
+    MClipsIterator() noexcept : rust_iter_ptr(nullptr), cur_ptr(nullptr) {}
+
+    // コピー禁止 (重要！二重解放を防ぐ)
+    // std::forward_iterator はコピー可能である必要がありますが、
+    // Rustのイテレータを直接持つ場合は move だけにするか、ポインタ管理を工夫する必要があります。
+    MClipsIterator(const MClipsIterator &) = delete;
+    MClipsIterator &operator=(const MClipsIterator &) = delete;
+
+    // Moveは許可
+    MClipsIterator(MClipsIterator &&other) noexcept
+        : rust_iter_ptr(other.rust_iter_ptr), cur_ptr(other.cur_ptr) {
+        other.rust_iter_ptr = nullptr;
+    }
+
+    void advance() noexcept {
+        if (rust_iter_ptr) {
+            cur_ptr = nomyoedit_gui_helper::clip_iter_next(rust_iter_ptr);
+            if (!cur_ptr) {
+                nomyoedit_gui_helper::clip_iter_free(rust_iter_ptr);
+                rust_iter_ptr = nullptr;
+            }
+        }
+    }
+
+    MClipsIterator &operator++() noexcept {
+        advance(); // 内部で free まで完結させる
         return *this;
     }
 
-    // 比較 (it != end)
-    bool operator!=(const MClipsIterator &other) const {
-        return index != other.index;
+    bool operator!=(const MClipsIterator &other) const noexcept {
+        // rust_iter_ptr ではなく、指しているデータ (cur_ptr) で比較するのが確実
+        return cur_ptr != other.cur_ptr;
     }
 
-    // 間接参照 (*it) -> ここで LayerRef を生成して返す
-    MClip operator*() const {
-        return MClip(muscedit_lib::layer_get_clip(raw_ptr, index));
+    MClip operator*() const noexcept {
+        return MClip(cur_ptr);
+    }
+
+    // デストラクタ: もし途中でループを抜けても Rust 側をリークさせない
+    ~MClipsIterator() {
+        if (rust_iter_ptr) {
+            nomyoedit_gui_helper::clip_iter_free(rust_iter_ptr);
+        }
     }
 };
-
-using RawLayer = muscedit_lib::Layer;
-
 class MClipsIterable {
     const RawLayer *raw_ptr;
 
   public:
-    MClipsIterable(const RawLayer *p) : raw_ptr(p) {}
-    bool isValid() const { return raw_ptr != nullptr; }
+    MClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
+    bool isValid() const noexcept { return raw_ptr != nullptr; }
 
-    size_t clipsCount() const { return muscedit_lib::layer_get_clips_count(raw_ptr); }
+    size_t clipsCount() const noexcept { return nomyoedit_gui_helper::layer_get_clips_count(raw_ptr); }
 
     // forループの開始点
-    MClipsIterator begin() const { return MClipsIterator(raw_ptr, 0); }
+    MClipsIterator begin() const noexcept { return MClipsIterator(raw_ptr); }
 
     // forループの終点
-    MClipsIterator end() const { return MClipsIterator(raw_ptr, clipsCount()); }
+    MClipsIterator end() const noexcept { return MClipsIterator(); }
 };

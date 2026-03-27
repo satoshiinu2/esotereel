@@ -1,43 +1,40 @@
-use crate::project::clip::Clip;
+use std::collections::BTreeSet;
+
 use rkyv::{Archive, Deserialize, Serialize};
 
-#[derive(Archive, Deserialize, Serialize, Clone)]
+use crate::project::clip::Clip;
+
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[archive_attr(derive(Ord, PartialOrd, Eq, PartialEq))]
 pub struct Layer {
     pub index: usize,
-    pub clips: Vec<Clip>,
+    pub clips: BTreeSet<Clip>,
     pub name: String,
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_clip(ptr: *const Layer, l_idx: usize) -> *const Clip {
-    if ptr.is_null() {
-        return std::ptr::null();
+impl Layer {
+    pub fn try_insert(&mut self, new_clip: Clip) -> Result<(), String> {
+        // 1. 挿入したい位置の「直前」と「直後」だけをチェックする
+        // position が new_clip.position 以上の最初の要素を取得
+        let mut overlap = self.clips.range(new_clip.clone()..);
+
+        // 次のクリップとの重なり
+        if let Some(next) = overlap.next() {
+            if new_clip.position + new_clip.duration > next.position {
+                return Err("Next clip overlap".into());
+            }
+        }
+
+        // 前のクリップとの重なり
+        let mut overlap_prev = self.clips.range(..new_clip.clone());
+        if let Some(prev) = overlap_prev.next_back() {
+            if prev.position + prev.duration > new_clip.position {
+                return Err("Previous clip overlap".into());
+            }
+        }
+
+        // 重なりがなければ挿入。O(log N) で爆速
+        self.clips.insert(new_clip);
+        Ok(())
     }
-
-    unsafe { std::ptr::addr_of!((&(*ptr).clips)[l_idx]) }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-
-    unsafe { (*ptr).clips.len() }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_name_ptr(ptr: *const Layer) -> *const u8 {
-    if ptr.is_null() {
-        return std::ptr::null();
-    }
-    unsafe { (*ptr).name.as_ptr() }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_name_len(ptr: *const Layer) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-    unsafe { (&(*ptr).name).len() }
 }

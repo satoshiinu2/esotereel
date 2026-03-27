@@ -6,9 +6,9 @@ fn main() {
             "--config",
             "cbindgen.toml",
             "--crate",
-            "muscedit_lib",
+            "nomyoedit_gui_helper",
             "--output",
-            "include/muscedit_lib.h",
+            "include/nomyoedit_gui_helper.h",
         ])
         .status()
         .expect("Failed to run cbindgen");

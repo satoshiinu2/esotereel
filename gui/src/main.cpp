@@ -1,6 +1,6 @@
 #include "window/main.h"
 #include "client.h"
-#include "muscedit_lib.h"
+#include "nomyoedit_gui_helper.h"
 #include <QApplication>
 #include <QDebug>
 #include <QProcess>
@@ -10,10 +10,13 @@
 
 void bootcore(QString corePath);
 
+MainWindow *window;
+
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
     MainWindow w;
+    window = &w;
     w.show();
 
     if (argc < 2) {
@@ -50,13 +53,14 @@ void bootcore(QString corePath) {
         qDebug() << "core started!";
     }
 
-    muscedit_lib::CommandCallbacks callbacks;
-    callbacks.on_test = +[]() {
-        qDebug() << "recv test!";
+    nomyoedit_gui_helper::GuiCallbacks callbacks;
+    callbacks.on_update_timeline = +[](size_t id) {
+        window->onUpdateTimeline(id);
     };
 
-    muscedit_lib::set_command_callbacks(callbacks);
-    muscedit_lib::set_send_callbacks(on_send_cb);
+    nomyoedit_gui_helper::init();
+    nomyoedit_gui_helper::set_gui_callbacks(callbacks);
+    nomyoedit_gui_helper::set_send_callback(on_send_cb);
 
     client.connectToCore();
 }

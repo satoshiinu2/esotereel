@@ -1,20 +1,20 @@
 #pragma once
 
-#include "muscedit_lib.h"
+#include "nomyoedit_gui_helper.h"
 #include "timeline.h"
 
-using RawProject = muscedit_lib::Project;
+using RawProject = nomyoedit_gui_helper::Project;
 
 class MProject {
     const RawProject *raw_ptr;
 
   public:
-    MProject(const RawProject *p) : raw_ptr(p) {}
-    bool isValid() const { return raw_ptr != nullptr; }
+    MProject(const RawProject *p) noexcept : raw_ptr(p) {}
+    bool isValid() const noexcept { return raw_ptr != nullptr; }
 
-    MTimeline timelineOf(size_t idx) const { return MTimeline(muscedit_lib::project_get_timeline(raw_ptr, idx)); }
+    MTimeline timelineOf(size_t index) const noexcept { return MTimeline(nomyoedit_gui_helper::project_get_timeline(raw_ptr, index)); }
 };
 
-inline MProject getProject() {
-    return MProject(muscedit_lib::get_project());
+inline MProject getProject() noexcept {
+    return MProject(nomyoedit_gui_helper::get_project());
 }

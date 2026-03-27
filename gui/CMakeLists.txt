@@ -6,6 +6,16 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# ビルドタイプに応じた設定の切り替え
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
+    set(RUST_PROFILE "debug")
+    set(RUST_FLAG "")
+else()
+    set(RUST_PROFILE "release")
+    set(RUST_FLAG "--release")
+endif()
+
+
 # Qt6
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network)  
 
@@ -20,57 +30,37 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(ADS_VERSION "4.3.1" CACHE STRING "" FORCE)  
 FetchContent_MakeAvailable(ads)
 
-# Rust ライブラリパス
-set(MUSCL_LIB_PATH "${CMAKE_SOURCE_DIR}/../lib/target/release/libmuscedit_lib.so")
-set(MUSCL_LIB_HEADER_PATH "${CMAKE_SOURCE_DIR}/../lib/include")
-set(MUSCL_LIB_HEADER "${CMAKE_SOURCE_DIR}/../lib/include/muscedit_lib.h")
-set(MUSCL_CORE_PATH "${CMAKE_SOURCE_DIR}/../core/target/release/muscedit-core")
+# ライブラリとコア
+set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/../target/${RUST_PROFILE}")
+set(GUI_HLP_LIB "${RUST_TARGET_DIR}/libnomyoedit_gui_helper.so")
+set(CORE_EXE "${RUST_TARGET_DIR}/nomyoedit_core")
 
-# lib ビルド
+# ビルドするやつ
 add_custom_command(
-    OUTPUT ${MUSCL_LIB_PATH}
-    COMMAND cargo build --release
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/../lib
-    COMMENT "Building Muscledit library..."
+    OUTPUT ${GUI_HLP_LIB} ${CORE_EXE}
+    COMMAND cargo build ${RUST_FLAG}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..
+    COMMENT "Building Rust Workspace (${RUST_PROFILE})..."
 )
 
-add_custom_target(rust_lib ALL DEPENDS ${MUSCL_LIB_PATH})
+add_custom_target(rust_workspace ALL DEPENDS ${GUI_HLP_LIB} ${CORE_EXE})
 
-# core ビルド
-add_custom_command(
-    OUTPUT ${MUSCL_CORE_PATH}
-    COMMAND cargo build --release
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/../core
-    COMMENT "Building Muscledit core..."
-)
-
-add_custom_target(rust_core ALL DEPENDS ${MUSCL_CORE_PATH})
-
-# ポート使ってるやつ消す
-add_custom_target(cleanup_port
-    COMMAND fuser -k 12345/tcp || true
-)
 
 # 実行ファイル
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS
-    src/*.cpp
-)
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
+add_executable(gui ${SRC_FILES})
 
-add_executable(gui 
-    ${SRC_FILES}
-    ${SRC_FILES}
-    ${PROTO_SRCS}
-)
+# ポート使ってるやつ消す
+add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
 
-add_dependencies(gui rust_lib rust_core cleanup_port)
-
-set_source_files_properties(${SRC_FILES} PROPERTIES
-    OBJECT_DEPENDS ${MUSCL_LIB_HEADER}
-)
+# 依存関係
+add_dependencies(gui rust_workspace cleanup_port)
 
 # ライブラリリンク
-target_link_libraries(gui PRIVATE Qt6::Widgets Qt6::Network)
-target_link_libraries(gui PRIVATE qt6advanceddocking)
-target_link_libraries(gui PRIVATE ${MUSCL_LIB_PATH})
-
-target_include_directories(gui PRIVATE ${MUSCL_LIB_HEADER_PATH})
+target_include_directories(gui PRIVATE "${CMAKE_SOURCE_DIR}/../guihlp/include")
+target_link_libraries(gui PRIVATE 
+    Qt6::Widgets 
+    Qt6::Network 
+    qt6advanceddocking 
+    ${GUI_HLP_LIB}
+)

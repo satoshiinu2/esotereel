@@ -116,6 +116,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomyoedit_gui_helper"
+version = "0.1.0"
+dependencies = [
+ "nomyoedit_lib",
+ "rkyv",
+]
+
+[[package]]
 name = "nomyoedit_lib"
 version = "0.1.0"
 dependencies = [

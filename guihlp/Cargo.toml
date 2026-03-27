@@ -1,7 +1,10 @@
 [package]
-name = "nomyoedit_core"
+name = "nomyoedit_gui_helper"
 version = "0.1.0"
 edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
 nomyoedit_lib = { package = "nomyoedit_lib", path = "../lib" }

@@ -18,7 +18,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     previewDock->setWidget(previewWidget);
     dockManager->addDockWidget(ads::BottomDockWidgetArea, previewDock);
 
-    auto *timelineWidget = new TimelineWidget(0);
+    this->timelineWidget = new TimelineWidget(0);
     auto *timelineDock = new ads::CDockWidget("Timeline");
     timelineDock->setWidget(timelineWidget);
     dockManager->addDockWidget(ads::BottomDockWidgetArea, timelineDock);
