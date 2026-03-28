@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(VideoEditorGUI)
 
-if(WIN32 AND NOT CMAKE_PREFIX_PATH)
-    set(CMAKE_PREFIX_PATH "C:/program/Qt/6.11.0/mingw_64")
-endif()
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -23,7 +19,7 @@ endif()
 if(WIN32)
     set(DLIB_EXT "dll")
     set(RLIB_PREFIX "")
-    elseif(APPLE)
+elseif(APPLE)
     set(DLIB_EXT "dylib")
     set(RLIB_PREFIX "lib")
 else()
@@ -46,7 +42,7 @@ set(ADS_VERSION "4.3.1" CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(ads)
 
 # ライブラリとコア
-set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/../target/${RUST_PROFILE}")
+set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}nomyoedit_gui_helper.${DLIB_EXT}")
 set(CORE_EXE "${RUST_TARGET_DIR}/nomyoedit_core")
 
@@ -54,7 +50,7 @@ set(CORE_EXE "${RUST_TARGET_DIR}/nomyoedit_core")
 add_custom_command(
     OUTPUT ${GUI_HLP_LIB} ${CORE_EXE}
     COMMAND cargo build ${RUST_FLAG}
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/..
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Building Rust Workspace (${RUST_PROFILE})..."
 )
 
@@ -62,7 +58,7 @@ add_custom_target(rust_workspace ALL DEPENDS ${GUI_HLP_LIB} ${CORE_EXE})
 
 
 # 実行ファイル
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS src/*.cpp)
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
 add_executable(gui ${SRC_FILES})
 
 # ポート使ってるやつ消す
@@ -76,11 +72,12 @@ endif()
 add_dependencies(gui rust_workspace cleanup_port)
 
 # ライブラリリンク
-target_include_directories(gui PRIVATE "${CMAKE_SOURCE_DIR}/../guihlp/include")
+target_include_directories(gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include")
 target_link_libraries(gui PRIVATE 
     Qt6::Widgets 
-    Qt6::Network 
-    Qt6::Gui       
+    Qt6::Network
+    Qt6::Gui
+    Qt6::Core
     qt6advanceddocking 
     ${GUI_HLP_LIB}
 )

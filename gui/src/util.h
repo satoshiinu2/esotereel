@@ -8,6 +8,13 @@
 #include <set>
 #include <vector>
 
+#if defined(Q_OS_WIN)
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#elif defined(Q_OS_LINUX)
+    #include <qnativeinterface.h>
+#endif
+
 template <typename T>
 bool contains(const std::vector<T> &vec, const T &value) {
     return std::find(vec.begin(), vec.end(), value) != vec.end();
@@ -30,14 +37,15 @@ T sat_sub(T a, T b) {
 
 inline void *getNativeDisplay() {
 #if defined(Q_OS_LINUX)
-    #include <qpa/qplatformnativeinterface.h>
-    #include <wayland-client.h>
     auto *x11App = qGuiApp->nativeInterface<QNativeInterface::QX11Application>();
     if (x11App) {
         return x11App->display();
     }
 
     // idk wayland
+#elif defined(Q_OS_WIN)
+    HINSTANCE hinst = GetModuleHandle(NULL); 
+    return hinst;
 
 #endif
     return nullptr;

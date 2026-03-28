@@ -7,7 +7,7 @@
       "request": "launch",
       "program": "${command:cmake.launchTargetPath}",
       "args": [ "${workspaceFolder}/target/debug/nomyoedit_core" ],
-      "cwd": "${workspaceFolder}/gui/build",
+      "cwd": "${workspaceFolder}/build",
       "stopAtEntry": false,
 
       "MIMode": "gdb",
@@ -25,10 +25,7 @@
       ],
       
       "environment": [
-        {
-          "name": "RUST_BACKTRACE",
-          "value": "1"
-        }
+          { "name": "RUST_BACKTRACE", "value": "1" }
       ],
       "windows": {
         "environment": [

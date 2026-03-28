@@ -1,5 +1,4 @@
 use std::ffi::c_void;
-use std::ptr::NonNull;
 
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
@@ -11,7 +10,9 @@ pub struct SurfaceTarget {
     pub display: RawDisplayHandle,
 }
 
-// wgpuが必要とするTraitを実装する
+unsafe impl Send for SurfaceTarget {}
+unsafe impl Sync for SurfaceTarget {}
+
 impl HasWindowHandle for SurfaceTarget {
     fn window_handle(&'_ self) -> Result<WindowHandle<'_>, HandleError> {
         unsafe { Ok(WindowHandle::borrow_raw(self.window)) }
@@ -23,7 +24,6 @@ impl HasDisplayHandle for SurfaceTarget {
     }
 }
 
-#[warn(unused)]
 pub fn get_surface_target(
     window_ptr: *mut c_void,
     display_ptr: *mut c_void,
@@ -35,9 +35,12 @@ pub fn get_surface_target(
         {
             use std::num::NonZeroIsize;
 
-            let h = raw_window_handle::Win32WindowHandle::new(
+            let mut h = raw_window_handle::Win32WindowHandle::new(
                 NonZeroIsize::new(window_ptr as isize).expect("window_ptr is zero"),
             );
+            
+            // display_ptrを hinstance として使う
+            h.hinstance = NonZeroIsize::new(display_ptr as isize); 
             RawWindowHandle::Win32(h)
         }
 
@@ -58,6 +61,8 @@ pub fn get_surface_target(
 
         #[cfg(target_os = "macos")]
         {
+            use std::ptr::NonNull;
+
             let h = raw_window_handle::AppKitWindowHandle::new(
                 NonNull::new(window_ptr).expect("window_ptr is zero"),
             );
@@ -70,6 +75,8 @@ pub fn get_surface_target(
         #[cfg(target_os = "linux")]
         {
             if is_wayland {
+                use std::ptr::NonNull;
+
                 let h = raw_window_handle::WaylandDisplayHandle::new(
                     NonNull::new(display_ptr).expect("display_ptr is zero"),
                 );

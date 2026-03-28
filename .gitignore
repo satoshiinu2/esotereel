@@ -1,5 +1,7 @@
 # ide
 **/.cache/
+**/.vscode/settings.json
+**/.vscode/c_cpp_properties.json
 
 # rust
 **/target/
@@ -9,6 +11,7 @@ target/
 # dist
 **/build/
 build/
+dist/
 
 # old src
 /base/

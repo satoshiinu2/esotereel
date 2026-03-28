@@ -2,20 +2,38 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build debug",
+      "label": "make debug",
       "type": "shell",
-      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Debug ; cmake --build gui/build",
+      "command": "cmake -G 'MinGW Makefiles' -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
       "group": "build",
       "dependsOrder": "sequence",
-      "dependsOn": ["deploy debug"]
+      "windows": {
+        "options": {
+          "shell": {
+            "executable": "bash.exe",
+            "args": [
+              "-c"
+            ]
+          }
+        }
+      },
     },
     {
-      "label": "build release",
+      "label": "make release",
       "type": "shell",
-      "command": "cmake -S gui -B gui/build -DCMAKE_BUILD_TYPE=Release ; cmake --build gui/build",
+      "command": "cmake -G 'MinGW Makefiles' -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build",
       "group": "build",
       "dependsOrder": "sequence",
-      "dependsOn": ["deploy release"]
+      "windows": {
+        "options": {
+          "shell": {
+            "executable": "bash.exe",
+            "args": [
+              "-c"
+            ]
+          }
+        }
+      },
     },
     {
       "label": "deploy debug",
@@ -42,6 +60,26 @@
         "panel": "new"
       },
       "problemMatcher": []
-    }
+    },
+    {
+      "label": "build debug",
+      "type": "shell",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "make debug",
+        "deploy debug"
+      ]
+    },
+    {
+      "label": "build release",
+      "type": "shell",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "make release",
+        "deploy release"
+      ]
+    },
   ]
 }

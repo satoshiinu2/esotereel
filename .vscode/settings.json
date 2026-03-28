@@ -1,5 +1,8 @@
 {
   "C_Cpp.intelliSenseEngine": "disabled",
   "clangd.arguments": ["--compile-commands-dir=build"],
-  "cmake.sourceDirectory": "C:/Users/satos/Documents/nomyoedit/gui"
+  "cmake.sourceDirectory": "C:/Users/satos/Documents/nomyoedit",
+  "cmake.configureSettings": {
+        "CMAKE_PREFIX_PATH": "C:/programs/Qt/6.11.0/mingw_64"
+    }
 }
