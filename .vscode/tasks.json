@@ -40,7 +40,7 @@
       "type": "shell",
       "command": "",
       "windows": {
-        "command": "powershell -ExecutionPolicy Bypass -File ./deploybuild.ps1"
+        "command": "powershell -ExecutionPolicy Bypass -File ./deploydebug.ps1"
       },
       "presentation": {
         "reveal": "always",
