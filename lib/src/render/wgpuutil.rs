@@ -8,17 +8,18 @@ pub struct WGpuUtil {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub surface: wgpu::Surface<'static>,
+    pub surface_target: std::sync::Arc<SurfaceTarget>,
     pub config: wgpu::SurfaceConfiguration,
     pub resources: WgpuRenderResources,
 }
 
 impl WGpuUtil {
-    pub fn new(target: SurfaceTarget, width: u32, height: u32) -> Self {
+    pub fn new(surface_target: SurfaceTarget, width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::default();
 
-        let target_arc = std::sync::Arc::new(target);
+        let surface_target = std::sync::Arc::new(surface_target);
         let surface = instance
-            .create_surface(target_arc)
+            .create_surface(surface_target.clone())
             .expect("Failed to create surface");
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -27,11 +28,6 @@ impl WGpuUtil {
         }))
         .expect("Could not get an adapter (GPU).");
 
-        let caps = adapter.get_downlevel_capabilities();
-        println!("Downlevel Flags: {:?}", caps.flags);
-        println!("WebGPU Compliant: {}", caps.is_webgpu_compliant());
-        dbg!(adapter.get_info().backend);
-        
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: wgpu::Features::empty(),
@@ -62,6 +58,7 @@ impl WGpuUtil {
             device,
             queue,
             surface,
+            surface_target,
             config,
             resources,
         }

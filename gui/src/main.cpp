@@ -9,12 +9,16 @@
 #include <qglobal.h>
 
 void bootcore(QString corePath);
+void setCallBacks();
 
 MainWindow *window;
+Client client;
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
+    setCallBacks();
+    
     MainWindow w;
     window = &w;
     w.show();
@@ -27,9 +31,7 @@ int main(int argc, char **argv) {
 
     return app.exec();
 }
-Client client;
 
-void on_send_cb(const uint8_t *ptr, size_t len);
 
 // placeholder
 void bootcore(QString corePath) {
@@ -53,7 +55,21 @@ void bootcore(QString corePath) {
         qDebug() << "core started!";
     }
 
+
+    client.connectToCore();
+}
+
+
+void on_send_cb(const uint8_t *ptr, size_t len) {
+    QByteArray data(reinterpret_cast<const char *>(ptr), len);
+    client.send(data);
+}
+
+void setCallBacks(){
     nomyoedit_gui_helper::GuiCallbacks callbacks;
+    
+    callbacks.on_test = +[]() {
+    };
     callbacks.on_update_timeline = +[](size_t id) {
         window->onUpdateTimeline(id);
     };
@@ -61,11 +77,4 @@ void bootcore(QString corePath) {
     nomyoedit_gui_helper::init();
     nomyoedit_gui_helper::set_gui_callbacks(callbacks);
     nomyoedit_gui_helper::set_send_callback(on_send_cb);
-
-    client.connectToCore();
-}
-
-void on_send_cb(const uint8_t *ptr, size_t len) {
-    QByteArray data(reinterpret_cast<const char *>(ptr), len);
-    client.send(data);
 }

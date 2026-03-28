@@ -10,7 +10,6 @@ pub extern "C" fn wgpuutil_init_surface(
     height: u32,
     is_wayland: bool,
 ) -> *mut WGpuUtil {
-    dbg!(window_ptr,display_ptr,width,height,is_wayland);
     let surface = get_surface_target(window_ptr, display_ptr, is_wayland);
 
     let wpguutil = WGpuUtil::new(surface, width, height);

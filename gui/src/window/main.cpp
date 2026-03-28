@@ -8,11 +8,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     resize(1280, 720);
     setWindowTitle("NomyoEdit");
 
+    
     auto *central = new QLabel("Preview", this);
     central->setAlignment(Qt::AlignCenter);
     setCentralWidget(central);
-
+    
     this->dockManager = new ads::CDockManager(this);
+    ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, true);
 
     auto *previewWidget = new WgpuCanvasWidget();
     auto *previewDock = new ads::CDockWidget("Preview");
