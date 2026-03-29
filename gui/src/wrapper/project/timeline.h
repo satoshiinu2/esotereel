@@ -29,10 +29,10 @@ class MTimeline {
         return MClipLocation(nomyoedit_gui_helper::timeline_find_clip_by_id(raw_ptr, id));
     }
 
-    bool wouldClipOverlap(size_t layerIdx, int64_t position, int64_t duration, const std::set<uint64_t> &exclude_set) const {
+    bool canPlaceClipAt(size_t layerIdx, int64_t position, int64_t duration, const std::set<uint64_t> &exclude_set) const {
         // そこまでsetは大きくないと信じてコピー
         std::vector<uint64_t> exclude_vec(exclude_set.begin(), exclude_set.end());
-        return nomyoedit_gui_helper::timeline_would_clip_overlap(
+        return nomyoedit_gui_helper::timeline_can_place_clip_at(
             raw_ptr, layerIdx, position, duration,
             exclude_vec.data(), exclude_vec.size());
     }

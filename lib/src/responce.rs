@@ -7,7 +7,7 @@ use crate::{
     project::{Project, clip::Clip},
 };
 
-type OnReceiveResponceFn = fn(&ArchivedResponse);
+type OnReceiveResponceFn = fn(&ArchivedResponse) -> Result<(), String>;
 
 #[derive(Archive, Deserialize, Serialize)]
 #[repr(u8)]
@@ -39,7 +39,9 @@ pub fn parse_responce(ptr: *const u8, len: usize) {
     let archived_resp = unsafe { rkyv::archived_root::<Response>(&bytes) };
 
     if let Some(on_responce_recveve) = RESPONCE_CALLBACK.get() {
-        on_responce_recveve(archived_resp);
+        if let Err(msg) = on_responce_recveve(archived_resp) {
+            println!("{}", msg);
+        }
     }
 }
 

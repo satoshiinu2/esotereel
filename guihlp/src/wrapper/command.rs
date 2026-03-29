@@ -24,14 +24,17 @@ pub extern "C" fn cmd_clip_move_mul(
     timeline_type: usize,
     ptr: *const u64,
     len: usize,
-    frame_moved: i32,
-    layer_moved: i32,
+    position_moved: i64,
+    duration_added: i64,
+    layer_moved: isize,
 ) {
-    let project_guard = PROJECT.read().unwrap();
-    let Some(project) = project_guard.as_ref() else {
+    let lock = PROJECT.read().unwrap();
+    let Some(project) = lock.as_ref() else {
         return;
     };
-    let timeline = project.get_timeline(timeline_type);
+    let Ok(timeline) = project.get_timeline(timeline_type) else {
+        return;
+    };
 
     let clip_ids = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
 
@@ -42,14 +45,15 @@ pub extern "C" fn cmd_clip_move_mul(
 
             Some(ClipMoveCtx {
                 clip_id: *clip_id,
-                new_frame: u64::try_from(clip.position as i64 + frame_moved as i64).ok()?,
-                new_layer: u32::try_from(layer_idx as i64 + layer_moved as i64).ok()?,
+                new_position: (clip.position + position_moved),
+                new_duration: (clip.duration + duration_added),
+                new_layer: usize::try_from(layer_idx as isize + layer_moved).ok()?,
             })
         })
         .collect();
 
     let cmd = Command::ClipsMove {
-        timeline_type,
+        timeline_idx: timeline_type,
         clips: clip_ctxs,
     };
     send_command(cmd);

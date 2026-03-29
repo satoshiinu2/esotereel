@@ -3,6 +3,7 @@ use nomyoedit_lib::{OnSendFn, project::Project};
 use crate::PROJECT;
 
 pub mod command;
+pub mod logger;
 pub mod project;
 pub mod render;
 

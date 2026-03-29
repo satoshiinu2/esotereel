@@ -8,15 +8,17 @@ pub mod uniform;
 pub mod vertex;
 pub mod wgpuutil;
 
-pub fn render_frame(util: &mut WGpuUtil) {
+static mut TESTPLACEHOLDER: f32 = 0.0;
+
+pub fn render_frame(util: &mut WGpuUtil) -> Result<(), String> {
     if util.config.width == 0 || util.config.height == 0 {
-        return;
+        return Err("window size is 0".into());
     }
 
-    // 2. 次のフレーム用のテクスチャを取得
     let output = match util.surface.get_current_texture() {
         CurrentSurfaceTexture::Success(t) => t,
-        _ => return,
+        CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return Err("could not get next frame texture".into()),
     };
 
     let view = output
@@ -36,11 +38,13 @@ pub fn render_frame(util: &mut WGpuUtil) {
     // let playhead = 0.0;
     let layer_height = 80.0;
 
+    unsafe { TESTPLACEHOLDER += 1.0 };
+    let testval = unsafe { TESTPLACEHOLDER };
     // (あなたのロジックで vertices を作成...)
     vertices.extend_from_slice(&Vertex::rect(
         100.0,
         100.0,
-        200.0,
+        testval,
         layer_height,
         [0.2, 0.5, 0.8, 1.0],
     ));
@@ -82,4 +86,5 @@ pub fn render_frame(util: &mut WGpuUtil) {
     // 5. GPUへ送信
     util.queue.submit(std::iter::once(encoder.finish()));
     output.present();
+    Ok(())
 }

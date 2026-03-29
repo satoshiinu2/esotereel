@@ -57,11 +57,11 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_would_clip_overlap(
+pub unsafe extern "C" fn timeline_can_place_clip_at(
     ptr: *const Timeline,
     layer_idx: usize,
-    position: u64,
-    duration: u64,
+    position: i64,
+    duration: i64,
     exclude_ids_ptr: *const u64,
     exclude_ids_len: usize,
 ) -> bool {
@@ -72,5 +72,5 @@ pub unsafe extern "C" fn timeline_would_clip_overlap(
 
     let exclude_ids = unsafe { std::slice::from_raw_parts(exclude_ids_ptr, exclude_ids_len) };
 
-    timeline.would_clip_overlap(layer_idx, position, duration, exclude_ids)
+    timeline.can_place_clip_at(layer_idx, position, duration, exclude_ids)
 }

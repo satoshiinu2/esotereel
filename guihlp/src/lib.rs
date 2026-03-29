@@ -31,24 +31,34 @@ pub extern "C" fn set_gui_callbacks(callbacks: GuiCallbacks) {
     GUI_CALLBACKS.set(callbacks).ok();
 }
 
-fn on_responce_recveve(responce: &ArchivedResponse) {
+fn on_responce_recveve(responce: &ArchivedResponse) -> Result<(), String> {
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
             let real_project: Project = project.deserialize(&mut rkyv::Infallible).unwrap();
+            let timeline_len = real_project.get_timeline_count();
+
             // dbg!(real_project.clone());
             *PROJECT.write().unwrap() = Some(real_project);
+            for i in 0..timeline_len {
+                update_timeline(i);
+            }
         }
         ArchivedResponse::ClipUpdates {
             timeline_type,
             updates,
         } => {
             if let Some(project) = PROJECT.write().unwrap().as_mut() {
-                clip_apply_updates(project, *timeline_type as usize, updates);
+                clip_apply_updates(project, *timeline_type as usize, updates)?;
             };
-            if let Some(cb) = GUI_CALLBACKS.get() {
-                (cb.on_update_timeline)(*timeline_type as usize);
-            }
+            update_timeline(*timeline_type as usize);
         }
+    }
+    Ok(())
+}
+
+fn update_timeline(timeline_type: usize) {
+    if let Some(cb) = GUI_CALLBACKS.get() {
+        (cb.on_update_timeline)(timeline_type);
     }
 }

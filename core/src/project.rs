@@ -12,15 +12,13 @@ pub(crate) fn clip_move_mul_core(
 ) {
     let update_ids: Vec<u64> = moved_clips.iter().map(|c| c.clip_id).collect();
     for clip_ctx in &moved_clips {
-        if let Some((_, _, c)) = timeline.find_clip_by_id(clip_ctx.clip_id) {
-            if timeline.would_clip_overlap(
-                clip_ctx.new_layer as usize,
-                clip_ctx.new_frame,
-                c.duration,
-                &update_ids,
-            ) {
-                return; // overraped
-            }
+        if !timeline.can_place_clip_at(
+            clip_ctx.new_layer as usize,
+            clip_ctx.new_position,
+            clip_ctx.new_duration,
+            &update_ids,
+        ) {
+            return;
         }
     }
 
@@ -37,7 +35,7 @@ pub(crate) fn clip_move_mul_core(
                 // 検索用のダミー（IDが比較対象ならIDだけ合致させればよい）
                 if let Some(mut clip) = layer.clips.take(&dummy) {
                     // 新しい座標を計算（所有権を持っているので自由に書き換え可能）
-                    clip.position = clip_ctx.new_frame as u64;
+                    clip.position = clip_ctx.new_position;
                     let target_layer_idx = clip_ctx.new_layer as usize;
 
                     extracted_clips.push((target_layer_idx, clip));

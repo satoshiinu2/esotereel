@@ -33,4 +33,5 @@ class WgpuCanvasWidget : public QWidget {
   private:
     std::optional<WWGpuUtil> wgpuutil;
     WId lastWinId = 0;
+    QTimer *renderTimer = nullptr;
 };

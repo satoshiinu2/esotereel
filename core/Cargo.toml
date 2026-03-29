@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 nomyoedit_lib = { package = "nomyoedit_lib", path = "../lib" }
 rkyv = { version = "0.7.10", features = ["validation"] }
+log = "0.4.29"
+chrono = "0.4.44"

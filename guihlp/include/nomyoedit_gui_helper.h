@@ -27,6 +27,8 @@ struct GuiCallbacks {
 
 using OnSendFn = void(*)(const uint8_t*, uintptr_t);
 
+using LogOutCStrFn = void(*)(uintptr_t level, const uint8_t *ptr, uintptr_t len);
+
 struct ClipLocation {
   uintptr_t layer_idx;
   uintptr_t clip_idx;
@@ -52,18 +54,23 @@ void cmd_new_project();
 void cmd_clip_move_mul(uintptr_t timeline_type,
                        const uint64_t *ptr,
                        uintptr_t len,
-                       int32_t frame_moved,
-                       int32_t layer_moved);
+                       int64_t position_moved,
+                       int64_t duration_added,
+                       intptr_t layer_moved);
 
-const Timeline *project_get_timeline(const Project *ptr, uintptr_t idx);
+void init_rust_logger(LogOutCStrFn callback);
+
+const Timeline *project_get_timeline(const Project *ptr, uintptr_t id);
+
+uintptr_t project_get_timeline_count(const Project *ptr);
 
 uint64_t clip_get_id(const Clip *ptr);
 
-uint64_t clip_get_position(const Clip *ptr);
+int64_t clip_get_position(const Clip *ptr);
 
-uint64_t clip_get_duration(const Clip *ptr);
+int64_t clip_get_duration(const Clip *ptr);
 
-ClipLocation layer_find_clip_at_frame(const Layer *ptr, uint64_t frame, uintptr_t layer_idx);
+ClipLocation layer_find_clip_at_frame(const Layer *ptr, int64_t frame, uintptr_t layer_idx);
 
 const Clip *layer_get_clip_at_slow(const Layer *ptr, uintptr_t idx);
 
@@ -87,12 +94,12 @@ int64_t timeline_get_playhead(const Timeline *ptr);
 
 ClipLocation timeline_find_clip_by_id(const Timeline *ptr, uint64_t clip_id);
 
-bool timeline_would_clip_overlap(const Timeline *ptr,
-                                 uintptr_t layer_idx,
-                                 uint64_t position,
-                                 uint64_t duration,
-                                 const uint64_t *exclude_ids_ptr,
-                                 uintptr_t exclude_ids_len);
+bool timeline_can_place_clip_at(const Timeline *ptr,
+                                uintptr_t layer_idx,
+                                int64_t position,
+                                int64_t duration,
+                                const uint64_t *exclude_ids_ptr,
+                                uintptr_t exclude_ids_len);
 
 WGpuUtil *wgpuutil_init_surface(void *window_ptr,
                                 void *display_ptr,

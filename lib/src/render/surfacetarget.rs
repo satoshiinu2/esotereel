@@ -38,9 +38,9 @@ pub fn get_surface_target(
             let mut h = raw_window_handle::Win32WindowHandle::new(
                 NonZeroIsize::new(window_ptr as isize).expect("window_ptr is zero"),
             );
-            
+
             // display_ptrを hinstance として使う
-            h.hinstance = NonZeroIsize::new(display_ptr as isize); 
+            h.hinstance = NonZeroIsize::new(display_ptr as isize);
             RawWindowHandle::Win32(h)
         }
 
@@ -54,8 +54,12 @@ pub fn get_surface_target(
                 );
                 RawWindowHandle::Wayland(h)
             } else {
-                let h = raw_window_handle::XlibWindowHandle::new(window_ptr as u64);
-                RawWindowHandle::Xlib(h)
+                use std::num::NonZeroU32;
+
+                let h = raw_window_handle::XcbWindowHandle::new(
+                    NonZeroU32::new(window_ptr as u32).expect("window_ptr is zero"),
+                );
+                RawWindowHandle::Xcb(h)
             }
         }
 
@@ -74,16 +78,15 @@ pub fn get_surface_target(
     let display_handle = {
         #[cfg(target_os = "linux")]
         {
+            use std::ptr::NonNull;
             if is_wayland {
-                use std::ptr::NonNull;
-
                 let h = raw_window_handle::WaylandDisplayHandle::new(
                     NonNull::new(display_ptr).expect("display_ptr is zero"),
                 );
                 RawDisplayHandle::Wayland(h)
             } else {
-                let h = raw_window_handle::XlibDisplayHandle::new(NonNull::new(display_ptr), 0);
-                RawDisplayHandle::Xlib(h)
+                let h = raw_window_handle::XcbDisplayHandle::new(NonNull::new(display_ptr), 0);
+                RawDisplayHandle::Xcb(h)
             }
         }
 

@@ -23,9 +23,9 @@
           "ignoreFailures": true
         }
       ],
-      
+
       "environment": [
-          { "name": "RUST_BACKTRACE", "value": "1" }
+        { "name": "RUST_BACKTRACE", "value": "1" }
       ],
       "windows": {
         "environment": [
@@ -35,7 +35,7 @@
       "linux": {
         "environment": [
           { "name": "RUST_BACKTRACE", "value": "1" },
-          { "name": "QT_QPA_PLATFORM", "value": "xcb" } 
+          { "name": "QT_QPA_PLATFORM", "value": "xcb" }
         ]
       }
     }

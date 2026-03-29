@@ -13,6 +13,7 @@ class MProject {
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
     MTimeline timelineOf(size_t index) const noexcept { return MTimeline(nomyoedit_gui_helper::project_get_timeline(raw_ptr, index)); }
+    size_t timelineCount() const noexcept { return nomyoedit_gui_helper::project_get_timeline_count(raw_ptr); }
 };
 
 inline MProject getProject() noexcept {

@@ -7,8 +7,8 @@ pub(crate) fn clip_apply_updates(
     project: &mut Project,
     timeline_type: usize,
     updates: &ArchivedHashMap<u32, ArchivedVec<ArchivedClip>>,
-) {
-    let timeline = project.get_timeline_mut(timeline_type);
+) -> Result<(), String> {
+    let timeline = project.get_timeline_mut(timeline_type)?;
 
     for (_, update_layer) in updates.iter() {
         for archived_clip in update_layer.iter() {
@@ -17,6 +17,7 @@ pub(crate) fn clip_apply_updates(
     }
 
     for (layer_idx, update_layer) in updates.iter() {
+        // TODO: warning for non-existent layer
         if let Some(layer) = timeline.layers.get_mut(*layer_idx as usize) {
             for archived_clip in update_layer.iter() {
                 let new_clip: Clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
@@ -24,4 +25,5 @@ pub(crate) fn clip_apply_updates(
             }
         }
     }
+    Ok(())
 }

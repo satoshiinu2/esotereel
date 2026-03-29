@@ -6,12 +6,12 @@ use rkyv::{Archive, Deserialize, Serialize};
 #[archive_attr(derive(Ord, PartialOrd, Eq, PartialEq))]
 pub struct Clip {
     pub id: u64,
-    pub position: u64,
-    pub duration: u64,
+    pub position: i64,
+    pub duration: i64,
 }
 
 impl Clip {
-    pub fn dummy(pos: u64) -> Self {
+    pub fn dummy(pos: i64) -> Self {
         Self {
             id: 0,
             position: pos,

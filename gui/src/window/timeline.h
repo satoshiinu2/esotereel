@@ -53,7 +53,7 @@ class TimelineWidget : public QWidget {
 
     TimelineWidget(size_t timelineType);
 
-    double_t frameToX(double_t frame) const noexcept {
+    double_t frameToX(int64_t frame) const noexcept {
         return frame * this->zoom - this->scroll.x() + LABEL_WIDTH;
     }
 
@@ -87,6 +87,7 @@ class TimelineWidget : public QWidget {
     void mouseMoveEvent(QMouseEvent *e) override;
     void wheelEvent(QWheelEvent *e) override;
     void mouseDoubleClickEvent(QMouseEvent *e) override;
+    void contextMenuEvent(QContextMenuEvent *e) override;
 
   private:
     QScrollBar *hScrollBar;
@@ -97,6 +98,7 @@ class TimelineWidget : public QWidget {
     bool isDragging = false;
     float_t last_pinch_dist = 0.0f;
 
+    QRect getInnerRect() const noexcept;
     MClipLocation findClipAt(const MTimeline &timeline, const QPoint &local) const;
 
     void drawLayers(const MTimeline &timeline, QPainter &p, const QRect &r) const;

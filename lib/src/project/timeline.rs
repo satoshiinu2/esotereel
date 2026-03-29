@@ -72,15 +72,18 @@ impl Timeline {
         }
     }
 
-    pub fn would_clip_overlap(
+    pub fn can_place_clip_at(
         &self,
         layer_idx: usize,
-        position: u64,
-        duration: u64,
+        position: i64,
+        duration: i64,
         exclude_ids: &[u64],
     ) -> bool {
+        if position < 0 {
+            return false;
+        }
         let Some(layer) = self.layers.get(layer_idx) else {
-            return true; // 範囲外と重なっている
+            return false;
         };
 
         for clip in &layer.clips {
@@ -88,9 +91,9 @@ impl Timeline {
                 continue;
             }
             if position < clip.position + clip.duration && position + duration > clip.position {
-                return true;
+                return false;
             }
         }
-        false
+        true
     }
 }

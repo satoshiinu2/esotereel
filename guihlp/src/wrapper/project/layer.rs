@@ -8,7 +8,7 @@ pub struct ClipIterator<'a>(std::collections::btree_set::Iter<'a, Clip>);
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn layer_find_clip_at_frame(
     ptr: *const Layer,
-    frame: u64,
+    frame: i64,
     layer_idx: usize,
 ) -> ClipLocation {
     let layer = unsafe { &(*ptr) };

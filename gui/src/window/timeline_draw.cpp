@@ -9,9 +9,23 @@
 #include <qvariant.h>
 #include <qwidget.h>
 
+QRect TimelineWidget::getInnerRect() const noexcept {
+    QRect innerRect = rect();
+    innerRect.setLeft(LABEL_WIDTH);
+    innerRect.setTop(RULER_HEIGHT);
+    return innerRect;
+}
+
 void TimelineWidget::drawLayers(const MTimeline &timeline, QPainter &p, const QRect &r) const {
+    // setup clipping
+    QRect bgRect = getInnerRect();
+    bgRect.setLeft(0); // 左端まで
+    QRect innerRect = getInnerRect();
+
+    // draw main
     size_t layerIdx = 0;
     for (auto const &layer : timeline.layers()) {
+        p.setClipRect(bgRect);
         double_t y = r.top() + this->layerToY(layerIdx);
         QRect layerRect(r.left(), y, r.width(), LAYER_HEIGHT);
 
@@ -32,12 +46,14 @@ void TimelineWidget::drawLayers(const MTimeline &timeline, QPainter &p, const QR
         p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, layer.name());
 
         // クリップ描画
+        p.setClipRect(innerRect);
         for (auto const &clip : layer.clips()) {
             this->drawClip(layerIdx, clip, p, r);
         }
 
         layerIdx++;
     }
+    p.setClipping(false);
 }
 
 void TimelineWidget::drawClip(size_t layer_idx, const MClip &clip, QPainter &p, const QRect &r) const {
@@ -78,6 +94,7 @@ void TimelineWidget::drawClip(size_t layer_idx, const MClip &clip, QPainter &p, 
 }
 
 void TimelineWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRect &r) const {
+    QRect innerRect = getInnerRect();
     double_t drawPosX = r.left() + this->frameToX(playhead_frame);
 
     QPen pen(QColor(255, 80, 80));
@@ -85,7 +102,9 @@ void TimelineWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRe
 
     p.setPen(pen);
 
+    p.setClipRect(innerRect);
     p.drawLine(drawPosX, r.top(), drawPosX, r.bottom());
+    p.setClipping(false);
 }
 
 void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
@@ -114,7 +133,8 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
         QString text = QString::number(frame);
         QPointF pos(x + 2.0, r.top() + 4.0);
 
-        p.drawText(pos, text);
+        QRectF textRect(x + 2.0, r.top(), 100.0, RULER_HEIGHT);
+        p.drawText(textRect, Qt::AlignTop | Qt::AlignLeft, text);
     }
 }
 

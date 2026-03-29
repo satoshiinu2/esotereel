@@ -1,21 +1,34 @@
 #include "timeline.h"
 #include <QEvent>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <qpainter.h>
 #include <qpoint.h>
 
+// return true if selected
 bool TimelineWidget::handleSelectClip(MTimeline &timeline, const QPoint &mousePos, bool ctrl) {
     auto clipLoc = this->findClipAt(timeline, mousePos);
     if (!clipLoc.isValid()) {
-        this->selectedClipIds.clear();
+        if (!ctrl) {
+            this->selectedClipIds.clear();
+            update();
+            return false;
+        }
         return false;
-    };
-
-    if (!ctrl) {
-        this->selectedClipIds.clear();
     }
-    this->selectedClipIds.insert(clipLoc.clip.id());
+
+    uint64_t id = clipLoc.clip.id();
+    if (ctrl) {
+        if (this->selectedClipIds.count(id)) {
+            this->selectedClipIds.erase(id);
+        } else {
+            this->selectedClipIds.insert(id);
+        }
+    } else {
+        this->selectedClipIds.clear();
+        this->selectedClipIds.insert(id);
+    }
     update();
     return true;
 }
@@ -50,10 +63,10 @@ void TimelineWidget::handleAreaSelEnd(const MTimeline &timeline) {
     for (auto layer : timeline.layers()) {
         size_t clipIdx = 0;
         for (auto clip : layer.clips()) {
-            float_t clipXStart = this->frameToX(clip.position());
-            float_t clipXEnd = this->frameToX(clip.position() + clip.duration());
-            float_t clipYStart = this->layerToY(layerIdx);
-            float_t clipYEnd = clipYStart + LAYER_HEIGHT;
+            double_t clipXStart = this->frameToX(clip.position());
+            double_t clipXEnd = this->frameToX(clip.position() + clip.duration());
+            double_t clipYStart = this->layerToY(layerIdx);
+            double_t clipYEnd = clipYStart + LAYER_HEIGHT;
 
             QRect clip_rect(clipXStart, clipYStart, clipXEnd, clipYEnd);
 

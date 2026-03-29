@@ -17,10 +17,10 @@ class MClip {
     uint64_t id() const noexcept {
         return nomyoedit_gui_helper::clip_get_id(raw_ptr);
     }
-    uint64_t position() const noexcept {
+    int64_t position() const noexcept {
         return nomyoedit_gui_helper::clip_get_position(raw_ptr);
     }
-    uint64_t duration() const noexcept {
+    int64_t duration() const noexcept {
         return nomyoedit_gui_helper::clip_get_duration(raw_ptr);
     }
 };

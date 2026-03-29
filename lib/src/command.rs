@@ -4,7 +4,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{SEND_CALLBACK, types::ClipMoveCtx};
 
-type OnReceiveCommandFn = fn(&ArchivedCommand);
+type OnReceiveCommandFn = fn(&ArchivedCommand) -> Result<(), String>;
 
 #[derive(Archive, Deserialize, Serialize)]
 #[repr(u8)]
@@ -12,13 +12,13 @@ pub enum Command {
     Test,
     NewProject,
     ClipsMove {
-        timeline_type: usize,
+        timeline_idx: usize,
         clips: Vec<ClipMoveCtx>,
     },
 }
 
 pub struct CommandCallbacks {
-    pub on_command_recveve: fn(&ArchivedCommand),
+    pub on_command_recveve: fn(&ArchivedCommand) -> Result<(), String>,
 }
 
 static COMMAND_CALLBACK: OnceLock<OnReceiveCommandFn> = OnceLock::new();
@@ -32,7 +32,9 @@ pub fn parse_command(ptr: *const u8, len: usize) {
     let archived_cmd = unsafe { rkyv::archived_root::<Command>(&bytes) };
 
     if let Some(on_command_recveve) = COMMAND_CALLBACK.get() {
-        on_command_recveve(archived_cmd);
+        if let Err(msg) = on_command_recveve(archived_cmd) {
+            println!("{}", msg);
+        }
     }
 }
 

@@ -1,19 +1,23 @@
 #pragma once
 
+#include "../util.h"
 #include "nomyoedit_gui_helper.h"
 #include <QWidget>
 #include <qguiapplication_platform.h>
+#include <qlogging.h>
 #include <qwindowdefs.h>
 
-static bool isWayland = QGuiApplication::platformName().startsWith("wayland");
 class WWGpuUtil {
 
   private:
     nomyoedit_gui_helper::WGpuUtil *raw_ptr;
+    bool isWayland;
 
   public:
     WWGpuUtil(WId winId, void *display, uint32_t width, uint32_t height) {
-        raw_ptr = nomyoedit_gui_helper::wgpuutil_init_surface((void *)winId, display, width, height, isWayland);
+        qDebug() << QGuiApplication::platformName();
+        this->isWayland = getLinuxDisplayType() == LinuxDisplayType::WAYLAND;
+        raw_ptr = nomyoedit_gui_helper::wgpuutil_init_surface((void *)winId, display, width, height, this->isWayland);
     }
     ~WWGpuUtil() {
         if (raw_ptr) {
@@ -43,7 +47,7 @@ class WWGpuUtil {
     }
 
     void updateSurface(WId winId, void *display) {
-        nomyoedit_gui_helper::wgpuutil_update_surface(raw_ptr, (void *)winId, display, isWayland);
+        nomyoedit_gui_helper::wgpuutil_update_surface(raw_ptr, (void *)winId, display, this->isWayland);
     }
 
     void updateSize(uint32_t width, uint32_t height) {

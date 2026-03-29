@@ -21,19 +21,28 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
     int w = this->width() * this->devicePixelRatio();
     int h = this->height() * this->devicePixelRatio();
 
-    this->wgpuutil = WWGpuUtil(this->winId(), getNativeDisplay(), w, h);
+    this->wgpuutil = WWGpuUtil(this->winId(), getNativeDisplay(windowHandle()), w, h);
+
+    renderTimer = new QTimer(this);
+    connect(renderTimer, &QTimer::timeout, this, [this]() {
+        if (this->wgpuutil.has_value()) {
+            this->wgpuutil->renderFrame();
+            update();
+        }
+    });
+    renderTimer->start(16);
 }
 
 void WgpuCanvasWidget::paintEvent(QPaintEvent *event) {
     if (!this->wgpuutil.has_value()) {
-        return; 
+        return;
     }
-    
-    WId currentId = winId();
-    if (currentId != lastWinId) {
-        this->wgpuutil->updateSurface(this->winId(), getNativeDisplay());
-        lastWinId = currentId;
-    }
+
+    // WId currentId = winId();
+    // if (currentId != lastWinId) {
+    //     this->wgpuutil->updateSurface(this->winId(), getNativeDisplay(windowHandle()));
+    //     lastWinId = currentId;
+    // }
 
     this->wgpuutil->renderFrame();
 }

@@ -51,25 +51,25 @@ void TimelineWidget::handleDragContinue(const MTimeline &timeline, const QPoint 
     drag->ghostPos = mousePos;
 
     // ovetlap check
-    drag->isWrong = false;
-
     int frameMoved = drag->curFrame - drag->srcFrame;
     int layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
+    drag->isWrong = false;
     for (uint64_t clipid : this->selectedClipIds) {
         auto clipLoc = timeline.findClipById(clipid);
         if (!clipLoc.isValid()) {
             continue;
         }
         size_t targetLayerIdx = (clipLoc.layerIdx + layerMoved);
-        uint64_t newClipPosition = clipLoc.clip.position() + frameMoved;
-        if (timeline.wouldClipOverlap(targetLayerIdx, newClipPosition,
-                                      clipLoc.clip.duration(), this->selectedClipIds)) {
+        int64_t newClipPosition = clipLoc.clip.position() + frameMoved;
+        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
+                                     clipLoc.clip.duration(), this->selectedClipIds)) {
             this->dragState->isWrong = true;
-            update();
-            return;
+            goto finalize;
         }
     }
+
+finalize:
     update();
 }
 
@@ -80,7 +80,7 @@ void TimelineWidget::handleDragDrop(const MTimeline &timeline, const QPoint &mou
         return;
     }
 
-    int frameMoved = drag->curFrame - drag->srcFrame;
+    uint64_t frameMoved = drag->curFrame - drag->srcFrame;
     int layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
     // range and overrap check
     for (uint64_t clipId : this->selectedClipIds) {
@@ -89,9 +89,9 @@ void TimelineWidget::handleDragDrop(const MTimeline &timeline, const QPoint &mou
             continue;
         }
         size_t targetLayerIdx = (clipLoc.layerIdx + layerMoved);
-        uint64_t newClipPosition = clipLoc.clip.position() + frameMoved;
-        if (timeline.wouldClipOverlap(targetLayerIdx, newClipPosition,
-                                      clipLoc.clip.duration(), this->selectedClipIds)) {
+        int64_t newClipPosition = clipLoc.clip.position() + frameMoved;
+        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
+                                     clipLoc.clip.duration(), this->selectedClipIds)) {
             goto send_drop;
         }
     }
@@ -101,7 +101,7 @@ send_drop:
     this->dragState = std::nullopt;
 
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    nomyoedit_gui_helper::cmd_clip_move_mul(this->timelineType, exclude_vec.data(), exclude_vec.size(), frameMoved, layerMoved);
+    nomyoedit_gui_helper::cmd_clip_move_mul(this->timelineType, exclude_vec.data(), exclude_vec.size(), frameMoved, 0, layerMoved);
 }
 
 void TimelineWidget::drawDragGhost(const MTimeline &timeline, QPainter &p, const QRect &r) const {
@@ -110,8 +110,8 @@ void TimelineWidget::drawDragGhost(const MTimeline &timeline, QPainter &p, const
         return;
     }
 
-    int frameMoved = drag->curFrame - drag->srcFrame;
-    int layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    int64_t frameMoved = drag->curFrame - drag->srcFrame;
+    int64_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
     // range and overrap check
     for (uint64_t clipId : this->selectedClipIds) {
         auto clipLoc = timeline.findClipById(clipId);
@@ -119,7 +119,7 @@ void TimelineWidget::drawDragGhost(const MTimeline &timeline, QPainter &p, const
             continue;
         }
         size_t targetLayerIdx = (clipLoc.layerIdx + layerMoved);
-        uint64_t newClipPosition = clipLoc.clip.position() + frameMoved;
+        int64_t newClipPosition = clipLoc.clip.position() + frameMoved;
 
         // range check
         if (targetLayerIdx >= timeline.layersCount()) {

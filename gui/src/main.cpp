@@ -1,12 +1,16 @@
 #include "window/main.h"
-#include "client.h"
+#include "network/boot.h"
+#include "network/client.h"
 #include "nomyoedit_gui_helper.h"
 #include <QApplication>
 #include <QDebug>
+#include <QLoggingCategory>
 #include <QProcess>
 #include <QWidget>
 #include <qdebug.h>
 #include <qglobal.h>
+
+Q_LOGGING_CATEGORY(logRust, "rust.core")
 
 void bootcore(QString corePath);
 void setCallBacks();
@@ -18,7 +22,7 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
     setCallBacks();
-    
+
     MainWindow w;
     window = &w;
     w.show();
@@ -28,46 +32,38 @@ int main(int argc, char **argv) {
     }
     QString corePath = argv[1];
     bootcore(corePath);
+    client.connectToCore();
 
     return app.exec();
 }
-
-
-// placeholder
-void bootcore(QString corePath) {
-    QProcess *coreProcess = new QProcess();
-
-    coreProcess->setProgram(corePath);
-    QAbstractSocket::connect(
-        coreProcess, &QProcess::readyReadStandardOutput, [coreProcess]() {
-            qDebug() << "[core stdout]" << coreProcess->readAllStandardOutput();
-        });
-
-    QAbstractSocket::connect(
-        coreProcess, &QProcess::readyReadStandardError, [coreProcess]() {
-            qDebug() << "[core stderr]" << coreProcess->readAllStandardError();
-        });
-    coreProcess->start();
-
-    if (!coreProcess->waitForStarted()) {
-        qDebug() << "failed to start core";
-    } else {
-        qDebug() << "core started!";
-    }
-
-
-    client.connectToCore();
-}
-
 
 void on_send_cb(const uint8_t *ptr, size_t len) {
     QByteArray data(reinterpret_cast<const char *>(ptr), len);
     client.send(data);
 }
 
-void setCallBacks(){
+void q_log_callback(size_t level, const uint8_t *ptr, size_t len) {
+    QString message = QString::fromUtf8(reinterpret_cast<const char *>(ptr), static_cast<int>(len));
+
+    switch (level) {
+    case 1:
+        qCritical(logRust).noquote() << message;
+        break;
+    case 2:
+        qWarning(logRust).noquote() << message;
+        break;
+    case 3:
+        qInfo(logRust).noquote() << message;
+        break;
+    default:
+        qDebug(logRust).noquote() << message;
+        break;
+    }
+}
+
+void setCallBacks() {
     nomyoedit_gui_helper::GuiCallbacks callbacks;
-    
+
     callbacks.on_test = +[]() {
     };
     callbacks.on_update_timeline = +[](size_t id) {
@@ -75,6 +71,7 @@ void setCallBacks(){
     };
 
     nomyoedit_gui_helper::init();
+    nomyoedit_gui_helper::init_rust_logger(q_log_callback);
     nomyoedit_gui_helper::set_gui_callbacks(callbacks);
     nomyoedit_gui_helper::set_send_callback(on_send_cb);
 }

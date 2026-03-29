@@ -13,6 +13,7 @@ pub struct ClipLocation {
 #[repr(C)]
 pub struct ClipMoveCtx {
     pub clip_id: u64,
-    pub new_frame: u64,
-    pub new_layer: u32,
+    pub new_position: i64,
+    pub new_duration: i64,
+    pub new_layer: usize,
 }
