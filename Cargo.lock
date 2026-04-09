@@ -238,6 +238,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "esotereel_core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "esotereel_lib",
+ "log",
+ "rkyv",
+]
+
+[[package]]
+name = "esotereel_gui_helper"
+version = "0.1.0"
+dependencies = [
+ "esotereel_lib",
+ "log",
+ "rkyv",
+]
+
+[[package]]
+name = "esotereel_lib"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "log",
+ "pollster",
+ "raw-window-handle",
+ "rkyv",
+ "wgpu",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -574,37 +605,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
-]
-
-[[package]]
-name = "nomyoedit_core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "log",
- "nomyoedit_lib",
- "rkyv",
-]
-
-[[package]]
-name = "nomyoedit_gui_helper"
-version = "0.1.0"
-dependencies = [
- "log",
- "nomyoedit_lib",
- "rkyv",
-]
-
-[[package]]
-name = "nomyoedit_lib"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "log",
- "pollster",
- "raw-window-handle",
- "rkyv",
- "wgpu",
 ]
 
 [[package]]

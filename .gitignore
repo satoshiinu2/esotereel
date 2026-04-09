@@ -2,6 +2,7 @@
 **/.cache/
 **/.vscode/settings.json
 .vscode/settings.json
+*.code-workspace
 
 # rust
 **/target/

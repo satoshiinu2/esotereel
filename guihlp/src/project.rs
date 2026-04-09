@@ -1,5 +1,5 @@
-use nomyoedit_lib::project::Project;
-use nomyoedit_lib::project::clip::{ArchivedClip, Clip};
+use esotereel_lib::project::Project;
+use esotereel_lib::project::clip::{ArchivedClip, Clip};
 use rkyv::Deserialize;
 use rkyv::{collections::ArchivedHashMap, vec::ArchivedVec};
 

@@ -6,9 +6,9 @@ fn main() {
             "--config",
             "cbindgen.toml",
             "--crate",
-            "nomyoedit_gui_helper",
+            "esotereel_gui_helper",
             "--output",
-            "include/nomyoedit_gui_helper.h",
+            "include/esotereel_gui_helper.h",
         ])
         .status()
         .expect("Failed to run cbindgen");

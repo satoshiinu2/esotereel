@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(NomyoeditGui)
+project(EsotereelGui)
 set(QT_NO_PRIVATE_MODULE_WARNING ON CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -57,8 +57,8 @@ endif()
 
 # ライブラリとコア
 set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
-set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}nomyoedit_gui_helper.${DLIB_EXT}")
-set(CORE_EXE "${RUST_TARGET_DIR}/nomyoedit_core")
+set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
+set(CORE_EXE "${RUST_TARGET_DIR}/esotereel_core")
 
 # ビルドするやつ
 add_custom_command(
@@ -73,7 +73,7 @@ add_custom_target(rust_workspace ALL DEPENDS ${GUI_HLP_LIB} ${CORE_EXE})
 
 # 実行ファイル
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
-add_executable(nomyoedit_gui ${SRC_FILES})
+add_executable(esotereel_gui ${SRC_FILES})
 
 
 # dll deploy
@@ -84,7 +84,7 @@ if(WIN32)
         set(DLL_DEPLOY_CMD "powershell -ExecutionPolicy Bypass -File ./deploydist.ps1")
     endif()
 
-    add_custom_command(TARGET nomyoedit_gui POST_BUILD
+    add_custom_command(TARGET esotereel_gui POST_BUILD
         COMMAND ${DLL_DEPLOY_CMD}
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
@@ -98,11 +98,11 @@ else()
 endif()
 
 # 依存関係
-add_dependencies(nomyoedit_gui rust_workspace cleanup_port)
+add_dependencies(esotereel_gui rust_workspace cleanup_port)
 
 # ライブラリリンク
-target_include_directories(nomyoedit_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include")
-target_link_libraries(nomyoedit_gui PRIVATE 
+target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include")
+target_link_libraries(esotereel_gui PRIVATE 
     Qt6::Widgets 
     Qt6::Network
     Qt6::WaylandClient

@@ -1,14 +1,14 @@
 #pragma once
 
 #include "clip.h"
-#include "nomyoedit_gui_helper.h"
+#include "esotereel_gui_helper.h"
 #include <iterator>
 
-using RawLayer = nomyoedit_gui_helper::Layer;
-using RawClipIterator = nomyoedit_gui_helper::ClipIterator;
+using RawLayer = esotereel_gui_helper::Layer;
+using RawClipIterator = esotereel_gui_helper::ClipIterator;
 class MClipsIterator {
-    nomyoedit_gui_helper::ClipIterator *rust_iter_ptr;
-    const nomyoedit_gui_helper::Clip *cur_ptr;
+    esotereel_gui_helper::ClipIterator *rust_iter_ptr;
+    const esotereel_gui_helper::Clip *cur_ptr;
 
   public:
     using iterator_category = std::forward_iterator_tag;
@@ -17,7 +17,7 @@ class MClipsIterator {
 
     // begin用
     MClipsIterator(const RawLayer *t) noexcept
-        : rust_iter_ptr(nomyoedit_gui_helper::layer_clips_begin(t)), cur_ptr(nullptr) {
+        : rust_iter_ptr(esotereel_gui_helper::layer_clips_begin(t)), cur_ptr(nullptr) {
         advance();
     }
 
@@ -38,9 +38,9 @@ class MClipsIterator {
 
     void advance() noexcept {
         if (rust_iter_ptr) {
-            cur_ptr = nomyoedit_gui_helper::clip_iter_next(rust_iter_ptr);
+            cur_ptr = esotereel_gui_helper::clip_iter_next(rust_iter_ptr);
             if (!cur_ptr) {
-                nomyoedit_gui_helper::clip_iter_free(rust_iter_ptr);
+                esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
                 rust_iter_ptr = nullptr;
             }
         }
@@ -63,7 +63,7 @@ class MClipsIterator {
     // デストラクタ: もし途中でループを抜けても Rust 側をリークさせない
     ~MClipsIterator() {
         if (rust_iter_ptr) {
-            nomyoedit_gui_helper::clip_iter_free(rust_iter_ptr);
+            esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
         }
     }
 };
@@ -74,7 +74,7 @@ class MClipsIterable {
     MClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
-    size_t clipsCount() const noexcept { return nomyoedit_gui_helper::layer_get_clips_count(raw_ptr); }
+    size_t clipsCount() const noexcept { return esotereel_gui_helper::layer_get_clips_count(raw_ptr); }
 
     // forループの開始点
     MClipsIterator begin() const noexcept { return MClipsIterator(raw_ptr); }

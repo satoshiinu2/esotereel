@@ -1,10 +1,10 @@
 use std::sync::{OnceLock, RwLock};
 
-pub use nomyoedit_lib::project::Project;
-pub use nomyoedit_lib::project::clip::Clip;
-pub use nomyoedit_lib::project::layer::Layer;
-pub use nomyoedit_lib::project::timeline::Timeline;
-use nomyoedit_lib::responce::{ArchivedResponse, set_responce_callbacks};
+pub use esotereel_lib::project::Project;
+pub use esotereel_lib::project::clip::Clip;
+pub use esotereel_lib::project::layer::Layer;
+pub use esotereel_lib::project::timeline::Timeline;
+use esotereel_lib::responce::{ArchivedResponse, set_responce_callbacks};
 use rkyv::Deserialize;
 
 use crate::project::clip_apply_updates;

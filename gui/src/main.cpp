@@ -1,7 +1,7 @@
 #include "window/main.h"
 #include "network/boot.h"
 #include "network/client.h"
-#include "nomyoedit_gui_helper.h"
+#include "esotereel_gui_helper.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
@@ -62,7 +62,7 @@ void q_log_callback(size_t level, const uint8_t *ptr, size_t len) {
 }
 
 void setCallBacks() {
-    nomyoedit_gui_helper::GuiCallbacks callbacks;
+    esotereel_gui_helper::GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {
     };
@@ -70,8 +70,8 @@ void setCallBacks() {
         window->onUpdateTimeline(id);
     };
 
-    nomyoedit_gui_helper::init();
-    nomyoedit_gui_helper::init_rust_logger(q_log_callback);
-    nomyoedit_gui_helper::set_gui_callbacks(callbacks);
-    nomyoedit_gui_helper::set_send_callback(on_send_cb);
+    esotereel_gui_helper::init();
+    esotereel_gui_helper::init_rust_logger(q_log_callback);
+    esotereel_gui_helper::set_gui_callbacks(callbacks);
+    esotereel_gui_helper::set_send_callback(on_send_cb);
 }

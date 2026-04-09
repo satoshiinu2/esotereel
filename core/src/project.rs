@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use nomyoedit_lib::{
+use esotereel_lib::{
     project::{clip::Clip, timeline::Timeline},
     types::ClipMoveCtx,
 };

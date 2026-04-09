@@ -1,6 +1,6 @@
 use std::slice;
 
-use nomyoedit_lib::{
+use esotereel_lib::{
     command::{Command, send_command},
     types::ClipMoveCtx,
 };

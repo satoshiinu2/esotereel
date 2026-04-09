@@ -6,7 +6,7 @@
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     resize(1280, 720);
-    setWindowTitle("NomyoEdit");
+    setWindowTitle("Esotereel");
 
     auto *central = new QLabel("Preview", this);
     central->setAlignment(Qt::AlignCenter);

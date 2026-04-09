@@ -1,4 +1,4 @@
-use nomyoedit_lib::{
+use esotereel_lib::{
     project::{clip::Clip, layer::Layer},
     types::ClipLocation,
 };

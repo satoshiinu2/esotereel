@@ -1,8 +1,8 @@
-use nomyoedit_lib::command::parse_command;
-use nomyoedit_lib::command::set_command_callbacks;
-use nomyoedit_lib::logger::init_logger;
-use nomyoedit_lib::project::Project;
-use nomyoedit_lib::set_send_callback;
+use esotereel_lib::command::parse_command;
+use esotereel_lib::command::set_command_callbacks;
+use esotereel_lib::logger::init_logger;
+use esotereel_lib::project::Project;
+use esotereel_lib::set_send_callback;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};

@@ -1,5 +1,5 @@
 #include "../util.h"
-#include "nomyoedit_gui_helper.h"
+#include "esotereel_gui_helper.h"
 #include "timeline.h"
 #include <QEvent>
 #include <algorithm>
@@ -101,7 +101,7 @@ send_drop:
     this->dragState = std::nullopt;
 
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    nomyoedit_gui_helper::cmd_clip_move_mul(this->timelineType, exclude_vec.data(), exclude_vec.size(), frameMoved, 0, layerMoved);
+    esotereel_gui_helper::cmd_clip_move_mul(this->timelineType, exclude_vec.data(), exclude_vec.size(), frameMoved, 0, layerMoved);
 }
 
 void TimelineWidget::drawDragGhost(const MTimeline &timeline, QPainter &p, const QRect &r) const {

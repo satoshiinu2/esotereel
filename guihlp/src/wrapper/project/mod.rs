@@ -1,4 +1,4 @@
-use nomyoedit_lib::project::{Project, timeline::Timeline};
+use esotereel_lib::project::{Project, timeline::Timeline};
 
 pub mod clip;
 pub mod layer;

@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use nomyoedit_lib::render::{surfacetarget::get_surface_target, wgpuutil::WGpuUtil};
+use esotereel_lib::render::{surfacetarget::get_surface_target, wgpuutil::WGpuUtil};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wgpuutil_init_surface(
@@ -64,7 +64,7 @@ pub unsafe extern "C" fn wgpuutil_update_size(ptr: *mut WGpuUtil, width: u32, he
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn render_frame(ptr: *mut WGpuUtil) {
     if !ptr.is_null() {
-        let result = unsafe { nomyoedit_lib::render::render_frame(&mut (*ptr)) };
+        let result = unsafe { esotereel_lib::render::render_frame(&mut (*ptr)) };
         if let Err(err) = result {
             log::error!("{}", err);
         }

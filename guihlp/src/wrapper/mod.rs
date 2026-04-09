@@ -1,4 +1,4 @@
-use nomyoedit_lib::{OnSendFn, project::Project};
+use esotereel_lib::{OnSendFn, project::Project};
 
 use crate::PROJECT;
 
@@ -9,11 +9,11 @@ pub mod render;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn parse_responce(ptr: *const u8, len: usize) {
-    nomyoedit_lib::responce::parse_responce(ptr, len);
+    esotereel_lib::responce::parse_responce(ptr, len);
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn set_send_callback(callback: OnSendFn) {
-    nomyoedit_lib::set_send_callback(callback);
+    esotereel_lib::set_send_callback(callback);
 }
 
 #[unsafe(no_mangle)]

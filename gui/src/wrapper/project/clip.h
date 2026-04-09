@@ -1,11 +1,11 @@
 #pragma once
 
-#include "nomyoedit_gui_helper.h"
+#include "esotereel_gui_helper.h"
 #include <cstddef>
 #include <cstdint>
 
-using RawClip = nomyoedit_gui_helper::Clip;
-using RawClipLocation = nomyoedit_gui_helper::ClipLocation;
+using RawClip = esotereel_gui_helper::Clip;
+using RawClipLocation = esotereel_gui_helper::ClipLocation;
 
 class MClip {
     const RawClip *raw_ptr;
@@ -15,13 +15,13 @@ class MClip {
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
     uint64_t id() const noexcept {
-        return nomyoedit_gui_helper::clip_get_id(raw_ptr);
+        return esotereel_gui_helper::clip_get_id(raw_ptr);
     }
     int64_t position() const noexcept {
-        return nomyoedit_gui_helper::clip_get_position(raw_ptr);
+        return esotereel_gui_helper::clip_get_position(raw_ptr);
     }
     int64_t duration() const noexcept {
-        return nomyoedit_gui_helper::clip_get_duration(raw_ptr);
+        return esotereel_gui_helper::clip_get_duration(raw_ptr);
     }
 };
 class MClipLocation {

@@ -1,9 +1,9 @@
 cpp_compat = true
 language = "C++"
-namespace = "nomyoedit_gui_helper"
+namespace = "esotereel_gui_helper"
 header = "#pragma once"
 
 [parse]
 parse_deps = true
 clean = true
-include = ["nomyoedit_lib"] 
+include = ["esotereel_lib"] 

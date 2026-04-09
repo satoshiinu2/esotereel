@@ -1,4 +1,4 @@
-use nomyoedit_lib::project::clip::Clip;
+use esotereel_lib::project::clip::Clip;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clip_get_id(ptr: *const Clip) -> u64 {

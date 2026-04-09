@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use nomyoedit_lib::{
+use esotereel_lib::{
     command::ArchivedCommand,
     project::{Project, clip::Clip},
     responce::{Response, send_response},
@@ -33,7 +33,7 @@ pub fn on_command_recveve(command: &ArchivedCommand) -> Result<(), String> {
             let mut lock = PROJECT.write().unwrap();
             let project = lock
                 .as_mut()
-                .ok_or(nomyoedit_lib::ERROR_NO_PROJECT_LOADED)?;
+                .ok_or(esotereel_lib::ERROR_NO_PROJECT_LOADED)?;
             let moved_clips: Vec<ClipMoveCtx> = clips.deserialize(&mut rkyv::Infallible).unwrap();
             let mut updates: HashMap<usize, Vec<Clip>> = HashMap::new();
             let timeline = project.get_timeline_mut(timeline_type)?;
