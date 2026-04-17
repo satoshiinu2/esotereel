@@ -59,12 +59,20 @@ endif()
 set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
 set(CORE_EXE "${RUST_TARGET_DIR}/esotereel_core")
+file(GLOB_RECURSE RUST_SRC_FILES
+    "${CMAKE_SOURCE_DIR}/core/src/*.rs"
+    "${CMAKE_SOURCE_DIR}/lib/src/*.rs"
+    "${CMAKE_SOURCE_DIR}/guihlp/src/*.rs"
+    "${CMAKE_SOURCE_DIR}/Cargo.toml"
+)
 
-# ビルドするやつ
+# rustビルドするやつ
 add_custom_command(
     OUTPUT ${GUI_HLP_LIB} ${CORE_EXE}
     COMMAND cargo build ${RUST_FLAG}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS ${RUST_SRC_FILES}
+    USES_TERMINAL 
     COMMENT "Building Rust Workspace (${RUST_PROFILE})..."
 )
 

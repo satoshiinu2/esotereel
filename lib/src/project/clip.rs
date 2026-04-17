@@ -1,13 +1,16 @@
 use std::cmp::Ordering;
 
-use rkyv::{Archive, Deserialize, Serialize};
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
+
+use crate::project::clipdata::ClipData;
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
-#[archive_attr(derive(Ord, PartialOrd, Eq, PartialEq))]
+#[archive_attr(derive(Ord, PartialOrd, Eq, PartialEq, CheckBytes))]
 pub struct Clip {
     pub id: u64,
     pub position: i64,
     pub duration: i64,
+    pub clip_data: ClipData,
 }
 
 impl Clip {
@@ -16,6 +19,7 @@ impl Clip {
             id: 0,
             position: pos,
             duration: 0,
+            clip_data: ClipData::Dummy,
         }
     }
 }

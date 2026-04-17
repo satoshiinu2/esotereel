@@ -1,11 +1,10 @@
 use std::sync::OnceLock;
 
-pub mod command;
-pub mod logger;
 pub mod project;
 pub mod render;
-pub mod responce;
-pub mod types;
+pub mod requests;
+pub mod responces;
+pub mod util;
 
 pub type OnSendFn = extern "C" fn(*const u8, usize);
 

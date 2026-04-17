@@ -4,14 +4,14 @@
 #include <cstddef>
 #include <cstdint>
 
-using RawClip = esotereel_gui_helper::Clip;
-using RawClipLocation = esotereel_gui_helper::ClipLocation;
+using RawClip = esotereel_gui_helper::_Clip;
+using RawClipLocation = esotereel_gui_helper::_ClipLocation;
 
-class MClip {
+class Clip {
     const RawClip *raw_ptr;
 
   public:
-    MClip(const RawClip *p) noexcept : raw_ptr(p) {}
+    Clip(const RawClip *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
     uint64_t id() const noexcept {
@@ -25,12 +25,17 @@ class MClip {
     }
 };
 class MClipLocation {
+  private:
+    MClipLocation() : clip(Clip(nullptr)), clipIdx(0), layerIdx(0) {}
+
   public:
-    const MClip clip;
+    const Clip clip;
     const size_t clipIdx;
     const size_t layerIdx;
 
-    MClipLocation() : clip(MClip(nullptr)), clipIdx(0), layerIdx(0) {}
-    MClipLocation(const RawClipLocation &raw) : clip(MClip(raw.clip)), clipIdx(raw.clip_idx), layerIdx(raw.layer_idx) {}
+    static MClipLocation Empty() {
+        return MClipLocation();
+    }
+    MClipLocation(const RawClipLocation &raw) : clip(Clip(raw.clip)), clipIdx(raw.clip_idx), layerIdx(raw.layer_idx) {}
     bool isValid() const noexcept { return clip.isValid(); }
 };

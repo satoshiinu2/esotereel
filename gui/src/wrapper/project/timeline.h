@@ -1,28 +1,30 @@
 #pragma once
 
-#include "layer.h"
 #include "esotereel_gui_helper.h"
+#include "layer.h"
 #include "timeline_layers.h"
 #include <cstdint>
 #include <set>
 
-using RawTimeline = esotereel_gui_helper::Timeline;
+using RawTimeline = esotereel_gui_helper::_Timeline;
 
-class MTimeline {
+class Timeline {
     const RawTimeline *raw_ptr;
 
   public:
-    MTimeline(const RawTimeline *p) noexcept : raw_ptr(p) {}
+    Timeline(const RawTimeline *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
-    size_t layersCount() const noexcept { return esotereel_gui_helper::timeline_get_layers_count(raw_ptr); }
+    size_t layersCount() const noexcept {
+        return esotereel_gui_helper::timeline_get_layers_count(raw_ptr);
+    }
 
     MLayersIterable layers() const noexcept {
         return MLayersIterable(raw_ptr);
     }
 
-    MLayer layerAt(size_t index) const noexcept {
-        return MLayer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
+    Layer layerAt(size_t index) const noexcept {
+        return Layer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
     }
 
     MClipLocation findClipById(uint64_t id) const noexcept {

@@ -1,39 +1,39 @@
 #pragma once
 
-#include "layer.h"
 #include "esotereel_gui_helper.h"
+#include "layer.h"
 #include <iterator>
 
-using RawTimeline = esotereel_gui_helper::Timeline;
+using RawTimeline = esotereel_gui_helper::_Timeline;
 
-class MLayersIterator {
+class LayersIterator {
     const RawTimeline *raw_ptr;
     size_t index;
 
   public:
     // 必須の型定義（標準ライブラリとの互換性のため）
     using iterator_category = std::forward_iterator_tag;
-    using value_type = MLayer;
+    using value_type = Layer;
     using difference_type = std::ptrdiff_t;
-    using pointer = MLayersIterator *;
-    using reference = MLayersIterator;
+    using pointer = LayersIterator *;
+    using reference = LayersIterator;
 
-    MLayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {}
+    LayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {}
 
     // インクリメント (++it)
-    MLayersIterator &operator++() noexcept {
+    LayersIterator &operator++() noexcept {
         index++;
         return *this;
     }
 
     // 比較 (it != end)
-    bool operator!=(const MLayersIterator &other) const noexcept {
+    bool operator!=(const LayersIterator &other) const noexcept {
         return index != other.index;
     }
 
     // 間接参照 (*it) -> ここで LayerRef を生成して返す
-    MLayer operator*() const noexcept {
-        return MLayer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
+    Layer operator*() const noexcept {
+        return Layer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
     }
 };
 
@@ -47,8 +47,8 @@ class MLayersIterable {
     size_t layersCount() const noexcept { return esotereel_gui_helper::timeline_get_layers_count(raw_ptr); }
 
     // forループの開始点
-    MLayersIterator begin() const noexcept { return MLayersIterator(raw_ptr, 0); }
+    LayersIterator begin() const noexcept { return LayersIterator(raw_ptr, 0); }
 
     // forループの終点
-    MLayersIterator end() const noexcept { return MLayersIterator(raw_ptr, layersCount()); }
+    LayersIterator end() const noexcept { return LayersIterator(raw_ptr, layersCount()); }
 };

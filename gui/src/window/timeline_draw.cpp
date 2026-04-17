@@ -16,7 +16,7 @@ QRect TimelineWidget::getInnerRect() const noexcept {
     return innerRect;
 }
 
-void TimelineWidget::drawLayers(const MTimeline &timeline, QPainter &p, const QRect &r) const {
+void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRect &r) const {
     // setup clipping
     QRect bgRect = getInnerRect();
     bgRect.setLeft(0); // 左端まで
@@ -56,7 +56,7 @@ void TimelineWidget::drawLayers(const MTimeline &timeline, QPainter &p, const QR
     p.setClipping(false);
 }
 
-void TimelineWidget::drawClip(size_t layer_idx, const MClip &clip, QPainter &p, const QRect &r) const {
+void TimelineWidget::drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const {
     bool isSelected = contains(this->selectedClipIds, clip.id());
     bool isDragging = this->dragState.has_value();
 
@@ -149,8 +149,8 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    MProject project = getProject();
-    MTimeline timeline = project.isValid() ? project.timelineOf(this->timelineType) : MTimeline(nullptr);
+    Project project = getProject();
+    Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     if (timeline.isValid()) {
         // レイヤーラベルと区切り線
         this->drawLayers(timeline, p, r);

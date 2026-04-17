@@ -7,3 +7,6 @@ header = "#pragma once"
 parse_deps = true
 clean = true
 include = ["esotereel_lib"] 
+
+[export]
+prefix = "_"

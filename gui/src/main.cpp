@@ -1,7 +1,7 @@
 #include "window/main.h"
+#include "esotereel_gui_helper.h"
 #include "network/boot.h"
 #include "network/client.h"
-#include "esotereel_gui_helper.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
@@ -62,7 +62,7 @@ void q_log_callback(size_t level, const uint8_t *ptr, size_t len) {
 }
 
 void setCallBacks() {
-    esotereel_gui_helper::GuiCallbacks callbacks;
+    esotereel_gui_helper::_GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {
     };

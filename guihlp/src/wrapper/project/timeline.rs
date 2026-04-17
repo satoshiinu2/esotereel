@@ -1,6 +1,6 @@
 use esotereel_lib::{
     project::{clip::Clip, layer::Layer, timeline::Timeline},
-    types::ClipLocation,
+    util::types::ClipLocation,
 };
 
 #[unsafe(no_mangle)]
@@ -24,15 +24,6 @@ pub unsafe extern "C" fn timeline_get_layers_count(ptr: *const Timeline) -> usiz
     }
 
     unsafe { (*ptr).layers.len() }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_playhead(ptr: *const Timeline) -> i64 {
-    if ptr.is_null() {
-        return 0;
-    }
-
-    unsafe { (*ptr).playhead }
 }
 
 #[unsafe(no_mangle)]

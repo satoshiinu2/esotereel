@@ -1,4 +1,5 @@
 #include "client.h"
+#include "../wrapper/requests.h"
 #include "esotereel_gui_helper.h"
 #include <QDebug>
 #include <sys/types.h>
@@ -11,7 +12,7 @@ Client::Client() {
         // qDebug() << "recv:" << data;
     });
     connect(&socket, &QTcpSocket::connected, this, []() {
-        esotereel_gui_helper::cmd_new_project();
+        Requests::newProject();
     });
 }
 void Client::connectToCore() {

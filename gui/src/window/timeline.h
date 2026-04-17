@@ -45,7 +45,7 @@ class TimelineWidget : public QWidget {
     Q_OBJECT
 
   public:
-    size_t timelineType;
+    size_t timelineIdx;
     float_t zoom = 4;
     QPointF scroll = QPointF();
     int64_t playhead = 0;
@@ -65,6 +65,10 @@ class TimelineWidget : public QWidget {
         return layer_idx * LAYER_HEIGHT + RULER_HEIGHT - this->scroll.y();
     }
 
+    int YToLayerIdx(double_t y) const noexcept {
+        return std::floor((y - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
+    }
+
     void setScrollX(qreal x) {
         this->scroll.setX(x);
         hScrollBar->setValue(x);
@@ -74,9 +78,9 @@ class TimelineWidget : public QWidget {
         vScrollBar->setValue(y);
     }
 
-    MTimeline getTimeline() {
-        MProject project = getProject();
-        return project.isValid() ? project.timelineOf(this->timelineType) : MTimeline(nullptr);
+    Timeline getTimeline() {
+        Project project = getProject();
+        return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     }
 
   protected:
@@ -96,31 +100,34 @@ class TimelineWidget : public QWidget {
     std::optional<SelectionRect> selectionRect;
     std::optional<ClipDragState> dragState;
     bool isDragging = false;
+    std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
 
     QRect getInnerRect() const noexcept;
-    MClipLocation findClipAt(const MTimeline &timeline, const QPoint &local) const;
+    MClipLocation findClipAt(const Timeline &timeline, const QPoint &local) const;
 
-    void drawLayers(const MTimeline &timeline, QPainter &p, const QRect &r) const;
-    void drawClip(size_t layer_idx, const MClip &clip, QPainter &p, const QRect &r) const;
+    void drawLayers(const Timeline &timeline, QPainter &p, const QRect &r) const;
+    void drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const;
     void drawPlayhead(const int64_t playhead_frame, QPainter &p, const QRect &r) const;
     void drawRuler(QPainter &p, const QRect &r) const;
     void drawSelectionRect(QPainter &p, const QRect &r) const;
-    void drawDragGhost(const MTimeline &timeline, QPainter &p, const QRect &r) const;
+    void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
 
-    bool handleDragGrab(const MTimeline &timeline, const QPoint &local, bool ctrl);
-    void handleDragContinue(const MTimeline &timeline, const QPoint &local);
-    void handleDragDrop(const MTimeline &timeline, const QPoint &local);
+    bool handleDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
+    void handleDragContinue(const Timeline &timeline, const QPoint &local);
+    void handleDragDrop(const Timeline &timeline, const QPoint &local);
 
-    bool handleSelectClip(MTimeline &timeline, const QPoint &mousePos, bool ctrl);
+    bool handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl);
     void handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
-    void handleAreaSelEnd(const MTimeline &timeline);
+    void handleAreaSelEnd(const Timeline &timeline);
 
-    void onDragStarted(QMouseEvent *e);
+    void onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
     void onDragEnd(QMouseEvent *e);
 
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
+
+    void addClipAt(const QPoint &local);
 };

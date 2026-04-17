@@ -1,8 +1,7 @@
 #include "../util.h"
-#include "esotereel_gui_helper.h"
+#include "../wrapper/requests.h"
 #include "timeline.h"
 #include <QEvent>
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -10,14 +9,14 @@
 #include <qevent.h>
 #include <qpainter.h>
 
-bool TimelineWidget::handleDragGrab(const MTimeline &timeline, const QPoint &mousePos, bool ctrl) {
+bool TimelineWidget::handleDragGrab(const Timeline &timeline, const QPoint &mousePos, bool ctrl) {
     uint64_t frame = this->XToFrame(mousePos.x());
 
     auto clipCtx = this->findClipAt(timeline, mousePos);
     if (!clipCtx.isValid()) {
         return false;
     }
-    const MClip *clip = &clipCtx.clip;
+    const Clip *clip = &clipCtx.clip;
 
     if (!contains(this->selectedClipIds, clip->id())) {
         if (!ctrl) {
@@ -38,16 +37,17 @@ bool TimelineWidget::handleDragGrab(const MTimeline &timeline, const QPoint &mou
     return true;
 }
 
-void TimelineWidget::handleDragContinue(const MTimeline &timeline, const QPoint &mousePos) {
+void TimelineWidget::handleDragContinue(const Timeline &timeline, const QPoint &mousePos) {
     int64_t frame = this->XToFrame(mousePos.x());
+    ssize_t layerIdx = this->YToLayerIdx(mousePos.y());
 
     auto &drag = this->dragState;
     if (!drag.has_value()) {
         return;
     }
 
-    drag->curFrame = std::max(frame, (int64_t)0);
-    drag->curLayerIdx = ((mousePos.y() - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
+    drag->curFrame = frame;
+    drag->curLayerIdx = layerIdx;
     drag->ghostPos = mousePos;
 
     // ovetlap check
@@ -73,7 +73,7 @@ finalize:
     update();
 }
 
-void TimelineWidget::handleDragDrop(const MTimeline &timeline, const QPoint &mousePos) {
+void TimelineWidget::handleDragDrop(const Timeline &timeline, const QPoint &mousePos) {
     handleDragContinue(timeline, mousePos);
     auto &drag = this->dragState;
     if (!drag.has_value()) {
@@ -100,11 +100,12 @@ send_drop:
     update();
     this->dragState = std::nullopt;
 
-    std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    esotereel_gui_helper::cmd_clip_move_mul(this->timelineType, exclude_vec.data(), exclude_vec.size(), frameMoved, 0, layerMoved);
+    std::vector<uint64_t>
+        exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    Requests::moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
 }
 
-void TimelineWidget::drawDragGhost(const MTimeline &timeline, QPainter &p, const QRect &r) const {
+void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const {
     auto drag = this->dragState;
     if (!drag.has_value()) {
         return;

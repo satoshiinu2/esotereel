@@ -6,6 +6,7 @@
 #include <qevent.h>
 #include <qpainter.h>
 #include <qpair.h>
+#include <qpoint.h>
 #include <qwidget.h>
 
 void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
@@ -15,6 +16,7 @@ void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
 
     int64_t frame = this->XToFrame(mousePos.x());
     this->playhead = frame;
+    update();
 }
 
 void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
@@ -36,18 +38,21 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
 
     if (e->button() & Qt::LeftButton) {
         this->handleCtrlPlayhead(e->pos());
+        this->firstClickPos = e->pos();
+        this->isDragging = false;
     }
 }
 
 void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     QWidget::mouseMoveEvent(e);
 
+    if (e->buttons() & Qt::LeftButton && !this->isDragging && this->firstClickPos.has_value()) {
+        this->onDragStarted(e, this->firstClickPos.value());
+        this->isDragging = true;
+    }
+
     if (this->isDragging) {
         this->onDragContinue(e);
-    }
-    if (e->buttons() & Qt::LeftButton && !this->isDragging) {
-        this->onDragStarted(e);
-        this->isDragging = true;
     }
 
     if (this->dragState.has_value()) {
@@ -64,7 +69,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 
     // ドラッグしていないなら１つセレクト
     if (!this->dragState.has_value() && e->button() & Qt::LeftButton) {
-        MTimeline timeline = getTimeline();
+        Timeline timeline = getTimeline();
         if (timeline.isValid()) {
             this->handleSelectClip(timeline, e->pos(), ctrl);
         }
@@ -76,14 +81,14 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     }
 }
 
-void TimelineWidget::onDragStarted(QMouseEvent *e) {
+void TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
-    MTimeline timeline = getTimeline();
+    Timeline timeline = getTimeline();
     if (!timeline.isValid()) {
         goto areasel;
     }
 
-    if (this->handleDragGrab(timeline, e->pos(), ctrl)) {
+    if (this->handleDragGrab(timeline, firstClickPos, ctrl)) {
         return;
     }
 
@@ -92,7 +97,7 @@ areasel:
 }
 
 void TimelineWidget::onDragContinue(QMouseEvent *e) {
-    MTimeline timeline = getTimeline();
+    Timeline timeline = getTimeline();
     if (!timeline.isValid()) {
         goto areasel;
     }
@@ -107,7 +112,7 @@ areasel:
 }
 
 void TimelineWidget::onDragEnd(QMouseEvent *e) {
-    MTimeline timeline = getTimeline();
+    Timeline timeline = getTimeline();
     if (!timeline.isValid()) {
         goto areasel;
     }

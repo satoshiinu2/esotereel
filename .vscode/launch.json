@@ -3,40 +3,27 @@
   "configurations": [
     {
       "name": "Build and debug gui",
-      "type": "cppdbg",
+      "type": "lldb",
       "request": "launch",
-      "program": "${command:cmake.launchTargetPath}",
+      "program": "${workspaceFolder}/build/esotereel_gui",
       "args": [ "${workspaceFolder}/target/debug/esotereel_core" ],
       "cwd": "${workspaceFolder}/build",
-      "stopAtEntry": false,
-
-      "MIMode": "gdb",
-      "miDebuggerPath": "gdb",
-
-      "externalConsole": false,
 
       "preLaunchTask": "build debug",
-      "setupCommands": [
-        {
-          "description": "Enable pretty-printing",
-          "text": "-enable-pretty-printing",
-          "ignoreFailures": true
-        }
-      ],
 
-      "environment": [
-        { "name": "RUST_BACKTRACE", "value": "1" }
-      ],
+      "env": {
+        "RUST_BACKTRACE": "1",
+      },
       "windows": {
-        "environment": [
-          { "name": "RUST_BACKTRACE", "value": "1" }
-        ]
+        "env": {
+          "RUST_BACKTRACE": "1",
+        }
       },
       "linux": {
-        "environment": [
-          { "name": "RUST_BACKTRACE", "value": "1" },
-          { "name": "QT_QPA_PLATFORM", "value": "xcb" }
-        ]
+        "env": {
+          "RUST_BACKTRACE": "1",
+          "QT_QPA_PLATFORM": "xcb"
+        }
       }
     }
   ]

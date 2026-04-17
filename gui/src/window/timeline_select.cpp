@@ -7,7 +7,7 @@
 #include <qpoint.h>
 
 // return true if selected
-bool TimelineWidget::handleSelectClip(MTimeline &timeline, const QPoint &mousePos, bool ctrl) {
+bool TimelineWidget::handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl) {
     auto clipLoc = this->findClipAt(timeline, mousePos);
     if (!clipLoc.isValid()) {
         if (!ctrl) {
@@ -34,6 +34,10 @@ bool TimelineWidget::handleSelectClip(MTimeline &timeline, const QPoint &mousePo
 }
 
 void TimelineWidget::handleAreaSelStart(const QPoint &mousePos, bool ctrl) {
+    if (mousePos.x() <= LABEL_WIDTH || mousePos.y() <= RULER_HEIGHT) {
+        return;
+    }
+
     if (!ctrl) {
         this->selectedClipIds.clear();
     }
@@ -51,7 +55,7 @@ void TimelineWidget::handleAreaSelContinue(const QPoint &mousePos) {
     update();
 }
 
-void TimelineWidget::handleAreaSelEnd(const MTimeline &timeline) {
+void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
     auto sel = this->selectionRect;
     if (!sel.has_value()) {
         return;

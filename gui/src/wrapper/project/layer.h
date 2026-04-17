@@ -1,16 +1,17 @@
 #pragma once
 
-#include "layer_clips.h"
+#include "../stringview.h"
 #include "esotereel_gui_helper.h"
+#include "layer_clips.h"
 #include <QString>
 
-using RawLayer = esotereel_gui_helper::Layer;
+using RawLayer = esotereel_gui_helper::_Layer;
 
-class MLayer {
+class Layer {
     const RawLayer *raw_ptr;
 
   public:
-    MLayer(const RawLayer *p) noexcept : raw_ptr(p) {}
+    Layer(const RawLayer *p) noexcept : raw_ptr(p) {}
 
     size_t clipsCount() const noexcept { return esotereel_gui_helper::layer_get_clips_count(raw_ptr); }
 
@@ -18,8 +19,8 @@ class MLayer {
         return MClipsIterable(raw_ptr);
     }
 
-    MClip clipAtSlow(size_t index) const noexcept {
-        return MClip(esotereel_gui_helper::layer_get_clip_at_slow(raw_ptr, index));
+    Clip clipAtSlow(size_t index) const noexcept {
+        return Clip(esotereel_gui_helper::layer_get_clip_at_slow(raw_ptr, index));
     }
 
     MClipLocation findClipAtFrame(int64_t frame, size_t layerIdx) const noexcept {
@@ -27,9 +28,6 @@ class MLayer {
     }
 
     QString name() const noexcept {
-        const char *p = (const char *)esotereel_gui_helper::layer_get_name_ptr(raw_ptr);
-        size_t len = esotereel_gui_helper::layer_get_name_len(raw_ptr);
-
-        return QString::fromUtf8(p, (int)len);
+        return StringView::toQstring(esotereel_gui_helper::layer_get_name(raw_ptr));
     }
 };

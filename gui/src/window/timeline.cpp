@@ -5,7 +5,7 @@
 #include <qpoint.h>
 #include <qwidget.h>
 
-TimelineWidget::TimelineWidget(size_t timelineType) : timelineType(timelineType) {
+TimelineWidget::TimelineWidget(size_t timelineType) : timelineIdx(timelineType) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 
@@ -27,13 +27,13 @@ void TimelineWidget::resizeEvent(QResizeEvent *event) {
     vScrollBar->setGeometry(width() - sw, 0, sw, height() - sw);
 }
 
-MClipLocation TimelineWidget::findClipAt(const MTimeline &timeline, const QPoint &local) const {
+MClipLocation TimelineWidget::findClipAt(const Timeline &timeline, const QPoint &local) const {
     int64_t frame = this->XToFrame(local.x());
-    size_t layerIdx = ((local.y() - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
+    size_t layerIdx = this->YToLayerIdx(local.y());
 
     // range check
     if (layerIdx >= timeline.layersCount()) {
-        return MClipLocation();
+        return MClipLocation::Empty();
     }
     return timeline.layerAt(layerIdx).findClipAtFrame(frame, layerIdx);
 }

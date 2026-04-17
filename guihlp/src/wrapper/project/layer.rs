@@ -1,7 +1,9 @@
 use esotereel_lib::{
     project::{clip::Clip, layer::Layer},
-    types::ClipLocation,
+    util::types::ClipLocation,
 };
+
+use crate::wrapper::stringview::StringView;
 
 pub struct ClipIterator<'a>(std::collections::btree_set::Iter<'a, Clip>);
 
@@ -56,19 +58,11 @@ pub unsafe extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_name_ptr(ptr: *const Layer) -> *const u8 {
+pub unsafe extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
     if ptr.is_null() {
-        return std::ptr::null();
+        return StringView::zero();
     }
-    unsafe { (*ptr).name.as_ptr() }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_name_len(ptr: *const Layer) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-    unsafe { (&(*ptr).name).len() }
+    unsafe { StringView::from_str(&(*ptr).name) }
 }
 
 #[unsafe(no_mangle)]

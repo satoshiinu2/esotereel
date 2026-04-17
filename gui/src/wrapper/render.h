@@ -7,34 +7,40 @@
 #include <qlogging.h>
 #include <qwindowdefs.h>
 
-class WWGpuUtil {
+using RawWGpuUtil = esotereel_gui_helper::_WGpuUtil;
+
+class WGpuUtil {
 
   private:
-    esotereel_gui_helper::WGpuUtil *raw_ptr;
+    RawWGpuUtil *raw_ptr;
     bool isWayland;
 
   public:
-    WWGpuUtil(WId winId, void *display, uint32_t width, uint32_t height) {
-        qDebug() << QGuiApplication::platformName();
+    WGpuUtil(WId winId, void *display, uint32_t width, uint32_t height) {
+        // qDebug() << QGuiApplication::platformName();
         this->isWayland = getLinuxDisplayType() == LinuxDisplayType::WAYLAND;
         raw_ptr = esotereel_gui_helper::wgpuutil_init_surface((void *)winId, display, width, height, this->isWayland);
     }
-    ~WWGpuUtil() {
+    ~WGpuUtil() {
         if (raw_ptr) {
             esotereel_gui_helper::wgpuutil_drop(raw_ptr);
             raw_ptr = nullptr;
         }
     }
-    WWGpuUtil(const WWGpuUtil &) = delete;
-    WWGpuUtil &operator=(const WWGpuUtil &) = delete;
+    WGpuUtil(const WGpuUtil &) = delete;
+    WGpuUtil &operator=(const WGpuUtil &) = delete;
 
-    WWGpuUtil(WWGpuUtil &&other) noexcept : raw_ptr(other.raw_ptr) {
+    //  move
+    WGpuUtil(WGpuUtil &&other) noexcept : raw_ptr(other.raw_ptr) {
         other.raw_ptr = nullptr;
     }
-    WWGpuUtil &operator=(WWGpuUtil &&other) noexcept {
+
+    // drop
+    WGpuUtil &operator=(WGpuUtil &&other) noexcept {
         if (this != &other) {
-            if (raw_ptr)
+            if (raw_ptr) {
                 esotereel_gui_helper::wgpuutil_drop(raw_ptr);
+            }
             raw_ptr = other.raw_ptr;
             other.raw_ptr = nullptr;
         }

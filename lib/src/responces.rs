@@ -1,16 +1,16 @@
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck, check_archived_root};
 use std::{collections::HashMap, sync::OnceLock};
-
-use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
     SEND_CALLBACK,
     project::{Project, clip::Clip},
+    util::error::{EsotereelError, EsotereelResult},
 };
 
-type OnReceiveResponceFn = fn(&ArchivedResponse) -> Result<(), String>;
+type OnReceiveResponceFn = fn(&ArchivedResponse) -> EsotereelResult<()>;
 
 #[derive(Archive, Deserialize, Serialize)]
-#[repr(u8)]
+#[archive_attr(derive(CheckBytes))]
 pub enum Response {
     Test,
     ProjectAll {
@@ -18,7 +18,7 @@ pub enum Response {
     },
     ClipUpdates {
         timeline_type: usize,
-        updates: HashMap<usize, Vec<Clip>>,
+        updates: HashMap<u32, Vec<Clip>>,
     },
 }
 
@@ -34,15 +34,19 @@ pub fn set_responce_callbacks(callback: OnReceiveResponceFn) {
     RESPONCE_CALLBACK.set(callback).ok();
 }
 
-pub fn parse_responce(ptr: *const u8, len: usize) {
+pub fn parse_and_handle_responce(ptr: *const u8, len: usize) -> EsotereelResult<()> {
     let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-    let archived_resp = unsafe { rkyv::archived_root::<Response>(&bytes) };
 
+    // validation
+    let archived_resp: &ArchivedResponse = check_archived_root::<Response>(bytes)
+        .map_err(|e| EsotereelError::IoError(format!("Invalid data format: {:?}", e)))?;
+
+    // callback
     if let Some(on_responce_recveve) = RESPONCE_CALLBACK.get() {
-        if let Err(msg) = on_responce_recveve(archived_resp) {
-            println!("{}", msg);
-        }
+        on_responce_recveve(archived_resp)?;
     }
+
+    Ok(())
 }
 
 pub fn send_response(response: Response) {

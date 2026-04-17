@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use esotereel_lib::logger::init_logger;
+use esotereel_lib::util::logger::init_logger;
 
 pub type LogOutCStrFn = extern "C" fn(level: usize, ptr: *const u8, len: usize);
 

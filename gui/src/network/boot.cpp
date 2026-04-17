@@ -12,12 +12,12 @@ void bootcore(QString corePath) {
     coreProcess->setProgram(corePath);
     QAbstractSocket::connect(
         coreProcess, &QProcess::readyReadStandardOutput, [coreProcess]() {
-            qDebug() << "[core stdout]" << coreProcess->readAllStandardOutput();
+            qDebug().noquote() << "[core stdout]" << coreProcess->readAllStandardOutput();
         });
 
     QAbstractSocket::connect(
         coreProcess, &QProcess::readyReadStandardError, [coreProcess]() {
-            qDebug() << "[core stderr]" << coreProcess->readAllStandardError();
+            qDebug().noquote() << "[core stderr]" << coreProcess->readAllStandardError();
         });
     coreProcess->start();
 

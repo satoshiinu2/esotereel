@@ -251,6 +251,7 @@ dependencies = [
 name = "esotereel_gui_helper"
 version = "0.1.0"
 dependencies = [
+ "bytecheck",
  "esotereel_lib",
  "log",
  "rkyv",

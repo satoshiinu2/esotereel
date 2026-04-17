@@ -1,52 +1,52 @@
-use std::collections::HashMap;
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
+    sync::RwLock,
+};
 
 use esotereel_lib::{
-    command::ArchivedCommand,
-    project::{Project, clip::Clip},
-    responce::{Response, send_response},
-    types::ClipMoveCtx,
+    requests::{parse_and_handle_request, set_request_callbacks},
+    set_send_callback,
 };
-use rkyv::Deserialize as _;
 
-use crate::{PROJECT, project::clip_move_mul_core};
+use crate::requests::on_request_recveve;
 
-pub fn on_command_recveve(command: &ArchivedCommand) -> Result<(), String> {
-    match command {
-        ArchivedCommand::Test => {}
-        ArchivedCommand::NewProject => {
-            let mut lock = PROJECT.write().unwrap();
-            let new_project = Project::new();
+static CLIENT_STREAM: RwLock<Option<TcpStream>> = RwLock::new(None);
 
-            let cmd = Response::ProjectAll {
-                project: new_project.clone(),
-            };
+pub(super) fn start_poll_packets() {
+    set_request_callbacks(on_request_recveve);
+    set_send_callback(on_send);
 
-            *lock = Some(new_project);
-            send_response(cmd);
-        }
-        ArchivedCommand::ClipsMove {
-            timeline_idx: timeline_type,
-            clips,
-        } => {
-            let timeline_type = *timeline_type as usize;
+    let listener = TcpListener::bind("127.0.0.1:12345").unwrap();
+    log::info!("Core server started");
 
-            let mut lock = PROJECT.write().unwrap();
-            let project = lock
-                .as_mut()
-                .ok_or(esotereel_lib::ERROR_NO_PROJECT_LOADED)?;
-            let moved_clips: Vec<ClipMoveCtx> = clips.deserialize(&mut rkyv::Infallible).unwrap();
-            let mut updates: HashMap<usize, Vec<Clip>> = HashMap::new();
-            let timeline = project.get_timeline_mut(timeline_type)?;
+    for stream in listener.incoming() {
+        let stream = stream.unwrap();
+        let mut read_stream = stream.try_clone().unwrap();
+        *CLIENT_STREAM.write().unwrap() = Some(stream);
 
-            clip_move_mul_core(timeline, moved_clips, &mut updates);
+        loop {
+            let mut buf = rkyv::AlignedVec::with_capacity(1024);
+            buf.resize(1024, 0);
 
-            // send updates
-            let cmd = Response::ClipUpdates {
-                timeline_type,
-                updates,
-            };
-            send_response(cmd);
+            let size = read_stream.read(&mut buf).unwrap();
+            if size == 0 {
+                break;
+            }
+
+            if let Err(e) = parse_and_handle_request(buf.as_ptr(), size) {
+                eprintln!("[Esotereel Core Error] {:?}", e);
+            }
         }
     }
-    Ok(())
+}
+
+extern "C" fn on_send(ptr: *const u8, len: usize) {
+    let data = unsafe { std::slice::from_raw_parts(ptr, len) };
+
+    if let Ok(mut guard) = CLIENT_STREAM.write() {
+        if let Some(ref mut stream) = *guard {
+            stream.write_all(data).unwrap();
+        }
+    }
 }

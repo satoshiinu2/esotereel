@@ -1,10 +1,13 @@
-use crate::project::{clip::Clip, layer::Layer};
-use rkyv::{Archive, Deserialize, Serialize};
+use std::collections::BTreeSet;
+
+use crate::project::{clip::Clip, clipdata::ClipData, layer::Layer};
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[archive_attr(derive(CheckBytes))]
 pub struct Timeline {
     pub layers: Vec<Layer>,
-    pub playhead: i64,
+    next_clip_id: u64,
 }
 
 impl Timeline {
@@ -14,44 +17,39 @@ impl Timeline {
                 Layer {
                     index: 0,
                     name: "Layer 0".to_string(),
-                    clips: vec![
-                        crate::project::clip::Clip {
-                            id: 0,
-                            position: 10,
-                            duration: 50,
-                        },
-                        crate::project::clip::Clip {
-                            id: 1,
-                            position: 70,
-                            duration: 30,
-                        },
-                    ]
-                    .into_iter()
-                    .collect(),
+                    clips: BTreeSet::new(),
                 },
                 Layer {
                     index: 1,
                     name: "Layer 1".to_string(),
-                    clips: vec![crate::project::clip::Clip {
-                        id: 2,
-                        position: 20,
-                        duration: 40,
-                    }]
-                    .into_iter()
-                    .collect(),
+                    clips: BTreeSet::new(),
                 },
                 Layer {
                     index: 2,
                     name: "Layer 2".to_string(),
-                    clips: vec![].into_iter().collect(),
+                    clips: BTreeSet::new(),
                 },
                 Layer {
                     index: 3,
                     name: "Layer 3".to_string(),
-                    clips: vec![].into_iter().collect(),
+                    clips: BTreeSet::new(),
                 },
             ],
-            playhead: 0,
+            next_clip_id: 0,
+        }
+    }
+
+    fn new_clip_id(&mut self) -> u64 {
+        let id = self.next_clip_id;
+        self.next_clip_id += 1;
+        id
+    }
+    pub fn new_clip(&mut self, position: i64, duration: i64, clip_data: ClipData) -> Clip {
+        Clip {
+            id: self.new_clip_id(),
+            position,
+            duration,
+            clip_data,
         }
     }
 

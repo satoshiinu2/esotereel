@@ -8,112 +8,115 @@
 
 namespace esotereel_gui_helper {
 
-struct Clip;
+struct _Clip;
 
-struct ClipIterator;
+struct _ClipIterator;
 
-struct Layer;
+struct _Layer;
 
-struct Project;
+struct _Project;
 
-struct Timeline;
+struct _Timeline;
 
-struct WGpuUtil;
+struct _WGpuUtil;
 
-struct GuiCallbacks {
+struct _GuiCallbacks {
   void (*on_test)();
   void (*on_update_timeline)(uintptr_t timeline_type);
 };
 
-using OnSendFn = void(*)(const uint8_t*, uintptr_t);
+struct _StringView {
+  const uint8_t *ptr;
+  uintptr_t len;
+};
 
-using LogOutCStrFn = void(*)(uintptr_t level, const uint8_t *ptr, uintptr_t len);
+using _OnSendFn = void(*)(const uint8_t*, uintptr_t);
 
-struct ClipLocation {
+using _LogOutCStrFn = void(*)(uintptr_t level, const uint8_t *ptr, uintptr_t len);
+
+struct _ClipLocation {
   uintptr_t layer_idx;
   uintptr_t clip_idx;
-  const Clip *clip;
+  const _Clip *clip;
 };
 
 extern "C" {
 
 void init();
 
-void set_gui_callbacks(GuiCallbacks callbacks);
+void set_gui_callbacks(_GuiCallbacks callbacks);
 
-void parse_responce(const uint8_t *ptr, uintptr_t len);
+_StringView parse_responce(const uint8_t *ptr, uintptr_t len);
 
-void set_send_callback(OnSendFn callback);
+void set_send_callback(_OnSendFn callback);
 
-const Project *get_project();
+const _Project *get_project();
 
-void cmd_test();
-
-void cmd_new_project();
-
-void cmd_clip_move_mul(uintptr_t timeline_type,
+void req_clip_move_mul(uintptr_t timeline_idx,
                        const uint64_t *ptr,
                        uintptr_t len,
                        int64_t position_moved,
                        int64_t duration_added,
                        intptr_t layer_moved);
 
-void init_rust_logger(LogOutCStrFn callback);
+void req_add_clip_dummy(uintptr_t timeline_idx, int64_t position, uintptr_t layer_idx);
 
-const Timeline *project_get_timeline(const Project *ptr, uintptr_t id);
+void init_rust_logger(_LogOutCStrFn callback);
 
-uintptr_t project_get_timeline_count(const Project *ptr);
+const _Timeline *project_get_timeline(const _Project *ptr, uintptr_t id);
 
-uint64_t clip_get_id(const Clip *ptr);
+uintptr_t project_get_timeline_count(const _Project *ptr);
 
-int64_t clip_get_position(const Clip *ptr);
+uint64_t clip_get_id(const _Clip *ptr);
 
-int64_t clip_get_duration(const Clip *ptr);
+int64_t clip_get_position(const _Clip *ptr);
 
-ClipLocation layer_find_clip_at_frame(const Layer *ptr, int64_t frame, uintptr_t layer_idx);
+int64_t clip_get_duration(const _Clip *ptr);
 
-const Clip *layer_get_clip_at_slow(const Layer *ptr, uintptr_t idx);
+_ClipLocation layer_find_clip_at_frame(const _Layer *ptr, int64_t frame, uintptr_t layer_idx);
 
-uintptr_t layer_get_clips_count(const Layer *ptr);
+const _Clip *layer_get_clip_at_slow(const _Layer *ptr, uintptr_t idx);
 
-const uint8_t *layer_get_name_ptr(const Layer *ptr);
+uintptr_t layer_get_clips_count(const _Layer *ptr);
 
-uintptr_t layer_get_name_len(const Layer *ptr);
+_StringView layer_get_name(const _Layer *ptr);
 
-ClipIterator *layer_clips_begin(const Layer *layer);
+_ClipIterator *layer_clips_begin(const _Layer *layer);
 
-const Clip *clip_iter_next(ClipIterator *iter);
+const _Clip *clip_iter_next(_ClipIterator *iter);
 
-void clip_iter_free(ClipIterator *iter);
+void clip_iter_free(_ClipIterator *iter);
 
-const Layer *timeline_get_layer_at(const Timeline *ptr, uintptr_t l_idx);
+const _Layer *timeline_get_layer_at(const _Timeline *ptr, uintptr_t l_idx);
 
-uintptr_t timeline_get_layers_count(const Timeline *ptr);
+uintptr_t timeline_get_layers_count(const _Timeline *ptr);
 
-int64_t timeline_get_playhead(const Timeline *ptr);
+_ClipLocation timeline_find_clip_by_id(const _Timeline *ptr, uint64_t clip_id);
 
-ClipLocation timeline_find_clip_by_id(const Timeline *ptr, uint64_t clip_id);
-
-bool timeline_can_place_clip_at(const Timeline *ptr,
+bool timeline_can_place_clip_at(const _Timeline *ptr,
                                 uintptr_t layer_idx,
                                 int64_t position,
                                 int64_t duration,
                                 const uint64_t *exclude_ids_ptr,
                                 uintptr_t exclude_ids_len);
 
-WGpuUtil *wgpuutil_init_surface(void *window_ptr,
-                                void *display_ptr,
-                                uint32_t width,
-                                uint32_t height,
-                                bool is_wayland);
+_WGpuUtil *wgpuutil_init_surface(void *window_ptr,
+                                 void *display_ptr,
+                                 uint32_t width,
+                                 uint32_t height,
+                                 bool is_wayland);
 
-void wgpuutil_drop(WGpuUtil *ptr);
+void wgpuutil_drop(_WGpuUtil *ptr);
 
-void wgpuutil_update_surface(WGpuUtil *ptr, void *window_ptr, void *display_ptr, bool is_wayland);
+void wgpuutil_update_surface(_WGpuUtil *ptr, void *window_ptr, void *display_ptr, bool is_wayland);
 
-void wgpuutil_update_size(WGpuUtil *ptr, uint32_t width, uint32_t height);
+void wgpuutil_update_size(_WGpuUtil *ptr, uint32_t width, uint32_t height);
 
-void render_frame(WGpuUtil *ptr);
+void render_frame(_WGpuUtil *ptr);
+
+void req_test();
+
+void req_new_project();
 
 }  // extern "C"
 

@@ -1,27 +1,15 @@
 use std::slice;
 
 use esotereel_lib::{
-    command::{Command, send_command},
-    types::ClipMoveCtx,
+    project::{clipdata::ClipData, commands::Command},
+    util::types::ClipMoveCtx,
 };
 
-use crate::PROJECT;
+use crate::{PROJECT, wrapper::requests::req_command};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn cmd_test() {
-    let cmd = Command::Test;
-    send_command(cmd);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn cmd_new_project() {
-    let cmd = Command::NewProject;
-    send_command(cmd);
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn cmd_clip_move_mul(
-    timeline_type: usize,
+pub extern "C" fn req_clip_move_mul(
+    timeline_idx: usize,
     ptr: *const u64,
     len: usize,
     position_moved: i64,
@@ -32,11 +20,11 @@ pub extern "C" fn cmd_clip_move_mul(
     let Some(project) = lock.as_ref() else {
         return;
     };
-    let Ok(timeline) = project.get_timeline(timeline_type) else {
+    let Ok(timeline) = project.get_timeline(timeline_idx) else {
         return;
     };
 
-    let clip_ids = unsafe { slice::from_raw_parts(ptr, len) }.to_vec();
+    let clip_ids = unsafe { slice::from_raw_parts(ptr, len) };
 
     let clip_ctxs = clip_ids
         .iter()
@@ -52,9 +40,18 @@ pub extern "C" fn cmd_clip_move_mul(
         })
         .collect();
 
-    let cmd = Command::ClipsMove {
-        timeline_idx: timeline_type,
-        clips: clip_ctxs,
+    let command = Command::ClipsMove { clips: clip_ctxs };
+
+    req_command(timeline_idx, command);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn req_add_clip_dummy(timeline_idx: usize, position: i64, layer_idx: usize) {
+    let command = Command::AddClip {
+        layer_idx,
+        position,
+        duration: 10,
+        clip_data: ClipData::Dummy,
     };
-    send_command(cmd);
+    req_command(timeline_idx, command);
 }
