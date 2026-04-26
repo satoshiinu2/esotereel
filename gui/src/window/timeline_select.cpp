@@ -8,8 +8,8 @@
 
 // return true if selected
 bool TimelineWidget::handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl) {
-    auto clipLoc = this->findClipAt(timeline, mousePos);
-    if (!clipLoc.isValid()) {
+    auto [clip, layerIdx] = this->findClipAt(timeline, mousePos);
+    if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();
             update();
@@ -18,7 +18,7 @@ bool TimelineWidget::handleSelectClip(Timeline &timeline, const QPoint &mousePos
         return false;
     }
 
-    uint64_t id = clipLoc.clip.id();
+    uint64_t id = clip.id();
     if (ctrl) {
         if (this->selectedClipIds.count(id)) {
             this->selectedClipIds.erase(id);
@@ -33,31 +33,32 @@ bool TimelineWidget::handleSelectClip(Timeline &timeline, const QPoint &mousePos
     return true;
 }
 
-void TimelineWidget::handleAreaSelStart(const QPoint &mousePos, bool ctrl) {
+std::optional<DragAreaSel> TimelineWidget::handleAreaSelStart(const QPoint &mousePos, bool ctrl) {
     if (mousePos.x() <= LABEL_WIDTH || mousePos.y() <= RULER_HEIGHT) {
-        return;
+        return std::nullopt;
     }
 
     if (!ctrl) {
         this->selectedClipIds.clear();
     }
-    this->selectionRect = SelectionRect{
+
+    update();
+    return DragAreaSel{
         mousePos,
         mousePos,
     };
-    update();
 }
 
 void TimelineWidget::handleAreaSelContinue(const QPoint &mousePos) {
-    if (this->selectionRect.has_value()) {
-        this->selectionRect->current = mousePos;
+    if (auto *sel = std::get_if<DragAreaSel>(&this->dragState)) {
+        sel->current = mousePos;
     }
     update();
 }
 
 void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
-    auto sel = this->selectionRect;
-    if (!sel.has_value()) {
+    auto *sel = std::get_if<DragAreaSel>(&this->dragState);
+    if (!sel) {
         return;
     }
 
@@ -82,17 +83,16 @@ void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
         layerIdx++;
     }
 
-    this->selectionRect = std::nullopt;
     update();
 }
 
 void TimelineWidget::drawSelectionRect(QPainter &p, const QRect &r) const {
-    if (!this->selectionRect.has_value()) {
+    auto *sel = std::get_if<DragAreaSel>(&this->dragState);
+    if (!sel) {
         return;
     }
-    auto sel = selectionRect.value();
 
-    QRectF selRect(r.topLeft() + sel.start, r.topLeft() + sel.current);
+    QRectF selRect(r.topLeft() + sel->start, r.topLeft() + sel->current);
 
     p.setBrush(QColor(100, 150, 255, 64));
     p.setPen(QPen(QColor(100, 150, 255), 1));

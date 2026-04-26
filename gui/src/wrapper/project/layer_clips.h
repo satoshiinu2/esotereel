@@ -12,6 +12,17 @@ class ClipsIterator {
     RawClipIterator *rust_iter_ptr;
     const RawClip *cur_ptr;
 
+    static RawClipIterator *getBegin(const RawLayer *t) {
+        if (!t)
+            return nullptr;
+
+        RawClipIterator *result = nullptr;
+        if (esotereel_gui_helper::layer_clips_begin(t, &result) != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+            return nullptr;
+        }
+        return result;
+    }
+
   public:
     using iterator_category = std::forward_iterator_tag;
     using value_type = Clip;
@@ -19,7 +30,7 @@ class ClipsIterator {
 
     // begin用
     ClipsIterator(const RawLayer *t) noexcept
-        : rust_iter_ptr(esotereel_gui_helper::layer_clips_begin(t)), cur_ptr(nullptr) {
+        : rust_iter_ptr(ClipsIterator::getBegin(t)), cur_ptr(nullptr) {
         advance();
     }
 
@@ -40,8 +51,9 @@ class ClipsIterator {
 
     void advance() noexcept {
         if (rust_iter_ptr) {
-            cur_ptr = esotereel_gui_helper::clip_iter_next(rust_iter_ptr);
-            if (!cur_ptr) {
+            auto result = esotereel_gui_helper::clip_iter_next(rust_iter_ptr, &cur_ptr);
+            if (result != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+                cur_ptr = nullptr;
                 esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
                 rust_iter_ptr = nullptr;
             }
@@ -69,14 +81,14 @@ class ClipsIterator {
         }
     }
 };
-class MClipsIterable {
+class ClipsIterable {
     const RawLayer *raw_ptr;
 
   public:
-    MClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
+    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
-    size_t clipsCount() const noexcept { return esotereel_gui_helper::layer_get_clips_count(raw_ptr); }
+    size_t clipsCount() const noexcept { return raw_ptr ? esotereel_gui_helper::layer_get_clips_count(raw_ptr) : 0; }
 
     // forループの開始点
     ClipsIterator begin() const noexcept { return ClipsIterator(raw_ptr); }

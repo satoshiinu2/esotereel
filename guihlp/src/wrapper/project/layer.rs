@@ -1,55 +1,33 @@
-use esotereel_lib::{
-    project::{clip::Clip, layer::Layer},
-    util::types::ClipLocation,
-};
+use std::sync::Arc;
 
-use crate::wrapper::stringview::StringView;
+use esotereel_lib::project::{clip::Clip, layer::Layer};
 
-pub struct ClipIterator<'a>(std::collections::btree_set::Iter<'a, Clip>);
+use crate::{WrapperErrorCode, wrapper::stringview::StringView};
+
+pub struct ClipIterator<'a>(std::collections::btree_set::Iter<'a, Arc<Clip>>);
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_find_clip_at_frame(
+pub extern "C" fn layer_find_clip_at_frame(
     ptr: *const Layer,
     frame: i64,
-    layer_idx: usize,
-) -> ClipLocation {
+    out: *mut *const Clip,
+) -> WrapperErrorCode {
+    if ptr.is_null() || out.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
+
     let layer = unsafe { &(*ptr) };
-
-    if !ptr.is_null() {
-        for (clip_idx, clip) in layer.clips.iter().enumerate() {
-            if frame >= clip.position && frame < clip.position + clip.duration {
-                return ClipLocation {
-                    layer_idx,
-                    clip_idx,
-                    clip,
-                };
-            }
-        }
-    }
-    return ClipLocation {
-        layer_idx: 0,
-        clip_idx: 0,
-        clip: std::ptr::null(),
+    let clip = layer.get_clip_at_frame(frame);
+    let Some(clip) = clip else {
+        return WrapperErrorCode::NotFound;
     };
+
+    unsafe { *out = clip };
+    WrapperErrorCode::Ok
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_clip_at_slow(ptr: *const Layer, idx: usize) -> *const Clip {
-    if ptr.is_null() {
-        return std::ptr::null();
-    }
-
-    let layer = unsafe { &*ptr };
-
-    // nth(idx) で要素を探し、あればその参照をポインタとして返す
-    match layer.clips.iter().nth(idx) {
-        Some(clip_ref) => clip_ref as *const Clip,
-        None => std::ptr::null(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
+pub extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
     if ptr.is_null() {
         return 0;
     }
@@ -58,7 +36,7 @@ pub unsafe extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
+pub extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
     if ptr.is_null() {
         return StringView::zero();
     }
@@ -66,24 +44,51 @@ pub unsafe extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn layer_clips_begin(layer: &Layer) -> *mut ClipIterator<'_> {
-    let iter = Box::new(ClipIterator(layer.clips.iter()));
-    Box::into_raw(iter)
+pub extern "C" fn layer_clips_begin(
+    layer: &Layer,
+    out: *mut *mut ClipIterator<'static>,
+) -> WrapperErrorCode {
+    if out.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
+
+    let iter = Box::new(ClipIterator(layer.clips.into_iter()));
+    // 寿命の強制変換
+    unsafe {
+        let raw_iter = Box::into_raw(iter);
+        *out = std::mem::transmute::<*mut ClipIterator<'_>, *mut ClipIterator<'static>>(raw_iter);
+    }
+    WrapperErrorCode::Ok
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn clip_iter_next<'a>(iter: &mut ClipIterator<'a>) -> *const Clip {
-    iter.0
-        .next()
-        .map(|c| c as *const Clip)
-        .unwrap_or(std::ptr::null())
-}
+pub extern "C" fn clip_iter_next<'a>(
+    iter_ptr: *mut ClipIterator<'a>,
+    out: *mut *const Clip,
+) -> WrapperErrorCode {
+    if iter_ptr.is_null() || out.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) {
-    if !iter.is_null() {
-        unsafe {
-            drop(Box::from_raw(iter));
+    let iter = unsafe { &mut *iter_ptr };
+
+    match iter.0.next() {
+        Some(clip) => {
+            unsafe { *out = clip.as_ref() };
+            WrapperErrorCode::Ok
+        }
+        None => {
+            unsafe { *out = std::ptr::null() };
+            WrapperErrorCode::NotFound
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) -> WrapperErrorCode {
+    if iter.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
+    unsafe { drop(Box::from_raw(iter)) };
+    WrapperErrorCode::Ok
 }

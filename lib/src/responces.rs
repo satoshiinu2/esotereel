@@ -1,9 +1,9 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck, check_archived_root};
-use std::{collections::HashMap, sync::OnceLock};
+use std::sync::OnceLock;
 
 use crate::{
     SEND_CALLBACK,
-    project::{Project, clip::Clip},
+    project::{ClipUpdateMap, Project},
     util::error::{EsotereelError, EsotereelResult},
 };
 
@@ -18,7 +18,7 @@ pub enum Response {
     },
     ClipUpdates {
         timeline_type: usize,
-        updates: HashMap<u32, Vec<Clip>>,
+        updates: ClipUpdateMap,
     },
 }
 

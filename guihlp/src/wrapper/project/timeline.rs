@@ -1,7 +1,6 @@
-use esotereel_lib::{
-    project::{clip::Clip, layer::Layer, timeline::Timeline},
-    util::types::ClipLocation,
-};
+use esotereel_lib::project::{clip::Clip, layer::Layer, timeline::Timeline};
+
+use crate::WrapperErrorCode;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_get_layer_at(ptr: *const Timeline, l_idx: usize) -> *const Layer {
@@ -30,21 +29,21 @@ pub unsafe extern "C" fn timeline_get_layers_count(ptr: *const Timeline) -> usiz
 pub unsafe extern "C" fn timeline_find_clip_by_id(
     ptr: *const Timeline,
     clip_id: u64,
-) -> ClipLocation {
-    if !ptr.is_null() {
-        if let Some((layer_idx, clip_idx, clip)) = unsafe { (*ptr).find_clip_by_id(clip_id) } {
-            return ClipLocation {
-                layer_idx,
-                clip_idx,
-                clip: clip as *const Clip,
-            };
-        };
+    out_clip: *mut *const Clip,
+    out_layer_idx: *mut usize,
+) -> WrapperErrorCode {
+    if ptr.is_null() | out_clip.is_null() {
+        return WrapperErrorCode::NullPtr;
     }
-    ClipLocation {
-        layer_idx: 0,
-        clip_idx: 0,
-        clip: std::ptr::null(),
-    }
+
+    let Some((layer_id, clip)) = (unsafe { (*ptr).find_clip_by_id(clip_id) }) else {
+        return WrapperErrorCode::NullPtr;
+    };
+    unsafe {
+        *out_clip = clip.as_ref();
+        *out_layer_idx = layer_id;
+    };
+    WrapperErrorCode::Ok
 }
 
 #[unsafe(no_mangle)]

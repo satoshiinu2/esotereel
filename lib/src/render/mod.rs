@@ -1,16 +1,22 @@
 use wgpu::CurrentSurfaceTexture;
 
-use crate::render::{vertex::Vertex, wgpuutil::WGpuUtil};
+use crate::{
+    project::timeline::Timeline,
+    render::{builder::build_vertices, wgpuutil::WGpuUtil},
+};
 
+pub mod builder;
 pub mod pipeline;
 pub mod surfacetarget;
 pub mod uniform;
 pub mod vertex;
 pub mod wgpuutil;
 
-static mut TESTPLACEHOLDER: f32 = 0.0;
-
-pub fn render_frame(util: &mut WGpuUtil) -> Result<(), String> {
+pub fn render_frame(
+    util: &mut WGpuUtil,
+    timeline: &Timeline,
+    current_frame: i64,
+) -> Result<(), String> {
     if util.config.width == 0 || util.config.height == 0 {
         return Err("window size is 0".into());
     }
@@ -28,26 +34,8 @@ pub fn render_frame(util: &mut WGpuUtil) -> Result<(), String> {
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-    // --- ここにあなたのロジックを組み込む ---
-    // ※ プロジェクトデータ(project)をどこから持ってくるかは、別途ポインタで渡すか
-    // WGpuUtilの中やグローバルに保持しておく必要があります
-    let mut vertices = vec![];
-
-    // 仮のplayheadとデータ構造でのループ例
-    // 本来は project ポインタなどから取得してください
-    // let playhead = 0.0;
-    let layer_height = 80.0;
-
-    unsafe { TESTPLACEHOLDER += 1.0 };
-    let testval = unsafe { TESTPLACEHOLDER };
-    // (あなたのロジックで vertices を作成...)
-    vertices.extend_from_slice(&Vertex::rect(
-        100.0,
-        100.0,
-        testval,
-        layer_height,
-        [0.2, 0.5, 0.8, 1.0],
-    ));
+    // 頂点作成
+    let vertices = build_vertices(timeline, current_frame);
 
     let screen_size = [util.config.width as f32, util.config.height as f32];
 
@@ -78,8 +66,13 @@ pub fn render_frame(util: &mut WGpuUtil) -> Result<(), String> {
 
         // 4. 描画実行（pipeline.rs の render から write_buffer を除いたもの）
         if !vertices.is_empty() {
-            util.resources
-                .render(&util.queue, &mut rpass, screen_size, &vertices[..]);
+            util.resources.render(
+                &util.device,
+                &util.queue,
+                &mut rpass,
+                screen_size,
+                &vertices[..],
+            );
         }
     }
 

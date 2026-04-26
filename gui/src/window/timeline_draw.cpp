@@ -58,7 +58,7 @@ void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRe
 
 void TimelineWidget::drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const {
     bool isSelected = contains(this->selectedClipIds, clip.id());
-    bool isDragging = this->dragState.has_value();
+    bool isDragging = std::holds_alternative<DragClip>(this->dragState);
 
     // ドラッグ中は元の位置に半透明で残す
     QColor bgColor;
@@ -149,7 +149,7 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    Project project = getProject();
+    Project project = Project::getProject();
     Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     if (timeline.isValid()) {
         // レイヤーラベルと区切り線

@@ -5,6 +5,7 @@ use super::{uniform::ScreenUniform, vertex::Vertex};
 pub struct WgpuRenderResources {
     pub pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
+    pub vertex_capacity: u64,
     pub uniform_buffer: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
 }
@@ -47,9 +48,10 @@ impl WgpuRenderResources {
         });
 
         // 頂点バッファ（最大1000矩形 = 6000頂点）
+        let vertex_capacity = (std::mem::size_of::<Vertex>() * 6000) as u64;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("vertex_buffer"),
-            size: (std::mem::size_of::<Vertex>() * 6000) as u64,
+            size: vertex_capacity,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -94,20 +96,34 @@ impl WgpuRenderResources {
         Self {
             pipeline,
             vertex_buffer,
+            vertex_capacity,
             uniform_buffer,
             bind_group,
         }
     }
 
     pub fn render(
-        &self,
+        &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass,
         screen_size: [f32; 2],
         vertices: &[Vertex],
     ) {
-        if vertices.is_empty() {
+        let needed_size = (vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+        if needed_size == 0 {
             return;
+        }
+
+        // 容量が足りない場合はバッファを拡張（再作成）
+        if needed_size > self.vertex_capacity {
+            self.vertex_capacity = needed_size.next_power_of_two();
+            self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("vertex_buffer_resized"),
+                size: self.vertex_capacity,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
         }
 
         // Uniform更新

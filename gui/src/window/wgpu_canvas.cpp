@@ -1,9 +1,12 @@
 #include "wgpu_canvas.h"
 #include "../util.h"
+#include "../wrapper/project/project.h"
+#include "timeline.h"
 #include <QTimer>
 #include <QWindow>
+#include <cstdint>
 
-WgpuCanvasWidget::WgpuCanvasWidget() {
+WgpuCanvasWidget::WgpuCanvasWidget(WindowGState *windowState) : windowState(windowState) {
     // OS がこのウィンドウに直接描画するのを許可する（Qtのバックバッファをスキップ）
     setAttribute(Qt::WA_OpaquePaintEvent);
     setAttribute(Qt::WA_NativeWindow);
@@ -25,26 +28,31 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
 
     renderTimer = new QTimer(this);
     connect(renderTimer, &QTimer::timeout, this, [this]() {
-        if (this->wgpuutil.has_value()) {
-            this->wgpuutil->renderFrame();
-            update();
-        }
+        update();
     });
     renderTimer->start(16);
 }
 
 void WgpuCanvasWidget::paintEvent(QPaintEvent *event) {
-    if (!this->wgpuutil.has_value()) {
-        return;
+    this->tryRender();
+}
+
+bool WgpuCanvasWidget::tryRender() {
+    if (this->wgpuutil.has_value()) {
+        auto project = Project::getProject();
+        auto focusedTimelineWidget = this->windowState->focusedTimeline;
+        if (!project.isValid() || !focusedTimelineWidget) {
+            return false;
+        }
+
+        Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineIdx);
+
+        int64_t currentFrame = focusedTimelineWidget->playhead;
+
+        this->wgpuutil->renderFrame(timeline, currentFrame);
+        return true;
     }
-
-    // WId currentId = winId();
-    // if (currentId != lastWinId) {
-    //     this->wgpuutil->updateSurface(this->winId(), getNativeDisplay(windowHandle()));
-    //     lastWinId = currentId;
-    // }
-
-    this->wgpuutil->renderFrame();
+    return false;
 }
 
 void WgpuCanvasWidget::resizeEvent(QResizeEvent *event) {

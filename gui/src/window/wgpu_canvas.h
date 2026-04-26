@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../wrapper/render.h"
+#include "main.h"
 #include <QEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -14,7 +15,7 @@ class WgpuCanvasWidget : public QWidget {
     Q_OBJECT
 
   public:
-    WgpuCanvasWidget();
+    WgpuCanvasWidget(WindowGState *windowState);
 
     WgpuCanvasWidget(const WgpuCanvasWidget &) = delete;
     WgpuCanvasWidget(WgpuCanvasWidget &&) = delete;
@@ -30,7 +31,10 @@ class WgpuCanvasWidget : public QWidget {
         return nullptr;
     }
 
+    bool tryRender();
+
   private:
+    WindowGState *windowState;
     std::optional<WGpuUtil> wgpuutil;
     WId lastWinId = 0;
     QTimer *renderTimer = nullptr;

@@ -29,7 +29,7 @@ pub extern "C" fn req_clip_move_mul(
     let clip_ctxs = clip_ids
         .iter()
         .filter_map(|clip_id| {
-            let (layer_idx, _, clip) = timeline.find_clip_by_id(*clip_id)?;
+            let (layer_idx, clip) = timeline.find_clip_by_id(*clip_id)?;
 
             Some(ClipMoveCtx {
                 clip_id: *clip_id,

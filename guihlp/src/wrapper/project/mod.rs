@@ -5,7 +5,7 @@ pub mod layer;
 pub mod timeline;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn project_get_timeline(ptr: *const Project, id: usize) -> *const Timeline {
+pub extern "C" fn project_get_timeline(ptr: *const Project, id: usize) -> *const Timeline {
     if ptr.is_null() {
         return std::ptr::null();
     }
@@ -19,6 +19,10 @@ pub unsafe extern "C" fn project_get_timeline(ptr: *const Project, id: usize) ->
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn project_get_timeline_count(ptr: *const Project) -> usize {
+pub extern "C" fn project_get_timeline_count(ptr: *const Project) -> usize {
+    if ptr.is_null() {
+        return 0;
+    }
+
     unsafe { (*ptr).get_timeline_count() }
 }

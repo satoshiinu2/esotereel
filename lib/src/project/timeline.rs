@@ -1,6 +1,10 @@
-use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use crate::project::{clip::Clip, clipdata::ClipData, layer::Layer};
+use crate::project::{
+    clip::Clip,
+    clipdata::ClipData,
+    layer::{ClipMap, Layer},
+};
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -17,22 +21,22 @@ impl Timeline {
                 Layer {
                     index: 0,
                     name: "Layer 0".to_string(),
-                    clips: BTreeSet::new(),
+                    clips: ClipMap::new(),
                 },
                 Layer {
                     index: 1,
                     name: "Layer 1".to_string(),
-                    clips: BTreeSet::new(),
+                    clips: ClipMap::new(),
                 },
                 Layer {
                     index: 2,
                     name: "Layer 2".to_string(),
-                    clips: BTreeSet::new(),
+                    clips: ClipMap::new(),
                 },
                 Layer {
                     index: 3,
                     name: "Layer 3".to_string(),
-                    clips: BTreeSet::new(),
+                    clips: ClipMap::new(),
                 },
             ],
             next_clip_id: 0,
@@ -44,30 +48,31 @@ impl Timeline {
         self.next_clip_id += 1;
         id
     }
-    pub fn new_clip(&mut self, position: i64, duration: i64, clip_data: ClipData) -> Clip {
-        Clip {
+    pub fn new_clip(&mut self, position: i64, duration: i64, clip_data: ClipData) -> Arc<Clip> {
+        Arc::new(Clip {
             id: self.new_clip_id(),
             position,
             duration,
             clip_data,
-        }
+        })
     }
 
-    pub fn find_clip_by_id(&self, clip_id: u64) -> Option<(usize, usize, &Clip)> {
+    pub fn find_clip_by_id(&self, clip_id: u64) -> Option<(usize, Arc<Clip>)> {
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            for (clip_idx, clip) in layer.clips.iter().enumerate() {
-                if clip.id == clip_id {
-                    return Some((layer_idx, clip_idx, clip));
-                }
+            if let Some(clip) = layer.clips.get_by_id(clip_id) {
+                return Some((layer_idx, clip));
             }
         }
         None
     }
 
-    pub fn remove_clip_by_id(&mut self, clip_id: u64) {
-        for layer in self.layers.iter_mut() {
-            layer.clips.retain(|c| c.id != clip_id);
+    pub fn remove_clip_by_id(&mut self, clip_id: u64) -> Option<(usize, Arc<Clip>)> {
+        for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
+            if let Some(clip) = layer.clips.remove_by_id(clip_id) {
+                return Some((layer_idx, clip));
+            }
         }
+        None
     }
 
     pub fn can_place_clip_at(

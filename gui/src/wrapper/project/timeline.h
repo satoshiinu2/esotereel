@@ -1,17 +1,20 @@
 #pragma once
 
+#include "clip.h"
 #include "esotereel_gui_helper.h"
 #include "layer.h"
 #include "timeline_layers.h"
+#include <cstddef>
 #include <cstdint>
 #include <set>
+#include <tuple>
 
 using RawTimeline = esotereel_gui_helper::_Timeline;
 
 class Timeline {
+  public:
     const RawTimeline *raw_ptr;
 
-  public:
     Timeline(const RawTimeline *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
@@ -19,16 +22,22 @@ class Timeline {
         return esotereel_gui_helper::timeline_get_layers_count(raw_ptr);
     }
 
-    MLayersIterable layers() const noexcept {
-        return MLayersIterable(raw_ptr);
+    LayersIterable layers() const noexcept {
+        return LayersIterable(raw_ptr);
     }
 
     Layer layerAt(size_t index) const noexcept {
         return Layer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
     }
 
-    MClipLocation findClipById(uint64_t id) const noexcept {
-        return MClipLocation(esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id));
+    std::tuple<Clip, size_t> findClipById(uint64_t id) const noexcept {
+        const RawClip *raw_clip;
+        size_t layerIdx;
+        auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerIdx);
+        if (result != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+            return std::make_tuple(Clip::Empty(), 0);
+        }
+        return std::make_tuple(Clip(raw_clip), layerIdx);
     }
 
     bool canPlaceClipAt(size_t layerIdx, int64_t position, int64_t duration, const std::set<uint64_t> &exclude_set) const {

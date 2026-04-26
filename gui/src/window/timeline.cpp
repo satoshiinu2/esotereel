@@ -4,8 +4,9 @@
 #include <cstddef>
 #include <qpoint.h>
 #include <qwidget.h>
+#include <tuple>
 
-TimelineWidget::TimelineWidget(size_t timelineType) : timelineIdx(timelineType) {
+TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType) : windowState(windowState), timelineIdx(timelineType) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 
@@ -27,13 +28,14 @@ void TimelineWidget::resizeEvent(QResizeEvent *event) {
     vScrollBar->setGeometry(width() - sw, 0, sw, height() - sw);
 }
 
-MClipLocation TimelineWidget::findClipAt(const Timeline &timeline, const QPoint &local) const {
+std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, const QPoint &local) const {
     int64_t frame = this->XToFrame(local.x());
     size_t layerIdx = this->YToLayerIdx(local.y());
 
     // range check
     if (layerIdx >= timeline.layersCount()) {
-        return MClipLocation::Empty();
+        return std::make_tuple(Clip::Empty(), 0);
     }
-    return timeline.layerAt(layerIdx).findClipAtFrame(frame, layerIdx);
+    Clip clip = timeline.layerAt(layerIdx).findClipAtFrame(frame);
+    return std::make_tuple(clip, layerIdx);
 }

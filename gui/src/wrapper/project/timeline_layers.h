@@ -37,11 +37,11 @@ class LayersIterator {
     }
 };
 
-class MLayersIterable {
+class LayersIterable {
     const RawTimeline *raw_ptr;
 
   public:
-    MLayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {}
+    LayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept { return raw_ptr != nullptr; }
 
     size_t layersCount() const noexcept { return esotereel_gui_helper::timeline_get_layers_count(raw_ptr); }

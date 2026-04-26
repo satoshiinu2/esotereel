@@ -2,10 +2,12 @@
 
 #include "../util.h"
 #include "esotereel_gui_helper.h"
+#include "project/timeline.h"
 #include <QWidget>
 #include <qguiapplication_platform.h>
 #include <qlogging.h>
 #include <qwindowdefs.h>
+#include <sys/types.h>
 
 using RawWGpuUtil = esotereel_gui_helper::_WGpuUtil;
 
@@ -48,8 +50,8 @@ class WGpuUtil {
     }
 
     bool isValid() const { return raw_ptr != nullptr; }
-    void renderFrame() {
-        esotereel_gui_helper::render_frame(raw_ptr);
+    void renderFrame(Timeline timeline, u_int64_t currentFrame) {
+        esotereel_gui_helper::render_frame(raw_ptr, timeline.raw_ptr, currentFrame);
     }
 
     void updateSurface(WId winId, void *display) {

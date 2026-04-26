@@ -10,7 +10,7 @@ use crate::project::{ClipUpdateMap, clip_add, clip_move_mul_core};
 pub fn handle_command_action(
     request: &ArchivedCommand,
     timeline: &mut Timeline,
-    updates: &mut ClipUpdateMap,
+    updates: &mut Option<ClipUpdateMap>,
 ) -> EsotereelResult<()> {
     match request {
         ArchivedCommand::ClipsMove { clips } => {

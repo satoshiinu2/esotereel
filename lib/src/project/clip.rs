@@ -14,7 +14,7 @@ pub struct Clip {
 }
 
 impl Clip {
-    pub fn dummy(pos: i64) -> Self {
+    pub fn dummy_at(pos: i64) -> Self {
         Self {
             id: 0,
             position: pos,

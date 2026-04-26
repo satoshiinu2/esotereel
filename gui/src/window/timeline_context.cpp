@@ -12,8 +12,8 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
 
     Timeline timeline = getTimeline();
     if (timeline.isValid()) {
-        auto clipCtx = this->findClipAt(timeline, e->pos());
-        if (clipCtx.isValid()) {
+        auto [clip, layerIdx] = this->findClipAt(timeline, e->pos());
+        if (clip.isValid()) {
             QAction *clipCopyAction = menu.addAction("Copy");
             QObject::connect(clipCopyAction, &QAction::triggered, this, []() {});
 

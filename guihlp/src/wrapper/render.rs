@@ -1,6 +1,9 @@
 use std::ffi::c_void;
 
-use esotereel_lib::render::{surfacetarget::get_surface_target, wgpuutil::WGpuUtil};
+use esotereel_lib::{
+    project::timeline::Timeline,
+    render::{surfacetarget::get_surface_target, wgpuutil::WGpuUtil},
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wgpuutil_init_surface(
@@ -62,11 +65,18 @@ pub unsafe extern "C" fn wgpuutil_update_size(ptr: *mut WGpuUtil, width: u32, he
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn render_frame(ptr: *mut WGpuUtil) {
-    if !ptr.is_null() {
-        let result = unsafe { esotereel_lib::render::render_frame(&mut (*ptr)) };
-        if let Err(err) = result {
-            log::error!("{}", err);
-        }
+pub unsafe extern "C" fn render_frame(
+    ptr_wgpu: *mut WGpuUtil,
+    ptr_timeline: *const Timeline,
+    current_frame: i64,
+) {
+    if ptr_wgpu.is_null() || ptr_timeline.is_null() {
+        return;
+    }
+    let result = unsafe {
+        esotereel_lib::render::render_frame(&mut (*ptr_wgpu), &(*ptr_timeline), current_frame)
+    };
+    if let Err(err) = result {
+        log::error!("{}", err);
     }
 }

@@ -1,14 +1,5 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::clip::Clip;
-
-#[repr(C)]
-pub struct ClipLocation {
-    pub layer_idx: usize,
-    pub clip_idx: usize,
-    pub clip: *const Clip,
-}
-
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 #[repr(C)]

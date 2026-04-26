@@ -16,6 +16,13 @@ pub(crate) static PROJECT: RwLock<Option<Project>> = RwLock::new(None);
 static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
 
 #[repr(C)]
+pub enum WrapperErrorCode {
+    Ok = 0,
+    NullPtr = 1,
+    NotFound = 2,
+    Panic = 3,
+}
+#[repr(C)]
 pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
     pub on_update_timeline: extern "C" fn(timeline_type: usize),

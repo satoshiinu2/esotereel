@@ -1,5 +1,7 @@
+use std::{collections::HashMap, sync::Arc};
+
 use crate::{
-    project::timeline::Timeline,
+    project::{clip::Clip, clipdata::ClipData, timeline::Timeline},
     util::error::{EsotereelError, EsotereelResult},
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
@@ -10,6 +12,8 @@ pub mod commands;
 pub mod layer;
 pub mod timeline;
 pub mod util;
+
+pub type ClipUpdateMap = HashMap<u32, Vec<Arc<Clip>>>;
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
@@ -36,5 +40,18 @@ impl Project {
     }
     pub fn get_timeline_count(&self) -> usize {
         self.timelines.len()
+    }
+
+    pub fn debug_add_clips(&mut self, timeline_idx: usize, layer_idx: usize) {
+        for i in 0..5 {
+            let new_pl_clip = {
+                let timeline = self.get_timeline_mut(timeline_idx).unwrap();
+                timeline.new_clip(i * 100, 50, ClipData::Dummy)
+            };
+
+            self.get_timeline_mut(timeline_idx).unwrap().layers[layer_idx]
+                .try_insert(new_pl_clip)
+                .unwrap();
+        }
     }
 }

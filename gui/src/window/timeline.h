@@ -14,6 +14,9 @@
 #include <qpair.h>
 #include <qpoint.h>
 #include <set>
+#include <variant>
+
+struct WindowGState;
 
 constexpr qreal CLIP_ROUND_RADIUS = 3;
 constexpr int RULER_STEP = 10;
@@ -26,13 +29,10 @@ constexpr float_t SCROLLBAR_SIZE = 12.0;
 constexpr double_t DEFAULT_FRAME_COUNT = 300;
 constexpr double_t DEFAULT_LAYER_LEN = 1;
 
-struct SelectionRect {
-    QPointF start;
-    QPointF current;
-};
+struct DragNone {};
+struct DragOther {};
 
-class ClipDragState {
-  public:
+struct DragClip {
     size_t srcLayerIdx;
     uint64_t srcFrame;
     size_t curLayerIdx;
@@ -40,6 +40,20 @@ class ClipDragState {
     QPointF ghostPos;
     bool isWrong;
 };
+
+struct DragAreaSel {
+    QPointF start;
+    QPointF current;
+};
+
+struct DragPlayHead {};
+
+using DragState = std::variant<
+    DragNone,
+    DragOther,
+    DragClip,
+    DragAreaSel,
+    DragPlayHead>;
 
 class TimelineWidget : public QWidget {
     Q_OBJECT
@@ -51,7 +65,7 @@ class TimelineWidget : public QWidget {
     int64_t playhead = 0;
     std::set<uint64_t> selectedClipIds; // clipid
 
-    TimelineWidget(size_t timelineType);
+    TimelineWidget(WindowGState *windowState, size_t timelineType);
 
     double_t frameToX(int64_t frame) const noexcept {
         return frame * this->zoom - this->scroll.x() + LABEL_WIDTH;
@@ -79,7 +93,7 @@ class TimelineWidget : public QWidget {
     }
 
     Timeline getTimeline() {
-        Project project = getProject();
+        Project project = Project::getProject();
         return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     }
 
@@ -97,14 +111,13 @@ class TimelineWidget : public QWidget {
     QScrollBar *hScrollBar;
     QScrollBar *vScrollBar;
 
-    std::optional<SelectionRect> selectionRect;
-    std::optional<ClipDragState> dragState;
-    bool isDragging = false;
+    DragState dragState = DragNone{};
+    WindowGState *windowState;
     std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
 
     QRect getInnerRect() const noexcept;
-    MClipLocation findClipAt(const Timeline &timeline, const QPoint &local) const;
+    std::tuple<Clip, size_t> findClipAt(const Timeline &timeline, const QPoint &local) const;
 
     void drawLayers(const Timeline &timeline, QPainter &p, const QRect &r) const;
     void drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const;
@@ -113,16 +126,16 @@ class TimelineWidget : public QWidget {
     void drawSelectionRect(QPainter &p, const QRect &r) const;
     void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
 
-    bool handleDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
-    void handleDragContinue(const Timeline &timeline, const QPoint &local);
-    void handleDragDrop(const Timeline &timeline, const QPoint &local);
+    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
+    void handleClipDragContinue(const Timeline &timeline, const QPoint &local);
+    void handleClipDraggingDrop(const Timeline &timeline, const QPoint &local);
 
     bool handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl);
-    void handleAreaSelStart(const QPoint &mousePos, bool ctrl);
+    std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
     void handleAreaSelEnd(const Timeline &timeline);
 
-    void onDragStarted(QMouseEvent *e, QPoint firstClickPos);
+    DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
     void onDragEnd(QMouseEvent *e);
 

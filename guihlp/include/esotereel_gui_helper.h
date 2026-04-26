@@ -8,6 +8,13 @@
 
 namespace esotereel_gui_helper {
 
+enum class _WrapperErrorCode {
+  Ok = 0,
+  NullPtr = 1,
+  NotFound = 2,
+  Panic = 3,
+};
+
 struct _Clip;
 
 struct _ClipIterator;
@@ -33,12 +40,6 @@ struct _StringView {
 using _OnSendFn = void(*)(const uint8_t*, uintptr_t);
 
 using _LogOutCStrFn = void(*)(uintptr_t level, const uint8_t *ptr, uintptr_t len);
-
-struct _ClipLocation {
-  uintptr_t layer_idx;
-  uintptr_t clip_idx;
-  const _Clip *clip;
-};
 
 extern "C" {
 
@@ -73,25 +74,26 @@ int64_t clip_get_position(const _Clip *ptr);
 
 int64_t clip_get_duration(const _Clip *ptr);
 
-_ClipLocation layer_find_clip_at_frame(const _Layer *ptr, int64_t frame, uintptr_t layer_idx);
-
-const _Clip *layer_get_clip_at_slow(const _Layer *ptr, uintptr_t idx);
+_WrapperErrorCode layer_find_clip_at_frame(const _Layer *ptr, int64_t frame, const _Clip **out);
 
 uintptr_t layer_get_clips_count(const _Layer *ptr);
 
 _StringView layer_get_name(const _Layer *ptr);
 
-_ClipIterator *layer_clips_begin(const _Layer *layer);
+_WrapperErrorCode layer_clips_begin(const _Layer *layer, _ClipIterator **out);
 
-const _Clip *clip_iter_next(_ClipIterator *iter);
+_WrapperErrorCode clip_iter_next(_ClipIterator *iter_ptr, const _Clip **out);
 
-void clip_iter_free(_ClipIterator *iter);
+_WrapperErrorCode clip_iter_free(_ClipIterator *iter);
 
 const _Layer *timeline_get_layer_at(const _Timeline *ptr, uintptr_t l_idx);
 
 uintptr_t timeline_get_layers_count(const _Timeline *ptr);
 
-_ClipLocation timeline_find_clip_by_id(const _Timeline *ptr, uint64_t clip_id);
+_WrapperErrorCode timeline_find_clip_by_id(const _Timeline *ptr,
+                                           uint64_t clip_id,
+                                           const _Clip **out_clip,
+                                           uintptr_t *out_layer_idx);
 
 bool timeline_can_place_clip_at(const _Timeline *ptr,
                                 uintptr_t layer_idx,
@@ -112,7 +114,7 @@ void wgpuutil_update_surface(_WGpuUtil *ptr, void *window_ptr, void *display_ptr
 
 void wgpuutil_update_size(_WGpuUtil *ptr, uint32_t width, uint32_t height);
 
-void render_frame(_WGpuUtil *ptr);
+void render_frame(_WGpuUtil *ptr_wgpu, const _Timeline *ptr_timeline, int64_t current_frame);
 
 void req_test();
 

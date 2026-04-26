@@ -1,12 +1,7 @@
-use std::slice;
-
 use esotereel_lib::{
-    project::{clipdata::ClipData, commands::Command},
+    project::commands::Command,
     requests::{Request, send_request},
-    util::types::ClipMoveCtx,
 };
-
-use crate::PROJECT;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_test() {
