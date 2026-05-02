@@ -10,6 +10,7 @@
 #include <tuple>
 
 using RawTimeline = esotereel_gui_helper::_Timeline;
+using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
 
 class Timeline {
   public:
@@ -34,7 +35,7 @@ class Timeline {
         const RawClip *raw_clip;
         size_t layerIdx;
         auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerIdx);
-        if (result != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+        if (result != WrapperErrorCode::Ok) {
             return std::make_tuple(Clip::Empty(), 0);
         }
         return std::make_tuple(Clip(raw_clip), layerIdx);

@@ -1,6 +1,6 @@
 use esotereel_lib::{
     project::{clipdata::ClipData, commands::ArchivedCommand, timeline::Timeline},
-    util::error::EsotereelResult,
+    util::result::EsotereelResult,
 };
 
 use rkyv::Deserialize as _;

@@ -7,33 +7,32 @@
 
 using RawStringView = esotereel_gui_helper::_StringView;
 
-struct StringView {
-    const uint8_t *ptr;
-    size_t len;
+namespace StringView {
+static std::string toStdString(const RawStringView &raw) {
+    return std::string(reinterpret_cast<const char *>(raw.ptr), raw.len);
+}
 
-    StringView(const RawStringView &raw) : ptr(raw.ptr), len(raw.len) {
+static QString toQstring(const RawStringView &raw) {
+    if (!raw.ptr || raw.len == 0) {
+        return QString();
     }
 
-    std::string
-    toStdString() const {
-        return std::string(reinterpret_cast<const char *>(ptr), len);
+    return QString::fromUtf8(reinterpret_cast<const char *>(raw.ptr), static_cast<int>(raw.len));
+}
+
+static RawStringView fromStdString(const std::string &str) {
+    if(str.empty()) {
+        return {nullptr, 0};
     }
+    return {reinterpret_cast<const uint8_t *>(str.data()), str.size()};
+}
 
-    QString toQstring() const {
-        if (!ptr || len == 0) {
-            return QString();
-        }
-
-        return QString::fromUtf8(reinterpret_cast<const char *>(ptr), static_cast<int>(len));
+static RawStringView fromQstring(const QString &str) {
+    if (str.isEmpty()) {
+        return {nullptr, 0};
     }
+    QByteArray utf8 = str.toUtf8();
+    return {reinterpret_cast<const uint8_t *>(utf8.constData()), static_cast<size_t>(utf8.size())};
+}
 
-    static QString toQstring(const RawStringView &raw) {
-        if (!raw.ptr || raw.len == 0) {
-            return QString();
-        }
-
-        return QString::fromUtf8(reinterpret_cast<const char *>(raw.ptr), static_cast<int>(raw.len));
-    }
-
-    bool isValid() const noexcept { return ptr != nullptr; }
-};
+}; // namespace StringView

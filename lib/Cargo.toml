@@ -11,5 +11,8 @@ bytemuck = "1.25.0"
 log = "0.4.29"
 pollster = "0.4.0"
 raw-window-handle = "0.6.2"
-rkyv = { version = "0.7.10", features = ["validation"] }
+rkyv = { version = "0.7.46", features = ["validation"] }
 wgpu = "29.0.1"
+ffmpeg-next = "8.1.0"
+image = "0.25.10"
+dashmap = "6.1.0"

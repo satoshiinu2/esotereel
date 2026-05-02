@@ -1,22 +1,28 @@
 #include "window/main.h"
-#include "esotereel_gui_helper.h"
+#include "log.h"
 #include "network/boot.h"
-#include "network/client.h"
+#include "wrapper/internalserver.h"
+#include "wrapper/network.h"
+#include "wrapper/requests.h"
+#include "wrapper/stringview.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QTimer>
 #include <QWidget>
+#include <qcontainerfwd.h>
 #include <qdebug.h>
 #include <qglobal.h>
 
-Q_LOGGING_CATEGORY(logRust, "rust.core")
+Q_LOGGING_CATEGORY(logRust, "lib")
 
 void bootcore(QString corePath);
 void setCallBacks();
 
 MainWindow *window;
-Client client;
+ClientNetworkHandler network;
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
@@ -27,38 +33,16 @@ int main(int argc, char **argv) {
     window = &w;
     w.show();
 
-    if (argc < 2) {
-        qDebug() << "Usage: gui <code_path>";
-    }
-    QString corePath = argv[1];
-    bootcore(corePath);
-    client.connectToCore();
+    QString addr = "0.0.0.0:12345";
+    InternalServer::internalServerStart(addr);
+    network.run(addr);
 
     return app.exec();
 }
 
-void on_send_cb(const uint8_t *ptr, size_t len) {
-    QByteArray data(reinterpret_cast<const char *>(ptr), len);
-    client.send(data);
-}
-
-void q_log_callback(size_t level, const uint8_t *ptr, size_t len) {
-    QString message = QString::fromUtf8(reinterpret_cast<const char *>(ptr), static_cast<int>(len));
-
-    switch (level) {
-    case 1:
-        qCritical(logRust).noquote() << message;
-        break;
-    case 2:
-        qWarning(logRust).noquote() << message;
-        break;
-    case 3:
-        qInfo(logRust).noquote() << message;
-        break;
-    default:
-        qDebug(logRust).noquote() << message;
-        break;
-    }
+void onConnectedCallBack() {
+    // placeholder
+    Requests::newProject();
 }
 
 void setCallBacks() {
@@ -69,9 +53,11 @@ void setCallBacks() {
     callbacks.on_update_timeline = +[](size_t id) {
         window->onUpdateTimeline(id);
     };
+    callbacks.on_stream_frame = +[](uint32_t resource_id, uint32_t width, uint32_t height, const uint8_t *data) {
+    };
 
     esotereel_gui_helper::init();
     esotereel_gui_helper::init_rust_logger(q_log_callback);
     esotereel_gui_helper::set_gui_callbacks(callbacks);
-    esotereel_gui_helper::set_send_callback(on_send_cb);
+    esotereel_gui_helper::set_on_connected_callback(onConnectedCallBack);
 }

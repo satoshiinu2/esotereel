@@ -21,9 +21,5 @@ void bootcore(QString corePath) {
         });
     coreProcess->start();
 
-    if (!coreProcess->waitForStarted()) {
-        qDebug() << "failed to start core";
-    } else {
-        qDebug() << "core started!";
-    }
+    qDebug() << "Core process started (non-blocking). Client will attempt to connect.";
 }

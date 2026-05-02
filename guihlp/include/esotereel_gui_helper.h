@@ -12,8 +12,11 @@ enum class _WrapperErrorCode {
   Ok = 0,
   NullPtr = 1,
   NotFound = 2,
-  Panic = 3,
+  Error = 3,
+  Panic = 4,
 };
+
+struct _ClientNetworkHandler;
 
 struct _Clip;
 
@@ -30,16 +33,17 @@ struct _WGpuUtil;
 struct _GuiCallbacks {
   void (*on_test)();
   void (*on_update_timeline)(uintptr_t timeline_type);
+  void (*on_stream_frame)(uint32_t resource_id, uint32_t width, uint32_t height, const uint8_t *data);
 };
+
+using _OnConnectedFn = void(*)();
 
 struct _StringView {
   const uint8_t *ptr;
   uintptr_t len;
 };
 
-using _OnSendFn = void(*)(const uint8_t*, uintptr_t);
-
-using _LogOutCStrFn = void(*)(uintptr_t level, const uint8_t *ptr, uintptr_t len);
+using _LogOutCStrFn = void(*)(uintptr_t level, _StringView target, _StringView msg);
 
 extern "C" {
 
@@ -47,22 +51,28 @@ void init();
 
 void set_gui_callbacks(_GuiCallbacks callbacks);
 
-_StringView parse_responce(const uint8_t *ptr, uintptr_t len);
-
-void set_send_callback(_OnSendFn callback);
+void set_on_connected_callback(_OnConnectedFn callback);
 
 const _Project *get_project();
 
-void req_clip_move_mul(uintptr_t timeline_idx,
-                       const uint64_t *ptr,
-                       uintptr_t len,
-                       int64_t position_moved,
-                       int64_t duration_added,
-                       intptr_t layer_moved);
+void req_cmd_clip_move_mul(uintptr_t timeline_idx,
+                           const uint64_t *ptr,
+                           uintptr_t len,
+                           int64_t position_moved,
+                           int64_t duration_added,
+                           intptr_t layer_moved);
 
-void req_add_clip_dummy(uintptr_t timeline_idx, int64_t position, uintptr_t layer_idx);
+void req_cmd_add_clip_dummy(uintptr_t timeline_idx, int64_t position, uintptr_t layer_idx);
+
+_WrapperErrorCode internal_server_start(_StringView addr);
 
 void init_rust_logger(_LogOutCStrFn callback);
+
+_WrapperErrorCode client_network_handler_run(const _ClientNetworkHandler *ptr, _StringView addr);
+
+_WrapperErrorCode client_network_handler_new(const _ClientNetworkHandler **out);
+
+_WrapperErrorCode client_network_handler_drop(const _ClientNetworkHandler *ptr);
 
 const _Timeline *project_get_timeline(const _Project *ptr, uintptr_t id);
 
@@ -119,6 +129,8 @@ void render_frame(_WGpuUtil *ptr_wgpu, const _Timeline *ptr_timeline, int64_t cu
 void req_test();
 
 void req_new_project();
+
+_WrapperErrorCode req_load_stream(_StringView path);
 
 }  // extern "C"
 

@@ -7,6 +7,7 @@ use crate::{
 
 pub mod builder;
 pub mod pipeline;
+pub mod streamreq;
 pub mod surfacetarget;
 pub mod uniform;
 pub mod vertex;

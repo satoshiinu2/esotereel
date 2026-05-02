@@ -1,19 +1,39 @@
+use log::{LevelFilter, Log, Metadata, Record};
 use std::sync::OnceLock;
 
-use esotereel_lib::util::logger::init_logger;
+use crate::wrapper::stringview::StringView;
 
-pub type LogOutCStrFn = extern "C" fn(level: usize, ptr: *const u8, len: usize);
+pub type LogOutCStrFn = extern "C" fn(level: usize, target: StringView, msg: StringView);
 
 pub(crate) static LOG_C_CALLBACK: OnceLock<LogOutCStrFn> = OnceLock::new();
+
+struct GuiLogger;
+
+static LOGGER: GuiLogger = GuiLogger;
+
+impl Log for GuiLogger {
+    fn enabled(&self, _metadata: &Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &Record) {
+        if let Some(log_cb) = LOG_C_CALLBACK.get() {
+            let target = record.target();
+            let msg = format!("{}", record.args());
+
+            // C側にターゲット情報とメッセージを渡す
+            // .as_str() を介することで、msg (String) の所有権をこの関数に留め、
+            // コールバックが終わるまでメモリを保護します。
+            log_cb(record.level() as usize, target.into(), msg.as_str().into());
+        }
+    }
+
+    fn flush(&self) {}
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_rust_logger(callback: LogOutCStrFn) {
     LOG_C_CALLBACK.set(callback).ok();
-    init_logger(log_out_callback_wrapper);
-}
-
-fn log_out_callback_wrapper(level: usize, msg: String) {
-    if let Some(log_cb) = LOG_C_CALLBACK.get() {
-        log_cb(level, msg.as_ptr(), msg.len());
-    }
+    let _ = log::set_logger(&LOGGER);
+    log::set_max_level(LevelFilter::Debug);
 }

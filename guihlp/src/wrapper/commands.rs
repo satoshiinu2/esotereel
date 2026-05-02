@@ -5,10 +5,10 @@ use esotereel_lib::{
     util::types::ClipMoveCtx,
 };
 
-use crate::{PROJECT, wrapper::requests::req_command};
+use crate::{network::ClientNetworkHandler, wrapper::requests::req_command};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_clip_move_mul(
+pub extern "C" fn req_cmd_clip_move_mul(
     timeline_idx: usize,
     ptr: *const u64,
     len: usize,
@@ -16,7 +16,12 @@ pub extern "C" fn req_clip_move_mul(
     duration_added: i64,
     layer_moved: isize,
 ) {
-    let lock = PROJECT.read().unwrap();
+    let Some(network) = ClientNetworkHandler::get_instance() else {
+        return;
+    };
+    let app_state = &network.app_state;
+
+    let lock = app_state.project.read().unwrap();
     let Some(project) = lock.as_ref() else {
         return;
     };
@@ -46,7 +51,7 @@ pub extern "C" fn req_clip_move_mul(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_add_clip_dummy(timeline_idx: usize, position: i64, layer_idx: usize) {
+pub extern "C" fn req_cmd_add_clip_dummy(timeline_idx: usize, position: i64, layer_idx: usize) {
     let command = Command::AddClip {
         layer_idx,
         position,

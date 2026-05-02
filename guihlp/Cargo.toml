@@ -8,6 +8,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
-rkyv = { version = "0.7.10", features = ["validation"] }
+esotereel_core= { package = "esotereel_core", path = "../core" }
+rkyv = { version = "0.7.46", features = ["validation"] }
 bytecheck = "0.6"
 log = "0.4.29"
+tokio = { version = "1.51.1", features = ["full"]}

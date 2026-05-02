@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::{
     project::{clip::Clip, clipdata::ClipData, timeline::Timeline},
-    util::error::{EsotereelError, EsotereelResult},
+    util::result::{EsotereelError, EsotereelResult},
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
@@ -42,16 +42,27 @@ impl Project {
         self.timelines.len()
     }
 
-    pub fn debug_add_clips(&mut self, timeline_idx: usize, layer_idx: usize) {
+    pub fn debug_add_clips(&mut self, timeline_idx: usize) {
         for i in 0..5 {
             let new_pl_clip = {
                 let timeline = self.get_timeline_mut(timeline_idx).unwrap();
                 timeline.new_clip(i * 100, 50, ClipData::Dummy)
             };
 
-            self.get_timeline_mut(timeline_idx).unwrap().layers[layer_idx]
+            self.get_timeline_mut(timeline_idx).unwrap().layers[i as usize]
                 .try_insert(new_pl_clip)
                 .unwrap();
         }
+    }
+
+    pub fn rebuild_id_map(&mut self) -> EsotereelResult<()> {
+        for i in 0..self.get_timeline_count() {
+            let timeline = self.get_timeline_mut(i)?;
+            timeline
+                .layers
+                .iter_mut()
+                .for_each(|l| l.clips.rebuild_id_map());
+        }
+        Ok(())
     }
 }

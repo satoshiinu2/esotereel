@@ -1,19 +1,11 @@
-use esotereel_lib::project::Project;
+use esotereel_core::server_network_start;
 use esotereel_lib::util::logger::init_logger;
 
-use std::sync::RwLock;
-
-use crate::network::start_poll_packets;
-
-mod network;
-mod project;
-mod requests;
-
-pub static PROJECT: RwLock<Option<Project>> = RwLock::new(None);
-fn main() {
+#[tokio::main]
+async fn main() {
     init_logger(log_out_callback);
 
-    start_poll_packets();
+    server_network_start("0.0.0.0:12345").await;
 }
 
 fn log_out_callback(level: usize, msg: String) {

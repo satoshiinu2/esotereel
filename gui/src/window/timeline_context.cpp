@@ -20,8 +20,12 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
             QAction *clipDeleteAction = menu.addAction("Delete");
             QObject::connect(clipDeleteAction, &QAction::triggered, this, []() {});
         } else {
+            QPoint pos = e->pos();
             QAction *clipAddAction = menu.addAction("Add clip");
-            QObject::connect(clipAddAction, &QAction::triggered, this, [&e, this]() { this->addClipAt(e->pos()); });
+            QObject::connect(clipAddAction, &QAction::triggered, this, [pos, this]() { this->addClipAt(pos); });
+
+            QAction *clipTestAction = menu.addAction("request test");
+            QObject::connect(clipTestAction, &QAction::triggered, this, [this]() { Requests::loadStream("/home/satoshiinu/Videos/3.mp4"); });
         }
     }
 

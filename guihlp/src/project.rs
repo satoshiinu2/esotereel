@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use esotereel_lib::project::clip::Clip;
 use esotereel_lib::project::{ClipUpdateMap, Project};
-use esotereel_lib::util::error::EsotereelResult;
+use esotereel_lib::util::result::EsotereelResult;
 use rkyv::Deserialize;
 
 pub(crate) fn clip_apply_updates(

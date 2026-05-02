@@ -1,14 +1,25 @@
-use std::sync::RwLockWriteGuard;
+use std::sync::RwLockReadGuard;
 
-use crate::{project::Project, util::error::EsotereelResult};
+use crate::{project::Project, util::result::EsotereelResult};
 
 pub trait ProjectExt {
-    fn project_err(&mut self) -> EsotereelResult<&mut Project>;
+    fn project_err(&self) -> EsotereelResult<&Project>;
 }
 
-impl ProjectExt for RwLockWriteGuard<'_, Option<Project>> {
-    fn project_err(&mut self) -> EsotereelResult<&mut Project> {
+impl ProjectExt for RwLockReadGuard<'_, Option<Project>> {
+    fn project_err(&self) -> EsotereelResult<&Project> {
+        self.as_ref()
+            .ok_or(crate::util::result::EsotereelError::ProjectNotFound)
+    }
+}
+
+pub trait ProjectMutExt {
+    fn project_mut_err(&mut self) -> EsotereelResult<&mut Project>;
+}
+
+impl ProjectMutExt for Option<Project> {
+    fn project_mut_err(&mut self) -> EsotereelResult<&mut Project> {
         self.as_mut()
-            .ok_or(crate::util::error::EsotereelError::ProjectNotFound)
+            .ok_or(crate::util::result::EsotereelError::ProjectNotFound)
     }
 }

@@ -10,7 +10,7 @@ use rkyv::{
 
 use crate::{
     project::clip::Clip,
-    util::error::{EsotereelError, EsotereelResult},
+    util::result::{EsotereelError, EsotereelResult},
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]

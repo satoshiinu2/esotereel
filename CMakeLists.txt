@@ -98,15 +98,15 @@ if(WIN32)
     )
 endif()
 
-# ポート使ってるやつ消す
-if(UNIX AND NOT APPLE)
-    add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
-else()
-    add_custom_target(cleanup_port)
-endif()
+# # ポート使ってるやつ消す
+# if(UNIX AND NOT APPLE)
+#     add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
+# else()
+#     add_custom_target(cleanup_port)
+# endif()
 
-# 依存関係
-add_dependencies(esotereel_gui rust_workspace cleanup_port)
+# # 依存関係
+# add_dependencies(esotereel_gui rust_workspace cleanup_port)
 
 # ライブラリリンク
 target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include")

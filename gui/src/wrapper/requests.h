@@ -1,6 +1,8 @@
 #pragma once
 
 #include "esotereel_gui_helper.h"
+#include "stringview.h"
+#include <QString>
 #include <cstddef>
 #include <vector>
 
@@ -11,8 +13,7 @@ class Requests {
     }
 
     static void moveClips(uint64_t timelineIdx, const std::vector<uint64_t> &clipIds, int64_t posMoved, int64_t durationMoved, int64_t layerMoved) noexcept {
-
-        esotereel_gui_helper::req_clip_move_mul(
+        esotereel_gui_helper::req_cmd_clip_move_mul(
             timelineIdx,
             clipIds.data(),
             clipIds.size(),
@@ -22,6 +23,10 @@ class Requests {
     }
 
     static void addClipAt(uint64_t timelineIdx, int64_t position, size_t layerIdx) noexcept {
-        esotereel_gui_helper::req_add_clip_dummy(timelineIdx, position, layerIdx);
+        esotereel_gui_helper::req_cmd_add_clip_dummy(timelineIdx, position, layerIdx);
+    }
+
+    static void loadStream(QString path) noexcept {
+        esotereel_gui_helper::req_load_stream(StringView::fromQstring(path));
     }
 };

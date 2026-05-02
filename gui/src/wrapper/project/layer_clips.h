@@ -7,6 +7,7 @@
 using RawLayer = esotereel_gui_helper::_Layer;
 using RawClip = esotereel_gui_helper::_Clip;
 using RawClipIterator = esotereel_gui_helper::_ClipIterator;
+using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
 
 class ClipsIterator {
     RawClipIterator *rust_iter_ptr;
@@ -17,7 +18,7 @@ class ClipsIterator {
             return nullptr;
 
         RawClipIterator *result = nullptr;
-        if (esotereel_gui_helper::layer_clips_begin(t, &result) != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+        if (esotereel_gui_helper::layer_clips_begin(t, &result) != WrapperErrorCode::Ok) {
             return nullptr;
         }
         return result;
@@ -52,7 +53,7 @@ class ClipsIterator {
     void advance() noexcept {
         if (rust_iter_ptr) {
             auto result = esotereel_gui_helper::clip_iter_next(rust_iter_ptr, &cur_ptr);
-            if (result != esotereel_gui_helper::_WrapperErrorCode::Ok) {
+            if (result != WrapperErrorCode::Ok) {
                 cur_ptr = nullptr;
                 esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
                 rust_iter_ptr = nullptr;
