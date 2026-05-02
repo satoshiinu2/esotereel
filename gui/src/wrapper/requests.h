@@ -27,6 +27,9 @@ class Requests {
     }
 
     static void loadStream(QString path) noexcept {
-        esotereel_gui_helper::req_load_stream(StringView::fromQstring(path));
+        QByteArray pathUtf8 = path.toUtf8();
+        auto pathView = StringView::fromQUtf8String(pathUtf8);
+
+        esotereel_gui_helper::req_load_stream(pathView);
     }
 };

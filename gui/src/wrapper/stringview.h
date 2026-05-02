@@ -21,17 +21,13 @@ static QString toQstring(const RawStringView &raw) {
 }
 
 static RawStringView fromStdString(const std::string &str) {
-    if(str.empty()) {
+    if (str.empty()) {
         return {nullptr, 0};
     }
     return {reinterpret_cast<const uint8_t *>(str.data()), str.size()};
 }
 
-static RawStringView fromQstring(const QString &str) {
-    if (str.isEmpty()) {
-        return {nullptr, 0};
-    }
-    QByteArray utf8 = str.toUtf8();
+static RawStringView fromQUtf8String(QByteArray utf8) {
     return {reinterpret_cast<const uint8_t *>(utf8.constData()), static_cast<size_t>(utf8.size())};
 }
 

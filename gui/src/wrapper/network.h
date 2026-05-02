@@ -54,9 +54,14 @@ class ClientNetworkHandler {
 
     bool isValid() const { return raw_ptr != nullptr; }
     bool run(QString addr) {
-        if (!isValid())
+        if (!isValid()) {
             return false;
-        auto res = esotereel_gui_helper::client_network_handler_run(raw_ptr, StringView::fromQstring(addr));
+        }
+
+        QByteArray addrUtf8 = addr.toUtf8();
+        auto addrView = StringView::fromQUtf8String(addrUtf8);
+        
+        auto res = esotereel_gui_helper::client_network_handler_run(raw_ptr, addrView);
         if (res != WrapperErrorCode::Ok) {
             qWarning() << "Failed to start network worker:" << (int)res;
         }
