@@ -1,23 +1,34 @@
+use crate::render::video::
+    update_timline_clips_texture
+;
 use wgpu::CurrentSurfaceTexture;
 
 use crate::{
+    ClientState,
     project::timeline::Timeline,
-    render::{builder::build_vertices, wgpuutil::WGpuUtil},
+    render::{builder::build_vertices, vertex::Vertex, wgpuutil::WGpuUtil},
 };
 
 pub mod builder;
 pub mod pipeline;
-pub mod streamreq;
 pub mod surfacetarget;
 pub mod uniform;
 pub mod vertex;
+pub mod video;
 pub mod wgpuutil;
+
+pub struct RenderBatch {
+    pub vertices: Vec<Vertex>,
+    pub bind_group: wgpu::BindGroup,
+}
 
 pub fn render_frame(
     util: &mut WGpuUtil,
     timeline: &Timeline,
+    app_state: &ClientState,
     current_frame: i64,
 ) -> Result<(), String> {
+
     if util.config.width == 0 || util.config.height == 0 {
         return Err("window size is 0".into());
     }
@@ -33,10 +44,15 @@ pub fn render_frame(
         .create_view(&wgpu::TextureViewDescriptor::default());
     let mut encoder = util
         .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Encoder"),
+        });
+
+    // 1. 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
+    update_timline_clips_texture(util, app_state, timeline, current_frame);
 
     // 頂点作成
-    let vertices = build_vertices(timeline, current_frame);
+    let vertices = build_vertices(timeline, app_state, current_frame);
 
     let screen_size = [util.config.width as f32, util.config.height as f32];
 
@@ -67,13 +83,25 @@ pub fn render_frame(
 
         // 4. 描画実行（pipeline.rs の render から write_buffer を除いたもの）
         if !vertices.is_empty() {
-            util.resources.render(
-                &util.device,
-                &util.queue,
-                &mut rpass,
-                screen_size,
-                &vertices[..],
-            );
+            let batches: Vec<RenderBatch> = vertices
+                .into_iter()
+                .map(|b| {
+                    // texture_id に対応する BindGroup を取得。なければダミーを使用。
+                    let bind_group = util
+                        .textures
+                        .get(&b.texture_id)
+                        .map(|(_, bg)| bg.clone())
+                        .unwrap_or_else(|| util.resources.dummy_bind_group.clone());
+
+                    RenderBatch {
+                        vertices: b.vertices,
+                        bind_group,
+                    }
+                })
+                .collect();
+
+            util.resources
+                .render(&util.device, &util.queue, &mut rpass, screen_size, &batches);
         }
     }
 

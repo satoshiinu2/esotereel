@@ -33,7 +33,7 @@ class LayersIterator {
 
     // 間接参照 (*it) -> ここで LayerRef を生成して返す
     Layer operator*() const noexcept {
-        return Layer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
+        return Layer(esotereel_gui_helper::timeline_get_layer_by_layer_handle(raw_ptr, index));
     }
 };
 

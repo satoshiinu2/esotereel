@@ -1,15 +1,21 @@
+use std::sync::Arc;
+
 use esotereel_lib::{
-    ClientState, decode::videoreciever::StreamReciever, project::Project,
-    responces::ArchivedResponse, util::result::EsotereelResult,
+    StreamState,
+    decode::streamplayer::StreamPlayer,
+    project::Project,
+    responces::ArchivedResponse,
+    util::result::{EsotereelError, EsotereelResult},
 };
 use rkyv::{Deserialize, de::deserializers::SharedDeserializeMap};
 
-use crate::{project::clip_apply_updates, update_stream_frame, update_timeline};
+use crate::{network::ClientNetworkHandler, project::clip_apply_updates, update_timeline};
 
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
-    app_state: &ClientState,
+    network: &Arc<ClientNetworkHandler>,
 ) -> EsotereelResult<()> {
+    let app_state = &network.app_state;
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
@@ -22,9 +28,11 @@ pub(super) fn on_responce_recveve(
             real_project.rebuild_id_map()?;
 
             let timeline_len = real_project.get_timeline_count();
+            let project_arc = Arc::new(real_project);
+
+            *network.app_state.project.write().unwrap() = Some(project_arc.clone());
 
             // dbg!(real_project.clone());
-            *app_state.project.write().unwrap() = Some(real_project);
             for i in 0..timeline_len {
                 update_timeline(i);
             }
@@ -34,28 +42,42 @@ pub(super) fn on_responce_recveve(
             updates,
         } => {
             if let Some(project) = app_state.project.write().unwrap().as_mut() {
+                let project = Arc::make_mut(project);
                 clip_apply_updates(project, *timeline_type as usize, updates)?;
             };
             update_timeline(*timeline_type as usize);
         }
         ArchivedResponse::StreamMetadata {
+            path,
             resource_id,
             codec_id,
             width,
             height,
+            time_base,
             extradata,
             ..
         } => {
             let codec_id = unsafe { std::mem::transmute(*codec_id) };
 
-            let player =
-                StreamReciever::new_from_metadata(codec_id, *width, *height, extradata.as_slice())
-                    .map_err(|e| {
-                        esotereel_lib::util::result::EsotereelError::IoError(e.to_string())
-                    })?;
+            let player = StreamPlayer::new_from_metadata(
+                codec_id,
+                *width,
+                *height,
+                *time_base,
+                extradata.as_slice(),
+            )
+            .map_err(|e| esotereel_lib::util::result::EsotereelError::IoError(e.to_string()))?;
 
             app_state.streams.insert(*resource_id, player);
-            log::info!("Player initialized for resource: {}", resource_id);
+            app_state
+                .path_to_stream
+                .insert(path.as_ref().to_owned(), StreamState::Loaded(*resource_id));
+
+            log::info!(
+                "Player initialized for resource: {} ({})",
+                resource_id,
+                path
+            );
         }
         ArchivedResponse::StreamData {
             resource_id,
@@ -74,15 +96,9 @@ pub(super) fn on_responce_recveve(
                 }
 
                 // パケットをデコードしてフレームを取得
-                if let Some(frame) = player.process_packet(data, pts, dts, *is_key) {
-                    // GUI側のコールバックを呼び出して描画を依頼
-                    update_stream_frame(
-                        *resource_id,
-                        frame.width(),
-                        frame.height(),
-                        frame.data(0).as_ptr(),
-                    );
-                }
+                player
+                    .process_packet(data, pts, dts, *is_key)
+                    .map_err(|e| EsotereelError::DecodeError(e.to_string()))?;
             }
         }
     }

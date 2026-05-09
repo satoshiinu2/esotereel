@@ -12,18 +12,24 @@
 #include <qwidget.h>
 
 void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
-    if (mousePos.y() > RULER_HEIGHT) {
-        return;
-    }
+    double_t mouseX = mousePos.x();
+    mouseX = std::max((double_t)LABEL_WIDTH, mouseX);
 
-    int64_t frame = this->XToFrame(mousePos.x());
+    int64_t frame = this->XToFrame(mouseX);
     this->playhead = frame;
     update();
+}
+
+bool isOnRuler(QPoint &mousePos) {
+    return mousePos.y() <= RULER_HEIGHT;
 }
 
 void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
     const qreal edgeZone = 40.0; // エッジから何px以内でスクロールするか
     const qreal maxSpeed = 8.0;
+
+    qreal oldX = this->scroll.x();
+    qreal oldY = this->scroll.y();
 
     if (mousePos.x() < edgeZone) {
         qreal speed = (edgeZone - mousePos.x()) / edgeZone * maxSpeed;
@@ -33,17 +39,27 @@ void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
         qreal speed = (mousePos.x() - (r.width() - edgeZone)) / edgeZone * maxSpeed;
         this->setScrollX(std::max(this->scroll.x() + speed, (qreal)0));
     }
+
+    // 再描画
+    if (this->scroll.x() != oldX || this->scroll.y() != oldY) {
+        update();
+        hScrollBar->setValue(this->scroll.x());
+        vScrollBar->setValue(this->scroll.y());
+    }
 }
 
 void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     QWidget::mousePressEvent(e);
+    auto mousePos = e->pos();
 
     if (e->button() & Qt::LeftButton) {
         // update focused widget
         this->windowState->focusedTimeline = this;
 
-        this->handleCtrlPlayhead(e->pos());
-        this->firstClickPos = e->pos();
+        if (isOnRuler(mousePos)) {
+            this->handleCtrlPlayhead(mousePos);
+        }
+        this->firstClickPos = mousePos;
         this->dragState = DragNone{};
     }
 }
@@ -58,6 +74,9 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     if (!std::holds_alternative<DragNone>(this->dragState)) {
         this->onDragContinue(e);
     }
+
+    auto project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
 }
 
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
@@ -67,7 +86,9 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 
     // ドラッグしていないなら１つセレクト
     if (!std::holds_alternative<DragClip>(this->dragState) && e->button() & Qt::LeftButton) {
-        Timeline timeline = getTimeline();
+        auto project = windowState->network->getProject();
+        Timeline timeline = getTimeline(project);
+
         if (timeline.isValid()) {
             this->handleSelectClip(timeline, e->pos(), ctrl);
         }
@@ -81,7 +102,9 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 
 DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
-    Timeline timeline = getTimeline();
+
+    auto project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
         return DragOther{};
@@ -94,7 +117,7 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     }
 
     // 2. ルーラー上なら再生ヘッド移動
-    if (firstClickPos.y() <= RULER_HEIGHT) {
+    if (isOnRuler(firstClickPos)) {
         return DragPlayHead{};
     }
 
@@ -108,7 +131,8 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
 }
 
 void TimelineWidget::onDragContinue(QMouseEvent *e) {
-    Timeline timeline = getTimeline();
+    auto project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
 
     std::visit([&](auto &&state) {
         using T = std::decay_t<decltype(state)>;
@@ -129,7 +153,8 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
 }
 
 void TimelineWidget::onDragEnd(QMouseEvent *e) {
-    Timeline timeline = getTimeline();
+    auto project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
         return;

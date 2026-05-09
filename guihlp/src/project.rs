@@ -18,17 +18,16 @@ pub(crate) fn clip_apply_updates(
         }
     }
 
-    for (layer_idx, update_clips) in updates.iter() {
+    for (layer_handle, update_clips) in updates.iter() {
         // TODO: warning for non-existent layer
-        if let Some(layer) = timeline.layers.get_mut(*layer_idx as usize) {
-            for archived_clip in update_clips.iter() {
-                let new_clip: Clip = archived_clip
-                    .as_ref()
-                    .deserialize(&mut rkyv::Infallible)
-                    .expect("Failed to deserialize clip");
 
-                layer.clips.insert(Arc::new(new_clip));
-            }
+        for archived_clip in update_clips.iter() {
+            let new_clip: Clip = archived_clip
+                .as_ref()
+                .deserialize(&mut rkyv::Infallible)
+                .expect("Failed to deserialize clip");
+
+            timeline.layers.update_layer_clip(*layer_handle, new_clip);
         }
     }
     Ok(())

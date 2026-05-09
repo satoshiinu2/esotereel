@@ -15,7 +15,7 @@ pub unsafe extern "C" fn clip_get_position(ptr: *const Clip) -> i64 {
         return 0;
     }
 
-    unsafe { (*ptr).position }
+    unsafe { (*ptr).position() }
 }
 
 #[unsafe(no_mangle)]

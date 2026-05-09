@@ -22,13 +22,11 @@ pub fn handle_command_action(
             duration,
             clip_data,
         } => {
-            let layer_idx = *layer_idx as usize;
-
             let clip_data: ClipData = clip_data.deserialize(&mut rkyv::Infallible).unwrap();
 
             let new_clip = timeline.new_clip(*position, *duration, clip_data);
 
-            clip_add(timeline, layer_idx, new_clip, updates);
+            clip_add(timeline, *layer_idx, new_clip, updates);
         }
     }
     Ok(())

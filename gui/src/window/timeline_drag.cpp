@@ -1,5 +1,6 @@
 #include "../util.h"
 #include "../wrapper/requests.h"
+#include "main.h"
 #include "timeline.h"
 #include <QEvent>
 #include <cmath>
@@ -11,7 +12,7 @@
 #include <qpainter.h>
 
 std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timeline, const QPoint &mousePos, bool ctrl) {
-    uint64_t frame = this->XToFrame(mousePos.x());
+    int64_t frame = this->XToFrame(mousePos.x());
 
     auto [clip, layerIdx] = this->findClipAt(timeline, mousePos);
     if (!clip.isValid()) {
@@ -52,8 +53,8 @@ void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoi
     drag->ghostPos = mousePos;
 
     // ovetlap check
-    int frameMoved = drag->curFrame - drag->srcFrame;
-    int layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    int64_t frameMoved = drag->curFrame - drag->srcFrame;
+    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
     drag->isWrong = false;
     for (uint64_t clipid : this->selectedClipIds) {
@@ -62,7 +63,7 @@ void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoi
         if (!clip.isValid()) {
             continue;
         }
-        size_t targetLayerIdx = (layerIdx + layerMoved);
+        uint32_t targetLayerIdx = (layerIdx + layerMoved);
         int64_t newClipPosition = clip.position() + frameMoved;
         if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
                                      clip.duration(), this->selectedClipIds)) {
@@ -88,15 +89,15 @@ void TimelineWidget::handleClipDraggingDrop(const Timeline &timeline, const QPoi
         return;
     }
 
-    uint64_t frameMoved = drag->curFrame - drag->srcFrame;
-    int layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    int64_t frameMoved = drag->curFrame - drag->srcFrame;
+    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
     // range and overrap check
     for (uint64_t clipId : this->selectedClipIds) {
         auto [clip, layerIdx] = timeline.findClipById(clipId);
         if (!clip.isValid()) {
             continue;
         }
-        size_t targetLayerIdx = (layerIdx + layerMoved);
+        uint32_t targetLayerIdx = (layerIdx + layerMoved);
         int64_t newClipPosition = clip.position() + frameMoved;
         if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
                                      clip.duration(), this->selectedClipIds)) {
@@ -108,7 +109,8 @@ send_drop:
     update();
     std::vector<uint64_t>
         exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    Requests::moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
+
+    this->windowState->network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
 }
 
 void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const {

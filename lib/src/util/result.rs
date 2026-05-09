@@ -1,10 +1,16 @@
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    any::Any,
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
-#[derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, Debug)]
+use rkyv::{Archive, Deserialize, Serialize};
+
+#[derive(Archive, Serialize, Deserialize, Debug)]
 pub enum EsotereelError {
     LockError(String),
     IoError(String),
     AccessError(String),
+    DecodeError(String),
     ProjectNotFound,
     TimelineNotFound(usize),
     ClipNotFound(u64),
@@ -15,6 +21,16 @@ pub enum EsotereelError {
 }
 
 pub type EsotereelResult<T> = Result<T, EsotereelError>;
+
+pub fn format_any_error(error: Box<dyn Any + Send>) -> String {
+    if let Some(s) = error.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = error.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "Unknown panic or error payload".to_string()
+    }
+}
 
 pub trait LockExt<T> {
     fn write_or_err(&self) -> EsotereelResult<RwLockWriteGuard<'_, T>>;

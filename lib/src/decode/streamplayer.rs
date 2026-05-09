@@ -4,21 +4,24 @@ use ffmpeg::codec::decoder::Video as VideoDecoder;
 use ffmpeg::format::Pixel;
 use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
+use std::collections::VecDeque;
 use std::fmt;
 use std::io::Write;
 
-pub struct StreamReciever {
+pub struct StreamPlayer {
     decoder: VideoDecoder,
     scaler: Option<Scaler>,
     target_width: u32,
     target_height: u32,
-    pub last_frame: Option<Video>,
     frame_count: u32,
+    pub frames: VecDeque<(f64, Video)>, // (秒数, フレーム) のペアで保持
+    pub time_base: f64,                 // 1単位あたりの秒数 (1/fps 等)
+    pub last_requested_time: Option<f64>,
 }
 
-impl fmt::Debug for StreamReciever {
+impl fmt::Debug for StreamPlayer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RemotePlayer")
+        f.debug_struct("StreamReciever")
             .field("decoder", &self.decoder.id())
             .field(
                 "target_resolution",
@@ -28,12 +31,13 @@ impl fmt::Debug for StreamReciever {
     }
 }
 
-impl StreamReciever {
+impl StreamPlayer {
     /// メタデータからデコーダとスケーラを初期化
     pub fn new_from_metadata(
-        codec_id: ffmpeg_next::codec::Id,
+        codec_id: ffmpeg::codec::Id,
         width: u32,
         height: u32,
+        time_base: f64,
         extradata: &[u8],
     ) -> Result<Self, ffmpeg::Error> {
         let codec = ffmpeg::decoder::find(codec_id).ok_or(ffmpeg::Error::DecoderNotFound)?;
@@ -71,8 +75,10 @@ impl StreamReciever {
             scaler: None,
             target_width: width,
             target_height: height,
-            last_frame: None,
             frame_count: 0,
+            frames: VecDeque::new(),
+            time_base,
+            last_requested_time: None,
         })
     }
 
@@ -83,7 +89,7 @@ impl StreamReciever {
         pts: Option<i64>,
         dts: Option<i64>,
         is_key: bool,
-    ) -> Option<&Video> {
+    ) -> Result<(), ffmpeg::util::error::Error> {
         let mut packet = ffmpeg::codec::packet::Packet::copy(packet_data);
         packet.set_pts(pts);
         packet.set_dts(dts);
@@ -91,43 +97,78 @@ impl StreamReciever {
             packet.set_flags(ffmpeg::codec::packet::Flags::KEY);
         }
 
-        // デコーダへの送信処理
-        self.decoder.send_packet(&packet).ok()?;
+        self.decoder.send_packet(&packet)?;
 
         let mut decoded = Video::empty();
-        self.decoder.receive_frame(&mut decoded).ok()?;
 
-        // 初回フレーム受信時にスケーラを遅延初期化
-        if self.scaler.is_none() {
-            self.scaler = Scaler::get(
-                decoded.format(),
-                decoded.width(),
-                decoded.height(),
-                Pixel::RGB24,
-                self.target_width,
-                self.target_height,
-                Flags::BILINEAR,
-            )
-            .ok();
+        // 利用可能なフレームをすべて取り出すループ
+        while self.decoder.receive_frame(&mut decoded).is_ok() {
+            // 初回フレーム受信時にスケーラを遅延初期化
+            if self.scaler.is_none() {
+                self.scaler = Scaler::get(
+                    decoded.format(),
+                    decoded.width(),
+                    decoded.height(),
+                    Pixel::RGBA,
+                    self.target_width,
+                    self.target_height,
+                    Flags::BILINEAR,
+                )
+                .ok();
+            }
+
+            if let Some(scaler) = self.scaler.as_mut() {
+                // 出力バッファを明示的に確保 (RGBA 4bytes/pixel)
+                let mut rgb_frame = Video::new(Pixel::RGBA, self.target_width, self.target_height);
+                if scaler.run(&decoded, &mut rgb_frame).is_ok() {
+                    // if self.frame_count <= 5 {
+                    //     self.save_debug_frame(&rgb_frame);
+                    // }
+
+                    // PTSを秒数に変換して保持
+                    let timestamp = decoded.pts().unwrap_or(0) as f64 * self.time_base;
+
+                    if self.frames.len() >= 600 {
+                        // 最大保持数
+                        self.frames.pop_front();
+                    }
+                    self.frames.push_back((timestamp, rgb_frame));
+
+                    log::debug!(
+                        "Decoded frame at timestamp: {:.3}s (buffer size: {})",
+                        timestamp,
+                        self.frames.len()
+                    )
+                }
+            }
         }
 
-        let mut rgb_frame = Video::empty();
-        self.scaler.as_mut()?.run(&decoded, &mut rgb_frame).ok()?;
+        Ok(())
+    }
 
-        // デバッグ処理の分離
-        if self.frame_count <= 5 {
-            self.save_debug_frame(&rgb_frame);
+    /// 指定した秒数に最も近いフレームをバッファから取得する
+    pub fn get_frame_at(&self, seconds: f64) -> Option<&Video> {
+        let (time, frame) = self.frames.iter().min_by(|(a_time, _), (b_time, _)| {
+            (a_time - seconds)
+                .abs()
+                .partial_cmp(&(b_time - seconds).abs())
+                .unwrap()
+        })?;
+
+        // 指定時間から0.1秒以上離れている場合は「見つからない」と判定（要調整）
+        if (time - seconds).abs() > 0.1 {
+            return None;
         }
-
-        self.last_frame = Some(rgb_frame);
-        self.last_frame.as_ref()
+        Some(frame)
     }
 
     pub fn flush(&mut self) {
         self.decoder.flush();
+        self.frames.clear(); // Clear buffered frames on flush
     }
 
     /// デバッグ用: PPM形式で保存する内部メソッド
+    #[allow(dead_code)]
     fn save_debug_frame(&mut self, frame: &Video) {
         let path = format!("debug_frame_{}.ppm", self.frame_count);
         if let Ok(mut file) = std::fs::File::create(&path) {
@@ -140,8 +181,10 @@ impl StreamReciever {
 
             for y in 0..frame.height() as usize {
                 let start = y * stride;
-                let end = start + width * 3;
-                let _ = file.write_all(&data[start..end]);
+                for x in 0..width {
+                    let px = start + x * 4;
+                    let _ = file.write_all(&data[px..px + 3]);
+                }
             }
         }
         self.frame_count += 1;

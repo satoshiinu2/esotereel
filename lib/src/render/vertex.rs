@@ -5,12 +5,14 @@ use bytemuck::{Pod, Zeroable};
 pub struct Vertex {
     pub position: [f32; 2],
     pub color: [f32; 4],
+    pub tex_coords: [f32; 2],
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
+    const ATTRIBS: [wgpu::VertexAttribute; 3] = wgpu::vertex_attr_array![
         0 => Float32x2,
         1 => Float32x4,
+        2 => Float32x2,
     ];
 
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
@@ -27,26 +29,32 @@ impl Vertex {
             Vertex {
                 position: [x, y],
                 color,
+                tex_coords: [0.0, 0.0],
             },
             Vertex {
                 position: [x2, y],
                 color,
+                tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [x, y2],
                 color,
+                tex_coords: [0.0, 1.0],
             },
             Vertex {
                 position: [x2, y],
                 color,
+                tex_coords: [1.0, 0.0],
             },
             Vertex {
                 position: [x2, y2],
                 color,
+                tex_coords: [1.0, 1.0],
             },
             Vertex {
                 position: [x, y2],
                 color,
+                tex_coords: [0.0, 1.0],
             },
         ]
     }

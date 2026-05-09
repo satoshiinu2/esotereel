@@ -8,6 +8,10 @@
 using RawStringView = esotereel_gui_helper::_StringView;
 
 namespace StringView {
+static bool isZero(const RawStringView &raw) {
+    return raw.ptr == nullptr || raw.len == 0;
+}
+
 static std::string toStdString(const RawStringView &raw) {
     return std::string(reinterpret_cast<const char *>(raw.ptr), raw.len);
 }

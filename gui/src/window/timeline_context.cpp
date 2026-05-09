@@ -1,4 +1,5 @@
 #include "../wrapper/requests.h"
+#include "main.h"
 #include "timeline.h"
 #include <QContextMenuEvent>
 #include <QEvent>
@@ -10,7 +11,8 @@
 void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
     QMenu menu(this);
 
-    Timeline timeline = getTimeline();
+    auto project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
     if (timeline.isValid()) {
         auto [clip, layerIdx] = this->findClipAt(timeline, e->pos());
         if (clip.isValid()) {
@@ -25,7 +27,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
             QObject::connect(clipAddAction, &QAction::triggered, this, [pos, this]() { this->addClipAt(pos); });
 
             QAction *clipTestAction = menu.addAction("request test");
-            QObject::connect(clipTestAction, &QAction::triggered, this, [this]() { Requests::loadStream("/home/satoshiinu/Videos/3.mp4"); });
+            QObject::connect(clipTestAction, &QAction::triggered, this, [&project]() { project.debugLog(); });
         }
     }
 
@@ -36,5 +38,5 @@ void TimelineWidget::addClipAt(const QPoint &local) {
     int64_t frame = this->XToFrame(local.x());
     size_t layerIdx = this->YToLayerIdx(local.y());
 
-    Requests::addClipAt(this->timelineIdx, frame, layerIdx);
+    windowState->network->requests().addClipAt(this->timelineIdx, frame, layerIdx);
 }

@@ -34,9 +34,9 @@ struct DragOther {};
 
 struct DragClip {
     size_t srcLayerIdx;
-    uint64_t srcFrame;
+    int64_t srcFrame;
     size_t curLayerIdx;
-    uint64_t curFrame;
+    int64_t curFrame;
     QPointF ghostPos;
     bool isWrong;
 };
@@ -71,8 +71,8 @@ class TimelineWidget : public QWidget {
         return frame * this->zoom - this->scroll.x() + LABEL_WIDTH;
     }
 
-    uint64_t XToFrame(double_t x) const noexcept {
-        return ((x - LABEL_WIDTH + this->scroll.x()) / this->zoom);
+    int64_t XToFrame(double_t x) const noexcept {
+        return std::floor((x - LABEL_WIDTH + this->scroll.x()) / this->zoom);
     }
 
     double_t layerToY(size_t layer_idx) const noexcept {
@@ -92,8 +92,8 @@ class TimelineWidget : public QWidget {
         vScrollBar->setValue(y);
     }
 
-    Timeline getTimeline() {
-        Project project = Project::getProject();
+    Timeline getTimeline(Project &project) {
+
         return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     }
 

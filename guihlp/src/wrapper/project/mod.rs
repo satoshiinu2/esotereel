@@ -1,6 +1,14 @@
+use std::{
+    os::raw::c_void,
+    sync::{Arc, RwLockReadGuard},
+};
+
 use esotereel_lib::project::{Project, timeline::Timeline};
 
+use crate::WrapperErrorCode;
+
 pub mod clip;
+pub mod debug;
 pub mod layer;
 pub mod timeline;
 
@@ -25,4 +33,28 @@ pub extern "C" fn project_get_timeline_count(ptr: *const Project) -> usize {
     }
 
     unsafe { (*ptr).get_timeline_count() }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn project_guard_get_project_from_guard(
+    guard_ptr: *const c_void,
+    out: *mut *const Project,
+) -> WrapperErrorCode {
+    if guard_ptr.is_null() || out.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
+
+    let guard = unsafe { &*(guard_ptr as *const RwLockReadGuard<Option<Arc<Project>>>) };
+
+    // ガードの中身を覗き見して、Projectの生ポインタを返す
+    match guard.as_ref() {
+        Some(p) => {
+            unsafe { *out = Arc::as_ptr(p) };
+            WrapperErrorCode::Ok
+        }
+        None => {
+            unsafe { *out = std::ptr::null() };
+            WrapperErrorCode::NotFound
+        }
+    }
 }

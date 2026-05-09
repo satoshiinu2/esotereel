@@ -1,4 +1,5 @@
 #include "../util.h"
+#include "main.h"
 #include "timeline.h"
 #include <cmath>
 #include <cstdint>
@@ -149,7 +150,7 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    Project project = Project::getProject();
+    auto project = windowState->network->getProject();
     Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     if (timeline.isValid()) {
         // レイヤーラベルと区切り線

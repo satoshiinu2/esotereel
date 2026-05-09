@@ -64,6 +64,7 @@ void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
 
     QRect selRect(sel->start.toPoint(), sel->current.toPoint());
 
+    // TODO: optimize
     size_t layerIdx = 0;
     for (auto layer : timeline.layers()) {
         size_t clipIdx = 0;

@@ -24,7 +24,7 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
     int w = this->width() * this->devicePixelRatio();
     int h = this->height() * this->devicePixelRatio();
 
-    this->wgpuutil = WGpuUtil(this->winId(), getNativeDisplay(windowHandle()), w, h);
+    this->wgpuutil = WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
 
     renderTimer = new QTimer(this);
     connect(renderTimer, &QTimer::timeout, this, [this]() {
@@ -39,7 +39,8 @@ void WgpuCanvasWidget::paintEvent(QPaintEvent *event) {
 
 bool WgpuCanvasWidget::tryRender() {
     if (this->wgpuutil.has_value()) {
-        auto project = Project::getProject();
+        auto project = windowState->network->getProject();
+
         auto focusedTimelineWidget = this->windowState->focusedTimeline;
         if (!project.isValid() || !focusedTimelineWidget) {
             return false;

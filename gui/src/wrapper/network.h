@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esotereel_gui_helper.h"
+#include "project/project.h"
 #include "stringview.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
@@ -9,6 +10,7 @@
 #include <qwindowdefs.h>
 #include <sys/types.h>
 
+class Requests;
 using RawClientNetworkHandler = esotereel_gui_helper::_ClientNetworkHandler;
 using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
 
@@ -52,6 +54,10 @@ class ClientNetworkHandler {
         return *this;
     }
 
+    operator const RawClientNetworkHandler *() const noexcept {
+        return raw_ptr;
+    }
+
     bool isValid() const { return raw_ptr != nullptr; }
     bool run(QString addr) {
         if (!isValid()) {
@@ -60,11 +66,24 @@ class ClientNetworkHandler {
 
         QByteArray addrUtf8 = addr.toUtf8();
         auto addrView = StringView::fromQUtf8String(addrUtf8);
-        
+
         auto res = esotereel_gui_helper::client_network_handler_run(raw_ptr, addrView);
         if (res != WrapperErrorCode::Ok) {
             qWarning() << "Failed to start network worker:" << (int)res;
         }
         return res == WrapperErrorCode::Ok;
     }
+
+    // can return invalid
+    Project getProject() const {
+        if (!isValid()) {
+            return Project::invalid();
+        }
+
+        const void *guard_ptr;
+        esotereel_gui_helper::client_network_handler_app_state_project_lock_read(raw_ptr, &guard_ptr);
+        return Project::byGuard(guard_ptr);
+    }
+
+    Requests requests() const;
 };

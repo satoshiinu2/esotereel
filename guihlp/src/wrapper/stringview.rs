@@ -12,6 +12,17 @@ impl StringView {
         }
     }
 
+    pub fn from_option_str(s: Option<&str>) -> Self {
+        if let Some(s) = s {
+            Self {
+                ptr: s.as_ptr(),
+                len: s.len(),
+            }
+        } else {
+            Self::zero()
+        }
+    }
+
     pub fn as_str<'a>(&self) -> Option<&'a str> {
         if self.ptr.is_null() {
             return None;

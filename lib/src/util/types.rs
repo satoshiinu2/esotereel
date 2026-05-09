@@ -7,14 +7,14 @@ pub struct ClipMoveCtx {
     pub clip_id: u64,
     pub new_position: i64,
     pub new_duration: i64,
-    pub new_layer: usize,
+    pub new_layer_handle: u32,
 }
 
 pub trait ClipMove {
     fn get_clip_id(&self) -> u64;
     fn get_new_position(&self) -> i64;
     fn get_new_duration(&self) -> i64;
-    fn get_new_layer(&self) -> usize;
+    fn get_new_layer_handle(&self) -> u32;
 }
 
 impl ClipMove for ClipMoveCtx {
@@ -30,8 +30,8 @@ impl ClipMove for ClipMoveCtx {
         self.new_duration
     }
 
-    fn get_new_layer(&self) -> usize {
-        self.new_layer
+    fn get_new_layer_handle(&self) -> u32 {
+        self.new_layer_handle
     }
 }
 
@@ -48,7 +48,7 @@ impl ClipMove for ArchivedClipMoveCtx {
         self.new_duration
     }
 
-    fn get_new_layer(&self) -> usize {
-        self.new_layer as usize
+    fn get_new_layer_handle(&self) -> u32 {
+        self.new_layer_handle
     }
 }

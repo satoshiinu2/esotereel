@@ -8,8 +8,10 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 pub mod clip;
 pub mod clipdata;
+pub mod clipmap;
 pub mod commands;
 pub mod layer;
+pub mod layermap;
 pub mod timeline;
 pub mod util;
 
@@ -43,26 +45,32 @@ impl Project {
     }
 
     pub fn debug_add_clips(&mut self, timeline_idx: usize) {
-        for i in 0..5 {
+        for i in 0..5u32 {
             let new_pl_clip = {
                 let timeline = self.get_timeline_mut(timeline_idx).unwrap();
-                timeline.new_clip(i * 100, 50, ClipData::Dummy)
+                timeline.new_clip(i as i64 * 100, 50, ClipData::Dummy)
             };
 
-            self.get_timeline_mut(timeline_idx).unwrap().layers[i as usize]
-                .try_insert(new_pl_clip)
-                .unwrap();
+            self.get_timeline_mut(timeline_idx)
+                .unwrap()
+                .layers
+                .get_by_sorted_idx_mut(i)
+                .map(|e| Arc::make_mut(e).try_insert(new_pl_clip).unwrap());
         }
     }
 
     pub fn rebuild_id_map(&mut self) -> EsotereelResult<()> {
+        log::debug!("Rebuilding ID maps...");
         for i in 0..self.get_timeline_count() {
             let timeline = self.get_timeline_mut(i)?;
-            timeline
-                .layers
-                .iter_mut()
-                .for_each(|l| l.clips.rebuild_id_map());
+
+            timeline.layers.rebuild_id_map();
+
+            timeline.layers.iter_mut().for_each(|l| {
+                Arc::make_mut(l).clips.rebuild_id_map();
+            });
         }
+
         Ok(())
     }
 }

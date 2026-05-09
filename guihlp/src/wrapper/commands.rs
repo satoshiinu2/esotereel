@@ -5,10 +5,11 @@ use esotereel_lib::{
     util::types::ClipMoveCtx,
 };
 
-use crate::{network::ClientNetworkHandler, wrapper::requests::req_command};
+use crate::network::ClientNetworkHandler;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_cmd_clip_move_mul(
+    ptr_network: *const ClientNetworkHandler,
     timeline_idx: usize,
     ptr: *const u64,
     len: usize,
@@ -16,9 +17,7 @@ pub extern "C" fn req_cmd_clip_move_mul(
     duration_added: i64,
     layer_moved: isize,
 ) {
-    let Some(network) = ClientNetworkHandler::get_instance() else {
-        return;
-    };
+    let network = unsafe { &*ptr_network };
     let app_state = &network.app_state;
 
     let lock = app_state.project.read().unwrap();
@@ -34,29 +33,40 @@ pub extern "C" fn req_cmd_clip_move_mul(
     let clip_ctxs = clip_ids
         .iter()
         .filter_map(|clip_id| {
-            let (layer_idx, clip) = timeline.find_clip_by_id(*clip_id)?;
+            let (_, clip, src_layer_handle) = timeline.find_clip_by_id(*clip_id)?;
 
             Some(ClipMoveCtx {
                 clip_id: *clip_id,
-                new_position: (clip.position + position_moved),
+                new_position: (clip.position() + position_moved),
                 new_duration: (clip.duration + duration_added),
-                new_layer: usize::try_from(layer_idx as isize + layer_moved).ok()?,
+                new_layer_handle: u32::try_from(src_layer_handle as isize + layer_moved).ok()?,
             })
         })
         .collect();
 
     let command = Command::ClipsMove { clips: clip_ctxs };
 
-    req_command(timeline_idx, command);
+    network.req_command(timeline_idx, command);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_cmd_add_clip_dummy(timeline_idx: usize, position: i64, layer_idx: usize) {
+pub extern "C" fn req_cmd_add_clip_dummy(
+    ptr_network: *const ClientNetworkHandler,
+    timeline_idx: usize,
+    position: i64,
+    layer_idx: usize,
+) {
+    let network = unsafe { &*ptr_network };
+
     let command = Command::AddClip {
         layer_idx,
         position,
-        duration: 10,
-        clip_data: ClipData::Dummy,
+        duration: 10000,
+        clip_data: ClipData::Video {
+            path: "/home/satoshiinu/Downloads/1fH5h8vLdoLvTtLV.mp4".to_string(),
+            media_offset: 0.0,
+        },
     };
-    req_command(timeline_idx, command);
+
+    network.req_command(timeline_idx, command);
 }

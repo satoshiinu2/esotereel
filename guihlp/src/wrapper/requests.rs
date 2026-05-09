@@ -1,39 +1,47 @@
-use esotereel_lib::{
-    project::commands::Command,
-    requests::{Request, send_request},
-};
+use esotereel_lib::{project::commands::Command, requests::Request};
 
-use crate::{WrapperErrorCode, wrapper::stringview::StringView};
+use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::stringview::StringView};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_test() {
+pub extern "C" fn req_test(ptr_network: *const ClientNetworkHandler) {
+    let network = unsafe { &*ptr_network };
+
     let req = Request::Test;
-    send_request(req);
+    network.send(req);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_new_project() {
+pub extern "C" fn req_new_project(ptr_network: *const ClientNetworkHandler) {
+    let network = unsafe { &*ptr_network };
+
     let req = Request::NewProject;
-    send_request(req);
+    network.send(req);
 }
 
-pub(crate) fn req_command(timeline_idx: usize, command: Command) {
-    let req = Request::Command {
-        command,
-        timeline_idx,
-    };
+impl ClientNetworkHandler {
+    pub(super) fn req_command(&self, timeline_idx: usize, command: Command) {
+        let req = Request::Command {
+            command,
+            timeline_idx,
+        };
 
-    send_request(req);
+        self.send(req);
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_load_stream(path: StringView) -> WrapperErrorCode {
+pub extern "C" fn req_load_stream(
+    ptr_network: *const ClientNetworkHandler,
+    path: StringView,
+) -> WrapperErrorCode {
+    let network = unsafe { &*ptr_network };
+
     let Some(path) = path.as_str() else {
         return WrapperErrorCode::Error;
     };
     let path = path.to_string();
 
     let req = Request::LoadStream { path };
-    send_request(req);
+    network.send(req);
     WrapperErrorCode::Ok
 }

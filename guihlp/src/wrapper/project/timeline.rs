@@ -3,14 +3,41 @@ use esotereel_lib::project::{clip::Clip, layer::Layer, timeline::Timeline};
 use crate::WrapperErrorCode;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_layer_at(ptr: *const Timeline, l_idx: usize) -> *const Layer {
+pub unsafe extern "C" fn timeline_get_layer_by_layer_handle(
+    ptr: *const Timeline,
+    layer_handle: u32,
+) -> *const Layer {
     if ptr.is_null() {
         return std::ptr::null();
     }
 
     let layers = unsafe { &(*ptr).layers };
-    if l_idx < layers.len() {
-        std::ptr::addr_of!(layers[l_idx])
+    if (layer_handle as usize) < layers.len() {
+        if let Some(layer) = layers.get_by_layer_handle(layer_handle) {
+            layer.as_ref() as *const Layer
+        } else {
+            std::ptr::null()
+        }
+    } else {
+        std::ptr::null()
+    }
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timeline_get_layer_by_sorted_idx(
+    ptr: *const Timeline,
+    index: u32,
+) -> *const Layer {
+    if ptr.is_null() {
+        return std::ptr::null();
+    }
+
+    let layers = unsafe { &(*ptr).layers };
+    if (index as usize) < layers.len() {
+        if let Some(layer) = layers.get_by_sorted_idx(index) {
+            layer.as_ref() as *const Layer
+        } else {
+            std::ptr::null()
+        }
     } else {
         std::ptr::null()
     }
@@ -36,12 +63,12 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
         return WrapperErrorCode::NullPtr;
     }
 
-    let Some((layer_id, clip)) = (unsafe { (*ptr).find_clip_by_id(clip_id) }) else {
+    let Some((_, clip, layer_idx)) = (unsafe { (*ptr).find_clip_by_id(clip_id) }) else {
         return WrapperErrorCode::NullPtr;
     };
     unsafe {
         *out_clip = clip.as_ref();
-        *out_layer_idx = layer_id;
+        *out_layer_idx = layer_idx;
     };
     WrapperErrorCode::Ok
 }
@@ -49,7 +76,7 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_can_place_clip_at(
     ptr: *const Timeline,
-    layer_idx: usize,
+    layer_idx: u32,
     position: i64,
     duration: i64,
     exclude_ids_ptr: *const u64,

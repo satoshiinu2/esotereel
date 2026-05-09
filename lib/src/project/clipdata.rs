@@ -1,21 +1,28 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
-#[archive_attr(derive(CheckBytes, Ord, PartialOrd, Eq, PartialEq))]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[archive_attr(derive(CheckBytes))]
 #[repr(u8)]
 pub enum ClipData {
     Dummy,
-    Video(String),
+    Video { path: String, media_offset: f64 },
+    Audio { path: String, media_offset: f64 },
 }
+impl ClipData {
+    pub fn get_media_seconds(
+        global_fps: f64,
+        clip_position: i64,
+        current_frame: i64,
+        media_offset: f64,
+    ) -> f64 {
+        let relative_frame = current_frame - clip_position;
 
-pub trait MediaClip<T = ClipData> {
-    fn get_media_secounds(&self, global_fps: f64, clip_position: i64, timeline_frame: i64) -> f64 {
-        let timeline_sec = timeline_frame as f64 / global_fps;
+        if relative_frame < 0 {
+            return media_offset;
+        }
 
-        let clip_start_sec = clip_position as f64 / global_fps;
+        let media_sec = (relative_frame as f64 / global_fps) + media_offset;
 
-        let media_start_sec = (timeline_sec - clip_start_sec).max(0.0);
-
-        media_start_sec
+        media_sec
     }
 }

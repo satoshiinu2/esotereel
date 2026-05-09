@@ -1,18 +1,18 @@
+use esotereel_lib::requests::Request;
+use esotereel_lib::responces::Response;
+use rkyv::{AlignedVec, check_archived_root};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use esotereel_lib::{
-    CLIENT_ALL, ServerState,
-    requests::{parse_and_handle_request, set_request_callbacks},
-    set_send_response_callback,
-};
+use esotereel_lib::ServerState;
 
+use crate::OnServerReadyFn;
 use crate::requests::on_request_receive;
 
-type ClientSender = mpsc::UnboundedSender<Vec<u8>>;
+type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
 pub static INSTANCE: RwLock<Option<Arc<ServerNetworkHandler>>> = RwLock::new(None);
 
@@ -32,19 +32,35 @@ impl ServerNetworkHandler {
     }
 
     pub fn new(app_state: Arc<ServerState>) -> Self {
-        set_request_callbacks(on_request_receive);
-        set_send_response_callback(on_send);
         Self {
             app_state,
             clients: RwLock::new(HashMap::new()),
         }
     }
 
-    pub async fn run(self: Arc<Self>, addr: &str) -> Result<(), std::io::Error> {
+    pub async fn run(
+        self: Arc<Self>,
+        addr: &str,
+        on_server_ready: Option<OnServerReadyFn>,
+    ) -> Result<(), std::io::Error> {
         // グローバルインスタンスを登録 (Cコールバック用)
         *INSTANCE.write().unwrap() = Some(self.clone());
 
-        let listener = TcpListener::bind(addr).await?;
+        let listener = match TcpListener::bind(&addr).await {
+            Ok(l) => {
+                if let Some(f) = on_server_ready {
+                    f(true);
+                }
+                Ok(l)
+            }
+            Err(e) => {
+                if let Some(f) = on_server_ready {
+                    f(false);
+                }
+                Err(e)
+            }
+        }?;
+
         log::info!("Server listening on {}", addr);
 
         let mut client_id_counter = 0;
@@ -54,8 +70,7 @@ impl ServerNetworkHandler {
             let client_id = client_id_counter;
             client_id_counter += 1;
 
-            let app_state = self.app_state.clone();
-            let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+            let (tx, mut rx) = mpsc::unbounded_channel::<AlignedVec>();
 
             // CLIENTSに登録
             let mut guard = self.clients.write().unwrap();
@@ -94,9 +109,7 @@ impl ServerNetworkHandler {
                             break;
                         }
 
-                        if let Err(e) = parse_and_handle_request(&buf, client_id, &app_state) {
-                            log::error!("Handler Error: {:?}", e);
-                        }
+                        instance.parse_and_handle_request(&buf, client_id);
                     }
 
                     // クリーンアップ
@@ -110,24 +123,46 @@ impl ServerNetworkHandler {
             });
         }
     }
-}
 
-extern "C" fn on_send(client_id: u32, ptr: *const u8, len: usize) {
-    let data = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+    fn parse_and_handle_request(self: &Arc<Self>, bytes: &Vec<u8>, client_id: u32) {
+        match check_archived_root::<Request>(bytes) {
+            Ok(archived_req) => {
+                if let Err(e) = on_request_receive(archived_req, client_id, self) {
+                    log::error!("Handler Error: {:?}", e);
+                }
+            }
+            Err(e) => log::error!("Invalid data format: {:?}", e),
+        }
+    }
 
-    if let Some(instance) = ServerNetworkHandler::get_instance() {
-        if let Ok(clients) = instance.clients.read() {
-            if client_id == CLIENT_ALL {
-                // 全クライアントへの配信
-                for tx in clients.values() {
-                    let _ = tx.send(data.clone());
+    pub fn send(&self, client_id: u32, request: Response) {
+        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+        self.send_bytes(client_id, bytes);
+    }
+
+    pub fn send_all(&self, request: Response) {
+        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+        self.send_bytes_all(bytes);
+    }
+
+    fn send_bytes_all(&self, bytes: AlignedVec) {
+        if let Ok(clients) = self.clients.read() {
+            for (client_id, tx) in clients.iter() {
+                if let Err(_) = tx.send(bytes.clone()) {
+                    log::error!("Failed to send to client {}: channel closed", client_id);
+                }
+            }
+        }
+    }
+
+    fn send_bytes(&self, client_id: u32, bytes: AlignedVec) {
+        if let Ok(clients) = self.clients.read() {
+            if let Some(tx) = clients.get(&client_id) {
+                if let Err(_) = tx.send(bytes) {
+                    log::error!("Failed to send to client {}: channel closed", client_id);
                 }
             } else {
-                if let Some(tx) = clients.get(&client_id) {
-                    if let Err(_) = tx.send(data) {
-                        log::error!("Failed to send to client {}: channel closed", client_id);
-                    }
-                }
+                log::error!("Failed to send to client {}: not found", client_id);
             }
         }
     }

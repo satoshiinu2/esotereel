@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wgpu::ExperimentalFeatures;
 
@@ -11,6 +13,7 @@ pub struct WGpuUtil {
     pub surface_target: std::sync::Arc<SurfaceTarget>,
     pub config: wgpu::SurfaceConfiguration,
     pub resources: WgpuRenderResources,
+    pub textures: HashMap<u32, (wgpu::Texture, wgpu::BindGroup)>,
 }
 
 impl WGpuUtil {
@@ -51,7 +54,7 @@ impl WGpuUtil {
 
         surface.configure(&device, &config);
 
-        let resources = WgpuRenderResources::new(&device, config.format);
+        let resources = WgpuRenderResources::new(&device, &queue, config.format);
 
         Self {
             instance,
@@ -61,6 +64,7 @@ impl WGpuUtil {
             surface_target,
             config,
             resources,
+            textures: HashMap::new(),
         }
     }
 

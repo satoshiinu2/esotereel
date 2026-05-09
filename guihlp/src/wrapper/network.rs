@@ -1,7 +1,10 @@
-use esotereel_lib::ClientState;
+use esotereel_lib::{ClientState, project::Project};
 
 use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::stringview::StringView};
-use std::sync::Arc;
+use std::{
+    ffi::c_void,
+    sync::{Arc, RwLockReadGuard},
+};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn client_network_handler_run(
@@ -74,4 +77,43 @@ pub extern "C" fn client_network_handler_drop(
         WrapperErrorCode::Ok
     }))
     .unwrap_or(WrapperErrorCode::Error)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
+    ptr: *const ClientNetworkHandler,
+    out: *mut *const c_void,
+) -> WrapperErrorCode {
+    if ptr.is_null() || out.is_null() {
+        return WrapperErrorCode::NullPtr;
+    }
+
+    let handler = unsafe { &*ptr };
+    // ガード自体をヒープに置いて、その「鍵」を返す
+    let lock = handler.app_state.project.read().unwrap();
+    if lock.as_ref().is_some() {
+        // ロックを維持するためにガードを leak させる
+        unsafe { *out = Box::into_raw(Box::new(lock)) as *const c_void };
+        WrapperErrorCode::Ok
+    } else {
+        unsafe { *out = std::ptr::null_mut() as *const c_void };
+        WrapperErrorCode::NotFound
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
+    guard_ptr: *const c_void,
+) -> WrapperErrorCode {
+    if !guard_ptr.is_null() {
+        // leak させた Box を戻してドロップ
+        unsafe {
+            drop(Box::from_raw(
+                guard_ptr as *mut RwLockReadGuard<Option<Arc<Project>>>,
+            ))
+        };
+        WrapperErrorCode::Ok
+    } else {
+        WrapperErrorCode::NullPtr
+    }
 }

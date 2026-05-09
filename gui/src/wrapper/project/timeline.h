@@ -27,8 +27,12 @@ class Timeline {
         return LayersIterable(raw_ptr);
     }
 
-    Layer layerAt(size_t index) const noexcept {
-        return Layer(esotereel_gui_helper::timeline_get_layer_at(raw_ptr, index));
+    Layer layerByLayerHandle(size_t layer_handle) const noexcept {
+        return Layer(esotereel_gui_helper::timeline_get_layer_by_layer_handle(raw_ptr, layer_handle));
+    }
+
+    Layer layerSortedAt(uint32_t index) const noexcept {
+        return Layer(esotereel_gui_helper::timeline_get_layer_by_sorted_idx(raw_ptr, index));
     }
 
     std::tuple<Clip, size_t> findClipById(uint64_t id) const noexcept {
@@ -41,7 +45,7 @@ class Timeline {
         return std::make_tuple(Clip(raw_clip), layerIdx);
     }
 
-    bool canPlaceClipAt(size_t layerIdx, int64_t position, int64_t duration, const std::set<uint64_t> &exclude_set) const {
+    bool canPlaceClipAt(uint32_t layerIdx, int64_t position, int64_t duration, const std::set<uint64_t> &exclude_set) const {
         // そこまでsetは大きくないと信じてコピー
         std::vector<uint64_t> exclude_vec(exclude_set.begin(), exclude_set.end());
         return esotereel_gui_helper::timeline_can_place_clip_at(

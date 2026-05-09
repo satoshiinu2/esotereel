@@ -29,6 +29,11 @@ void TimelineWidget::resizeEvent(QResizeEvent *event) {
 }
 
 std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, const QPoint &local) const {
+    // ルーラー領域、またはレイヤーラベル領域へのクリックは、クリップ選択の対象外とする
+    if (local.x() < LABEL_WIDTH || local.y() < RULER_HEIGHT) {
+        return std::make_tuple(Clip::Empty(), 0);
+    }
+
     int64_t frame = this->XToFrame(local.x());
     size_t layerIdx = this->YToLayerIdx(local.y());
 
@@ -36,6 +41,10 @@ std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, co
     if (layerIdx >= timeline.layersCount()) {
         return std::make_tuple(Clip::Empty(), 0);
     }
-    Clip clip = timeline.layerAt(layerIdx).findClipAtFrame(frame);
+    Clip clip = timeline.layerSortedAt(layerIdx).findClipAtFrame(frame);
+    if (!clip.isValid()) {
+        return std::make_tuple(Clip::Empty(), 0);
+    }
+
     return std::make_tuple(clip, layerIdx);
 }

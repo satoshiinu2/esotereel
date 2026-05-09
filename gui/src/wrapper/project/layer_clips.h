@@ -2,6 +2,7 @@
 
 #include "clip.h"
 #include "esotereel_gui_helper.h"
+#include <cstdint>
 #include <iterator>
 
 using RawLayer = esotereel_gui_helper::_Layer;
@@ -24,6 +25,17 @@ class ClipsIterator {
         return result;
     }
 
+    static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame) {
+        if (!t)
+            return nullptr;
+
+        RawClipIterator *result = nullptr;
+        if (esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &result) != WrapperErrorCode::Ok) {
+            return nullptr;
+        }
+        return result;
+    }
+
   public:
     using iterator_category = std::forward_iterator_tag;
     using value_type = Clip;
@@ -32,6 +44,11 @@ class ClipsIterator {
     // begin用
     ClipsIterator(const RawLayer *t) noexcept
         : rust_iter_ptr(ClipsIterator::getBegin(t)), cur_ptr(nullptr) {
+        advance();
+    }
+
+    ClipsIterator(const RawLayer *t, int64_t startFrame, int64_t endFrame) noexcept
+        : rust_iter_ptr(ClipsIterator::getBeginInRange(t,startFrame,endFrame)), cur_ptr(nullptr) {
         advance();
     }
 

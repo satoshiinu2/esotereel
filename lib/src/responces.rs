@@ -1,13 +1,6 @@
-use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck, check_archived_root};
-use std::sync::OnceLock;
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::{
-    ClientState, SEND_RESPONSE_CALLBACK,
-    project::{ClipUpdateMap, Project},
-    util::result::{EsotereelError, EsotereelResult},
-};
-
-type OnReceiveResponceFn = fn(&ArchivedResponse, app_state: &ClientState) -> EsotereelResult<()>;
+use crate::project::{ClipUpdateMap, Project};
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -21,10 +14,12 @@ pub enum Response {
         updates: ClipUpdateMap,
     },
     StreamMetadata {
+        path: String,
         resource_id: u32,
         codec_id: u16,
         width: u32,
         height: u32,
+        time_base: f64,
         extradata: Vec<u8>,
     },
     StreamData {
@@ -35,36 +30,4 @@ pub enum Response {
         is_key: bool,
         discontinuous: bool,
     },
-}
-
-#[repr(C)]
-pub struct ResponseCallbacks {
-    pub on_test: extern "C" fn(),
-    pub on_update_timeline: extern "C" fn(timeline_type: usize),
-}
-
-static RESPONCE_CALLBACK: OnceLock<OnReceiveResponceFn> = OnceLock::new();
-
-pub fn set_responce_callbacks(callback: OnReceiveResponceFn) {
-    RESPONCE_CALLBACK.set(callback).ok();
-}
-
-pub fn parse_and_handle_responce(bytes: &[u8], app_state: &ClientState) -> EsotereelResult<()> {
-    // validation
-    let archived_resp: &ArchivedResponse = check_archived_root::<Response>(bytes)
-        .map_err(|e| EsotereelError::IoError(format!("Invalid data format: {:?}", e)))?;
-
-    // callback
-    if let Some(on_responce_recveve) = RESPONCE_CALLBACK.get() {
-        on_responce_recveve(archived_resp, app_state)?;
-    }
-
-    Ok(())
-}
-
-pub fn send_response(client_id: u32, response: Response) {
-    let bytes: rkyv::AlignedVec = rkyv::to_bytes::<_, 1024>(&response).unwrap();
-    if let Some(send_cb) = SEND_RESPONSE_CALLBACK.get() {
-        send_cb(client_id, bytes.as_ptr(), bytes.len());
-    }
 }

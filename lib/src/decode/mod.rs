@@ -1,2 +1,2 @@
-pub mod videoreciever;
+pub mod streamplayer;
 pub mod videostreamer;

@@ -1,41 +1,45 @@
-use std::{
-    collections::{BTreeSet, HashMap},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use rkyv::{
-    Archive, CheckBytes, Deserialize, Serialize, bytecheck,
-    with::{AsVec, Skip},
-};
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
-    project::clip::Clip,
-    util::result::{EsotereelError, EsotereelResult},
+    project::{clip::Clip, clipmap::ClipMap},
+    util::{
+        result::{EsotereelError, EsotereelResult},
+        slot_map::SlotMapKey,
+    },
 };
-
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Layer {
-    pub index: usize,
+    pub order: u32,
     pub clips: ClipMap,
     pub name: String,
 }
 
 impl Layer {
+    pub fn new(order: u32, name: String) -> Self {
+        Self {
+            order,
+            clips: ClipMap::new(),
+            name,
+        }
+    }
+
     pub fn try_insert(&mut self, new_clip: Arc<Clip>) -> EsotereelResult<()> {
-        let mut overlap = self.clips.range(new_clip.clone()..);
+        let mut next_range = self.clips.range(new_clip.position()..);
 
         // 次のクリップとの重なり
-        if let Some(next) = overlap.next() {
-            if new_clip.position + new_clip.duration > next.position {
+        if let Some((_, next)) = next_range.next() {
+            if new_clip.position() + new_clip.duration > next.position() {
                 return Err(EsotereelError::ClipOverlap);
             }
         }
 
         // 前のクリップとの重なり
-        let mut overlap_prev = self.clips.range(..new_clip.clone());
-        if let Some(prev) = overlap_prev.next_back() {
-            if prev.position + prev.duration > new_clip.position {
+        let mut prev_range = self.clips.range(..new_clip.position());
+        if let Some((_, prev)) = prev_range.next_back() {
+            if prev.position() + prev.duration > new_clip.position() {
                 return Err(EsotereelError::ClipOverlap);
             }
         }
@@ -44,107 +48,39 @@ impl Layer {
         self.clips.insert(new_clip);
         Ok(())
     }
+}
+impl Eq for Layer {}
 
-    pub fn get_clip_at_frame(&self, frame: i64) -> Option<&Clip> {
-        if let Some(clip) = self.clips.range(..=Clip::dummy_at(frame)).next_back() {
-            if frame < clip.position + clip.duration {
-                return Some(clip);
-            }
-        }
-        None
+impl Ord for Layer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.order.cmp(&other.order)
     }
 }
 
-#[derive(Archive, Serialize, Deserialize, Debug, Clone)]
+impl PartialOrd for Layer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
-
-pub struct ClipMap {
-    #[with(AsVec)]
-    pub tree: BTreeSet<Arc<Clip>>,
-
-    #[with(Skip)]
-    pub id_map: HashMap<u64, Arc<Clip>>,
+#[repr(C)]
+pub(crate) struct LayerMapKey {
+    index: usize,
+    generation: u32,
 }
 
-impl Default for ClipMap {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ClipMap {
-    pub fn new() -> Self {
-        Self {
-            tree: BTreeSet::new(),
-            id_map: HashMap::new(),
-        }
+impl SlotMapKey for LayerMapKey {
+    fn new(index: usize, generation: u32) -> Self {
+        Self { index, generation }
     }
 
-    pub fn len(&self) -> usize {
-        self.tree.len()
+    fn index(&self) -> usize {
+        self.index
     }
 
-    /// Rebuilds the `id_map` from the `clips` set.
-    /// Necessary after deserialization as `id_map` is skipped by `rkyv`.
-    pub fn rebuild_id_map(&mut self) {
-        self.id_map = self
-            .tree
-            .iter()
-            .map(|clip| (clip.id, clip.clone()))
-            .collect();
-    }
-
-    pub fn range<T, R>(&self, range: R) -> std::collections::btree_set::Range<'_, Arc<Clip>>
-    where
-        T: Ord + ?Sized,
-        Arc<Clip>: std::borrow::Borrow<T>,
-        R: std::ops::RangeBounds<T>,
-    {
-        self.tree.range(range)
-    }
-
-    pub fn insert(&mut self, clip: Arc<Clip>) {
-        self.tree.insert(clip.clone());
-        self.id_map.insert(clip.id, clip.clone());
-    }
-
-    pub fn get_at(&self, pos: i64) -> Option<Arc<Clip>> {
-        self.tree.get(&Clip::dummy_at(pos)).cloned()
-    }
-
-    pub fn get_by_id(&self, id: u64) -> Option<Arc<Clip>> {
-        self.id_map.get(&id).cloned()
-    }
-
-    pub fn remove_at(&mut self, pos: i64) -> Option<Arc<Clip>> {
-        if let Some(clip) = self.get_at(pos) {
-            self.id_map.remove(&clip.id);
-            self.tree.remove(&clip);
-            Some(clip)
-        } else {
-            None
-        }
-    }
-
-    pub fn remove_by_id(&mut self, id: u64) -> Option<Arc<Clip>> {
-        if let Some(clip) = self.id_map.remove(&id) {
-            self.tree.remove(&clip);
-            Some(clip)
-        } else {
-            None
-        }
-    }
-
-    pub fn hydrate_id_map(&mut self) {
-        self.id_map = self.tree.iter().map(|c| (c.id, c.clone())).collect();
-    }
-}
-
-impl<'a> IntoIterator for &'a ClipMap {
-    type Item = &'a Arc<Clip>;
-    type IntoIter = std::collections::btree_set::Iter<'a, Arc<Clip>>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.tree.iter()
+    fn generation(&self) -> u32 {
+        self.generation
     }
 }

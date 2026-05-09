@@ -1,16 +1,18 @@
 use std::sync::{Arc, RwLock};
 
-use esotereel_lib::responces::{parse_and_handle_responce, set_responce_callbacks};
-use esotereel_lib::{ClientState, set_send_request_callback};
+use esotereel_lib::ClientState;
+use esotereel_lib::requests::Request;
+use esotereel_lib::responces::Response;
+use rkyv::{AlignedVec, check_archived_root};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
 use crate::{ON_CONNECTED_CALLBACKS, on_responce_recveve};
 
-type ClientSender = mpsc::UnboundedSender<Vec<u8>>;
+type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
-pub static INSTANCE: RwLock<Option<Arc<ClientNetworkHandler>>> = RwLock::new(None);
+static INSTANCE: RwLock<Option<Arc<ClientNetworkHandler>>> = RwLock::new(None);
 
 pub type OnConnectedFn = extern "C" fn();
 
@@ -30,8 +32,6 @@ impl ClientNetworkHandler {
     }
 
     pub fn new(app_state: Arc<ClientState>) -> Self {
-        set_responce_callbacks(on_responce_recveve);
-        set_send_request_callback(on_send);
         Self {
             app_state,
             tx: RwLock::new(None),
@@ -47,7 +47,7 @@ impl ClientNetworkHandler {
         let (mut reader, mut writer) = split(stream);
 
         // 送信用のチャンネルを作成
-        let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<AlignedVec>();
 
         // 送信チャンネルを保存
         if let Ok(mut guard) = self.tx.write() {
@@ -56,7 +56,6 @@ impl ClientNetworkHandler {
 
         self.on_connected();
 
-        let app_state = self.app_state.clone();
         let instance = self.clone();
 
         // A. 送信専用ループ（mpsc -> TCP）
@@ -83,9 +82,7 @@ impl ClientNetworkHandler {
                 break;
             }
 
-            if let Err(e) = parse_and_handle_responce(&buf, &app_state) {
-                log::error!("Handler Error: {:?}", e);
-            }
+            self.parse_and_handle_responce(&buf);
         }
 
         // クリーンアップ
@@ -98,20 +95,26 @@ impl ClientNetworkHandler {
         Ok(())
     }
 
-    fn on_connected(&self) {
-        if let Some(cb) = ON_CONNECTED_CALLBACKS.get() {
-            cb();
+    fn parse_and_handle_responce(self: &Arc<Self>, bytes: &Vec<u8>) {
+        match check_archived_root::<Response>(bytes) {
+            Ok(archived_req) => {
+                if let Err(e) = on_responce_recveve(archived_req, self) {
+                    log::error!("Handler Error: {:?}", e);
+                }
+            }
+            Err(e) => log::error!("Invalid data format: {:?}", e),
         }
     }
-}
 
-extern "C" fn on_send(_client_id: u32, ptr: *const u8, len: usize) {
-    let data = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+    pub fn send(&self, request: Request) {
+        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+        self.send_bytes(bytes);
+    }
 
-    if let Some(instance) = ClientNetworkHandler::get_instance() {
-        if let Ok(guard) = instance.tx.read() {
+    fn send_bytes(&self, bytes: AlignedVec) {
+        if let Ok(guard) = self.tx.read() {
             if let Some(tx) = guard.as_ref() {
-                if let Err(_) = tx.send(data) {
+                if let Err(_) = tx.send(bytes) {
                     log::error!("Failed to send to server: channel closed");
                 }
             } else {
@@ -120,7 +123,11 @@ extern "C" fn on_send(_client_id: u32, ptr: *const u8, len: usize) {
                 );
             }
         }
-    } else {
-        log::warn!("Dropped request: ClientNetworkHandler instance is not registered yet.");
+    }
+
+    fn on_connected(&self) {
+        if let Some(cb) = ON_CONNECTED_CALLBACKS.get() {
+            cb();
+        }
     }
 }

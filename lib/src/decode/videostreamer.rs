@@ -8,12 +8,12 @@ use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
 use std::path::Path;
 
-
 pub struct VideoStreamer {
     pub ictx: Input,
     decoder: VideoDecoder,
     scaler: Scaler,
     pub video_stream_index: usize,
+    pub time_base: f64,
 }
 
 impl VideoStreamer {
@@ -26,6 +26,7 @@ impl VideoStreamer {
             .ok_or(ffmpeg::Error::StreamNotFound)?;
 
         let video_stream_index = stream.index();
+        let time_base = f64::from(stream.time_base());
 
         let context_decoder =
             ffmpeg::codec::context::Context::from_parameters(stream.parameters())?;
@@ -36,7 +37,7 @@ impl VideoStreamer {
             decoder.format(),
             decoder.width(),
             decoder.height(),
-            Pixel::RGB24,
+            Pixel::RGBA,
             decoder.width(),
             decoder.height(),
             Flags::BILINEAR,
@@ -47,6 +48,7 @@ impl VideoStreamer {
             decoder,
             scaler,
             video_stream_index,
+            time_base,
         })
     }
 
@@ -69,9 +71,28 @@ impl VideoStreamer {
             }
 
             // スケーリング処理
-            let mut rgb_frame = Video::empty();
+            let mut rgb_frame =
+                Video::new(Pixel::RGBA, self.decoder.width(), self.decoder.height());
             self.scaler.run(&decoded, &mut rgb_frame).ok()?;
+            rgb_frame.set_pts(decoded.pts()); // PTSをコピーして保持
             return Some(rgb_frame);
+        }
+        None
+    }
+
+    /// 指定した秒数のフレームをピンポイントで取得する
+    pub fn get_frame_at_time(&mut self, seconds: f64) -> Option<Video> {
+        // 1. 指定位置の直前のキーフレームへシーク
+        if self.seek(seconds).is_err() {
+            return None;
+        }
+
+        // 2. 目的の秒数を超えるまでデコードを進める
+        while let Some(frame) = self.next_frame() {
+            let current_pts = frame.pts().unwrap_or(0) as f64 * self.time_base;
+            if current_pts >= seconds {
+                return Some(frame);
+            }
         }
         None
     }
@@ -110,5 +131,3 @@ impl VideoStreamer {
         }
     }
 }
-
-

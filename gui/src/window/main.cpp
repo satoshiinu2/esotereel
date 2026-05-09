@@ -3,7 +3,9 @@
 #include <DockManager.h>
 #include <QLabel>
 
-MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent) {
+    this->windowState.network = &network;
+
     resize(1280, 720);
     setWindowTitle("Esotereel");
 
@@ -23,4 +25,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     auto *timelineDock = new ads::CDockWidget(this->dockManager, "Timeline");
     timelineDock->setWidget(timelineWidget);
     dockManager->addDockWidget(ads::BottomDockWidgetArea, timelineDock);
+
+    // default timeline
+    this->windowState.focusedTimeline = timelineWidget;
 }

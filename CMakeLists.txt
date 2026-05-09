@@ -7,8 +7,17 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+# Allow setting Qt6 path via environment variable
+if(NOT Qt6_DIR AND DEFINED ENV{QT_DIR})
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+endif()
+
 # ビルドタイプに応じた設定の切り替え
-set(IS_DEBUG CMAKE_BUILD_TYPE STREQUAL "Debug" OR NOT CMAKE_BUILD_TYPE)
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(IS_DEBUG TRUE)
+else()
+    set(IS_DEBUG FALSE)
+endif()
 
 if(IS_DEBUG)
     set(RUST_PROFILE "debug")
@@ -30,8 +39,13 @@ else()
     set(RLIB_PREFIX "lib")
 endif()
 
-# Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Network WaylandClient Gui Core )  
+# Qt6 components - Wayland is platform-specific
+set(QT_COMPONENTS Widgets Network Gui Core)
+if(UNIX AND NOT APPLE)
+    list(APPEND QT_COMPONENTS WaylandClient)
+endif()
+
+find_package(Qt6 REQUIRED COMPONENTS ${QT_COMPONENTS})
 
 # qt ads
 include(FetchContent)
@@ -113,8 +127,15 @@ target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/inc
 target_link_libraries(esotereel_gui PRIVATE 
     Qt6::Widgets 
     Qt6::Network
-    Qt6::WaylandClient
-    Qt6::WaylandClientPrivate
     qtadvanceddocking-qt6 
     ${GUI_HLP_LIB}
 )
+
+if(TARGET Qt6::WaylandClient)
+    target_link_libraries(esotereel_gui PRIVATE Qt6::WaylandClient Qt6::WaylandClientPrivate)
+endif()
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(esotereel_gui PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_link_options(esotereel_gui PRIVATE -fsanitize=address)
+endif()
