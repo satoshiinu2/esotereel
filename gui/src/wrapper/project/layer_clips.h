@@ -99,6 +99,7 @@ class ClipsIterator {
         }
     }
 };
+
 class ClipsIterable {
     const RawLayer *raw_ptr;
 

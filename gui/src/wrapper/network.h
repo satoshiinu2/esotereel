@@ -1,7 +1,6 @@
 #pragma once
 
-#include "esotereel_gui_helper.h"
-#include "project/project.h"
+#include "project/forwards.h"
 #include "stringview.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
@@ -11,8 +10,11 @@
 #include <sys/types.h>
 
 class Requests;
+namespace esotereel_gui_helper {
+struct _ClientNetworkHandler;
+}
+
 using RawClientNetworkHandler = esotereel_gui_helper::_ClientNetworkHandler;
-using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
 
 class ClientNetworkHandler {
 
@@ -21,38 +23,13 @@ class ClientNetworkHandler {
     bool isWayland;
 
   public:
-    ClientNetworkHandler() {
-        auto res = esotereel_gui_helper::client_network_handler_new(&raw_ptr);
-        if (res != WrapperErrorCode::Ok) {
-            qCritical() << "Failed to create ClientNetworkHandler:" << (int)res;
-            raw_ptr = nullptr;
-        }
-    }
-    ~ClientNetworkHandler() {
-        if (raw_ptr) {
-            esotereel_gui_helper::client_network_handler_drop(raw_ptr);
-            raw_ptr = nullptr;
-        }
-    }
+    ClientNetworkHandler();
+    ~ClientNetworkHandler();
     ClientNetworkHandler(const ClientNetworkHandler &) = delete;
     ClientNetworkHandler &operator=(const ClientNetworkHandler &) = delete;
 
-    //  move
-    ClientNetworkHandler(ClientNetworkHandler &&other) noexcept : raw_ptr(other.raw_ptr) {
-        other.raw_ptr = nullptr;
-    }
-
-    // drop
-    ClientNetworkHandler &operator=(ClientNetworkHandler &&other) noexcept {
-        if (this != &other) {
-            if (raw_ptr) {
-                esotereel_gui_helper::client_network_handler_drop(raw_ptr);
-            }
-            raw_ptr = other.raw_ptr;
-            other.raw_ptr = nullptr;
-        }
-        return *this;
-    }
+    ClientNetworkHandler(ClientNetworkHandler &&other) noexcept;
+    ClientNetworkHandler &operator=(ClientNetworkHandler &&other) noexcept;
 
     operator const RawClientNetworkHandler *() const noexcept {
         return raw_ptr;
@@ -61,32 +38,9 @@ class ClientNetworkHandler {
     bool isValid() const {
         return raw_ptr != nullptr;
     }
-    bool run(QString addr) {
-        if (!isValid()) {
-            return false;
-        }
 
-        QByteArray addrUtf8 = addr.toUtf8();
-        auto addrView = StringView::fromQUtf8String(addrUtf8);
-
-        auto res = esotereel_gui_helper::client_network_handler_run(raw_ptr, addrView);
-        if (res != WrapperErrorCode::Ok) {
-            qWarning() << "Failed to start network worker:" << (int)res;
-        }
-        return res == WrapperErrorCode::Ok;
-    }
-
-    // can return invalid
-    Project getProject() const {
-        if (!isValid()) {
-            return Project::invalid();
-        }
-
-        const void *guard_ptr;
-        esotereel_gui_helper::client_network_handler_app_state_project_lock_read(raw_ptr,
-                                                                                 &guard_ptr);
-        return Project::byGuard(guard_ptr);
-    }
+    bool run(QString addr);
+    Project getProject() const;
 
     Requests requests() const;
 };

@@ -1,4 +1,9 @@
 
+
+#include "../wrapper/project/timeline.h"        // IWYU pragma: keep
+#include "../wrapper/project/clip.h"            // IWYU pragma: keep
+#include "../wrapper/project/project.h"         // IWYU pragma: keep
+#include "../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "timeline.h"
 #include <cmath>
 #include <cstddef>
@@ -48,4 +53,8 @@ std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, co
     }
 
     return std::make_tuple(clip, layerIdx);
+}
+
+Timeline TimelineWidget::getTimeline(Project &project) {
+    return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
 }

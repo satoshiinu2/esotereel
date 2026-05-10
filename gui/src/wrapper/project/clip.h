@@ -1,32 +1,22 @@
 #pragma once
 
-#include "esotereel_gui_helper.h"
 #include <cstdint>
 
+namespace esotereel_gui_helper {
+struct _Clip;
+}
 using RawClip = esotereel_gui_helper::_Clip;
 
 class Clip {
   public:
     const RawClip *raw_ptr;
 
-    Clip(const RawClip *p) noexcept : raw_ptr(p) {
-    }
-    
-    static Clip Empty() {
-        return Clip(nullptr);
-    }
+    Clip(const RawClip *p) noexcept;
 
-    bool isValid() const noexcept {
-        return raw_ptr != nullptr;
-    }
+    static Clip Empty();
 
-    uint64_t id() const noexcept {
-        return esotereel_gui_helper::clip_get_id(raw_ptr);
-    }
-    int64_t position() const noexcept {
-        return esotereel_gui_helper::clip_get_position(raw_ptr);
-    }
-    int64_t duration() const noexcept {
-        return esotereel_gui_helper::clip_get_duration(raw_ptr);
-    }
+    bool isValid() const noexcept;
+    uint64_t id() const noexcept;
+    int64_t position() const noexcept;
+    int64_t duration() const noexcept;
 };

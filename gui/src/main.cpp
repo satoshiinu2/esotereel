@@ -36,7 +36,7 @@ int main(int argc, char **argv) {
     w.show();
 
     addr = "0.0.0.0:12345";
-    InternalServer::internalServerStart(addr, onServerStart);
+    InternalServer::start(addr, onServerStart);
 
     return app.exec();
 }

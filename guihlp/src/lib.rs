@@ -25,6 +25,7 @@ pub enum WrapperErrorCode {
     Error = 3,
     Panic = 4,
 }
+
 #[repr(C)]
 pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
@@ -33,7 +34,7 @@ pub struct GuiCallbacks {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init() {
-    // set_responce_callbacks(on_responce_recveve);
+    
 }
 
 #[unsafe(no_mangle)]

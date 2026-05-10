@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use esotereel_lib::project::clip::Clip;
 use esotereel_lib::project::{ClipUpdateMap, Project};

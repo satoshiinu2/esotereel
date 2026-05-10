@@ -1,3 +1,6 @@
+
+#include "../wrapper/project/project.h"
+#include "../wrapper/project/timeline.h"
 #include "main.h"
 #include "timeline.h"
 #include <QEvent>
@@ -75,20 +78,18 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     if (!std::holds_alternative<DragNone>(this->dragState)) {
         this->onDragContinue(e);
     }
-
-    auto project = windowState->network->getProject();
-    Timeline timeline = getTimeline(project);
 }
 
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     QWidget::mouseReleaseEvent(e);
 
+    Project project = windowState->network->getProject();
+    Timeline timeline = getTimeline(project);
+
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
     // ドラッグしていないなら１つセレクト
     if (!std::holds_alternative<DragClip>(this->dragState) && e->button() & Qt::LeftButton) {
-        auto project = windowState->network->getProject();
-        Timeline timeline = getTimeline(project);
 
         if (timeline.isValid()) {
             this->handleSelectClip(timeline, e->pos(), ctrl);
@@ -104,7 +105,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
-    auto project = windowState->network->getProject();
+    Project project = windowState->network->getProject();
     Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
@@ -132,7 +133,7 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
 }
 
 void TimelineWidget::onDragContinue(QMouseEvent *e) {
-    auto project = windowState->network->getProject();
+    Project project = windowState->network->getProject();
     Timeline timeline = getTimeline(project);
 
     std::visit(

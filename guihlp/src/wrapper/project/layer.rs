@@ -35,7 +35,7 @@ pub extern "C" fn layer_find_clip_at_frame(
 
     let layer = unsafe { &(*ptr) };
     let clip = layer.clips.get_at(frame);
-    dbg!(&clip);
+
     let Some(clip) = clip else {
         return WrapperErrorCode::NotFound;
     };

@@ -1,8 +1,6 @@
 #pragma once
 
-#include "../wrapper/project/clip.h"
-#include "../wrapper/project/project.h"
-#include "../wrapper/project/timeline.h"
+#include "../wrapper/project/forwards.h"
 #include <QEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -87,10 +85,7 @@ class TimelineWidget : public QWidget {
         vScrollBar->setValue(y);
     }
 
-    Timeline getTimeline(Project &project) {
-
-        return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
-    }
+    Timeline getTimeline(Project &project) ;
 
   protected:
     void paintEvent(QPaintEvent *e) override;
@@ -121,8 +116,7 @@ class TimelineWidget : public QWidget {
     void drawSelectionRect(QPainter &p, const QRect &r) const;
     void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
 
-    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local,
-                                               bool ctrl);
+    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
     void handleClipDragContinue(const Timeline &timeline, const QPoint &local);
     void handleClipDraggingDrop(const Timeline &timeline, const QPoint &local);
 

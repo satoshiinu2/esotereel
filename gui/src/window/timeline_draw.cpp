@@ -1,4 +1,7 @@
 #include "../util.h"
+#include "../wrapper/project/project.h"         // IWYU pragma: keep
+#include "../wrapper/project/timeline.h"        // IWYU pragma: keep
+#include "../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "main.h"
 #include "timeline.h"
 #include <cmath>
