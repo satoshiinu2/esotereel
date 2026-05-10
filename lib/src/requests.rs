@@ -7,6 +7,7 @@ use crate::project::commands::Command;
 pub enum Request {
     Test,
     NewProject,
+    ProjectAll,
     Command {
         command: Command,
         timeline_idx: usize,

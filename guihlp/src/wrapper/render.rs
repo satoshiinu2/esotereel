@@ -119,7 +119,10 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
         let timeline = unsafe { &*ptr_timeline };
         let wgpuutil = unsafe { &mut (*ptr_wgpu) };
 
-        request_stream_packets_for_time(timeline, app_state, current_frame);
+        let req = request_stream_packets_for_time(timeline, app_state, current_frame);
+        for req in req.iter() {
+            network.send(req);
+        }
 
         let render_res =
             esotereel_lib::render::render_frame(wgpuutil, timeline, app_state, current_frame);

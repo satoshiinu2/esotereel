@@ -7,7 +7,7 @@ pub extern "C" fn req_test(ptr_network: *const ClientNetworkHandler) {
     let network = unsafe { &*ptr_network };
 
     let req = Request::Test;
-    network.send(req);
+    network.send(&req);
 }
 
 #[unsafe(no_mangle)]
@@ -15,7 +15,7 @@ pub extern "C" fn req_new_project(ptr_network: *const ClientNetworkHandler) {
     let network = unsafe { &*ptr_network };
 
     let req = Request::NewProject;
-    network.send(req);
+    network.send(&req);
 }
 
 impl ClientNetworkHandler {
@@ -25,7 +25,7 @@ impl ClientNetworkHandler {
             timeline_idx,
         };
 
-        self.send(req);
+        self.send(&req);
     }
 }
 
@@ -42,6 +42,6 @@ pub extern "C" fn req_load_stream(
     let path = path.to_string();
 
     let req = Request::LoadStream { path };
-    network.send(req);
+    network.send(&req);
     WrapperErrorCode::Ok
 }

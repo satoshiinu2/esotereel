@@ -36,7 +36,17 @@ pub fn on_request_receive(
             };
 
             *lock = Some(new_project);
-            network.send(client_id, cmd);
+            network.send(client_id, &cmd);
+        }
+        ArchivedRequest::ProjectAll => {
+            let mut lock = app_state.project.write_or_err()?;
+            let project = lock.project_mut_err()?;
+
+            let cmd = Response::ProjectAll {
+                project: project.clone(),
+            };
+
+            network.send(client_id, &cmd);
         }
         ArchivedRequest::Command {
             command,
@@ -58,7 +68,7 @@ pub fn on_request_receive(
                 timeline_type: timeline_idx,
                 updates,
             };
-            network.send_all(cmd);
+            network.send_all(&cmd);
         }
         ArchivedRequest::LoadStream { path } => {
             let path_str = path.as_ref();
@@ -92,7 +102,7 @@ pub fn on_request_receive(
 
             let codec_id = unsafe { std::mem::transmute(codec_id) };
 
-            let response = Response::StreamMetadata {
+            let res = Response::StreamMetadata {
                 path: path_str.to_owned(),
                 resource_id,
                 codec_id,
@@ -101,7 +111,7 @@ pub fn on_request_receive(
                 time_base,
                 extradata,
             };
-            network.send(client_id, response);
+            network.send(client_id, &res);
 
             log::info!(
                 "Sent StreamMetadata for resource_id: {} ({})",
@@ -155,7 +165,7 @@ pub fn on_request_receive(
                         discontinuous: is_first_packet_of_clip,
                     };
 
-                    network.send(client_id, res);
+                    network.send(client_id, &res);
 
                     is_first_packet_of_clip = false;
                     sent_count += 1;

@@ -106,8 +106,8 @@ impl ClientNetworkHandler {
         }
     }
 
-    pub fn send(&self, request: Request) {
-        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+    pub fn send(&self, request: &Request) {
+        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
         self.send_bytes(bytes);
     }
 

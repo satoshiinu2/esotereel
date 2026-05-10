@@ -135,13 +135,13 @@ impl ServerNetworkHandler {
         }
     }
 
-    pub fn send(&self, client_id: u32, request: Response) {
-        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+    pub fn send(&self, client_id: u32, request: &Response) {
+        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
         self.send_bytes(client_id, bytes);
     }
 
-    pub fn send_all(&self, request: Response) {
-        let bytes = rkyv::to_bytes::<_, 1024>(&request).unwrap();
+    pub fn send_all(&self, request: &Response) {
+        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
         self.send_bytes_all(bytes);
     }
 

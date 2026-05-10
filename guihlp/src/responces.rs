@@ -19,7 +19,7 @@ pub(super) fn on_responce_recveve(
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
-            log::info!("Client: Received ProjectAll response");
+            // log::info!("Client: Received ProjectAll response");
 
             let mut real_project: Project = project
                 .deserialize(&mut SharedDeserializeMap::new())
