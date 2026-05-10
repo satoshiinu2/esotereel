@@ -55,11 +55,8 @@ void onConnectedCallBack() {
 void setCallBacks() {
     esotereel_gui_helper::_GuiCallbacks callbacks;
 
-    callbacks.on_test = +[]() {
-    };
-    callbacks.redraw_timeline = +[](size_t id) {
-        window->redrawTimeline(id);
-    };
+    callbacks.on_test = +[]() {};
+    callbacks.redraw_timeline = +[](size_t id) { window->redrawTimeline(id); };
 
     esotereel_gui_helper::init();
     esotereel_gui_helper::init_rust_logger(q_log_callback);

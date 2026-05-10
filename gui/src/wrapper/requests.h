@@ -20,15 +20,10 @@ class Requests {
         esotereel_gui_helper::req_new_project(raw_ptr);
     }
 
-    void moveClips(uint64_t timelineIdx, const std::vector<uint64_t> &clipIds, int64_t posMoved, int64_t durationMoved, int64_t layerMoved) noexcept {
-        esotereel_gui_helper::req_cmd_clip_move_mul(
-            raw_ptr,
-            timelineIdx,
-            clipIds.data(),
-            clipIds.size(),
-            posMoved,
-            durationMoved,
-            layerMoved);
+    void moveClips(uint64_t timelineIdx, const std::vector<uint64_t> &clipIds, int64_t posMoved, int64_t durationMoved,
+                   int64_t layerMoved) noexcept {
+        esotereel_gui_helper::req_cmd_clip_move_mul(raw_ptr, timelineIdx, clipIds.data(), clipIds.size(), posMoved,
+                                                    durationMoved, layerMoved);
     }
 
     void addClipAt(uint64_t timelineIdx, int64_t position, size_t layerIdx) noexcept {

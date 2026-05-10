@@ -11,7 +11,8 @@
 #include <qevent.h>
 #include <qpainter.h>
 
-std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timeline, const QPoint &mousePos, bool ctrl) {
+std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timeline, const QPoint &mousePos,
+                                                           bool ctrl) {
     int64_t frame = this->XToFrame(mousePos.x());
 
     auto [clip, layerIdx] = this->findClipAt(timeline, mousePos);
@@ -30,13 +31,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timel
 
     update();
 
-    return DragClip{
-        layerIdx,
-        frame,
-        layerIdx,
-        frame,
-        mousePos,
-        false};
+    return DragClip{layerIdx, frame, layerIdx, frame, mousePos, false};
 }
 
 void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoint &mousePos) {
@@ -58,16 +53,15 @@ void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoi
 
     drag->isWrong = false;
     for (uint64_t clipid : this->selectedClipIds) {
-
         auto [clip, layerIdx] = timeline.findClipById(clipid);
         if (!clip.isValid()) {
             continue;
         }
+
         uint32_t targetLayerIdx = (layerIdx + layerMoved);
         int64_t newClipPosition = clip.position() + frameMoved;
-        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
-                                     clip.duration(), this->selectedClipIds)) {
 
+        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition, clip.duration(), this->selectedClipIds)) {
             auto *clipDragState = std::get_if<DragClip>(&this->dragState);
             if (!clipDragState) {
                 return;
@@ -99,16 +93,14 @@ void TimelineWidget::handleClipDraggingDrop(const Timeline &timeline, const QPoi
         }
         uint32_t targetLayerIdx = (layerIdx + layerMoved);
         int64_t newClipPosition = clip.position() + frameMoved;
-        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition,
-                                     clip.duration(), this->selectedClipIds)) {
+        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition, clip.duration(), this->selectedClipIds)) {
             goto send_drop;
         }
     }
 
 send_drop:
     update();
-    std::vector<uint64_t>
-        exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->windowState->network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
 }

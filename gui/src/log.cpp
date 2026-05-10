@@ -3,7 +3,8 @@
 #include <QDebug>
 #include <QString>
 
-void q_log_callback(size_t level, esotereel_gui_helper::_StringView target_view, esotereel_gui_helper::_StringView msg_view) {
+void q_log_callback(size_t level, esotereel_gui_helper::_StringView target_view,
+                    esotereel_gui_helper::_StringView msg_view) {
     QString target = StringView::toQstring(target_view);
     QString message = StringView::toQstring(msg_view);
 

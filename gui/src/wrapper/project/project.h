@@ -10,7 +10,8 @@ class Project {
     const RawProject *project_ptr;
 
   public:
-    Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr(p) {}
+    Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr(p) {
+    }
 
     static Project byGuard(const void *guard_ptr) {
         if (!guard_ptr)
@@ -30,12 +31,21 @@ class Project {
     }
 
     ~Project() {
-        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr); // デストラクタでRust側のロックを解除
+        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(
+            guard_ptr); // デストラクタでRust側のロックを解除
     }
 
-    bool isValid() const noexcept { return project_ptr != nullptr; }
+    bool isValid() const noexcept {
+        return project_ptr != nullptr;
+    }
 
-    Timeline timelineOf(size_t index) const noexcept { return Timeline(esotereel_gui_helper::project_get_timeline(project_ptr, index)); }
-    size_t timelineCount() const noexcept { return esotereel_gui_helper::project_get_timeline_count(project_ptr); }
-    void debugLog() const noexcept { esotereel_gui_helper::project_debug_log(project_ptr); }
+    Timeline timelineOf(size_t index) const noexcept {
+        return Timeline(esotereel_gui_helper::project_get_timeline(project_ptr, index));
+    }
+    size_t timelineCount() const noexcept {
+        return esotereel_gui_helper::project_get_timeline_count(project_ptr);
+    }
+    void debugLog() const noexcept {
+        esotereel_gui_helper::project_debug_log(project_ptr);
+    }
 };

@@ -48,12 +48,7 @@ struct DragAreaSel {
 
 struct DragPlayHead {};
 
-using DragState = std::variant<
-    DragNone,
-    DragOther,
-    DragClip,
-    DragAreaSel,
-    DragPlayHead>;
+using DragState = std::variant<DragNone, DragOther, DragClip, DragAreaSel, DragPlayHead>;
 
 class TimelineWidget : public QWidget {
     Q_OBJECT
@@ -126,7 +121,8 @@ class TimelineWidget : public QWidget {
     void drawSelectionRect(QPainter &p, const QRect &r) const;
     void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
 
-    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
+    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local,
+                                               bool ctrl);
     void handleClipDragContinue(const Timeline &timeline, const QPoint &local);
     void handleClipDraggingDrop(const Timeline &timeline, const QPoint &local);
 

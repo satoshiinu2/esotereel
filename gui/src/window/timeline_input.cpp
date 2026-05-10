@@ -67,7 +67,8 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
 void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     QWidget::mouseMoveEvent(e);
 
-    if (e->buttons() & Qt::LeftButton && std::holds_alternative<DragNone>(this->dragState) && this->firstClickPos.has_value()) {
+    if (e->buttons() & Qt::LeftButton && std::holds_alternative<DragNone>(this->dragState) &&
+        this->firstClickPos.has_value()) {
         this->dragState = this->onDragStarted(e, this->firstClickPos.value());
     }
 
@@ -134,22 +135,23 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
     auto project = windowState->network->getProject();
     Timeline timeline = getTimeline(project);
 
-    std::visit([&](auto &&state) {
-        using T = std::decay_t<decltype(state)>;
+    std::visit(
+        [&](auto &&state) {
+            using T = std::decay_t<decltype(state)>;
 
-        // タイムラインないならセレクトだけする
-        if (!timeline.isValid()) {
-            this->handleAreaSelContinue(e->pos());
-        } else if constexpr (std::is_same_v<T, DragAreaSel>) {
-            this->handleAreaSelContinue(e->pos());
-        } else if constexpr (std::is_same_v<T, DragPlayHead>) {
-            this->handleCtrlPlayhead(e->pos());
-        } else if constexpr (std::is_same_v<T, DragClip>) {
-            this->handleClipDragContinue(timeline, e->pos());
-            this->checkEdgeScroll(e->pos(), rect());
-        }
-    },
-               this->dragState);
+            // タイムラインないならセレクトだけする
+            if (!timeline.isValid()) {
+                this->handleAreaSelContinue(e->pos());
+            } else if constexpr (std::is_same_v<T, DragAreaSel>) {
+                this->handleAreaSelContinue(e->pos());
+            } else if constexpr (std::is_same_v<T, DragPlayHead>) {
+                this->handleCtrlPlayhead(e->pos());
+            } else if constexpr (std::is_same_v<T, DragClip>) {
+                this->handleClipDragContinue(timeline, e->pos());
+                this->checkEdgeScroll(e->pos(), rect());
+            }
+        },
+        this->dragState);
 }
 
 void TimelineWidget::onDragEnd(QMouseEvent *e) {
@@ -160,18 +162,19 @@ void TimelineWidget::onDragEnd(QMouseEvent *e) {
         return;
     }
 
-    std::visit([&](auto &&state) {
-        using T = std::decay_t<decltype(state)>;
+    std::visit(
+        [&](auto &&state) {
+            using T = std::decay_t<decltype(state)>;
 
-        if constexpr (std::is_same_v<T, DragAreaSel>) {
-            this->handleAreaSelEnd(timeline);
-        } else if constexpr (std::is_same_v<T, DragPlayHead>) {
+            if constexpr (std::is_same_v<T, DragAreaSel>) {
+                this->handleAreaSelEnd(timeline);
+            } else if constexpr (std::is_same_v<T, DragPlayHead>) {
 
-        } else if constexpr (std::is_same_v<T, DragClip>) {
-            this->handleClipDraggingDrop(timeline, e->pos());
-        }
-    },
-               this->dragState);
+            } else if constexpr (std::is_same_v<T, DragClip>) {
+                this->handleClipDraggingDrop(timeline, e->pos());
+            }
+        },
+        this->dragState);
 }
 
 void TimelineWidget::wheelEvent(QWheelEvent *e) {

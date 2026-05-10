@@ -18,7 +18,8 @@ class LayersIterator {
     using pointer = LayersIterator *;
     using reference = LayersIterator;
 
-    LayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {}
+    LayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {
+    }
 
     // インクリメント (++it)
     LayersIterator &operator++() noexcept {
@@ -41,14 +42,23 @@ class LayersIterable {
     const RawTimeline *raw_ptr;
 
   public:
-    LayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {}
-    bool isValid() const noexcept { return raw_ptr != nullptr; }
+    LayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {
+    }
+    bool isValid() const noexcept {
+        return raw_ptr != nullptr;
+    }
 
-    size_t layersCount() const noexcept { return esotereel_gui_helper::timeline_get_layers_count(raw_ptr); }
+    size_t layersCount() const noexcept {
+        return esotereel_gui_helper::timeline_get_layers_count(raw_ptr);
+    }
 
     // forループの開始点
-    LayersIterator begin() const noexcept { return LayersIterator(raw_ptr, 0); }
+    LayersIterator begin() const noexcept {
+        return LayersIterator(raw_ptr, 0);
+    }
 
     // forループの終点
-    LayersIterator end() const noexcept { return LayersIterator(raw_ptr, layersCount()); }
+    LayersIterator end() const noexcept {
+        return LayersIterator(raw_ptr, layersCount());
+    }
 };

@@ -6,7 +6,8 @@
 #include <qwidget.h>
 #include <tuple>
 
-TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType) : windowState(windowState), timelineIdx(timelineType) {
+TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType)
+    : windowState(windowState), timelineIdx(timelineType) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 

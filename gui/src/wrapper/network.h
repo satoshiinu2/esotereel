@@ -58,7 +58,9 @@ class ClientNetworkHandler {
         return raw_ptr;
     }
 
-    bool isValid() const { return raw_ptr != nullptr; }
+    bool isValid() const {
+        return raw_ptr != nullptr;
+    }
     bool run(QString addr) {
         if (!isValid()) {
             return false;
@@ -81,7 +83,8 @@ class ClientNetworkHandler {
         }
 
         const void *guard_ptr;
-        esotereel_gui_helper::client_network_handler_app_state_project_lock_read(raw_ptr, &guard_ptr);
+        esotereel_gui_helper::client_network_handler_app_state_project_lock_read(raw_ptr,
+                                                                                 &guard_ptr);
         return Project::byGuard(guard_ptr);
     }
 

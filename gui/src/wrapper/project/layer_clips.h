@@ -30,7 +30,8 @@ class ClipsIterator {
             return nullptr;
 
         RawClipIterator *result = nullptr;
-        if (esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &result) != WrapperErrorCode::Ok) {
+        if (esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &result) !=
+            WrapperErrorCode::Ok) {
             return nullptr;
         }
         return result;
@@ -42,18 +43,18 @@ class ClipsIterator {
     // ... (other traits)
 
     // begin用
-    ClipsIterator(const RawLayer *t) noexcept
-        : rust_iter_ptr(ClipsIterator::getBegin(t)), cur_ptr(nullptr) {
+    ClipsIterator(const RawLayer *t) noexcept : rust_iter_ptr(ClipsIterator::getBegin(t)), cur_ptr(nullptr) {
         advance();
     }
 
     ClipsIterator(const RawLayer *t, int64_t startFrame, int64_t endFrame) noexcept
-        : rust_iter_ptr(ClipsIterator::getBeginInRange(t,startFrame,endFrame)), cur_ptr(nullptr) {
+        : rust_iter_ptr(ClipsIterator::getBeginInRange(t, startFrame, endFrame)), cur_ptr(nullptr) {
         advance();
     }
 
     // end用
-    ClipsIterator() noexcept : rust_iter_ptr(nullptr), cur_ptr(nullptr) {}
+    ClipsIterator() noexcept : rust_iter_ptr(nullptr), cur_ptr(nullptr) {
+    }
 
     // コピー禁止 (重要！二重解放を防ぐ)
     // std::forward_iterator はコピー可能である必要がありますが、
@@ -62,8 +63,7 @@ class ClipsIterator {
     ClipsIterator &operator=(const ClipsIterator &) = delete;
 
     // Moveは許可
-    ClipsIterator(ClipsIterator &&other) noexcept
-        : rust_iter_ptr(other.rust_iter_ptr), cur_ptr(other.cur_ptr) {
+    ClipsIterator(ClipsIterator &&other) noexcept : rust_iter_ptr(other.rust_iter_ptr), cur_ptr(other.cur_ptr) {
         other.rust_iter_ptr = nullptr;
     }
 
@@ -103,14 +103,23 @@ class ClipsIterable {
     const RawLayer *raw_ptr;
 
   public:
-    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
-    bool isValid() const noexcept { return raw_ptr != nullptr; }
+    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {
+    }
+    bool isValid() const noexcept {
+        return raw_ptr != nullptr;
+    }
 
-    size_t clipsCount() const noexcept { return raw_ptr ? esotereel_gui_helper::layer_get_clips_count(raw_ptr) : 0; }
+    size_t clipsCount() const noexcept {
+        return raw_ptr ? esotereel_gui_helper::layer_get_clips_count(raw_ptr) : 0;
+    }
 
     // forループの開始点
-    ClipsIterator begin() const noexcept { return ClipsIterator(raw_ptr); }
+    ClipsIterator begin() const noexcept {
+        return ClipsIterator(raw_ptr);
+    }
 
     // forループの終点
-    ClipsIterator end() const noexcept { return ClipsIterator(); }
+    ClipsIterator end() const noexcept {
+        return ClipsIterator();
+    }
 };

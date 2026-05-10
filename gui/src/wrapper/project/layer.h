@@ -13,9 +13,12 @@ class Layer {
   public:
     const RawLayer *raw_ptr;
 
-    Layer(const RawLayer *p) noexcept : raw_ptr(p) {}
+    Layer(const RawLayer *p) noexcept : raw_ptr(p) {
+    }
 
-    size_t clipsCount() const noexcept { return esotereel_gui_helper::layer_get_clips_count(raw_ptr); }
+    size_t clipsCount() const noexcept {
+        return esotereel_gui_helper::layer_get_clips_count(raw_ptr);
+    }
 
     ClipsIterable clips() const noexcept {
         return ClipsIterable(raw_ptr);

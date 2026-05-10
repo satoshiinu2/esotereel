@@ -24,12 +24,11 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
     int w = this->width() * this->devicePixelRatio();
     int h = this->height() * this->devicePixelRatio();
 
-    this->wgpuutil = WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
+    this->wgpuutil =
+        WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
 
     renderTimer = new QTimer(this);
-    connect(renderTimer, &QTimer::timeout, this, [this]() {
-        update();
-    });
+    connect(renderTimer, &QTimer::timeout, this, [this]() { update(); });
     renderTimer->start(16);
 }
 
