@@ -129,22 +129,36 @@ pub fn on_request_receive(
                 resource_id,
                 seek_seconds
             );
-            let mut is_first_packet_of_clip = true;
 
             let mut streamer = app_state
                 .streams
                 .get_mut(resource_id)
                 .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
 
-            streamer
-                .seek(*seek_seconds)
-                .map_err(|e| EsotereelError::AccessError(e.to_string()))?;
+            // 継続的な読み込みを最適化:
+            // 現在の位置がリクエストされた位置の直前であればシークをスキップする
+            let current_time = streamer.last_pts.map(|pts| pts as f64 * streamer.time_base);
+            let needs_seek = match current_time {
+                Some(t) => {
+                    // リクエスト位置が現在より前、または1.0秒以上先ならジャンプ（シーク）が必要
+                    *seek_seconds < t || *seek_seconds > t + 1.0
+                }
+                None => true,
+            };
+
+            if needs_seek {
+                streamer
+                    .seek(*seek_seconds)
+                    .map_err(|e| EsotereelError::AccessError(e.to_string()))?;
+            }
 
             let video_idx = streamer.video_stream_index;
             let time_base = streamer.time_base;
             let mut sent_count = 0;
             let mut reached_target_time = false;
             let mut packets_after_target = 0;
+            let mut is_first_packet_of_response = true;
+            let mut latest_pts: Option<i64> = streamer.last_pts;
             let mut packets = streamer.ictx.packets();
 
             // Iteratorを直接進めて、指定された数(count)だけパケットを送る
@@ -153,8 +167,23 @@ pub fn on_request_receive(
                     let data = packet.data().map(|d| d.to_vec()).unwrap_or_default();
                     let pts = packet.pts();
                     let dts = packet.dts();
+
+                    // 次のリクエスト判定のためにlast_ptsを更新
+                    latest_pts = pts;
+
                     // パケットのPTSを秒数に変換
                     let packet_time = pts.map(|p| p as f64 * time_base).unwrap_or(0.0);
+
+                    // シーク位置よりあまりに前のパケットはスキップしても良いが、
+                    // I-frameから送る必要があるため基本は送信する。
+                    // ただし、reached_target_timeがいつまでもfalseの場合はシーク失敗の可能性がある。
+                    if !reached_target_time && packet_time > *seek_seconds + 10.0 {
+                        log::warn!(
+                            "Packet time ({:.2}) is way ahead of seek_seconds ({:.2}). Seek might have failed.",
+                            packet_time,
+                            seek_seconds
+                        );
+                    }
 
                     let res = Response::StreamData {
                         resource_id: *resource_id,
@@ -162,12 +191,13 @@ pub fn on_request_receive(
                         pts,
                         dts,
                         is_key: packet.is_key(),
-                        discontinuous: is_first_packet_of_clip,
+                        // 実際にシーク（ジャンプ）した場合のみ不連続フラグを立てる
+                        discontinuous: needs_seek && is_first_packet_of_response,
                     };
 
                     network.send(client_id, &res);
 
-                    is_first_packet_of_clip = false;
+                    is_first_packet_of_response = false;
                     sent_count += 1;
 
                     if packet_time >= *seek_seconds {
@@ -186,6 +216,8 @@ pub fn on_request_receive(
                     }
                 }
             }
+
+            streamer.last_pts = latest_pts;
         }
     }
     Ok(())
