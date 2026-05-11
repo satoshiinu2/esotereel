@@ -1,9 +1,12 @@
 #pragma once
 #include "../wrapper/network.h"
-#include "timeline.h"
 #include <DockManager.h>
 #include <QMainWindow>
 #include <cstddef>
+
+class TimelineWidget;
+
+class DebugStreamsWidget;
 
 struct WindowGState {
     ClientNetworkHandler *network;
@@ -15,9 +18,7 @@ class MainWindow : public QMainWindow {
   public:
     explicit MainWindow(ClientNetworkHandler &network, QWidget *parent = nullptr);
 
-    void redrawTimeline(size_t timelineId) {
-        timelineWidget->update();
-    }
+    void redrawTimeline(size_t timelineId);
 
   protected:
     WindowGState windowState;
@@ -25,4 +26,5 @@ class MainWindow : public QMainWindow {
   private:
     ads::CDockManager *dockManager;
     TimelineWidget *timelineWidget;
+    DebugStreamsWidget *debugStreamsWidget;
 };

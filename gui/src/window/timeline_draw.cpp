@@ -31,20 +31,27 @@ void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRe
     for (auto const &layer : timeline.layers()) {
         p.setClipRect(bgRect);
         double_t y = r.top() + this->layerToY(layerIdx);
-        QRect layerRect(r.left(), y, r.width(), LAYER_HEIGHT);
 
-        // 背景色
-        QColor bgColor(45, 45, 45);
-        if (layerIdx % 2 == 0) {
-            bgColor = QColor(40, 40, 40);
+        // クリップエリアの背景
+        QRect contentArea(r.left() + LABEL_WIDTH, y, r.width() - LABEL_WIDTH, LAYER_HEIGHT);
+        QColor contentColor = (layerIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
+        // 背景色に応じて明るくするか暗くするかを切り替える
+        if (contentColor.lightness() < 128) {
+            contentColor = contentColor.lighter(150);
+        } else {
+            contentColor = contentColor.darker(125);
         }
-
-        p.fillRect(layerRect, bgColor);
+        p.fillRect(contentArea, contentColor);
 
         // レイヤーラベル
+        QColor labelColor = this->getLabelBgColor();
+
+        QRect labelRect(r.left(), y, LABEL_WIDTH, LAYER_HEIGHT);
+        p.fillRect(labelRect, labelColor);
+
         QPoint pos(r.left() + 4, y + LAYER_HEIGHT / 2);
 
-        p.setPen(Qt::white);
+        p.setPen(palette().text().color());
 
         QRect textRect(r.left() + 4, y, r.width(), LAYER_HEIGHT);
         p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, layer.name());
@@ -57,6 +64,11 @@ void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRe
 
         layerIdx++;
     }
+
+    // 境界線を描画してさらに見やすくする
+    p.setPen(palette().mid().color());
+    p.drawLine(r.left() + LABEL_WIDTH, r.top(), r.left() + LABEL_WIDTH, r.bottom());
+
     p.setClipping(false);
 }
 
@@ -114,7 +126,8 @@ void TimelineWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRe
 void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
     QRect rulerRect(r.left() + LABEL_WIDTH, r.top(), r.width() - LABEL_WIDTH, RULER_HEIGHT);
 
-    p.fillRect(rulerRect, QColor(50, 50, 50));
+    QColor rulerBg = this->getLabelBgColor();
+    p.fillRect(rulerRect, rulerBg);
 
     // 目盛り（10フレームごと）
     double_t startFrame = (this->scroll.x() / this->zoom);
@@ -125,14 +138,14 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
         if (x < r.left() + LABEL_WIDTH) {
             continue;
         }
-        QPen pen(QColor(100, 100, 100));
+        QPen pen(palette().mid().color());
         pen.setWidth(1);
         p.setPen(pen);
 
         p.drawLine(x, r.top(), x, r.top() + RULER_HEIGHT);
 
         p.setFont(QFont("Arial", 10));
-        p.setPen(QColor(180, 180, 180));
+        p.setPen(palette().windowText().color());
 
         QString text = QString::number(frame);
         QPointF pos(x + 2.0, r.top() + 4.0);
@@ -148,7 +161,7 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     QPainter p(this);
     QRect r = rect();
     // 背景
-    p.fillRect(r, QColor(30, 30, 30));
+    p.fillRect(r, palette().window());
 
     // ルーラー
     this->drawRuler(p, r);
@@ -167,4 +180,14 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
 
     // 再生ヘッド
     this->drawPlayhead(this->playhead, p, r);
+}
+
+QColor TimelineWidget::getLabelBgColor() const noexcept {
+    QColor color = palette().window().color();
+    if (color.lightness() < 128) {
+        color = color.lighter(115);
+    } else {
+        color = color.darker(115);
+    }
+    return color;
 }

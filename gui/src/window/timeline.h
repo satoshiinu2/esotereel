@@ -85,7 +85,7 @@ class TimelineWidget : public QWidget {
         vScrollBar->setValue(y);
     }
 
-    Timeline getTimeline(Project &project) ;
+    Timeline getTimeline(Project &project);
 
   protected:
     void paintEvent(QPaintEvent *e) override;
@@ -106,6 +106,7 @@ class TimelineWidget : public QWidget {
     std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
 
+    QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
     std::tuple<Clip, size_t> findClipAt(const Timeline &timeline, const QPoint &local) const;
 
