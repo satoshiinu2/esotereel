@@ -148,14 +148,28 @@ impl StreamPlayer {
 
     /// 指定した秒数に最も近いフレームをバッファから取得する
     pub fn get_frame_at(&self, seconds: f64) -> Option<&Video> {
-        let (time, frame) = self.frames.iter().min_by(|(a_time, _), (b_time, _)| {
-            (a_time - seconds)
+        if self.frames.is_empty() {
+            return None;
+        }
+
+        // タイムスタンプは昇順なので binary search (partition_point) が利用可能
+        let idx = self.frames.partition_point(|(t, _)| *t < seconds);
+
+        let candidates = [
+            self.frames.get(idx),
+            if idx > 0 {
+                self.frames.get(idx - 1)
+            } else {
+                None
+            },
+        ];
+        let (time, frame) = candidates.iter().flatten().min_by(|a, b| {
+            (a.0 - seconds)
                 .abs()
-                .partial_cmp(&(b_time - seconds).abs())
+                .partial_cmp(&(b.0 - seconds).abs())
                 .unwrap()
         })?;
 
-        // 指定時間から0.1秒以上離れている場合は「見つからない」と判定（要調整）
         if (time - seconds).abs() > 0.1 {
             return None;
         }
@@ -165,6 +179,11 @@ impl StreamPlayer {
     pub fn flush(&mut self) {
         self.decoder.flush();
         self.frames.clear(); // Clear buffered frames on flush
+    }
+
+    /// 現在バッファリングされている全フレームのタイムスタンプを返す（UI表示用）
+    pub fn get_buffered_timestamps(&self) -> Vec<f64> {
+        self.frames.iter().map(|(t, _)| *t).collect()
     }
 
     /// デバッグ用: PPM形式で保存する内部メソッド

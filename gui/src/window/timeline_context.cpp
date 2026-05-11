@@ -1,3 +1,4 @@
+#include "../wrapper/network.h"
 #include "../wrapper/project/project.h"         // IWYU pragma: keep
 #include "../wrapper/project/timeline.h"        // IWYU pragma: keep
 #include "../wrapper/project/timeline_layers.h" // IWYU pragma: keep

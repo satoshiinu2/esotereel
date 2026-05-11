@@ -14,6 +14,7 @@ pub struct VideoStreamer {
     scaler: Scaler,
     pub video_stream_index: usize,
     pub time_base: f64,
+    pub last_pts: Option<i64>,
 }
 
 impl VideoStreamer {
@@ -49,6 +50,7 @@ impl VideoStreamer {
             scaler,
             video_stream_index,
             time_base,
+            last_pts: None,
         })
     }
 
@@ -75,6 +77,7 @@ impl VideoStreamer {
                 Video::new(Pixel::RGBA, self.decoder.width(), self.decoder.height());
             self.scaler.run(&decoded, &mut rgb_frame).ok()?;
             rgb_frame.set_pts(decoded.pts()); // PTSをコピーして保持
+            self.last_pts = decoded.pts();
             return Some(rgb_frame);
         }
         None
@@ -100,8 +103,11 @@ impl VideoStreamer {
     /// 指定した秒数（timestamp）にシークする
     pub fn seek(&mut self, seconds: f64) -> Result<(), ffmpeg::Error> {
         let timestamp = (seconds * f64::from(ffmpeg::util::mathematics::rescale::TIME_BASE)) as i64;
-        self.ictx.seek(timestamp, ..timestamp)?; // 近くのIフレームに飛ぶ
+
+        self.ictx.seek(timestamp, ..timestamp)?;
+
         self.decoder.flush(); // デコーダ内部のバッファをクリア
+        self.last_pts = None;
         Ok(())
     }
 

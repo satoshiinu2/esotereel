@@ -67,6 +67,20 @@ void req_cmd_add_clip_dummy(const _ClientNetworkHandler *ptr_network,
                             int64_t position,
                             uintptr_t layer_idx);
 
+uintptr_t debug_streams_get_resources_arr_size(const _ClientNetworkHandler *ptr_network);
+
+bool debug_streams_write_resources_arr(const _ClientNetworkHandler *ptr_network,
+                                       uint32_t *ptr_out_arr,
+                                       uintptr_t safety_size);
+
+uintptr_t debug_streams_get_loaded_streams_sec_arr_size(const _ClientNetworkHandler *ptr_network,
+                                                        uint32_t resource_id);
+
+bool debug_streams_write_loaded_streams_sec_arr(const _ClientNetworkHandler *ptr_network,
+                                                uint32_t resource_id,
+                                                double *ptr_out_arr,
+                                                uintptr_t safety_size);
+
 _WrapperErrorCode internal_server_start(_StringView addr, _OnServerReadyFn on_server_ready);
 
 void init_rust_logger(_LogOutCStrFn callback);

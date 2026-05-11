@@ -1,4 +1,5 @@
 
+#include "../wrapper/network.h"
 #include "../wrapper/project/project.h"
 #include "../wrapper/project/timeline.h"
 #include "main.h"

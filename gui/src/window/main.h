@@ -1,5 +1,5 @@
 #pragma once
-#include "../wrapper/network.h"
+#include "../wrapper/network.fwd.h"
 #include <DockManager.h>
 #include <QMainWindow>
 #include <cstddef>
