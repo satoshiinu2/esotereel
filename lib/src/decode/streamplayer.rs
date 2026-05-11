@@ -134,11 +134,11 @@ impl StreamPlayer {
                     }
                     self.frames.push_back((timestamp, rgb_frame));
 
-                    log::debug!(
-                        "Decoded frame at timestamp: {:.3}s (buffer size: {})",
-                        timestamp,
-                        self.frames.len()
-                    )
+                    // log::debug!(
+                    //     "Decoded frame at timestamp: {:.3}s (buffer size: {})",
+                    //     timestamp,
+                    //     self.frames.len()
+                    // )
                 }
             }
         }

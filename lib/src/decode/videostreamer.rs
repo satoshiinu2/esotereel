@@ -8,6 +8,10 @@ use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
 use std::path::Path;
 
+use crate::responces::Response;
+use crate::util::result::{EsotereelError, EsotereelResult};
+
+const AV_TIME_BASE: f64 = 1_000_000.0;
 pub struct VideoStreamer {
     pub ictx: Input,
     decoder: VideoDecoder,
@@ -15,6 +19,7 @@ pub struct VideoStreamer {
     pub video_stream_index: usize,
     pub time_base: f64,
     pub last_pts: Option<i64>,
+    needs_discontinuity_flag: bool,
 }
 
 impl VideoStreamer {
@@ -51,6 +56,7 @@ impl VideoStreamer {
             video_stream_index,
             time_base,
             last_pts: None,
+            needs_discontinuity_flag: false,
         })
     }
 
@@ -100,13 +106,72 @@ impl VideoStreamer {
         None
     }
 
+    pub fn fetch_stream_data(
+        &mut self,
+        resource_id: u32,
+        seek_seconds: f64,
+        count: u32,
+    ) -> EsotereelResult<Vec<Response>> {
+        log::info!("fetch_stream_data called: seek_seconds={}", seek_seconds);
+
+        let current_time = self.last_pts.map(|pts| pts as f64 * self.time_base);
+        let needs_seek = match current_time {
+            Some(t) => seek_seconds < t || seek_seconds > t + 1.0,
+            None => true,
+        };
+
+        if needs_seek {
+            self.seek(seek_seconds)
+                .map_err(|e| EsotereelError::AccessError(e.to_string()))?;
+            self.needs_discontinuity_flag = true;
+        }
+
+        let mut to_sends = Vec::new();
+        let mut reached_target_time = false;
+        let mut packets_after_target = 0;
+
+        // packets()ではなくread_packet()を直接ループ
+        let mut packet = ffmpeg::Packet::empty();
+        while packet.read(&mut self.ictx).is_ok() {
+            if packet.stream() != self.video_stream_index {
+                continue;
+            }
+
+            let pts = packet.pts();
+            let dts = packet.dts();
+            let packet_time = pts.map(|p| p as f64 * self.time_base).unwrap_or(0.0);
+
+            self.last_pts = pts;
+
+            let res = Response::StreamData {
+                resource_id,
+                data: packet.data().map(|d| d.to_vec()).unwrap_or_default(),
+                pts,
+                dts,
+                is_key: packet.is_key(),
+                discontinuous: std::mem::take(&mut self.needs_discontinuity_flag),
+            };
+            to_sends.push(res);
+
+            if packet_time >= seek_seconds {
+                reached_target_time = true;
+            }
+            if reached_target_time {
+                packets_after_target += 1;
+                if packets_after_target >= count {
+                    break;
+                }
+            }
+        }
+
+        Ok(to_sends)
+    }
+
     /// 指定した秒数（timestamp）にシークする
     pub fn seek(&mut self, seconds: f64) -> Result<(), ffmpeg::Error> {
-        let timestamp = (seconds * f64::from(ffmpeg::util::mathematics::rescale::TIME_BASE)) as i64;
-
+        let timestamp = (seconds * AV_TIME_BASE) as i64;
         self.ictx.seek(timestamp, ..timestamp)?;
-
-        self.decoder.flush(); // デコーダ内部のバッファをクリア
+        self.decoder.flush();
         self.last_pts = None;
         Ok(())
     }
