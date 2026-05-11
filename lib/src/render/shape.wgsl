@@ -6,13 +6,19 @@ struct Screen {
 @group(0) @binding(0)
 var<uniform> screen: Screen;
 
+struct Locals {
+    transform: mat4x4<f32>,
+}
+@group(2) @binding(0)
+var<uniform> locals: Locals;
+
 @group(1) @binding(0)
 var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1)
 var s_diffuse: sampler;
 
 struct VertexInput {
-    @location(0) position: vec2<f32>,
+    @location(0) position: vec3<f32>,
     @location(1) color: vec4<f32>,
     @location(2) tex_coords: vec2<f32>,
 }
@@ -21,20 +27,23 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) tex_coords: vec2<f32>,
-    @location(2) @interpolate(flat) tex_index: u32,
 }
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
+    // 1. ローカル変換行列を適用
+    let world_pos = locals.transform * vec4<f32>(in.position.xyz, 1.0);
+
+    // 2. 画面サイズに合わせてNDC（-1.0 to 1.0）に変換
     let ndc = vec2<f32>(
-        in.position.x / screen.size.x * 2.0 - 1.0,
-        1.0 - in.position.y / screen.size.y * 2.0,
+        world_pos.x / screen.size.x * 2.0 - 1.0,
+        1.0 - world_pos.y / screen.size.y * 2.0,
     );
+
     var out: VertexOutput;
-    out.position = vec4<f32>(ndc, 0.0, 1.0);
+    out.position = vec4<f32>(ndc, world_pos.z, 1.0);
     out.color = in.color;
     out.tex_coords = in.tex_coords;
-    out.tex_index = 0u; // 現在は未使用なので0で初期化
     return out;
 }
 

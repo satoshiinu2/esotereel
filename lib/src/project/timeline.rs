@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use crate::project::{clip::Clip, clipdata::ClipData, layer::Layer, layermap::LayerMap};
+use crate::project::{
+    clip::Clip, clip_data::ClipData, clip_translate::ClipTranslates, layer::Layer,
+    layer_map::LayerMap,
+};
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -36,8 +39,22 @@ impl Timeline {
         self.next_clip_id += 1;
         id
     }
-    pub fn new_clip(&mut self, position: i64, duration: i64, clip_data: ClipData) -> Arc<Clip> {
-        unsafe { Arc::new(Clip::new(self.new_clip_id(), position, duration, clip_data)) }
+    pub fn new_clip(
+        &mut self,
+        position: i64,
+        duration: i64,
+        clip_data: ClipData,
+        translates: ClipTranslates,
+    ) -> Arc<Clip> {
+        unsafe {
+            Arc::new(Clip::new(
+                self.new_clip_id(),
+                position,
+                duration,
+                clip_data,
+                translates,
+            ))
+        }
     }
 
     pub fn find_clip_by_id(&self, clip_id: u64) -> Option<(&Arc<Layer>, Arc<Clip>, usize)> {
@@ -49,7 +66,8 @@ impl Timeline {
         None
     }
 
-    pub fn remove_clip_by_id(&mut self, clip_id: u64) -> Option<(&mut Arc<Layer>, Arc<Clip>, u32)> {//layer, clip, layer_handle
+    pub fn remove_clip_by_id(&mut self, clip_id: u64) -> Option<(&mut Arc<Layer>, Arc<Clip>, u32)> {
+        //layer, clip, layer_handle
         for (layer_handle, layer) in self.layers.iter_mut().enumerate() {
             if let Some(clip) = Arc::make_mut(layer).clips.remove_by_id(clip_id) {
                 return Some((layer, clip, layer_handle as u32));

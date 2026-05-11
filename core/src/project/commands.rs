@@ -1,5 +1,8 @@
 use esotereel_lib::{
-    project::{clipdata::ClipData, commands::ArchivedCommand, timeline::Timeline},
+    project::{
+        clip_data::ClipData, clip_translate::ClipTranslates, commands::ArchivedCommand,
+        timeline::Timeline,
+    },
     util::result::EsotereelResult,
 };
 
@@ -21,10 +24,12 @@ pub fn handle_command_action(
             position,
             duration,
             clip_data,
+            translates,
         } => {
             let clip_data: ClipData = clip_data.deserialize(&mut rkyv::Infallible).unwrap();
+            let translates: ClipTranslates = translates.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let new_clip = timeline.new_clip(*position, *duration, clip_data);
+            let new_clip = timeline.new_clip(*position, *duration, clip_data, translates);
 
             clip_add(timeline, *layer_idx, new_clip, updates);
         }

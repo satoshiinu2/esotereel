@@ -4,7 +4,7 @@ use ffmpeg::util::frame::video::Video;
 
 use crate::{
     StreamState,
-    project::{clipdata::ClipData, timeline::Timeline},
+    project::{clip_data::ClipData, timeline::Timeline},
     render::wgpuutil::WGpuUtil,
 };
 

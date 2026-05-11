@@ -1,6 +1,6 @@
 use crate::{
     ClientState, StreamState,
-    project::{clipdata::ClipData, timeline::Timeline},
+    project::{clip_data::ClipData, timeline::Timeline},
     requests::Request,
 };
 

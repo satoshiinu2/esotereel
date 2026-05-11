@@ -1,6 +1,5 @@
-use crate::render::video::
-    update_timline_clips_texture
-;
+use crate::render::video::update_timline_clips_texture;
+use glam::Mat4;
 use wgpu::CurrentSurfaceTexture;
 
 use crate::{
@@ -19,7 +18,8 @@ pub mod wgpuutil;
 
 pub struct RenderBatch {
     pub vertices: Vec<Vertex>,
-    pub bind_group: wgpu::BindGroup,
+    pub texture_bind_group: wgpu::BindGroup,
+    pub transform: Mat4,
 }
 
 pub fn render_frame(
@@ -28,7 +28,6 @@ pub fn render_frame(
     app_state: &ClientState,
     current_frame: i64,
 ) -> Result<(), String> {
-
     if util.config.width == 0 || util.config.height == 0 {
         return Err("window size is 0".into());
     }
@@ -95,7 +94,8 @@ pub fn render_frame(
 
                     RenderBatch {
                         vertices: b.vertices,
-                        bind_group,
+                        texture_bind_group: bind_group,
+                        transform: b.transform,
                     }
                 })
                 .collect();

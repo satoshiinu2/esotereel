@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
-    project::{clip::Clip, clipmap::ClipMap},
+    project::{clip::Clip, clip_map::ClipMap},
     util::{
         result::{EsotereelError, EsotereelResult},
         slot_map::SlotMapKey,

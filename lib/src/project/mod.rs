@@ -1,17 +1,23 @@
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
-    project::{clip::Clip, clipdata::ClipData, timeline::Timeline},
+    project::{
+        clip::Clip,
+        clip_data::ClipData,
+        clip_translate::{ClipTranslate, ClipTranslates},
+        timeline::Timeline,
+    },
     util::result::{EsotereelError, EsotereelResult},
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 pub mod clip;
-pub mod clipdata;
-pub mod clipmap;
+pub mod clip_data;
+pub mod clip_map;
+pub mod clip_translate;
 pub mod commands;
 pub mod layer;
-pub mod layermap;
+pub mod layer_map;
 pub mod timeline;
 pub mod util;
 
@@ -48,7 +54,13 @@ impl Project {
         for i in 0..5u32 {
             let new_pl_clip = {
                 let timeline = self.get_timeline_mut(timeline_idx).unwrap();
-                timeline.new_clip(i as i64 * 100, 50, ClipData::Dummy)
+                let translates = ClipTranslates::Normal(ClipTranslate {
+                    position: [100.0, 100.0, 0.0],
+                    rotation: [0.0, 0.0, 0.0],
+                    scale: [400.0, 300.0, 1.0],
+                });
+
+                timeline.new_clip(i as i64 * 100, 50, ClipData::Dummy, translates)
             };
 
             self.get_timeline_mut(timeline_idx)

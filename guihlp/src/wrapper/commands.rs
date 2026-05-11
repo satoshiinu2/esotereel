@@ -1,7 +1,7 @@
 use std::slice;
 
 use esotereel_lib::{
-    project::{clipdata::ClipData, commands::Command},
+    project::{clip_data::ClipData, clip_translate::{ClipTranslate, ClipTranslates}, commands::Command},
     util::types::ClipMoveCtx,
 };
 
@@ -58,14 +58,24 @@ pub extern "C" fn req_cmd_add_clip_dummy(
 ) {
     let network = unsafe { &*ptr_network };
 
+    let clip_data = ClipData::Video {
+        path: "/home/satoshiinu/Downloads/1fH5h8vLdoLvTtLV.mp4".to_string(),
+        media_offset: 0.0,
+    };
+
+    let translates = ClipTranslates::Normal(ClipTranslate {
+        position: [100.0, 100.0, 0.0],
+        rotation: [0.0, 0.0, 0.0],
+        scale: [400.0, 300.0, 1.0],
+        
+    });
+
     let command = Command::AddClip {
         layer_idx,
         position,
         duration: 10000,
-        clip_data: ClipData::Video {
-            path: "/home/satoshiinu/Downloads/1fH5h8vLdoLvTtLV.mp4".to_string(),
-            media_offset: 0.0,
-        },
+        clip_data,
+        translates,
     };
 
     network.req_command(timeline_idx, command);

@@ -1,12 +1,14 @@
 use crate::{
     ClientState,
-    project::{clipdata::ClipData, timeline::Timeline},
+    project::{clip_data::ClipData, timeline::Timeline},
     render::vertex::Vertex,
 };
+use glam::{EulerRot, Mat4, Quat, Vec3};
 
 pub struct VertexBatch {
     pub vertices: Vec<Vertex>,
     pub texture_id: u32, // ここでどのテクスチャを使用するか識別する
+    pub transform: Mat4,
 }
 
 pub fn build_vertices(
@@ -29,10 +31,25 @@ pub fn build_vertices(
             };
 
             let color = [1.0, 1.0, 1.0, 1.0];
-            let rect = Vertex::rect(100.0, 100.0, 400.0, 300.0, color);
+            // 頂点は原点 (0,0) ベースで作成
+            let rect = Vertex::rect(0.0, 0.0, 1.0, 1.0, color);
+
+            let clip_trans = clip.translates.get_translate_at();
+
+            let transform = if let Some(t) = clip_trans {
+                Mat4::from_scale_rotation_translation(
+                    Vec3::from_array(t.scale),
+                    Quat::from_euler(EulerRot::XYZ, t.rotation[0], t.rotation[1], t.rotation[2]),
+                    Vec3::from_array(t.position),
+                )
+            } else {
+                Mat4::IDENTITY
+            };
+
             batches.push(VertexBatch {
                 vertices: rect.to_vec(),
                 texture_id,
+                transform,
             });
         }
     }

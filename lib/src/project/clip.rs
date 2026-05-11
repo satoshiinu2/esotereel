@@ -1,6 +1,6 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::clipdata::ClipData;
+use crate::project::{clip_data::ClipData, clip_translate::ClipTranslates};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
@@ -9,17 +9,10 @@ pub struct Clip {
     position: i64,
     pub duration: i64,
     pub clip_data: ClipData,
+    pub translates: ClipTranslates,
 }
 
 impl Clip {
-    pub fn get_dummy_at(pos: i64) -> Self {
-        Self {
-            id: 0,
-            position: pos,
-            duration: 0,
-            clip_data: ClipData::Dummy,
-        }
-    }
     pub fn position(&self) -> i64 {
         self.position
     }
@@ -28,12 +21,19 @@ impl Clip {
         self.position = v;
     }
 
-    pub(super) unsafe fn new(id: u64, position: i64, duration: i64, clip_data: ClipData) -> Self {
+    pub(in crate::project) unsafe fn new(
+        id: u64,
+        position: i64,
+        duration: i64,
+        clip_data: ClipData,
+        translates: ClipTranslates,
+    ) -> Self {
         Self {
             id,
             position,
             duration,
             clip_data,
+            translates,
         }
     }
 }
