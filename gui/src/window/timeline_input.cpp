@@ -57,6 +57,8 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     auto mousePos = e->pos();
 
     if (e->button() & Qt::LeftButton) {
+        // クリック時にこのウィジェットにフォーカスを移す
+        this->setFocus();
         // update focused widget
         this->windowState->focusedTimeline = this;
 
@@ -204,4 +206,13 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
 
 void TimelineWidget::mouseDoubleClickEvent(QMouseEvent *e) {
     QWidget::mouseDoubleClickEvent(e);
+}
+
+void TimelineWidget::keyPressEvent(QKeyEvent *e) {
+    if (e->key() == Qt::Key_Space) {
+        this->togglePlayback();
+        e->accept();
+    } else {
+        QWidget::keyPressEvent(e);
+    }
 }

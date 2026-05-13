@@ -9,7 +9,7 @@ pub extern "C" fn debug_streams_get_resources_arr_size(
     }
 
     let network = unsafe { &*ptr_network };
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
 
     app_state.streams.len()
 }
@@ -25,7 +25,7 @@ pub extern "C" fn debug_streams_write_resources_arr(
     }
 
     let network = unsafe { &*ptr_network };
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
 
     if ptr_out_arr.is_null() && safety_size != 0 {
         return false;
@@ -53,7 +53,7 @@ pub extern "C" fn debug_streams_get_loaded_streams_sec_arr_size(
     }
 
     let network = unsafe { &*ptr_network };
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
 
     let Some(stream) = app_state.streams.get(&resource_id) else {
         return 0;
@@ -74,7 +74,7 @@ pub extern "C" fn debug_streams_write_loaded_streams_sec_arr(
     }
 
     let network = unsafe { &*ptr_network };
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
 
     let Some(stream) = app_state.streams.get(&resource_id) else {
         return false;

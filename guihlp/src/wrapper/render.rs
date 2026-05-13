@@ -115,17 +115,17 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
     }
     let result = catch_unwind(AssertUnwindSafe(|| {
         let network = unsafe { &*ptr_network };
-        let app_state = &network.app_state;
+        let app_state = network.app_state.lock().expect("mutex poisoned");
         let timeline = unsafe { &*ptr_timeline };
         let wgpuutil = unsafe { &mut (*ptr_wgpu) };
 
-        let req = request_stream_packets_for_time(timeline, app_state, current_frame);
+        let req = request_stream_packets_for_time(timeline, &app_state, current_frame);
         for req in req.iter() {
             network.send(req);
         }
 
         let render_res =
-            esotereel_lib::render::render_frame(wgpuutil, timeline, app_state, current_frame);
+            esotereel_lib::render::render_frame(wgpuutil, timeline, &app_state, current_frame);
 
         if let Err(err) = render_res {
             log::error!("{}", err);

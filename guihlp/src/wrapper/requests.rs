@@ -41,7 +41,7 @@ pub extern "C" fn req_load_stream(
     };
     let path = path.to_string();
 
-    let req = Request::LoadStream { path };
+    let req = Request::InitStream { path };
     network.send(&req);
     WrapperErrorCode::Ok
 }

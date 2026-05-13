@@ -1,9 +1,11 @@
 #pragma once
 
 #include "../wrapper/project/forwards.h"
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QPainter>
 #include <QScrollBar>
+#include <QTimer>
 #include <QWidget>
 #include <cmath>
 #include <cstddef>
@@ -96,16 +98,24 @@ class TimelineWidget : public QWidget {
     void wheelEvent(QWheelEvent *e) override;
     void mouseDoubleClickEvent(QMouseEvent *e) override;
     void contextMenuEvent(QContextMenuEvent *e) override;
+    void keyPressEvent(QKeyEvent *e) override;
 
   private:
+    // objects
     QScrollBar *hScrollBar;
     QScrollBar *vScrollBar;
+    QTimer *playbackTimer;
+    QElapsedTimer playbackElapsedTimer;
 
+    // states
     DragState dragState = DragNone{};
     WindowGState *windowState;
     std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
+    int64_t playbackStartFrame;
+    bool isPlaying;
 
+    // functions
     QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
     std::tuple<Clip, size_t> findClipAt(const Timeline &timeline, const QPoint &local) const;
@@ -133,5 +143,6 @@ class TimelineWidget : public QWidget {
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
 
+    void togglePlayback();
     void addClipAt(const QPoint &local);
 };

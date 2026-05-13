@@ -3,6 +3,7 @@
 #include "esotereel_gui_helper.h"
 #include "layer.h"
 #include "timeline_layers.h"
+#include <cmath>
 #include <vector>
 
 using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
@@ -51,4 +52,8 @@ bool Timeline::canPlaceClipAt(uint32_t layerIdx, int64_t position, int64_t durat
 
     return esotereel_gui_helper::timeline_can_place_clip_at(raw_ptr, layerIdx, position, duration, exclude_vec.data(),
                                                             exclude_vec.size());
+}
+
+double_t Timeline::fps() const noexcept {
+    return esotereel_gui_helper::timeline_get_fps(raw_ptr);
 }

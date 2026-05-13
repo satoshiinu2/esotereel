@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <qpoint.h>
 #include <qwidget.h>
+#include <QTimer>
 #include <tuple>
 
 TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType)
@@ -22,6 +23,23 @@ TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType)
     });
     connect(vScrollBar, &QScrollBar::valueChanged, [this](int val) {
         this->scroll.setY(val);
+        update();
+    });
+
+    // 再生用タイマーの設定
+    playbackTimer = new QTimer(this);
+    connect(playbackTimer, &QTimer::timeout, this, [this]() {
+        if (!this->isPlaying) return;
+
+        // プロジェクトのFPS（とりあえず60固定と想定）
+        const double fps = 60.0;
+        
+        // 再生開始時からの経過時間を取得 (ms)
+        qint64 elapsedMs = this->playbackElapsedTimer.elapsed();
+        
+        // 現在のフレームを算出
+        this->playhead = this->playbackStartFrame + static_cast<int64_t>(elapsedMs * fps / 1000.0);
+        
         update();
     });
 }
@@ -57,4 +75,16 @@ std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, co
 
 Timeline TimelineWidget::getTimeline(Project &project) {
     return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
+}
+
+void TimelineWidget::togglePlayback() {
+    if (isPlaying) {
+        playbackTimer->stop();
+        isPlaying = false;
+    } else {
+        this->playbackStartFrame = this->playhead;
+        this->playbackElapsedTimer.start();
+        this->playbackTimer->start(16); // 約60FPSでUI更新
+        this->isPlaying = true;
+    }
 }

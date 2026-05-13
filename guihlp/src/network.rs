@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use esotereel_lib::ClientState;
 use esotereel_lib::requests::Request;
@@ -17,7 +17,7 @@ static INSTANCE: RwLock<Option<Arc<ClientNetworkHandler>>> = RwLock::new(None);
 pub type OnConnectedFn = extern "C" fn();
 
 pub struct ClientNetworkHandler {
-    pub app_state: Arc<ClientState>,
+    pub app_state: Arc<Mutex<ClientState>>,
     tx: RwLock<Option<ClientSender>>,
 }
 
@@ -31,7 +31,7 @@ impl ClientNetworkHandler {
         None
     }
 
-    pub fn new(app_state: Arc<ClientState>) -> Self {
+    pub fn new(app_state: Arc<Mutex<ClientState>>) -> Self {
         Self {
             app_state,
             tx: RwLock::new(None),

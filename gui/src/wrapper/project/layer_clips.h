@@ -11,8 +11,8 @@ using RawClipIterator = esotereel_gui_helper::_ClipIterator;
 using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
 
 class ClipsIterator {
-    RawClipIterator *rust_iter_ptr;
-    const RawClip *cur_ptr;
+    RawClipIterator *raw_iter_ptr;
+    const RawClip *raw_cur_ptr;
 
     static RawClipIterator *getBegin(const RawLayer *t) {
         if (!t)
@@ -43,17 +43,17 @@ class ClipsIterator {
     // ... (other traits)
 
     // begin用
-    ClipsIterator(const RawLayer *t) noexcept : rust_iter_ptr(ClipsIterator::getBegin(t)), cur_ptr(nullptr) {
+    ClipsIterator(const RawLayer *t) noexcept : raw_iter_ptr(ClipsIterator::getBegin(t)), raw_cur_ptr(nullptr) {
         advance();
     }
 
     ClipsIterator(const RawLayer *t, int64_t startFrame, int64_t endFrame) noexcept
-        : rust_iter_ptr(ClipsIterator::getBeginInRange(t, startFrame, endFrame)), cur_ptr(nullptr) {
+        : raw_iter_ptr(ClipsIterator::getBeginInRange(t, startFrame, endFrame)), raw_cur_ptr(nullptr) {
         advance();
     }
 
     // end用
-    ClipsIterator() noexcept : rust_iter_ptr(nullptr), cur_ptr(nullptr) {
+    ClipsIterator() noexcept : raw_iter_ptr(nullptr), raw_cur_ptr(nullptr) {
     }
 
     // コピー禁止 (重要！二重解放を防ぐ)
@@ -63,17 +63,17 @@ class ClipsIterator {
     ClipsIterator &operator=(const ClipsIterator &) = delete;
 
     // Moveは許可
-    ClipsIterator(ClipsIterator &&other) noexcept : rust_iter_ptr(other.rust_iter_ptr), cur_ptr(other.cur_ptr) {
-        other.rust_iter_ptr = nullptr;
+    ClipsIterator(ClipsIterator &&other) noexcept : raw_iter_ptr(other.raw_iter_ptr), raw_cur_ptr(other.raw_cur_ptr) {
+        other.raw_iter_ptr = nullptr;
     }
 
     void advance() noexcept {
-        if (rust_iter_ptr) {
-            auto result = esotereel_gui_helper::clip_iter_next(rust_iter_ptr, &cur_ptr);
+        if (raw_iter_ptr) {
+            auto result = esotereel_gui_helper::clip_iter_next(raw_iter_ptr, &raw_cur_ptr);
             if (result != WrapperErrorCode::Ok) {
-                cur_ptr = nullptr;
-                esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
-                rust_iter_ptr = nullptr;
+                raw_cur_ptr = nullptr;
+                esotereel_gui_helper::clip_iter_free(raw_iter_ptr);
+                raw_iter_ptr = nullptr;
             }
         }
     }
@@ -85,17 +85,17 @@ class ClipsIterator {
 
     bool operator!=(const ClipsIterator &other) const noexcept {
         // rust_iter_ptr ではなく、指しているデータ (cur_ptr) で比較するのが確実
-        return cur_ptr != other.cur_ptr;
+        return raw_cur_ptr != other.raw_cur_ptr;
     }
 
     Clip operator*() const noexcept {
-        return Clip(cur_ptr);
+        return Clip(raw_cur_ptr);
     }
 
     // デストラクタ: もし途中でループを抜けても Rust 側をリークさせない
     ~ClipsIterator() {
-        if (rust_iter_ptr) {
-            esotereel_gui_helper::clip_iter_free(rust_iter_ptr);
+        if (raw_iter_ptr) {
+            esotereel_gui_helper::clip_iter_free(raw_iter_ptr);
         }
     }
 };

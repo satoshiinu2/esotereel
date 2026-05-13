@@ -17,7 +17,7 @@ pub fn on_request_receive(
     client_id: u32,
     network: &Arc<ServerNetworkHandler>,
 ) -> EsotereelResult<()> {
-    let app_state = &network.app_state;
+    let mut app_state = network.app_state.lock().expect("mutex poisoned");
 
     match request {
         ArchivedRequest::Test => {}
@@ -70,47 +70,22 @@ pub fn on_request_receive(
             };
             network.send_all(&cmd);
         }
-        ArchivedRequest::LoadStream { path } => {
-            let path_str = path.as_ref();
+        ArchivedRequest::InitStream { path } => {
+            let path = path.as_ref();
 
-            let streamer = VideoStreamer::new(path_str).map_err(|e| {
+            let streamer = VideoStreamer::new(path).map_err(|e| {
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
 
-            let resource_id = app_state
-                .path_to_stream
-                .get(path_str)
-                .and_then(|s| s.as_option())
-                .unwrap_or_else(|| {
-                    network
-                        .app_state
-                        .next_resource_id
-                        .fetch_add(1, Ordering::SeqCst)
-                });
+            let resource_id = app_state.get_or_create_resource_id(path);
 
-            let codec_id = streamer.codec_id();
-            let width = streamer.width();
-            let height = streamer.height();
-            let extradata = streamer.extradata().unwrap_or(&[]).to_vec();
-            let time_base = streamer.time_base;
+            let res = streamer.get_init_packet(path, resource_id);
 
-            // Store the streamer in the thread-local STREAMS for later packet requests
             app_state.streams.insert(resource_id, streamer);
             app_state
                 .path_to_stream
-                .insert(path_str.to_owned(), StreamState::Loaded(resource_id));
+                .insert(path.to_owned(), StreamState::Loaded(resource_id));
 
-            let codec_id = unsafe { std::mem::transmute(codec_id) };
-
-            let res = Response::StreamMetadata {
-                path: path_str.to_owned(),
-                resource_id,
-                codec_id,
-                width,
-                height,
-                time_base,
-                extradata,
-            };
             network.send(client_id, &res);
 
             log::info!(
@@ -135,7 +110,7 @@ pub fn on_request_receive(
                 .get_mut(resource_id)
                 .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
 
-            let to_send=streamer.fetch_stream_data(*resource_id, *seek_seconds, *count)?;
+            let to_send = streamer.fetch_stream_data(*resource_id, *seek_seconds, *count)?;
 
             for res in to_send {
                 network.send(client_id, &res);

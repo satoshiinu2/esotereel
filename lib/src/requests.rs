@@ -12,7 +12,7 @@ pub enum Request {
         command: Command,
         timeline_idx: usize,
     },
-    LoadStream {
+    InitStream {
         path: String,
     },
     FetchStreamData {

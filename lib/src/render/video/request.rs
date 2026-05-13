@@ -59,7 +59,9 @@ pub fn request_stream_packets_for_time(
                             .insert(path.to_owned(), StreamState::Loading);
 
                         // ストリームがないならロードを要求
-                        requests.push(Request::LoadStream { path: path.clone() });
+                        requests.push(Request::InitStream {
+                            path: path.to_owned(),
+                        });
                     }
                 }
                 _ => {}

@@ -106,6 +106,26 @@ impl VideoStreamer {
         None
     }
 
+    pub fn get_init_packet(&self, path: &str, resource_id: u32) -> Response {
+        let codec_id = self.codec_id();
+        let width = self.width();
+        let height = self.height();
+        let extradata = self.extradata().unwrap_or(&[]).to_vec();
+        let time_base = self.time_base;
+
+        let codec_id = unsafe { std::mem::transmute(codec_id) };
+
+        Response::StreamMetadata {
+            path: path.to_owned(),
+            resource_id,
+            codec_id,
+            width,
+            height,
+            time_base,
+            extradata,
+        }
+    }
+
     pub fn fetch_stream_data(
         &mut self,
         resource_id: u32,

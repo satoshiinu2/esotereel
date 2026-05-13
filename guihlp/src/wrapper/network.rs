@@ -3,7 +3,7 @@ use esotereel_lib::{ClientState, project::Project};
 use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::stringview::StringView};
 use std::{
     ffi::c_void,
-    sync::{Arc, RwLockReadGuard},
+    sync::{Arc, Mutex, RwLockReadGuard},
 };
 
 #[unsafe(no_mangle)]
@@ -55,7 +55,7 @@ pub extern "C" fn client_network_handler_new(
         return WrapperErrorCode::NullPtr;
     }
 
-    let network = ClientNetworkHandler::new(Arc::new(ClientState::new()));
+    let network = ClientNetworkHandler::new(Arc::new(Mutex::new(ClientState::new())));
 
     unsafe {
         *out = Arc::into_raw(Arc::new(network));
@@ -90,7 +90,8 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
 
     let handler = unsafe { &*ptr };
     // ガード自体をヒープに置いて、その「鍵」を返す
-    let lock = handler.app_state.project.read().unwrap();
+    let lock = handler.app_state.lock().expect("mutex poisoned");
+    let lock = lock.project.read().unwrap();
     if lock.as_ref().is_some() {
         // ロックを維持するためにガードを leak させる
         unsafe { *out = Box::into_raw(Box::new(lock)) as *const c_void };

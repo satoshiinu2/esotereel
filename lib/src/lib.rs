@@ -1,5 +1,7 @@
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicU32};
 
+use std::sync::atomic::Ordering;
+
 use crate::{
     decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer},
     project::Project,
@@ -75,6 +77,12 @@ impl ServerState {
             streams: Arc::new(DashMap::new()),
             next_resource_id: Arc::new(AtomicU32::new(0)),
         }
+    }
+    pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {
+        self.path_to_stream
+            .get(path)
+            .and_then(|s| s.as_option())
+            .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))
     }
 }
 // スレッド間で移動させること自体は問題ない

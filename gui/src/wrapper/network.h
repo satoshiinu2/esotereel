@@ -19,7 +19,7 @@ using RawClientNetworkHandler = esotereel_gui_helper::_ClientNetworkHandler;
 class ClientNetworkHandler {
 
   private:
-    const RawClientNetworkHandler *raw_ptr;
+    const RawClientNetworkHandler *network_ptr;
     bool isWayland;
 
   public:
@@ -32,11 +32,11 @@ class ClientNetworkHandler {
     ClientNetworkHandler &operator=(ClientNetworkHandler &&other) noexcept;
 
     operator const RawClientNetworkHandler *() const noexcept {
-        return raw_ptr;
+        return network_ptr;
     }
 
     bool isValid() const {
-        return raw_ptr != nullptr;
+        return network_ptr != nullptr;
     }
 
     bool run(QString addr);

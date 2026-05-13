@@ -91,3 +91,13 @@ pub unsafe extern "C" fn timeline_can_place_clip_at(
 
     timeline.can_place_clip_at(layer_idx, position, duration, exclude_ids)
 }
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timeline_get_fps(ptr: *const Timeline) -> f64 {
+    if ptr.is_null() {
+        return f64::NAN;
+    }
+    let timeline = unsafe { &(*ptr) };
+
+    timeline.fps
+}

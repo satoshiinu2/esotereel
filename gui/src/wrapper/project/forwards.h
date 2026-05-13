@@ -1,3 +1,5 @@
+#pragma once
+
 class Clip;
 class Layer;
 class ClipsIterator;

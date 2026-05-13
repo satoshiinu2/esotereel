@@ -1,7 +1,11 @@
 use std::slice;
 
 use esotereel_lib::{
-    project::{clip_data::ClipData, clip_translate::{ClipTranslate, ClipTranslates}, commands::Command},
+    project::{
+        clip_data::ClipData,
+        clip_translate::{ClipTranslate, ClipTranslates},
+        commands::Command,
+    },
     util::types::ClipMoveCtx,
 };
 
@@ -18,7 +22,7 @@ pub extern "C" fn req_cmd_clip_move_mul(
     layer_moved: isize,
 ) {
     let network = unsafe { &*ptr_network };
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
 
     let lock = app_state.project.read().unwrap();
     let Some(project) = lock.as_ref() else {
@@ -67,7 +71,6 @@ pub extern "C" fn req_cmd_add_clip_dummy(
         position: [100.0, 100.0, 0.0],
         rotation: [0.0, 0.0, 0.0],
         scale: [400.0, 300.0, 1.0],
-        
     });
 
     let command = Command::AddClip {

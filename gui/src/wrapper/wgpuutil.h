@@ -14,7 +14,7 @@ using RawWGpuUtil = esotereel_gui_helper::_WGpuUtil;
 class WGpuUtil {
 
   private:
-    RawWGpuUtil *raw_ptr;
+    RawWGpuUtil *wgpuutil_ptr;
     bool isWayland;
     ClientNetworkHandler &network;
 

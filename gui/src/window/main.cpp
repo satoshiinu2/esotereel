@@ -1,10 +1,15 @@
 #include "main.h"
-#include "debug_streams.h"
 #include "timeline.h"
 #include "wgpu_canvas.h"
 #include <DockManager.h>
 #include <QLabel>
 #include <QTimer>
+
+#define SHOW_DEBUG_STREAMS 0
+
+#if SHOW_DEBUG_STREAMS
+#include "debug_streams.h"
+#endif
 
 MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent) {
     this->windowState.network = &network;
@@ -36,10 +41,12 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     timelineDock->setWidget(timelineWidget);
     dockManager->addDockWidget(ads::BottomDockWidgetArea, timelineDock);
 
+#if SHOW_DEBUG_STREAMS
     this->debugStreamsWidget = new DebugStreamsWidget(&windowState);
     auto *debugStreamsDock = new ads::CDockWidget(dockManager, "DebugStreams");
     debugStreamsDock->setWidget(debugStreamsWidget);
     dockManager->addDockWidget(ads::CenterDockWidgetArea, debugStreamsDock, previewDock->dockAreaWidget());
+#endif
 
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;

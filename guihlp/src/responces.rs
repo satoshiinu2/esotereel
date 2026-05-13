@@ -15,7 +15,8 @@ pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
     network: &Arc<ClientNetworkHandler>,
 ) -> EsotereelResult<()> {
-    let app_state = &network.app_state;
+    let app_state = network.app_state.lock().expect("mutex poisoned");
+
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
@@ -30,7 +31,7 @@ pub(super) fn on_responce_recveve(
             let timeline_len = real_project.get_timeline_count();
             let project_arc = Arc::new(real_project);
 
-            *network.app_state.project.write().unwrap() = Some(project_arc.clone());
+            *app_state.project.write().unwrap() = Some(project_arc.clone());
 
             // dbg!(real_project.clone());
             for i in 0..timeline_len {

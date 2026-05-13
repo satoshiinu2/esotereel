@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../wrapper/render.h"
+#include "../wrapper/wgpuutil.h"
 #include "main.h"
 #include <QEvent>
 #include <QPainter>

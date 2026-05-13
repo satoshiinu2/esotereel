@@ -2,7 +2,7 @@ use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
 use rkyv::{AlignedVec, check_archived_root};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -17,7 +17,7 @@ type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 pub static INSTANCE: RwLock<Option<Arc<ServerNetworkHandler>>> = RwLock::new(None);
 
 pub struct ServerNetworkHandler {
-    pub app_state: Arc<ServerState>,
+    pub app_state: Arc<Mutex<ServerState>>,
     clients: RwLock<HashMap<u32, ClientSender>>,
 }
 
@@ -31,7 +31,7 @@ impl ServerNetworkHandler {
         None
     }
 
-    pub fn new(app_state: Arc<ServerState>) -> Self {
+    pub fn new(app_state: Arc<Mutex<ServerState>>) -> Self {
         Self {
             app_state,
             clients: RwLock::new(HashMap::new()),

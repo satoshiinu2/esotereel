@@ -8,6 +8,8 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::io::Write;
 
+const MAX_BUFFER_FRAMES: usize = 60;
+
 pub struct StreamPlayer {
     decoder: VideoDecoder,
     scaler: Option<Scaler>,
@@ -128,8 +130,7 @@ impl StreamPlayer {
                     // PTSを秒数に変換して保持
                     let timestamp = decoded.pts().unwrap_or(0) as f64 * self.time_base;
 
-                    if self.frames.len() >= 600 {
-                        // 最大保持数
+                    if self.frames.len() >= MAX_BUFFER_FRAMES {
                         self.frames.pop_front();
                     }
                     self.frames.push_back((timestamp, rgb_frame));

@@ -1,6 +1,8 @@
 #include "wgpu_canvas.h"
 #include "../util.h"
 #include "../wrapper/project/project.h"
+#include "../wrapper/project/timeline.h"
+#include "../wrapper/wgpuutil.h"
 #include "timeline.h"
 #include <QTimer>
 #include <QWindow>
@@ -24,8 +26,7 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
     int w = this->width() * this->devicePixelRatio();
     int h = this->height() * this->devicePixelRatio();
 
-    this->wgpuutil =
-        WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
+    this->wgpuutil = WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
 
     renderTimer = new QTimer(this);
     connect(renderTimer, &QTimer::timeout, this, [this]() { update(); });

@@ -145,6 +145,8 @@ bool timeline_can_place_clip_at(const _Timeline *ptr,
                                 const uint64_t *exclude_ids_ptr,
                                 uintptr_t exclude_ids_len);
 
+double timeline_get_fps(const _Timeline *ptr);
+
 _StringView wgpuutil_init_surface(void *window_ptr,
                                   void *display_ptr,
                                   uint32_t width,
