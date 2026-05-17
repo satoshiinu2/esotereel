@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use esotereel_lib::{
     StreamState,
@@ -8,6 +8,7 @@ use esotereel_lib::{
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt},
 };
+use rkyv::Deserialize;
 
 use crate::{network::ServerNetworkHandler, project::commands::handle_command_action};
 
@@ -95,21 +96,23 @@ pub fn on_request_receive(
         }
         ArchivedRequest::FetchStreamData {
             resource_id,
-            seek_seconds,
-            count,
+            seek_range_sec,
         } => {
             log::info!(
-                "Received FetchStreamData request for resource_id: {} at:{}",
+                "Received FetchStreamData request for resource_id: {} at:{:?}",
                 resource_id,
-                seek_seconds
+                seek_range_sec
             );
+
+            let seek_range_sec: Range<f64> =
+                seek_range_sec.deserialize(&mut rkyv::Infallible).unwrap();
 
             let mut streamer = app_state
                 .streams
                 .get_mut(resource_id)
                 .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
 
-            let to_send = streamer.fetch_stream_data(*resource_id, *seek_seconds, *count)?;
+            let to_send = streamer.fetch_stream_data(*resource_id, seek_range_sec)?;
 
             for res in to_send {
                 network.send(client_id, &res);

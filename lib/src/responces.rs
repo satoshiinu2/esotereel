@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::project::{ClipUpdateMap, Project};
@@ -29,5 +31,9 @@ pub enum Response {
         dts: Option<i64>,
         is_key: bool,
         discontinuous: bool,
+    },
+    StreamDataEnd {
+        resource_id: u32,
+        fetched_range: Range<f64>,
     },
 }

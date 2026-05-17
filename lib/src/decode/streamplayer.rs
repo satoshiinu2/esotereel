@@ -4,11 +4,36 @@ use ffmpeg::codec::decoder::Video as VideoDecoder;
 use ffmpeg::format::Pixel;
 use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
-use std::collections::VecDeque;
+use ordered_float::OrderedFloat;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io::Write;
+use std::ops::Range;
+use std::time;
 
-const MAX_BUFFER_FRAMES: usize = 60;
+const BUFFER_KEEP_SECONDS_BEFORE: f64 = 2.0; // 現在位置より前に保持する秒数
+const BUFFER_KEEP_SECONDS_AFTER: f64 = 5.0; // 現在位置より後に保持する秒数
+
+pub enum FetchState {
+    Idle,
+    Fetching {
+        requested_at: time::Instant,
+        seek_range_sec: Range<f64>,
+    },
+}
+
+impl FetchState {
+    const FETCH_TIMEOUT: time::Duration = time::Duration::from_secs(10);
+
+    pub fn is_active(&self) -> bool {
+        match self {
+            FetchState::Idle => false,
+            FetchState::Fetching { requested_at, .. } => {
+                requested_at.elapsed() < Self::FETCH_TIMEOUT
+            }
+        }
+    }
+}
 
 pub struct StreamPlayer {
     decoder: VideoDecoder,
@@ -16,9 +41,9 @@ pub struct StreamPlayer {
     target_width: u32,
     target_height: u32,
     frame_count: u32,
-    pub frames: VecDeque<(f64, Video)>, // (秒数, フレーム) のペアで保持
-    pub time_base: f64,                 // 1単位あたりの秒数 (1/fps 等)
-    pub last_requested_time: Option<f64>,
+    pub frames: BTreeMap<ordered_float::OrderedFloat<f64>, Video>, // (秒数, フレーム) のペアで保持
+    pub time_base: f64,                                            // 1単位あたりの秒数 (1/fps 等)
+    pub fetch_state: FetchState,
 }
 
 impl fmt::Debug for StreamPlayer {
@@ -78,9 +103,9 @@ impl StreamPlayer {
             target_width: width,
             target_height: height,
             frame_count: 0,
-            frames: VecDeque::new(),
+            frames: BTreeMap::new(),
             time_base,
-            last_requested_time: None,
+            fetch_state: FetchState::Idle,
         })
     }
 
@@ -91,7 +116,12 @@ impl StreamPlayer {
         pts: Option<i64>,
         dts: Option<i64>,
         is_key: bool,
+        discontinuous: bool,
     ) -> Result<(), ffmpeg::util::error::Error> {
+        if discontinuous {
+            self.flush();
+        }
+
         let mut packet = ffmpeg::codec::packet::Packet::copy(packet_data);
         packet.set_pts(pts);
         packet.set_dts(dts);
@@ -123,68 +153,47 @@ impl StreamPlayer {
                 // 出力バッファを明示的に確保 (RGBA 4bytes/pixel)
                 let mut rgb_frame = Video::new(Pixel::RGBA, self.target_width, self.target_height);
                 if scaler.run(&decoded, &mut rgb_frame).is_ok() {
-                    // if self.frame_count <= 5 {
-                    //     self.save_debug_frame(&rgb_frame);
-                    // }
-
                     // PTSを秒数に変換して保持
                     let timestamp = decoded.pts().unwrap_or(0) as f64 * self.time_base;
 
-                    if self.frames.len() >= MAX_BUFFER_FRAMES {
-                        self.frames.pop_front();
-                    }
-                    self.frames.push_back((timestamp, rgb_frame));
-
-                    // log::debug!(
-                    //     "Decoded frame at timestamp: {:.3}s (buffer size: {})",
-                    //     timestamp,
-                    //     self.frames.len()
-                    // )
+                    self.frames.insert(OrderedFloat(timestamp), rgb_frame);
                 }
             }
         }
 
         Ok(())
     }
+    pub fn free_no_needed_frames(&mut self, fetched_range: Range<f64>) {
+        let keep_start = OrderedFloat(fetched_range.start - BUFFER_KEEP_SECONDS_BEFORE);
+        let keep_end = OrderedFloat(fetched_range.end + BUFFER_KEEP_SECONDS_AFTER);
+
+        self.frames = self.frames.split_off(&keep_start);
+        self.frames.split_off(&keep_end);
+    }
 
     /// 指定した秒数に最も近いフレームをバッファから取得する
     pub fn get_frame_at(&self, seconds: f64) -> Option<&Video> {
-        if self.frames.is_empty() {
-            return None;
-        }
+        let target = OrderedFloat(seconds);
 
-        // タイムスタンプは昇順なので binary search (partition_point) が利用可能
-        let idx = self.frames.partition_point(|(t, _)| *t < seconds);
+        let before = self.frames.range(..=target).next_back();
+        let after = self.frames.range(target..).next();
 
-        let candidates = [
-            self.frames.get(idx),
-            if idx > 0 {
-                self.frames.get(idx - 1)
-            } else {
-                None
-            },
-        ];
-        let (time, frame) = candidates.iter().flatten().min_by(|a, b| {
-            (a.0 - seconds)
-                .abs()
-                .partial_cmp(&(b.0 - seconds).abs())
-                .unwrap()
-        })?;
+        let binding = [before, after];
+        let (sec, frame) = binding
+            .iter()
+            .flatten()
+            .min_by_key(|(p, _)| OrderedFloat((**p - seconds).abs()))?;
 
-        if (time - seconds).abs() > 0.1 {
+        if (**sec - seconds).abs() > 0.1 {
             return None;
         }
         Some(frame)
     }
 
     pub fn flush(&mut self) {
+        // self.fetch_state = FetchState::Idle;
         self.decoder.flush();
-        self.frames.clear(); // Clear buffered frames on flush
-    }
-
-    /// 現在バッファリングされている全フレームのタイムスタンプを返す（UI表示用）
-    pub fn get_buffered_timestamps(&self) -> Vec<f64> {
-        self.frames.iter().map(|(t, _)| *t).collect()
+        // self.frames.clear(); // Clear buffered frames on flush
     }
 
     /// デバッグ用: PPM形式で保存する内部メソッド

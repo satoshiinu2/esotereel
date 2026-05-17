@@ -6,6 +6,8 @@ use ffmpeg::format::{Pixel, context::Input, input};
 use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
+use std::mem;
+use std::ops::Range;
 use std::path::Path;
 
 use crate::responces::Response;
@@ -129,26 +131,30 @@ impl VideoStreamer {
     pub fn fetch_stream_data(
         &mut self,
         resource_id: u32,
-        seek_seconds: f64,
-        count: u32,
+        seek_sec_range: Range<f64>,
     ) -> EsotereelResult<Vec<Response>> {
-        log::info!("fetch_stream_data called: seek_seconds={}", seek_seconds);
+        log::info!(
+            "fetch_stream_data called: seek_seconds={:?}",
+            seek_sec_range
+        );
 
         let current_time = self.last_pts.map(|pts| pts as f64 * self.time_base);
         let needs_seek = match current_time {
-            Some(t) => seek_seconds < t || seek_seconds > t + 1.0,
+            Some(t) => {
+                // 現在位置が要求開始位置より後にある場合、または
+                // 前方に離れすぎている場合はシークを実行する
+                t > seek_sec_range.start || t < seek_sec_range.start - 1.0
+            }
             None => true,
         };
 
         if needs_seek {
-            self.seek(seek_seconds)
+            self.seek(seek_sec_range.start)
                 .map_err(|e| EsotereelError::AccessError(e.to_string()))?;
             self.needs_discontinuity_flag = true;
         }
 
         let mut to_sends = Vec::new();
-        let mut reached_target_time = false;
-        let mut packets_after_target = 0;
 
         // packets()ではなくread_packet()を直接ループ
         let mut packet = ffmpeg::Packet::empty();
@@ -169,20 +175,20 @@ impl VideoStreamer {
                 pts,
                 dts,
                 is_key: packet.is_key(),
-                discontinuous: std::mem::take(&mut self.needs_discontinuity_flag),
+                discontinuous: mem::take(&mut self.needs_discontinuity_flag),
             };
             to_sends.push(res);
 
-            if packet_time >= seek_seconds {
-                reached_target_time = true;
-            }
-            if reached_target_time {
-                packets_after_target += 1;
-                if packets_after_target >= count {
-                    break;
-                }
+            if packet_time >= seek_sec_range.end {
+                break;
             }
         }
+
+        // 完了通知
+        to_sends.push(Response::StreamDataEnd {
+            resource_id,
+            fetched_range: seek_sec_range,
+        });
 
         Ok(to_sends)
     }

@@ -1,73 +1,125 @@
+use std::{ops::Range, time};
+
 use crate::{
     ClientState, StreamState,
-    project::{clip_data::ClipData, timeline::Timeline},
+    decode::streamplayer::{FetchState, StreamPlayer},
+    project::{clip::Clip, clip_data::ClipData, timeline::Timeline},
     requests::Request,
 };
 
-/// 同一ストリームへの重複リクエストを抑制するための閾値（秒）
-const STREAM_FETCH_THRESHOLD: f64 = 0.5;
+enum BufferNeed {
+    Sufficient,                   // 十分
+    NeedMore { fetch_from: f64 }, // 不足、この位置から取得が必要
+    Stale,                        // 古い（シーク後などバッファが現在位置より前）
+}
+
+pub const BUFFER_LOOKAHEAD_THRESHOLD: f64 = 1.0; // バッファの先読み量
 
 pub fn request_stream_packets_for_time(
     timeline: &Timeline,
     app_state: &ClientState,
-    current_frame: i64,
+    frame_range: Range<i64>,
 ) -> Vec<Request> {
-    let mut requests = Vec::new();
+    timeline
+        .layers
+        .iter()
+        .filter_map(|layer| layer.clips.get_at(frame_range.start))
+        .filter_map(|clip| {
+            collect_request_for_clip(timeline, app_state, &clip, frame_range.clone())
+        })
+        .collect()
+}
 
-    for layer in &timeline.layers {
-        if let Some(clip) = layer.clips.get_at(current_frame) {
-            match &clip.clip_data {
-                ClipData::Video { path, media_offset } => {
-                    let media_seconds = ClipData::get_media_seconds(
-                        timeline.fps,
-                        clip.position(),
-                        current_frame,
-                        *media_offset,
-                    );
+fn collect_request_for_clip(
+    timeline: &Timeline,
+    app_state: &ClientState,
+    clip: &Clip,
+    frame_range: Range<i64>,
+) -> Option<Request> {
+    let (path, media_offset) = match &clip.clip_data {
+        ClipData::Video { path, media_offset } => Some((path, media_offset)),
+        _ => None,
+    }?;
 
-                    if let Some(resource_id_ref) = app_state.path_to_stream.get(path) {
-                        // 読み込まれていないならスキップ
-                        let StreamState::Loaded(resource_id) = *resource_id_ref else {
-                            continue;
-                        };
+    if let Some(resource_id_ref) = app_state.path_to_stream.get(path) {
+        let StreamState::Loaded(resource_id) = *resource_id_ref else {
+            return None;
+        };
 
-                        // フレームがない場合にのみリクエストを検討
-                        if let Some(mut player) = app_state.streams.get_mut(&resource_id) {
-                            if player.get_frame_at(media_seconds).is_some() {
-                                continue;
-                            }
+        let start_seconds = ClipData::get_media_seconds(
+            timeline.fps,
+            clip.position(),
+            frame_range.start,
+            *media_offset,
+        );
 
-                            // スパム防止：直近で要求した位置とほぼ同じならレスポンス待ちとみなしてスキップ
-                            if let Some(last) = player.last_requested_time {
-                                if (last - media_seconds).abs() < STREAM_FETCH_THRESHOLD {
-                                    continue;
-                                }
-                            }
-                            player.last_requested_time = Some(media_seconds);
-                        }
+        if let Some(mut player) = app_state.streams.get_mut(&resource_id) {
+            if player.fetch_state.is_active() {
+                return None;
+            }
 
-                        // 既にストリームがあるならパケットを要求
-                        requests.push(Request::FetchStreamData {
-                            resource_id,
-                            seek_seconds: media_seconds,
-                            count: 10,
-                        });
-                    } else {
-                        // スパム防止でフラグ立てる
-                        app_state
-                            .path_to_stream
-                            .insert(path.to_owned(), StreamState::Loading);
+            let buffer_need = assess_buffer(&player, start_seconds);
 
-                        // ストリームがないならロードを要求
-                        requests.push(Request::InitStream {
-                            path: path.to_owned(),
-                        });
+            if player.fetch_state.is_active() {
+                return None;
+            }
+
+            let fetch_from = match buffer_need {
+                BufferNeed::Sufficient => return None,
+                BufferNeed::Stale => start_seconds, // シーク後は現在位置から取り直し
+                BufferNeed::NeedMore { fetch_from } => {
+                    if player.fetch_state.is_active() {
+                        return None;
                     }
+                    fetch_from
                 }
-                _ => {}
+            };
+
+            let seek_range_sec = fetch_from..fetch_from + BUFFER_LOOKAHEAD_THRESHOLD;
+
+            player.fetch_state = FetchState::Fetching {
+                requested_at: time::Instant::now(),
+                seek_range_sec: seek_range_sec.clone(),
+            };
+
+            Some(Request::FetchStreamData {
+                resource_id,
+                seek_range_sec: seek_range_sec.clone(),
+            })
+        } else {
+            None
+        }
+    } else {
+        app_state
+            .path_to_stream
+            .insert(path.to_owned(), StreamState::Loading);
+        Some(Request::InitStream {
+            path: path.to_owned(),
+        })
+    }
+}
+
+fn assess_buffer(player: &StreamPlayer, current_seconds: f64) -> BufferNeed {
+    let buffer_front = player.frames.first_key_value().map(|(t, _)| t.0);
+    let buffer_end = player.frames.last_key_value().map(|(t, _)| t.0);
+
+    match (buffer_front, buffer_end) {
+        (None, _) | (_, None) => BufferNeed::NeedMore {
+            fetch_from: current_seconds,
+        },
+        (Some(front), Some(end)) => {
+            if current_seconds < front || current_seconds > end {
+                return BufferNeed::Stale;
+            }
+            if player.get_frame_at(current_seconds).is_none() {
+                return BufferNeed::Stale; // NeedMoreではなくStale
+            }
+            let buffered = end - current_seconds;
+            if buffered < BUFFER_LOOKAHEAD_THRESHOLD {
+                BufferNeed::NeedMore { fetch_from: end }
+            } else {
+                BufferNeed::Sufficient
             }
         }
     }
-
-    requests
 }

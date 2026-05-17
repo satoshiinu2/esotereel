@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use esotereel_lib::{
     StreamState,
-    decode::streamplayer::StreamPlayer,
+    decode::streamplayer::{FetchState, StreamPlayer},
     project::Project,
     responces::ArchivedResponse,
     util::result::{EsotereelError, EsotereelResult},
@@ -92,14 +92,24 @@ pub(super) fn on_responce_recveve(
             let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
 
             if let Some(mut player) = app_state.streams.get_mut(resource_id) {
-                if *discontinuous {
-                    player.flush();
-                }
-
                 // パケットをデコードしてフレームを取得
                 player
-                    .process_packet(data, pts, dts, *is_key)
+                    .process_packet(data, pts, dts, *is_key, *discontinuous)
                     .map_err(|e| EsotereelError::DecodeError(e.to_string()))?;
+            }
+        }
+        ArchivedResponse::StreamDataEnd {
+            resource_id,
+            fetched_range,
+        } => {
+            if let Some(mut player) = app_state.streams.get_mut(resource_id) {
+                let fetched_range: Range<f64> =
+                    fetched_range.deserialize(&mut rkyv::Infallible).unwrap();
+
+                // fetch_state を元の状態に戻して待機
+                player.fetch_state = FetchState::Idle;
+
+                player.free_no_needed_frames(fetched_range);
             }
         }
     }

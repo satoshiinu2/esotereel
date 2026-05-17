@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::project::commands::Command;
@@ -17,7 +19,6 @@ pub enum Request {
     },
     FetchStreamData {
         resource_id: u32,
-        seek_seconds: f64,
-        count: usize,
+        seek_range_sec: Range<f64>,
     },
 }
