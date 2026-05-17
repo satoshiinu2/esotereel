@@ -6,14 +6,13 @@
 #include "../../wrapper/requests.h"
 #include "../main.h"
 #include "timeline.h"
+#include <QColor>
 #include <QEvent>
+#include <QPainter>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <qcolor.h>
-#include <qevent.h>
-#include <qpainter.h>
 
 std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timeline, const QPoint &mousePos,
                                                            bool ctrl) {

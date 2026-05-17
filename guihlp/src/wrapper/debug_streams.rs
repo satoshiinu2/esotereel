@@ -87,9 +87,9 @@ pub extern "C" fn debug_streams_write_loaded_streams_sec_arr(
         return false;
     }
 
-    for (i, key) in stream.frames.iter().map(|e| e.0).enumerate() {
+    for (i, key) in stream.frames.keys().enumerate() {
         unsafe {
-            *ptr_out_arr.add(i) = key;
+            *ptr_out_arr.add(i) = key.0;
         }
     }
 

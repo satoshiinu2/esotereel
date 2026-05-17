@@ -123,10 +123,14 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
         let network = unsafe { &*ptr_network };
         let app_state = network.app_state.lock().expect("mutex poisoned");
         let timeline = unsafe { &*ptr_timeline };
-        let wgpuutil = unsafe { &mut (*ptr_wgpu) };
+        let wgpuutil = unsafe { &mut *ptr_wgpu };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        let req = request_stream_packets_for_time(timeline, &app_state, current_frame);
+        // 現在のフレームから2秒先（60fps想定で120フレームなど）を
+        // バッファリング対象としてリクエスト関数に渡す
+        let lookahead = 60;
+        let frame_range = current_frame..current_frame + lookahead;
+        let req = request_stream_packets_for_time(timeline, &app_state, frame_range);
         for req in req.iter() {
             network.send(req);
         }

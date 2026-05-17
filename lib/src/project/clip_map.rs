@@ -1,6 +1,7 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck, with::Skip};
 use std::{
     collections::{BTreeMap, HashMap},
+    ops::Range,
     sync::Arc,
 };
 
@@ -108,17 +109,17 @@ impl ClipMap {
         }
     }
 
-    pub fn get_clips_in_range(&self, start: i64, end: i64) -> Vec<Arc<Clip>> {
+    pub fn get_clips_in_range(&self, range: Range<i64>) -> Vec<Arc<Clip>> {
         let mut results = Vec::new();
 
         // 1. end (範囲の終わり) 未満の中で、最も後ろにあるクリップから開始
         //    next_back() で後ろから順に辿る (O(log N) で位置特定)
-        let mut iter = self.pos_tree.range(..end);
+        let mut iter = self.pos_tree.range(..range.end);
 
         while let Some((_, clip)) = iter.next_back() {
             // クリップの「終わり」が「検索範囲の始まり」より前なら、
             // これ以上前に遡っても絶対にヒットしないので即終了！
-            if clip.position() + clip.duration <= start {
+            if clip.position() + clip.duration <= range.start {
                 break;
             }
 

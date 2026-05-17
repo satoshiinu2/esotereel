@@ -99,6 +99,7 @@ class TimelineWidget : public QWidget {
     void mouseDoubleClickEvent(QMouseEvent *e) override;
     void contextMenuEvent(QContextMenuEvent *e) override;
     void keyPressEvent(QKeyEvent *e) override;
+    bool event(QEvent *e) override;
 
   private:
     // objects

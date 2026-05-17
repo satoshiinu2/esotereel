@@ -4,16 +4,16 @@
 #include "../../wrapper/project/timeline.h"
 #include "../main.h"
 #include "timeline.h"
+#include <QDebug>
 #include <QEvent>
+#include <QNativeGestureEvent>
+#include <QPainter>
+#include <QPair>
+#include <QPoint>
+#include <QWidget>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <qevent.h>
-#include <qlogging.h>
-#include <qpainter.h>
-#include <qpair.h>
-#include <qpoint.h>
-#include <qwidget.h>
 
 void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
     double_t mouseX = mousePos.x();
@@ -202,6 +202,29 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
 
     update();
     e->accept();
+}
+
+bool TimelineWidget::event(QEvent *e) {
+    if (e->type() == QEvent::NativeGesture) {
+        auto *ge = static_cast<QNativeGestureEvent *>(e);
+        if (ge->gestureType() == Qt::ZoomNativeGesture) {
+            // ノートパソコンのピンチ操作（ズームジェスチャー）
+            // プラットフォームによって ge->value() の意味が異なります：
+            // - macOS: 1.0 を基準とした倍率（1.1 なら 110%）
+            // - Windows: 0.0 を基準とした変化量（0.00390625 なら +0.39%）
+            qreal value = ge->value();
+
+            // 0付近の値（変化量）が送られてきた場合は 1.0 を足して倍率に変換する
+            qreal factor = (std::abs(value) < 0.5) ? (1.0 + value) : value;
+
+            if (factor > 0) {
+                this->zoom = std::clamp(this->zoom * (float_t)factor, 0.1f, 10.0f);
+                update();
+                return true;
+            }
+        }
+    }
+    return QWidget::event(e);
 }
 
 void TimelineWidget::mouseDoubleClickEvent(QMouseEvent *e) {

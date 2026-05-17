@@ -16,6 +16,7 @@ class DebugStreamsWidget : public QWidget {
   protected:
     void showEvent(QShowEvent *e) override;
     void paintEvent(QPaintEvent *e) override;
+    void resizeEvent(QResizeEvent *e) override;
 
   private:
     QScrollBar *hScrollBar;

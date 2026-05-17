@@ -8,9 +8,9 @@
 #include <QContextMenuEvent>
 #include <QEvent>
 #include <QMenu>
+#include <QPoint>
 #include <cstddef>
 #include <cstdint>
-#include <qpoint.h>
 
 void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
     QMenu menu(this);

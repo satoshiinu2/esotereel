@@ -1,4 +1,5 @@
 #include "main.h"
+#include "ads_globals.h"
 #include "preview/wgpu_canvas.h"
 #include "timeline/timeline.h"
 #include <DockManager.h>
@@ -7,7 +8,7 @@
 #include <QVector3D>
 #include <qvectornd.h>
 
-#define SHOW_DEBUG_STREAMS 0
+#define SHOW_DEBUG_STREAMS 1
 
 #if SHOW_DEBUG_STREAMS
 #include "debug_streams.h"
@@ -51,7 +52,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     this->debugStreamsWidget = new DebugStreamsWidget(&windowState);
     auto *debugStreamsDock = new ads::CDockWidget(dockManager, "DebugStreams");
     debugStreamsDock->setWidget(debugStreamsWidget);
-    dockManager->addDockWidget(ads::CenterDockWidgetArea, debugStreamsDock, previewDock->dockAreaWidget());
+    dockManager->addDockWidget(ads::RightDockWidgetArea, debugStreamsDock, previewDock->dockAreaWidget());
 #endif
 
     // default timeline

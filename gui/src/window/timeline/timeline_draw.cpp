@@ -5,14 +5,14 @@
 #include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "../main.h"
 #include "timeline.h"
+#include <QBrush>
+#include <QColor>
+#include <QLine>
+#include <QPainter>
+#include <QVariant>
+#include <QWidget>
 #include <cmath>
 #include <cstdint>
-#include <qbrush.h>
-#include <qcolor.h>
-#include <qline.h>
-#include <qpainter.h>
-#include <qvariant.h>
-#include <qwidget.h>
 
 QRect TimelineWidget::getInnerRect() const noexcept {
     QRect innerRect = rect();
