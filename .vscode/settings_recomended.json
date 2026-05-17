@@ -1,6 +1,7 @@
 {
-    "C_Cpp.intelliSenseEngine": "disabled",
-    "clangd.arguments": [ "--compile-commands-dir=build" ],
-    "cmake.sourceDirectory": "${workspaceFolder}",
-    "cmake.generator": "Ninja"
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "cmake.generator": "Ninja",
+  "C_Cpp.errorSquiggles": "enabled",
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.autocomplete": "default"
 }

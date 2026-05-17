@@ -244,20 +244,16 @@ impl WgpuRenderResources {
         }
     }
 
-    pub fn render(
+    /// バッファの内容を更新する
+    pub fn update_buffers(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        rpass: &mut wgpu::RenderPass,
         screen_size: [f32; 2],
-        view_projection_matrix: Mat4, // 新しい引数
+        view_projection_matrix: Mat4,
         batches: &[RenderBatch],
     ) {
         let total_vertex_count: usize = batches.iter().map(|b| b.vertices.len()).sum();
-        if total_vertex_count == 0 {
-            return;
-        }
-
         self.check_capacity(device, batches.len(), total_vertex_count);
 
         // Uniform更新
@@ -292,6 +288,15 @@ impl WgpuRenderResources {
             transform_data.extend(std::iter::repeat(0u8).take(padding));
         }
         queue.write_buffer(&self.transform_buffer, 0, &transform_data);
+    }
+
+    pub fn record_render_commands(
+        &self,
+        rpass: &mut wgpu::RenderPass,
+        batches: &[RenderBatch],
+        device: &wgpu::Device,
+    ) {
+        let alignment = device.limits().min_uniform_buffer_offset_alignment as usize;
 
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);

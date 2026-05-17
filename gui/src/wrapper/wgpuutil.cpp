@@ -6,8 +6,6 @@
 #include <QMatrix4x4>
 #include <stdexcept>
 
-using CameraInfo = esotereel_gui_helper::_CameraInfo;
-
 WGpuUtil::WGpuUtil(ClientNetworkHandler *network, WId winId, void *display, uint32_t width, uint32_t height)
     : network(*network) {
     this->isWayland = getLinuxDisplayType() == LinuxDisplayType::WAYLAND;
@@ -45,12 +43,11 @@ bool WGpuUtil::isValid() const {
     return wgpuutil_ptr != nullptr;
 }
 
-void WGpuUtil::renderFrame(Timeline &timeline, CameraInfo camerainfo, uint64_t currentFrame) {
+void WGpuUtil::renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t currentFrame) {
     if (!isValid())
         return;
 
-    auto result =
-        esotereel_gui_helper::wgpuutil_render_frame(wgpuutil_ptr, network, timeline, viewMat.constData(), currentFrame);
+    auto result = esotereel_gui_helper::wgpuutil_render_frame(wgpuutil_ptr, network, timeline, camera, currentFrame);
 
     if (!StringView::isZero(result)) {
         throw std::runtime_error(StringView::toStdString(result));

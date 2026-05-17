@@ -58,9 +58,9 @@ impl Timeline {
     }
 
     pub fn find_clip_by_id(&self, clip_id: u64) -> Option<(&Arc<Layer>, Arc<Clip>, usize)> {
-        for (layer_idx, layer) in self.layers.iter().enumerate() {
+        for (layer_handle, layer) in self.layers.iter().enumerate() {
             if let Some(clip) = layer.clips.get_by_id(clip_id) {
-                return Some((layer, clip, layer_idx));
+                return Some((layer, clip, layer_handle));
             }
         }
         None

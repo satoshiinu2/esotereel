@@ -14,7 +14,7 @@ namespace esotereel_gui_helper {
 struct _ClientNetworkHandler;
 }
 
-using RawClientNetworkHandler = esotereel_gui_helper::_ClientNetworkHandler;
+using RawClientNetworkHandler = esotereel_gui_helper::ClientNetworkHandler;
 
 class ClientNetworkHandler {
 

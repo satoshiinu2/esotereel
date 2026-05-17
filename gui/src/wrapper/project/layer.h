@@ -5,9 +5,9 @@
 #include "layer_clips.h"
 #include <QString>
 
-using RawLayer = esotereel_gui_helper::_Layer;
-using RawClip = esotereel_gui_helper::_Clip;
-using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
+using RawLayer = esotereel_gui_helper::Layer;
+using RawClip = esotereel_gui_helper::Clip;
+using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
 
 class Layer {
   public:

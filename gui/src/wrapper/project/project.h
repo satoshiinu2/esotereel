@@ -4,9 +4,9 @@
 #include <cstddef>
 
 namespace esotereel_gui_helper {
-struct _Project;
+struct Project;
 }
-using RawProject = esotereel_gui_helper::_Project;
+using RawProject = esotereel_gui_helper::Project;
 
 class Timeline;
 

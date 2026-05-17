@@ -5,10 +5,10 @@
 #include <cstdint>
 #include <iterator>
 
-using RawLayer = esotereel_gui_helper::_Layer;
-using RawClip = esotereel_gui_helper::_Clip;
-using RawClipIterator = esotereel_gui_helper::_ClipIterator;
-using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
+using RawLayer = esotereel_gui_helper::Layer;
+using RawClip = esotereel_gui_helper::Clip;
+using RawClipIterator = esotereel_gui_helper::ClipIterator;
+using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
 
 class ClipsIterator {
     RawClipIterator *raw_iter_ptr;

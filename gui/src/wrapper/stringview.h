@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 
-using RawStringView = esotereel_gui_helper::_StringView;
+using RawStringView = esotereel_gui_helper::StringView;
 
 namespace StringView {
 inline bool isZero(const RawStringView &raw) {

@@ -4,7 +4,7 @@
 #include "layer.h"
 #include <iterator>
 
-using RawTimeline = esotereel_gui_helper::_Timeline;
+using RawTimeline = esotereel_gui_helper::Timeline;
 
 class LayersIterator {
     const RawTimeline *raw_ptr;

@@ -1,0 +1,17 @@
+If:
+  OS: linux
+CompileFlags:
+  CompilationDatabase: build
+  Compiler: /usr/bin/g++
+  Add: [
+    "-Igui",
+    "-Iguihlp/include",
+    "-Ibuild/_deps/ads-src/src",
+    "-I/home/satoshiinu/Qt/6.7.3/gcc_64/include/QtCore",
+    "-I/home/satoshiinu/Qt/6.7.3/gcc_64/include",
+    "-isystem", "/usr/include",
+
+    "-std=c++17"
+  ]
+Index:
+  Background: Build

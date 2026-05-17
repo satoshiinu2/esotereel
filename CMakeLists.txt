@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(EsotereelGui)
+
+# clangdがプロジェクト全体を解析できるようにビルドフラグを出力
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_NO_PRIVATE_MODULE_WARNING ON CACHE BOOL "" FORCE)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -8,8 +11,12 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
 # Allow setting Qt6 path via environment variable
-if(NOT Qt6_DIR AND DEFINED ENV{QT_DIR})
-    list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+if(NOT Qt6_DIR)
+    if(DEFINED ENV{Qt6_DIR})
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{Qt6_DIR}")
+    elseif(DEFINED ENV{QT_DIR})
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{QT_DIR}")
+    endif()
 endif()
 
 # ビルドタイプに応じた設定の切り替え
@@ -31,12 +38,21 @@ endif()
 if(WIN32)
     set(DLIB_EXT "dll")
     set(RLIB_PREFIX "")
+    set(CLANGD_OS "windows")
+    set(CLANGD_DEFINES "    \"-DUNICODE\",\n    \"-D_UNICODE\",")
+    set(CLANGD_SYS_INC "")
 elseif(APPLE)
     set(DLIB_EXT "dylib")
     set(RLIB_PREFIX "lib")
+    set(CLANGD_OS "darwin")
+    set(CLANGD_DEFINES "")
+    set(CLANGD_SYS_INC "")
 else()
     set(DLIB_EXT "so")
     set(RLIB_PREFIX "lib")
+    set(CLANGD_OS "linux")
+    set(CLANGD_DEFINES "")
+    set(CLANGD_SYS_INC "    \"-isystem\", \"/usr/include\",")
 endif()
 
 # Qt6 components - Wayland is platform-specific
@@ -67,6 +83,19 @@ if (TARGET qtadvanceddocking-qt6)
         # MSVC用
         target_compile_options(qtadvanceddocking-qt6 PRIVATE "/W0")
     endif()
+endif()
+
+# コンパイラパスの指定
+set(CLANGD_COMPILER "${CMAKE_CXX_COMPILER}")
+
+# Qt6のインクルードパスを、clangdが読めるフォーマットに一括変換
+set(CLANGD_QT_PATHS "")
+if(TARGET Qt6::Core)
+    get_target_property(QT6_INC_DIRS Qt6::Core INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(dir ${QT6_INC_DIRS})
+        # セミコロンやリストのバグを防ぐため、1つずつ安全に整形して蓄積
+        set(CLANGD_QT_PATHS "${CLANGD_QT_PATHS}    \"-I${dir}\",\n")
+    endforeach()
 endif()
 
 # ライブラリとコア
@@ -139,3 +168,26 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(esotereel_gui PRIVATE -fsanitize=address -fno-omit-frame-pointer)
     target_link_options(esotereel_gui PRIVATE -fsanitize=address)
 endif()
+
+
+# .clangd ファイルの動的生成設定
+set(CLANGD_CONTENT
+"If:
+  OS: ${CLANGD_OS}
+CompileFlags:
+  CompilationDatabase: build
+  Compiler: ${CLANGD_COMPILER}
+  Add: [
+    \"-Igui\",
+    \"-Iguihlp/include\",
+    \"-Ibuild/_deps/ads-src/src\",
+${CLANGD_QT_PATHS}${CLANGD_SYS_INC}
+${CLANGD_DEFINES}
+    \"-std=c++17\"
+  ]
+Index:
+  Background: Build
+"
+)
+
+file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/.clangd" "${CLANGD_CONTENT}")

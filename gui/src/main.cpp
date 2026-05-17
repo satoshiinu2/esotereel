@@ -53,7 +53,7 @@ void onConnectedCallBack() {
 }
 
 void setCallBacks() {
-    esotereel_gui_helper::_GuiCallbacks callbacks;
+    esotereel_gui_helper::GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {};
     callbacks.redraw_timeline = +[](size_t id) { window->redrawTimeline(id); };

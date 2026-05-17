@@ -1,6 +1,7 @@
 struct Screen {
     size: vec2<f32>,
     _pad: vec2<f32>,
+    view_projection: mat4x4<f32>, 
 }
 
 @group(0) @binding(0)
@@ -34,14 +35,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     // 1. ローカル変換行列を適用
     let world_pos = locals.transform * vec4<f32>(in.position.xyz, 1.0);
 
-    // 2. 画面サイズに合わせてNDC（-1.0 to 1.0）に変換
-    let ndc = vec2<f32>(
-        world_pos.x / screen.size.x * 2.0 - 1.0,
-        1.0 - world_pos.y / screen.size.y * 2.0,
-    );
+    let clip_pos = screen.view_projection * world_pos;
 
     var out: VertexOutput;
-    out.position = vec4<f32>(ndc, world_pos.z, 1.0);
+    out.position = clip_pos;
     out.color = in.color;
     out.tex_coords = in.tex_coords;
     return out;

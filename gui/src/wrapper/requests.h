@@ -7,11 +7,11 @@
 
 class ClientNetworkHandler;
 namespace esotereel_gui_helper {
-struct _ClientNetworkHandler;
+struct ClientNetworkHandler;
 }
 
 class Requests {
-    const esotereel_gui_helper::_ClientNetworkHandler *raw_ptr;
+    const esotereel_gui_helper::ClientNetworkHandler *raw_ptr;
 
   public:
     Requests(const ClientNetworkHandler *network);

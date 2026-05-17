@@ -3,9 +3,9 @@
 #include <cstdint>
 
 namespace esotereel_gui_helper {
-struct _Clip;
+struct Clip;
 }
-using RawClip = esotereel_gui_helper::_Clip;
+using RawClip = esotereel_gui_helper::Clip;
 
 class Clip {
   public:

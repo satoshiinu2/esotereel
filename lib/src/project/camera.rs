@@ -1,9 +1,10 @@
 use glam::{Mat4, Vec3};
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct CameraInfo {
-    position: [f32; 3],
-    rotation: [f32; 3], // degree
+    position: Vec3,
+    rotation: Vec3, // degree
     is_orthographic: bool,
     orthographic_direction: Direction,
     scale_factor: f32,
@@ -19,28 +20,28 @@ impl CameraInfo {
             // 3Dモード: オイラー角から回転を生成
             Mat4::from_euler(
                 glam::EulerRot::XYZ,
-                self.rotation[0].to_radians(),
-                self.rotation[1].to_radians(),
-                self.rotation[2].to_radians(),
+                self.rotation.x.to_radians(),
+                self.rotation.y.to_radians(),
+                self.rotation.z.to_radians(),
             )
         };
 
         // 左手系への変換と平行移動を適用
-        let trans_mat = Mat4::from_translation(-Vec3::from_array(self.position))
-            * Mat4::from_scale(Vec3::new(1.0, 1.0, -1.0));
+        let trans_mat =
+            Mat4::from_scale(Vec3::new(1.0, 1.0, -1.0)) * Mat4::from_translation(-self.position);
 
         rot_mat * trans_mat
     }
 
-    pub fn get_proj_mat(&self, screen_width: f32, screen_height: f32) -> Mat4 {
-        let half_w = screen_width / 2.0;
-        let half_h = screen_height / 2.0;
-        let aspect = screen_width / screen_height;
+    pub fn get_proj_mat(&self, screen_size: [f32; 2]) -> Mat4 {
+        let half_w = screen_size[0] / 2.0;
+        let half_h = screen_size[1] / 2.0;
+        let aspect = screen_size[0] / screen_size[1];
         let fov = self.fov.to_radians();
 
         if self.is_orthographic {
             // 2D用の平行投影行列（ズームレベルを考慮）
-            let ortho_mat = Mat4::orthographic_lh(-half_w, half_w, -half_h, half_h, 0.1, 1000.0);
+            let ortho_mat = Mat4::orthographic_lh(-half_w, half_w, half_h, -half_h, -1000.0, 1000.0);
             let scale_mat = Mat4::from_scale(Vec3::new(self.scale_factor, self.scale_factor, 1.0));
 
             scale_mat * ortho_mat
@@ -51,7 +52,7 @@ impl CameraInfo {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 
 pub enum Direction {

@@ -6,7 +6,7 @@
 #include <cmath>
 #include <vector>
 
-using WrapperErrorCode = esotereel_gui_helper::_WrapperErrorCode;
+using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
 
 Timeline::Timeline(const RawTimeline *p) noexcept : raw_ptr(p) {}
 
@@ -31,7 +31,7 @@ Layer Timeline::layerSortedAt(uint32_t index) const noexcept {
 }
 
 std::tuple<Clip, size_t> Timeline::findClipById(uint64_t id) const noexcept {
-    const esotereel_gui_helper::_Clip *raw_clip;
+    const esotereel_gui_helper::Clip *raw_clip;
     size_t layerIdx;
 
     auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerIdx);

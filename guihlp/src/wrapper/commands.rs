@@ -63,12 +63,12 @@ pub extern "C" fn req_cmd_add_clip_dummy(
     let network = unsafe { &*ptr_network };
 
     let clip_data = ClipData::Video {
-        path: "/home/satoshiinu/Downloads/1fH5h8vLdoLvTtLV.mp4".to_string(),
+        path: "/home/satoshiinu/Videos/3.mp4".to_string(),
         media_offset: 0.0,
     };
 
     let translates = ClipTranslates::Normal(ClipTranslate {
-        position: [100.0, 100.0, 0.0],
+        position: [-100.0, -100.0, 0.0],
         rotation: [0.0, 0.0, 0.0],
         scale: [400.0, 300.0, 1.0],
     });

@@ -7,9 +7,9 @@
 #include <tuple>
 
 namespace esotereel_gui_helper {
-struct _Timeline;
+struct Timeline;
 }
-using RawTimeline = esotereel_gui_helper::_Timeline;
+using RawTimeline = esotereel_gui_helper::Timeline;
 
 class Clip;
 class Layer;

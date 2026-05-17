@@ -2,6 +2,7 @@
 
 #include "esotereel_gui_helper.h"
 #include "network.h"
+#include "project/camera.fwd.h"
 #include "project/forwards.h"
 #include <QMatrix4x4>
 #include <cstdint>
@@ -12,8 +13,8 @@ struct _WGpuUtil;
 struct _CameraInfo;
 } // namespace esotereel_gui_helper
 
-using RawWGpuUtil = esotereel_gui_helper::_WGpuUtil;
-using CameraInfo = esotereel_gui_helper::_CameraInfo;
+using RawWGpuUtil = esotereel_gui_helper::WGpuUtil;
+using CameraInfo = esotereel_gui_helper::CameraInfo;
 
 class WGpuUtil {
 
@@ -33,7 +34,7 @@ class WGpuUtil {
     WGpuUtil &operator=(WGpuUtil &&other) noexcept;
 
     bool isValid() const;
-    void renderFrame(Timeline &timeline, CameraInfo &camerainfo, uint64_t currentFrame);
+    void renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t currentFrame);
     void updateSurface(WId winId, void *display);
     void updateSize(uint32_t width, uint32_t height);
 };

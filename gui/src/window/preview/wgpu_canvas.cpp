@@ -4,7 +4,6 @@
 #include "../../wrapper/project/timeline.h"
 #include "../../wrapper/wgpuutil.h"
 #include "../timeline/timeline.h"
-#include "camera.h"
 #include <QMatrix4x4>
 #include <QTimer>
 #include <QWindow>
@@ -52,9 +51,7 @@ bool WgpuCanvasWidget::tryRender() {
 
         int64_t currentFrame = focusedTimelineWidget->playhead;
 
-        QMatrix4x4 viewMat = windowState->camera->getViewMat();
-
-        this->wgpuutil->renderFrame(timeline, viewMat, currentFrame);
+        this->wgpuutil->renderFrame(timeline, windowState->camera, currentFrame);
         return true;
     }
     return false;

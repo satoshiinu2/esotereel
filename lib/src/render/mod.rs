@@ -51,16 +51,48 @@ pub fn render_frame(
     // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
     update_timline_clips_texture(util, app_state, timeline, current_frame);
 
-    // 頂点作成
-    let vertices = build_vertices(timeline, app_state, current_frame);
-
     let screen_size = [util.config.width as f32, util.config.height as f32];
 
     // ビュープロジェクション行列の計算
-    let proj_matrix = camera_info.get_proj_mat(util.config.width as f32, util.config.height as f32);
+    let proj_matrix = camera_info.get_proj_mat(screen_size);
     let view_matrix = camera_info.get_view_mat();
 
     let view_projection_matrix = proj_matrix * view_matrix;
+
+    // 頂点作成
+    let vertices = build_vertices(timeline, app_state, current_frame);
+
+    let batches: Vec<RenderBatch> = if !vertices.is_empty() {
+        vertices
+            .into_iter()
+            .map(|b| {
+                let bind_group = util
+                    .textures
+                    .get(&b.texture_id)
+                    .map(|(_, bg)| bg.clone())
+                    .unwrap_or_else(|| util.resources.dummy_bind_group.clone());
+
+                RenderBatch {
+                    vertices: b.vertices,
+                    texture_bind_group: bind_group,
+                    transform: b.transform,
+                }
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    // バッファの更新（RenderPass開始前に行う）
+    if !batches.is_empty() {
+        util.resources.update_buffers(
+            &util.device,
+            &util.queue,
+            screen_size,
+            view_projection_matrix,
+            &batches,
+        );
+    }
 
     {
         // RenderPass の作成
@@ -87,34 +119,10 @@ pub fn render_frame(
             multiview_mask: None,
         });
 
-        //  描画実行（pipeline.rs の render から write_buffer を除いたもの）
-        if !vertices.is_empty() {
-            let batches: Vec<RenderBatch> = vertices
-                .into_iter()
-                .map(|b| {
-                    // texture_id に対応する BindGroup を取得。なければダミーを使用。
-                    let bind_group = util
-                        .textures
-                        .get(&b.texture_id)
-                        .map(|(_, bg)| bg.clone())
-                        .unwrap_or_else(|| util.resources.dummy_bind_group.clone());
-
-                    RenderBatch {
-                        vertices: b.vertices,
-                        texture_bind_group: bind_group,
-                        transform: b.transform,
-                    }
-                })
-                .collect();
-
-            util.resources.render(
-                &util.device,
-                &util.queue,
-                &mut rpass,
-                screen_size,
-                view_projection_matrix,
-                &batches,
-            );
+        // 描画コマンドの記録
+        if !batches.is_empty() {
+            util.resources
+                .record_render_commands(&mut rpass, &batches, &util.device);
         }
     }
     // 5. GPUへ送信
