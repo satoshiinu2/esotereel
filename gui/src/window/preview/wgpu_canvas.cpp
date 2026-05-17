@@ -1,9 +1,11 @@
 #include "wgpu_canvas.h"
-#include "../util.h"
-#include "../wrapper/project/project.h"
-#include "../wrapper/project/timeline.h"
-#include "../wrapper/wgpuutil.h"
-#include "timeline.h"
+#include "../../util.h"
+#include "../../wrapper/project/project.h"
+#include "../../wrapper/project/timeline.h"
+#include "../../wrapper/wgpuutil.h"
+#include "../timeline/timeline.h"
+#include "camera.h"
+#include <QMatrix4x4>
 #include <QTimer>
 #include <QWindow>
 #include <cstdint>
@@ -50,7 +52,9 @@ bool WgpuCanvasWidget::tryRender() {
 
         int64_t currentFrame = focusedTimelineWidget->playhead;
 
-        this->wgpuutil->renderFrame(timeline, currentFrame);
+        QMatrix4x4 viewMat = windowState->camera->getViewMat();
+
+        this->wgpuutil->renderFrame(timeline, viewMat, currentFrame);
         return true;
     }
     return false;

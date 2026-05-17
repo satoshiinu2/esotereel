@@ -17,4 +17,4 @@ ffmpeg-next = "8.1.0"
 image = "0.25.10"
 dashmap = "6.1.0"
 getset = "0.1.6"
-glam = "0.32.1"
+glam = { version = "0.32.1", features = ["bytemuck"] }

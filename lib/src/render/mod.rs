@@ -1,4 +1,4 @@
-use crate::render::video::update_timline_clips_texture;
+use crate::{project::camera::CameraInfo, render::video::update_timline_clips_texture};
 use glam::Mat4;
 use wgpu::CurrentSurfaceTexture;
 
@@ -26,6 +26,7 @@ pub fn render_frame(
     util: &mut WGpuUtil,
     timeline: &Timeline,
     app_state: &ClientState,
+    camera_info: &CameraInfo,
     current_frame: i64,
 ) -> Result<(), String> {
     if util.config.width == 0 || util.config.height == 0 {
@@ -47,7 +48,7 @@ pub fn render_frame(
             label: Some("Encoder"),
         });
 
-    // 1. 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
+    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
     update_timline_clips_texture(util, app_state, timeline, current_frame);
 
     // 頂点作成
@@ -55,8 +56,14 @@ pub fn render_frame(
 
     let screen_size = [util.config.width as f32, util.config.height as f32];
 
+    // ビュープロジェクション行列の計算
+    let proj_matrix = camera_info.get_proj_mat(util.config.width as f32, util.config.height as f32);
+    let view_matrix = camera_info.get_view_mat();
+
+    let view_projection_matrix = proj_matrix * view_matrix;
+
     {
-        // 3. RenderPass の作成
+        // RenderPass の作成
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Main Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -80,7 +87,7 @@ pub fn render_frame(
             multiview_mask: None,
         });
 
-        // 4. 描画実行（pipeline.rs の render から write_buffer を除いたもの）
+        //  描画実行（pipeline.rs の render から write_buffer を除いたもの）
         if !vertices.is_empty() {
             let batches: Vec<RenderBatch> = vertices
                 .into_iter()
@@ -100,11 +107,16 @@ pub fn render_frame(
                 })
                 .collect();
 
-            util.resources
-                .render(&util.device, &util.queue, &mut rpass, screen_size, &batches);
+            util.resources.render(
+                &util.device,
+                &util.queue,
+                &mut rpass,
+                screen_size,
+                view_projection_matrix,
+                &batches,
+            );
         }
     }
-
     // 5. GPUへ送信
     util.queue.submit(std::iter::once(encoder.finish()));
     output.present();

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../wrapper/project/forwards.h"
+#include "../../wrapper/project/forwards.h"
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QPainter>
@@ -60,7 +60,7 @@ class TimelineWidget : public QWidget {
     int64_t playhead = 0;
     std::set<uint64_t> selectedClipIds; // clipid
 
-    TimelineWidget(WindowGState *windowState, size_t timelineType);
+    explicit TimelineWidget(WindowGState *windowState, size_t timelineType);
 
     double_t frameToX(int64_t frame) const noexcept {
         return frame * this->zoom - this->scroll.x() + LABEL_WIDTH;

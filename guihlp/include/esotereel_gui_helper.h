@@ -16,6 +16,15 @@ enum class _WrapperErrorCode {
   Panic = 4,
 };
 
+enum class _Direction {
+  Front,
+  Back,
+  Top,
+  Bottom,
+  Left,
+  Right,
+};
+
 struct _ClientNetworkHandler;
 
 struct _Clip;
@@ -45,6 +54,15 @@ struct _StringView {
 using _OnServerReadyFn = void(*)(bool);
 
 using _LogOutCStrFn = void(*)(uintptr_t level, _StringView target, _StringView msg);
+
+struct _CameraInfo {
+  float position[3];
+  float rotation[3];
+  bool is_orthographic;
+  _Direction orthographic_direction;
+  float scale_factor;
+  float fov;
+};
 
 extern "C" {
 
@@ -166,6 +184,7 @@ _StringView wgpuutil_update_size(_WGpuUtil *ptr, uint32_t width, uint32_t height
 _StringView wgpuutil_render_frame(_WGpuUtil *ptr_wgpu,
                                   const _ClientNetworkHandler *ptr_network,
                                   const _Timeline *ptr_timeline,
+                                  const _CameraInfo *ptr_camera_info,
                                   int64_t current_frame);
 
 void req_test(const _ClientNetworkHandler *ptr_network);

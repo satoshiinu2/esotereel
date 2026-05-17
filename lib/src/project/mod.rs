@@ -11,6 +11,7 @@ use crate::{
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
+pub mod camera;
 pub mod clip;
 pub mod clip_data;
 pub mod clip_map;

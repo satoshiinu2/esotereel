@@ -1,15 +1,15 @@
 
 
-#include "../wrapper/project/timeline.h"        // IWYU pragma: keep
-#include "../wrapper/project/clip.h"            // IWYU pragma: keep
-#include "../wrapper/project/project.h"         // IWYU pragma: keep
-#include "../wrapper/project/timeline_layers.h" // IWYU pragma: keep
+#include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
+#include "../../wrapper/project/clip.h"            // IWYU pragma: keep
+#include "../../wrapper/project/project.h"         // IWYU pragma: keep
+#include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "timeline.h"
+#include <QTimer>
 #include <cmath>
 #include <cstddef>
 #include <qpoint.h>
 #include <qwidget.h>
-#include <QTimer>
 #include <tuple>
 
 TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType)
@@ -29,17 +29,18 @@ TimelineWidget::TimelineWidget(WindowGState *windowState, size_t timelineType)
     // 再生用タイマーの設定
     playbackTimer = new QTimer(this);
     connect(playbackTimer, &QTimer::timeout, this, [this]() {
-        if (!this->isPlaying) return;
+        if (!this->isPlaying)
+            return;
 
         // プロジェクトのFPS（とりあえず60固定と想定）
         const double fps = 60.0;
-        
+
         // 再生開始時からの経過時間を取得 (ms)
         qint64 elapsedMs = this->playbackElapsedTimer.elapsed();
-        
+
         // 現在のフレームを算出
         this->playhead = this->playbackStartFrame + static_cast<int64_t>(elapsedMs * fps / 1000.0);
-        
+
         update();
     });
 }

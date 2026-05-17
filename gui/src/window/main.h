@@ -1,5 +1,6 @@
 #pragma once
 #include "../wrapper/network.fwd.h"
+#include "preview/camera.fwd.h"
 #include <DockManager.h>
 #include <QMainWindow>
 #include <cstddef>
@@ -11,6 +12,7 @@ class DebugStreamsWidget;
 struct WindowGState {
     ClientNetworkHandler *network;
     TimelineWidget *focusedTimeline = nullptr;
+    Camera *camera{};
 };
 
 class MainWindow : public QMainWindow {

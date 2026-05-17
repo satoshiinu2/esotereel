@@ -1,6 +1,7 @@
 #include "main.h"
-#include "timeline.h"
-#include "wgpu_canvas.h"
+#include "preview/camera.h"
+#include "preview/wgpu_canvas.h"
+#include "timeline/timeline.h"
 #include <DockManager.h>
 #include <QLabel>
 #include <QTimer>
@@ -14,12 +15,10 @@
 MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent) {
     this->windowState.network = &network;
 
+    this->windowState.camera = new Camera();
+
     resize(1280, 720);
     setWindowTitle("Esotereel");
-
-    auto *central = new QLabel("Preview", this);
-    central->setAlignment(Qt::AlignCenter);
-    setCentralWidget(central);
 
     this->dockManager = new ads::CDockManager(this);
     ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);

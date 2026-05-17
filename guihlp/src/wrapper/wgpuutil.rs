@@ -4,7 +4,7 @@ use std::{
 };
 
 use esotereel_lib::{
-    project::timeline::Timeline,
+    project::{camera::CameraInfo, timeline::Timeline},
     render::{
         surfacetarget::get_surface_target, video::request::request_stream_packets_for_time,
         wgpuutil::WGpuUtil,
@@ -108,24 +108,36 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
     ptr_wgpu: *mut WGpuUtil,
     ptr_network: *const ClientNetworkHandler,
     ptr_timeline: *const Timeline,
+    ptr_camera_info: *const CameraInfo,
     current_frame: i64,
 ) -> StringView {
-    if ptr_wgpu.is_null() || ptr_timeline.is_null() {
+    if ptr_wgpu.is_null()
+        || ptr_network.is_null()
+        || ptr_timeline.is_null()
+        || ptr_camera_info.is_null()
+    {
         return StringView::from_str("nullptr");
     }
+
     let result = catch_unwind(AssertUnwindSafe(|| {
         let network = unsafe { &*ptr_network };
         let app_state = network.app_state.lock().expect("mutex poisoned");
         let timeline = unsafe { &*ptr_timeline };
         let wgpuutil = unsafe { &mut (*ptr_wgpu) };
+        let camera_info = unsafe { &*ptr_camera_info };
 
         let req = request_stream_packets_for_time(timeline, &app_state, current_frame);
         for req in req.iter() {
             network.send(req);
         }
 
-        let render_res =
-            esotereel_lib::render::render_frame(wgpuutil, timeline, &app_state, current_frame);
+        let render_res = esotereel_lib::render::render_frame(
+            wgpuutil,
+            timeline,
+            &app_state,
+            &camera_info,
+            current_frame,
+        );
 
         if let Err(err) = render_res {
             log::error!("{}", err);

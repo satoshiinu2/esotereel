@@ -1,8 +1,12 @@
 #include "wgpuutil.h"
 #include "../util.h"
+#include "esotereel_gui_helper.h"
 #include "project/timeline.h"
 #include "stringview.h"
+#include <QMatrix4x4>
 #include <stdexcept>
+
+using CameraInfo = esotereel_gui_helper::_CameraInfo;
 
 WGpuUtil::WGpuUtil(ClientNetworkHandler *network, WId winId, void *display, uint32_t width, uint32_t height)
     : network(*network) {
@@ -41,11 +45,13 @@ bool WGpuUtil::isValid() const {
     return wgpuutil_ptr != nullptr;
 }
 
-void WGpuUtil::renderFrame(Timeline &timeline, uint64_t currentFrame) {
+void WGpuUtil::renderFrame(Timeline &timeline, CameraInfo camerainfo, uint64_t currentFrame) {
     if (!isValid())
         return;
 
-    auto result = esotereel_gui_helper::wgpuutil_render_frame(wgpuutil_ptr, network, timeline, currentFrame);
+    auto result =
+        esotereel_gui_helper::wgpuutil_render_frame(wgpuutil_ptr, network, timeline, viewMat.constData(), currentFrame);
+
     if (!StringView::isZero(result)) {
         throw std::runtime_error(StringView::toStdString(result));
     }

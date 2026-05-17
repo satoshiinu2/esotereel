@@ -31,7 +31,7 @@ pub fn build_vertices(
             };
 
             let color = [1.0, 1.0, 1.0, 1.0];
-            // 頂点は原点 (0,0) ベースで作成
+            
             let rect = Vertex::rect(0.0, 0.0, 1.0, 1.0, color);
 
             let clip_trans = clip.translates.get_translate_at();

@@ -1,6 +1,6 @@
-use wgpu::util::DeviceExt;
-
 use crate::render::RenderBatch;
+use glam::Mat4;
+use wgpu::util::DeviceExt;
 
 use super::{uniform::ScreenUniform, vertex::Vertex};
 
@@ -23,10 +23,12 @@ impl WgpuRenderResources {
         // Uniform buffer
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("screen_uniform"),
-            contents: bytemuck::bytes_of(&ScreenUniform {
-                size: [1280.0, 720.0],
-                _pad: [0.0, 0.0],
-            }),
+            contents: bytemuck::bytes_of(&ScreenUniform::new(
+                [1280.0, 720.0], // 初期画面サイズ
+                // 初期ビュープロジェクション行列（単位行列）
+                // これは `render` メソッドで毎フレーム更新されます
+                glam::Mat4::IDENTITY,
+            )),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -248,6 +250,7 @@ impl WgpuRenderResources {
         queue: &wgpu::Queue,
         rpass: &mut wgpu::RenderPass,
         screen_size: [f32; 2],
+        view_projection_matrix: Mat4, // 新しい引数
         batches: &[RenderBatch],
     ) {
         let total_vertex_count: usize = batches.iter().map(|b| b.vertices.len()).sum();
@@ -255,13 +258,13 @@ impl WgpuRenderResources {
             return;
         }
 
-        self.check_capacity(device, batches, total_vertex_count);
+        self.check_capacity(device, batches.len(), total_vertex_count);
 
         // Uniform更新
         queue.write_buffer(
             &self.uniform_buffer,
             0,
-            bytemuck::bytes_of(&ScreenUniform::new(screen_size)),
+            bytemuck::bytes_of(&ScreenUniform::new(screen_size, view_projection_matrix)),
         );
 
         // 頂点バッファ更新
@@ -312,7 +315,7 @@ impl WgpuRenderResources {
     fn check_capacity(
         &mut self,
         device: &wgpu::Device,
-        batches: &[RenderBatch],
+        num_batches: usize,
         total_vertex_count: usize,
     ) {
         let needed_size = (total_vertex_count * std::mem::size_of::<Vertex>()) as u64;
@@ -330,8 +333,9 @@ impl WgpuRenderResources {
 
         // 行列バッファの容量チェックとリサイズ
         let alignment = device.limits().min_uniform_buffer_offset_alignment as u64;
-        let needed_transform_count = batches.len() as u64;
-        if needed_transform_count > self.transform_capacity {
+        let needed_transform_count = num_batches as u64;
+        if needed_transform_count > self.transform_capacity || self.transform_capacity == 0 {
+            // Added check for initial 0 capacity
             self.transform_capacity = needed_transform_count.next_power_of_two();
             self.transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("transform_buffer_resized"),

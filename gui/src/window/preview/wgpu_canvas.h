@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../wrapper/wgpuutil.h"
-#include "main.h"
+#include "../../wrapper/wgpuutil.h"
+#include "../main.h"
 #include <QEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -15,7 +15,7 @@ class WgpuCanvasWidget : public QWidget {
     Q_OBJECT
 
   public:
-    WgpuCanvasWidget(WindowGState *windowState);
+    explicit WgpuCanvasWidget(WindowGState *windowState);
 
     WgpuCanvasWidget(const WgpuCanvasWidget &) = delete;
     WgpuCanvasWidget(WgpuCanvasWidget &&) = delete;

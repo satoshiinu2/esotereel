@@ -1,8 +1,8 @@
 
-#include "../wrapper/network.h"
-#include "../wrapper/project/project.h"
-#include "../wrapper/project/timeline.h"
-#include "main.h"
+#include "../../wrapper/network.h"
+#include "../../wrapper/project/project.h"
+#include "../../wrapper/project/timeline.h"
+#include "../main.h"
 #include "timeline.h"
 #include <QEvent>
 #include <algorithm>
