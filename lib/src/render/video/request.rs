@@ -23,7 +23,13 @@ pub fn request_stream_packets_for_time(
     timeline
         .layers
         .iter()
-        .filter_map(|layer| layer.clips.get_at(frame_range.start))
+        .filter_map(|layer| {
+            layer
+                .clips
+                .get_clips_in_range(frame_range.clone())
+                .first()
+                .cloned()
+        })
         .filter_map(|clip| {
             collect_request_for_clip(timeline, app_state, &clip, frame_range.clone())
         })
