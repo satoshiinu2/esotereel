@@ -4,10 +4,9 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
     project::{clip::Clip, clip_map::ClipMap},
-    util::{
-        result::{EsotereelError, EsotereelResult},
-        slot_map::SlotMapKey,
-    },
+    util::
+        result::{EsotereelError, EsotereelResult}
+    ,
 };
 #[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq)]
 #[archive_attr(derive(CheckBytes))]
@@ -60,27 +59,5 @@ impl Ord for Layer {
 impl PartialOrd for Layer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
-#[archive_attr(derive(CheckBytes))]
-#[repr(C)]
-pub(crate) struct LayerMapKey {
-    index: usize,
-    generation: u32,
-}
-
-impl SlotMapKey for LayerMapKey {
-    fn new(index: usize, generation: u32) -> Self {
-        Self { index, generation }
-    }
-
-    fn index(&self) -> usize {
-        self.index
-    }
-
-    fn generation(&self) -> u32 {
-        self.generation
     }
 }

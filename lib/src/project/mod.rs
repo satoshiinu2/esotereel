@@ -7,7 +7,10 @@ use crate::{
         clip_translate::{ClipTranslate, ClipTranslates},
         timeline::Timeline,
     },
-    util::result::{EsotereelError, EsotereelResult},
+    util::{
+        result::{EsotereelError, EsotereelResult},
+        slot_map::SlotMapKey,
+    },
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
@@ -22,7 +25,7 @@ pub mod layer_map;
 pub mod timeline;
 pub mod util;
 
-pub type ClipUpdateMap = HashMap<u32, Vec<Arc<Clip>>>;
+pub type ClipUpdateMap = HashMap<SlotMapKey, Vec<Arc<Clip>>>; // layer clips
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
@@ -61,14 +64,15 @@ impl Project {
                     scale: [400.0, 300.0, 1.0],
                 });
 
-                timeline.new_clip(i as i64 * 100, 50, ClipData::Dummy, translates)
+                timeline
+                    .layers
+                    .new_clip(i as i64 * 100, 50, ClipData::Dummy, translates)
             };
 
-            self.get_timeline_mut(timeline_idx)
-                .unwrap()
-                .layers
-                .get_by_sorted_idx_mut(i)
-                .map(|e| Arc::make_mut(e).try_insert(new_pl_clip).unwrap());
+            let layers = &mut self.get_timeline_mut(timeline_idx).unwrap().layers;
+            let key = layers.get_cureent_new_key(i as usize);
+
+            layers.modify_layer(&key, |l| l.clips.insert(new_pl_clip));
         }
     }
 
@@ -79,8 +83,8 @@ impl Project {
 
             timeline.layers.rebuild_id_map();
 
-            timeline.layers.iter_mut().for_each(|l| {
-                Arc::make_mut(l).clips.rebuild_id_map();
+            timeline.layers.for_each_layer_mut(|l| {
+                l.clips.rebuild_id_map();
             });
         }
 

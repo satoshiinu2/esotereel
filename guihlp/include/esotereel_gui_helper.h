@@ -150,7 +150,7 @@ WrapperErrorCode clip_iter_next(ClipIterator *iter_ptr, const Clip **out);
 
 WrapperErrorCode clip_iter_free(ClipIterator *iter);
 
-const Layer *timeline_get_layer_by_layer_handle(const Timeline *ptr, uint32_t layer_handle);
+const Layer *timeline_get_layer_by_order(const Timeline *ptr, uint32_t order);
 
 const Layer *timeline_get_layer_by_sorted_idx(const Timeline *ptr, uint32_t index);
 
@@ -159,10 +159,10 @@ uintptr_t timeline_get_layers_count(const Timeline *ptr);
 WrapperErrorCode timeline_find_clip_by_id(const Timeline *ptr,
                                           uint64_t clip_id,
                                           const Clip **out_clip,
-                                          uintptr_t *out_layer_idx);
+                                          uint32_t *out_layer_idx);
 
 bool timeline_can_place_clip_at(const Timeline *ptr,
-                                uint32_t layer_idx,
+                                uint32_t layer_order,
                                 int64_t position,
                                 int64_t duration,
                                 const uint64_t *exclude_ids_ptr,

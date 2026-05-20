@@ -3,7 +3,7 @@ use esotereel_lib::{
         clip_data::ClipData, clip_translate::ClipTranslates, commands::ArchivedCommand,
         timeline::Timeline,
     },
-    util::result::EsotereelResult,
+    util::{result::EsotereelResult, slot_map::SlotMapKey},
 };
 
 use rkyv::Deserialize as _;
@@ -20,7 +20,7 @@ pub fn handle_command_action(
             clip_move_mul_core(timeline, clips.as_slice(), updates);
         }
         ArchivedCommand::AddClip {
-            layer_idx,
+            layer_map_key,
             position,
             duration,
             clip_data,
@@ -28,10 +28,13 @@ pub fn handle_command_action(
         } => {
             let clip_data: ClipData = clip_data.deserialize(&mut rkyv::Infallible).unwrap();
             let translates: ClipTranslates = translates.deserialize(&mut rkyv::Infallible).unwrap();
+            let key: SlotMapKey = layer_map_key.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let new_clip = timeline.new_clip(*position, *duration, clip_data, translates);
+            let new_clip = timeline
+                .layers
+                .new_clip(*position, *duration, clip_data, translates);
 
-            clip_add(timeline, *layer_idx, new_clip, updates);
+            clip_add(timeline, &key, new_clip, updates);
         }
     }
     Ok(())

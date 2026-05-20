@@ -1,5 +1,7 @@
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
+use crate::util::slot_map::SlotMapKey;
+
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 #[repr(C)]
@@ -7,14 +9,14 @@ pub struct ClipMoveCtx {
     pub clip_id: u64,
     pub new_position: i64,
     pub new_duration: i64,
-    pub new_layer_handle: u32,
+    pub new_layer_map_key: SlotMapKey,
 }
 
 pub trait ClipMove {
     fn get_clip_id(&self) -> u64;
     fn get_new_position(&self) -> i64;
     fn get_new_duration(&self) -> i64;
-    fn get_new_layer_handle(&self) -> u32;
+    fn new_layer_map_key(&self) -> SlotMapKey;
 }
 
 impl ClipMove for ClipMoveCtx {
@@ -30,8 +32,8 @@ impl ClipMove for ClipMoveCtx {
         self.new_duration
     }
 
-    fn get_new_layer_handle(&self) -> u32 {
-        self.new_layer_handle
+    fn new_layer_map_key(&self) -> SlotMapKey {
+        self.new_layer_map_key.clone()
     }
 }
 
@@ -48,7 +50,9 @@ impl ClipMove for ArchivedClipMoveCtx {
         self.new_duration
     }
 
-    fn get_new_layer_handle(&self) -> u32 {
-        self.new_layer_handle
+    fn new_layer_map_key(&self) -> SlotMapKey {
+        self.new_layer_map_key
+            .deserialize(&mut rkyv::Infallible)
+            .unwrap()
     }
 }

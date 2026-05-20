@@ -2,7 +2,7 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
     project::{clip_data::ClipData, clip_translate::ClipTranslates},
-    util::types::ClipMoveCtx,
+    util::{slot_map::SlotMapKey, types::ClipMoveCtx},
 };
 
 #[derive(Archive, Deserialize, Serialize)]
@@ -12,7 +12,7 @@ pub enum Command {
         clips: Vec<ClipMoveCtx>,
     },
     AddClip {
-        layer_idx: usize,
+        layer_map_key: SlotMapKey,
         position: i64,
         duration: i64,
         clip_data: ClipData,

@@ -37,13 +37,17 @@ pub extern "C" fn req_cmd_clip_move_mul(
     let clip_ctxs = clip_ids
         .iter()
         .filter_map(|clip_id| {
-            let (_, clip, src_layer_handle) = timeline.find_clip_by_id(*clip_id)?;
+            let (_, clip, src_layer_handle) = timeline.layers.find_orderd_clip_by_id(*clip_id)?;
+            let new_layer_order = u32::try_from(src_layer_handle as isize + layer_moved).ok()?;
+            let new_layer_map_key = timeline
+                .layers
+                .get_layer_map_key_by_order(new_layer_order)?;
 
             Some(ClipMoveCtx {
                 clip_id: *clip_id,
                 new_position: (clip.position() + position_moved),
                 new_duration: (clip.duration + duration_added),
-                new_layer_handle: u32::try_from(src_layer_handle as isize + layer_moved).ok()?,
+                new_layer_map_key,
             })
         })
         .collect();
@@ -61,6 +65,17 @@ pub extern "C" fn req_cmd_add_clip_dummy(
     layer_idx: usize,
 ) {
     let network = unsafe { &*ptr_network };
+    let app_state = network.app_state.lock().expect("mutex poisoned");
+
+    let lock = app_state.project.read().unwrap();
+    let Some(project) = lock.as_ref() else {
+        return;
+    };
+    let Ok(timeline) = project.get_timeline(timeline_idx) else {
+        return;
+    };
+
+    let layer_map_key = timeline.layers.get_cureent_new_key(layer_idx);
 
     let clip_data = ClipData::Video {
         path: "/home/satoshiinu/Videos/3.mp4".to_string(),
@@ -74,7 +89,7 @@ pub extern "C" fn req_cmd_add_clip_dummy(
     });
 
     let command = Command::AddClip {
-        layer_idx,
+        layer_map_key,
         position,
         duration: 10000,
         clip_data,

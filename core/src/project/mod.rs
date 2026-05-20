@@ -2,20 +2,23 @@ use std::sync::Arc;
 
 use esotereel_lib::{
     project::{ClipUpdateMap, clip::Clip, timeline::Timeline},
-    util::types::ArchivedClipMoveCtx,
+    util::{
+        slot_map::SlotMapKey,
+        types::{ArchivedClipMoveCtx, ClipMove},
+    },
 };
 
 pub(crate) mod commands;
 pub(crate) mod history;
 
 pub(crate) trait ClipUpdateExt {
-    fn push_clip(&mut self, layer_handle: u32, clip: Arc<Clip>);
+    fn push_clip(&mut self, layer_handle: &SlotMapKey, clip: Arc<Clip>);
 }
 
 impl ClipUpdateExt for Option<ClipUpdateMap> {
-    fn push_clip(&mut self, layer_handle: u32, clip: Arc<Clip>) {
+    fn push_clip(&mut self, key: &SlotMapKey, clip: Arc<Clip>) {
         if let Some(map) = self {
-            map.entry(layer_handle).or_default().push(clip);
+            map.entry(key.clone()).or_default().push(clip);
         }
     }
 }
@@ -25,12 +28,12 @@ pub(crate) fn clip_move_mul_core(
     moved_clips: &[ArchivedClipMoveCtx],
     updates: &mut Option<ClipUpdateMap>,
 ) {
-    // src_layer_handle, dest_layer_handle, orig_pos, orig_dur, delta, clip
-    let mut extracted: Vec<(u32, u32, i64, i64, i64, Arc<Clip>)> = Vec::new();
+    // src_layer_map_key, dest_layer_map_key, orig_pos, orig_dur, delta, clip
+    let mut extracted: Vec<(SlotMapKey, SlotMapKey, i64, i64, i64, Arc<Clip>)> = Vec::new();
 
     // まず対象のクリップをタイムラインから取り出し、情報をまとめる
     for ctx in moved_clips {
-        if let Some((_, clip, src_layer_handle)) = timeline.remove_clip_by_id(ctx.clip_id) {
+        if let Some((clip, src_layer_map_key)) = timeline.layers.remove_clip_by_id(ctx.clip_id) {
             let mut clip_to_move = clip;
             let original_position = clip_to_move.position();
             let original_duration = clip_to_move.duration;
@@ -43,8 +46,8 @@ pub(crate) fn clip_move_mul_core(
 
             let delta = ctx.new_position - original_position;
             extracted.push((
-                src_layer_handle,
-                ctx.new_layer_handle,
+                src_layer_map_key,
+                ctx.new_layer_map_key(),
                 original_position,
                 original_duration,
                 delta,
@@ -66,7 +69,7 @@ pub(crate) fn clip_move_mul_core(
 
     // 衝突判定 (新しい位置での重なりをチェック)
     for (_, layer_idx, _, _, _, clip) in &extracted {
-        let Some(layer) = timeline.layers.get_by_layer_handle(*layer_idx) else {
+        let Some(layer) = timeline.layers.get_by_layer_map_key(layer_idx) else {
             continue;
         };
 
@@ -117,7 +120,7 @@ pub(crate) fn clip_move_mul_core(
                 let final_end = final_pos + clip.duration;
                 timeline
                     .layers
-                    .get_by_layer_handle(*layer_idx)
+                    .get_by_layer_map_key(layer_idx)
                     .map_or(false, |layer| {
                         layer.clips.into_iter().any(|(_, c)| {
                             !moving_ids.contains(&c.id)
@@ -128,46 +131,44 @@ pub(crate) fn clip_move_mul_core(
             }),
     };
 
-    for (src_layer_idx, dest_layer_idx, orig_pos, orig_dur, delta, mut clip) in extracted {
+    for (src_layer_key, dest_layer_idx, orig_pos, orig_dur, delta, mut clip) in extracted {
         if cancelled {
             // キャンセルなら元の位置に戻す
-            if let Some(layer) = timeline.layers.get_by_layer_handle_mut(src_layer_idx) {
-                let layer = Arc::make_mut(layer);
+            timeline.layers.modify_layer(&src_layer_key, |layer| {
                 let c = Arc::make_mut(&mut clip);
+
                 c.set_position(orig_pos);
                 c.duration = orig_dur;
 
                 layer.clips.insert(clip);
-            }
+            });
         } else {
             // 確定なら移動先に挿入
-            if let Some(layer) = timeline.layers.get_by_layer_handle_mut(dest_layer_idx) {
+            timeline.layers.modify_layer(&dest_layer_idx, |layer| {
                 let snap_offset = final_snap.unwrap_or(0);
                 let new_pos = orig_pos + delta + snap_offset;
 
-                let layer = Arc::make_mut(layer);
-                Arc::make_mut(&mut clip).set_position(new_pos);
+                let c = Arc::make_mut(&mut clip);
+                c.set_position(new_pos);
 
                 // クライアント通知用
-                updates.push_clip(dest_layer_idx, clip.clone());
+                updates.push_clip(&dest_layer_idx, clip.clone());
 
                 layer.clips.insert(clip);
-            }
+            });
         }
     }
 }
 
 pub(crate) fn clip_add(
     timeline: &mut Timeline,
-    layer_handle: u32,
+    layer_map_key: &SlotMapKey,
     clip: Arc<Clip>,
     updates: &mut Option<ClipUpdateMap>,
 ) {
-    let Some(layer) = timeline.layers.get_by_layer_handle_mut(layer_handle) else {
-        return;
-    };
-
-    // TODO: range check
-    updates.push_clip(layer_handle, clip.clone());
-    Arc::make_mut(layer).clips.insert(clip);
+    timeline.layers.modify_layer(layer_map_key, |layer| {
+        // TODO: range check
+        updates.push_clip(layer_map_key, clip.clone());
+        layer.clips.insert(clip);
+    });
 }

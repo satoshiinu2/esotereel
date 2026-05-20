@@ -18,8 +18,7 @@ class LayersIterator {
     using pointer = LayersIterator *;
     using reference = LayersIterator;
 
-    LayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {
-    }
+    LayersIterator(const RawTimeline *t, size_t i) noexcept : raw_ptr(t), index(i) {}
 
     // インクリメント (++it)
     LayersIterator &operator++() noexcept {
@@ -34,7 +33,7 @@ class LayersIterator {
 
     // 間接参照 (*it) -> ここで LayerRef を生成して返す
     Layer operator*() const noexcept {
-        return Layer(esotereel_gui_helper::timeline_get_layer_by_layer_handle(raw_ptr, index));
+        return Layer(esotereel_gui_helper::timeline_get_layer_by_order(raw_ptr, index));
     }
 };
 
@@ -42,8 +41,7 @@ class LayersIterable {
     const RawTimeline *raw_ptr;
 
   public:
-    LayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {
-    }
+    LayersIterable(const RawTimeline *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept {
         return raw_ptr != nullptr;
     }

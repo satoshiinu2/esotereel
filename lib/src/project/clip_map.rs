@@ -165,6 +165,10 @@ impl ClipMap {
             false
         }
     }
+
+    pub fn contains_id(&self, clip_id: u64) -> bool {
+        self.id_map.contains_key(&clip_id)
+    }
 }
 
 impl<'a> IntoIterator for &'a ClipMap {
