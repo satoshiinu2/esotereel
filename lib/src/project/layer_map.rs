@@ -31,7 +31,7 @@ impl LayerMap {
 
     // Necessary after deserialization
     pub fn rebuild_id_map(&mut self) {
-        // Vec の中身を元に BTreeMap を構築し直す
+        // SlotMap の中身を元に BTreeMap を構築し直す
         self.layer_order = self
             .layers
             .iter()
