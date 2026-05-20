@@ -2,7 +2,7 @@
 #include "esotereel_gui_helper.h"
 #include "stringview.h"
 
-using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
+using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 bool InternalServer::start(QString addr, void (*OnConnectedFn)(bool)) {
     QByteArray addrUtf8 = addr.toUtf8();
@@ -10,5 +10,5 @@ bool InternalServer::start(QString addr, void (*OnConnectedFn)(bool)) {
 
     auto res = esotereel_gui_helper::internal_server_start(addrView, OnConnectedFn);
 
-    return res == WrapperErrorCode::Ok;
+    return res == WrapperResult::Ok;
 }

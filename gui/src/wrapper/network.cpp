@@ -3,11 +3,11 @@
 #include "project/project.h"
 #include "requests.h"
 
-using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
+using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 ClientNetworkHandler::ClientNetworkHandler() {
     auto res = esotereel_gui_helper::client_network_handler_new(&network_ptr);
-    if (res != WrapperErrorCode::Ok) {
+    if (res != WrapperResult::Ok) {
         qCritical() << "Failed to create ClientNetworkHandler:" << (int)res;
         network_ptr = nullptr;
     }
@@ -42,10 +42,10 @@ bool ClientNetworkHandler::run(QString addr) {
     auto addrView = StringView::fromQUtf8String(addrUtf8);
 
     auto res = esotereel_gui_helper::client_network_handler_run(network_ptr, addrView);
-    if (res != esotereel_gui_helper::WrapperErrorCode::Ok) {
+    if (res != esotereel_gui_helper::WrapperResult::Ok) {
         qWarning() << "Failed to start network worker:" << (int)res;
     }
-    return res == esotereel_gui_helper::WrapperErrorCode::Ok;
+    return res == esotereel_gui_helper::WrapperResult::Ok;
 }
 
 Project ClientNetworkHandler::getProject() const {

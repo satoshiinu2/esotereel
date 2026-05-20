@@ -75,7 +75,9 @@ pub extern "C" fn req_cmd_add_clip_dummy(
         return;
     };
 
-    let layer_map_key = timeline.layers.get_layer_map_key_by_order(layer_order);
+    let Some(layer_map_key) = timeline.layers.get_layer_map_key_by_order(layer_order) else {
+        return;
+    };
 
     let clip_data = ClipData::Video {
         path: "/home/satoshiinu/Videos/3.mp4".to_string(),

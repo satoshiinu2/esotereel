@@ -1,9 +1,8 @@
-use esotereel_lib::{
-    project::{clip::Clip, layer::Layer, timeline::Timeline},
-    util::slot_map::SlotMapKey,
-};
+use esotereel_lib::
+    project::{clip::Clip, layer::Layer, timeline::Timeline}
+;
 
-use crate::WrapperErrorCode;
+use crate::WrapperResult;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_get_layer_by_order(
@@ -57,21 +56,21 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
     clip_id: u64,
     out_clip: *mut *const Clip,
     out_layer_idx: *mut u32,
-) -> WrapperErrorCode {
+) -> WrapperResult {
     if ptr.is_null() | out_clip.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::null_ptr();
     }
 
     let project = unsafe { &(*ptr) };
 
     let Some((_, clip, layer_idx)) = project.layers.find_orderd_clip_by_id(clip_id) else {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::not_found(Some("clip not found"));
     };
     unsafe {
         *out_clip = clip.as_ref();
         *out_layer_idx = layer_idx;
     };
-    WrapperErrorCode::Ok
+    WrapperResult::ok()
 }
 
 #[unsafe(no_mangle)]

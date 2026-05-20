@@ -1,6 +1,10 @@
 use esotereel_lib::{ClientState, project::Project};
 
-use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::stringview::StringView};
+use crate::{
+    WrapperResult,
+    network::ClientNetworkHandler,
+    wrapper::{log_if_panicked, stringview::StringView},
+};
 use std::{
     ffi::c_void,
     sync::{Arc, Mutex, RwLockReadGuard},
@@ -10,9 +14,9 @@ use std::{
 pub extern "C" fn client_network_handler_run(
     ptr: *const ClientNetworkHandler,
     addr: StringView,
-) -> WrapperErrorCode {
+) -> WrapperResult {
     if ptr.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::null_ptr();
     }
 
     let network_arc = unsafe { Arc::from_raw(ptr) };
@@ -21,7 +25,7 @@ pub extern "C" fn client_network_handler_run(
     let _ = Arc::into_raw(network_arc);
 
     let Some(addr_str) = addr.as_str() else {
-        return WrapperErrorCode::Error;
+        return WrapperResult::invalid_string_error();
     };
     let addr = addr_str.to_string();
 
@@ -37,22 +41,19 @@ pub extern "C" fn client_network_handler_run(
             });
         }));
 
-        if let Err(err) = result {
-            // パニックの内容をログに出力（Any型なので型情報は制限されるが、発生事実は記録できる）
-            log::error!("Client worker thread panicked: {:?}", err);
-        }
+        log_if_panicked(result, "Client worker thread");
 
         log::info!("Client worker thread exited");
     });
 
-    WrapperErrorCode::Ok
+    WrapperResult::ok()
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn client_network_handler_new(
     out: *mut *const ClientNetworkHandler,
-) -> WrapperErrorCode {
+) -> WrapperResult {
     if out.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::null_ptr();
     }
 
     let network = ClientNetworkHandler::new(Arc::new(Mutex::new(ClientState::new())));
@@ -61,31 +62,31 @@ pub extern "C" fn client_network_handler_new(
         *out = Arc::into_raw(Arc::new(network));
     }
 
-    WrapperErrorCode::Ok
+    WrapperResult::ok()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn client_network_handler_drop(
-    ptr: *const ClientNetworkHandler,
-) -> WrapperErrorCode {
+pub extern "C" fn client_network_handler_drop(ptr: *const ClientNetworkHandler) -> WrapperResult {
     if ptr.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::null_ptr();
     }
 
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = unsafe { Arc::from_raw(ptr) };
-        WrapperErrorCode::Ok
-    }))
-    .unwrap_or(WrapperErrorCode::Error)
+        WrapperResult::ok()
+    }));
+
+    let msg = log_if_panicked(result, "client_network_handler_drop");
+    WrapperResult::panic(msg.as_deref())
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
     ptr: *const ClientNetworkHandler,
     out: *mut *const c_void,
-) -> WrapperErrorCode {
+) -> WrapperResult {
     if ptr.is_null() || out.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return WrapperResult::null_ptr();
     }
 
     let handler = unsafe { &*ptr };
@@ -95,17 +96,17 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
     if lock.as_ref().is_some() {
         // ロックを維持するためにガードを leak させる
         unsafe { *out = Box::into_raw(Box::new(lock)) as *const c_void };
-        WrapperErrorCode::Ok
+        WrapperResult::ok()
     } else {
         unsafe { *out = std::ptr::null_mut() as *const c_void };
-        WrapperErrorCode::NotFound
+        WrapperResult::not_found(Some("project not found"))
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
     guard_ptr: *const c_void,
-) -> WrapperErrorCode {
+) -> WrapperResult {
     if !guard_ptr.is_null() {
         // leak させた Box を戻してドロップ
         unsafe {
@@ -113,8 +114,8 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
                 guard_ptr as *mut RwLockReadGuard<Option<Arc<Project>>>,
             ))
         };
-        WrapperErrorCode::Ok
+        WrapperResult::ok()
     } else {
-        WrapperErrorCode::NullPtr
+        WrapperResult::null_ptr()
     }
 }

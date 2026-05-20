@@ -1,4 +1,5 @@
 #include "project.h"
+#include "../exception.h"
 #include "esotereel_gui_helper.h"
 #include "timeline.h"
 
@@ -13,7 +14,11 @@ Project Project::byGuard(const void *guard_ptr) {
         return Project::invalid();
 
     const RawProject *project_ptr = nullptr;
-    esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
+    auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
+    if (!checkWrapperResult(result)) {
+        return Project::invalid();
+    }
+
     return Project{guard_ptr, project_ptr};
 }
 

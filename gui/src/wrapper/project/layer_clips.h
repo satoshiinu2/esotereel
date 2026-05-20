@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../exception.h"
 #include "clip.h"
 #include "esotereel_gui_helper.h"
 #include <cstdint>
@@ -8,7 +9,7 @@
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
 using RawClipIterator = esotereel_gui_helper::ClipIterator;
-using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
+using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 class ClipsIterator {
     RawClipIterator *raw_iter_ptr;
@@ -18,23 +19,26 @@ class ClipsIterator {
         if (!t)
             return nullptr;
 
-        RawClipIterator *result = nullptr;
-        if (esotereel_gui_helper::layer_clips_begin(t, &result) != WrapperErrorCode::Ok) {
+        RawClipIterator *ptr_iter = nullptr;
+        
+        auto result = esotereel_gui_helper::layer_clips_begin(t, &ptr_iter);
+        if (!checkWrapperResult(result)) {
             return nullptr;
         }
-        return result;
+        return ptr_iter;
     }
 
     static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame) {
         if (!t)
             return nullptr;
 
-        RawClipIterator *result = nullptr;
-        if (esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &result) !=
-            WrapperErrorCode::Ok) {
+        RawClipIterator *ptr_iter = nullptr;
+
+        auto result = esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &ptr_iter);
+        if (!checkWrapperResult(result)) {
             return nullptr;
         }
-        return result;
+        return ptr_iter;
     }
 
   public:
@@ -53,8 +57,7 @@ class ClipsIterator {
     }
 
     // end用
-    ClipsIterator() noexcept : raw_iter_ptr(nullptr), raw_cur_ptr(nullptr) {
-    }
+    ClipsIterator() noexcept : raw_iter_ptr(nullptr), raw_cur_ptr(nullptr) {}
 
     // コピー禁止 (重要！二重解放を防ぐ)
     // std::forward_iterator はコピー可能である必要がありますが、
@@ -70,7 +73,7 @@ class ClipsIterator {
     void advance() noexcept {
         if (raw_iter_ptr) {
             auto result = esotereel_gui_helper::clip_iter_next(raw_iter_ptr, &raw_cur_ptr);
-            if (result != WrapperErrorCode::Ok) {
+            if (!checkWrapperResult(result)) {
                 raw_cur_ptr = nullptr;
                 esotereel_gui_helper::clip_iter_free(raw_iter_ptr);
                 raw_iter_ptr = nullptr;
@@ -104,8 +107,7 @@ class ClipsIterable {
     const RawLayer *raw_ptr;
 
   public:
-    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {
-    }
+    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
     bool isValid() const noexcept {
         return raw_ptr != nullptr;
     }
