@@ -5,7 +5,10 @@ use esotereel_lib::{
     decode::streamplayer::{FetchState, StreamPlayer},
     project::Project,
     responces::ArchivedResponse,
-    util::result::{EsotereelError, EsotereelResult},
+    util::{
+        result::{EsotereelError, EsotereelResult},
+        slot_map::SlotMapKey,
+    },
 };
 use rkyv::{Deserialize, de::deserializers::SharedDeserializeMap};
 
@@ -28,7 +31,7 @@ pub(super) fn on_responce_recveve(
 
             real_project.rebuild_id_map()?;
 
-            let timeline_len = real_project.get_timeline_count();
+            let timeline_len = real_project.timelines.len();
             let project_arc = Arc::new(real_project);
 
             *app_state.project.write().unwrap() = Some(project_arc.clone());
@@ -39,14 +42,22 @@ pub(super) fn on_responce_recveve(
             }
         }
         ArchivedResponse::ClipUpdates {
-            timeline_type,
+            timeline_map_key,
             updates,
         } => {
+            let timeline_map_key: SlotMapKey =
+                timeline_map_key.deserialize(&mut rkyv::Infallible).unwrap();
+
             if let Some(project) = app_state.project.write().unwrap().as_mut() {
                 let project = Arc::make_mut(project);
-                clip_apply_updates(project, *timeline_type as usize, updates)?;
+                let timeline: &mut esotereel_lib::project::timeline::Timeline = project
+                    .timelines
+                    .get_mut(&timeline_map_key)
+                    .ok_or(EsotereelError::InvalidTimeline)?;
+
+                clip_apply_updates(timeline, updates)?;
+                update_timeline(timeline_map_key.index);
             };
-            update_timeline(*timeline_type as usize);
         }
         ArchivedResponse::StreamMetadata {
             path,

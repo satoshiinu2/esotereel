@@ -17,13 +17,14 @@ pub extern "C" fn project_get_timeline(ptr: *const Project, id: usize) -> *const
     if ptr.is_null() {
         return std::ptr::null();
     }
+    let project = unsafe { &(*ptr) };
+    let key = project.timelines.get_cureent_new_key(id);
 
-    unsafe {
-        (*ptr)
-            .get_timeline(id)
-            .map(|t| t as *const Timeline)
-            .unwrap_or(std::ptr::null())
-    }
+    project
+        .timelines
+        .get(&key)
+        .map(|t| t as *const Timeline)
+        .unwrap_or(std::ptr::null())
 }
 
 #[unsafe(no_mangle)]
@@ -31,8 +32,9 @@ pub extern "C" fn project_get_timeline_count(ptr: *const Project) -> usize {
     if ptr.is_null() {
         return 0;
     }
+    let project = unsafe { &(*ptr) };
 
-    unsafe { (*ptr).get_timeline_count() }
+    project.timelines.len()
 }
 
 #[unsafe(no_mangle)]

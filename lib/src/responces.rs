@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::{ClipUpdateMap, Project};
+use crate::{project::{ClipUpdateMap, Project}, util::slot_map::SlotMapKey};
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -12,7 +12,7 @@ pub enum Response {
         project: Project,
     },
     ClipUpdates {
-        timeline_type: usize,
+        timeline_map_key: SlotMapKey,
         updates: ClipUpdateMap,
     },
     StreamMetadata {

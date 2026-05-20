@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -7,6 +9,7 @@ pub enum ClipData {
     Dummy,
     Video { path: String, media_offset: f64 },
     Audio { path: String, media_offset: f64 },
+    Composite { timeline_id: Option<NonZeroUsize> },
 }
 impl ClipData {
     pub fn get_media_seconds(

@@ -12,7 +12,7 @@ pub struct Slot<T> {
 #[archive_attr(derive(CheckBytes, Eq, Hash))]
 #[repr(C)]
 pub struct SlotMapKey {
-    index: usize,
+    pub index: usize,
     generation: u32,
 }
 

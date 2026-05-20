@@ -1,16 +1,14 @@
 use esotereel_lib::project::clip::Clip;
-use esotereel_lib::project::{ClipUpdateMap, Project};
+use esotereel_lib::project::timeline::Timeline;
+use esotereel_lib::project::{ClipUpdateMap, };
 use esotereel_lib::util::result::EsotereelResult;
 use esotereel_lib::util::slot_map::SlotMapKey;
 use rkyv::Deserialize;
 
 pub(crate) fn clip_apply_updates(
-    project: &mut Project,
-    timeline_type: usize,
+    timeline: &mut Timeline,
     updates: &rkyv::Archived<ClipUpdateMap>,
 ) -> EsotereelResult<()> {
-    let timeline = project.get_timeline_mut(timeline_type)?;
-
     for (_, update_clips) in updates.iter() {
         for clip in update_clips.iter() {
             timeline.layers.remove_clip_by_id(clip.id);

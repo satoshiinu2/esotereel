@@ -82,18 +82,18 @@ void set_gui_callbacks(GuiCallbacks callbacks);
 
 void set_on_connected_callback(OnConnectedFn callback);
 
-void req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
-                           uintptr_t timeline_idx,
-                           const uint64_t *ptr,
-                           uintptr_t len,
-                           int64_t position_moved,
-                           int64_t duration_added,
-                           intptr_t layer_moved);
+WrapperResult req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
+                                    uintptr_t timeline_idx,
+                                    const uint64_t *ptr,
+                                    uintptr_t len,
+                                    int64_t position_moved,
+                                    int64_t duration_added,
+                                    intptr_t layer_moved);
 
-void req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
-                            uintptr_t timeline_idx,
-                            int64_t position,
-                            uint32_t layer_order);
+WrapperResult req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
+                                     uintptr_t timeline_idx,
+                                     int64_t position,
+                                     uint32_t layer_order);
 
 uintptr_t debug_streams_get_resources_arr_size(const ClientNetworkHandler *ptr_network);
 

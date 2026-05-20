@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::commands::Command;
+use crate::{project::commands::Command, util::slot_map::SlotMapKey};
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -12,7 +12,7 @@ pub enum Request {
     ProjectAll,
     Command {
         command: Command,
-        timeline_idx: usize,
+        timeline_map_key: SlotMapKey,
     },
     InitStream {
         path: String,

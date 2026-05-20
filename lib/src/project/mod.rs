@@ -9,7 +9,7 @@ use crate::{
     },
     util::{
         result::{EsotereelError, EsotereelResult},
-        slot_map::SlotMapKey,
+        slot_map::{SlotMap, SlotMapKey},
     },
 };
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
@@ -30,34 +30,22 @@ pub type ClipUpdateMap = HashMap<SlotMapKey, Vec<Arc<Clip>>>; // layer clips
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Project {
-    timelines: [Timeline; 2],
+    pub timelines: SlotMap<Timeline>,
 }
 
 impl Project {
     pub fn new() -> Self {
         Self {
-            timelines: [Timeline::new(), Timeline::new()],
+            timelines: SlotMap::new(),
         }
     }
 
-    pub fn get_timeline<'a>(&self, id: usize) -> EsotereelResult<&Timeline> {
-        self.timelines
-            .get(id)
-            .ok_or(EsotereelError::InvalidTimeline)
-    }
-    pub fn get_timeline_mut<'a>(&mut self, id: usize) -> EsotereelResult<&mut Timeline> {
-        self.timelines
-            .get_mut(id)
-            .ok_or(EsotereelError::InvalidTimeline)
-    }
-    pub fn get_timeline_count(&self) -> usize {
-        self.timelines.len()
-    }
-
     pub fn debug_add_clips(&mut self, timeline_idx: usize) {
+        let key = self.timelines.get_cureent_new_key(timeline_idx);
+
         for i in 0..5u32 {
             let new_pl_clip = {
-                let timeline = self.get_timeline_mut(timeline_idx).unwrap();
+                let timeline = self.timelines.get_mut(&key).unwrap();
                 let translates = ClipTranslates::Normal(ClipTranslate {
                     position: [100.0, 100.0, 0.0],
                     rotation: [0.0, 0.0, 0.0],
@@ -69,7 +57,7 @@ impl Project {
                     .new_clip(i as i64 * 100, 50, ClipData::Dummy, translates)
             };
 
-            let layers = &mut self.get_timeline_mut(timeline_idx).unwrap().layers;
+            let layers = &mut self.timelines.get_mut(&key).unwrap().layers;
             let key = layers.get_cureent_new_key(i as usize);
 
             layers.modify_layer(&key, |l| l.clips.insert(new_pl_clip));
@@ -78,8 +66,13 @@ impl Project {
 
     pub fn rebuild_id_map(&mut self) -> EsotereelResult<()> {
         log::debug!("Rebuilding ID maps...");
-        for i in 0..self.get_timeline_count() {
-            let timeline = self.get_timeline_mut(i)?;
+        for i in 0..self.timelines.len() {
+            let key = self.timelines.get_cureent_new_key(i);
+
+            let timeline = self
+                .timelines
+                .get_mut(&key)
+                .ok_or(EsotereelError::InvalidTimeline)?;
 
             timeline.layers.rebuild_id_map();
 

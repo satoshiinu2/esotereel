@@ -1,4 +1,4 @@
-use esotereel_lib::{project::commands::Command, requests::Request};
+use esotereel_lib::{project::commands::Command, requests::Request, util::slot_map::SlotMapKey};
 
 use crate::{WrapperResult, network::ClientNetworkHandler, wrapper::stringview::StringView};
 
@@ -19,10 +19,10 @@ pub extern "C" fn req_new_project(ptr_network: *const ClientNetworkHandler) {
 }
 
 impl ClientNetworkHandler {
-    pub(super) fn req_command(&self, timeline_idx: usize, command: Command) {
+    pub(super) fn req_command(&self, timeline_map_key: SlotMapKey, command: Command) {
         let req = Request::Command {
             command,
-            timeline_idx,
+            timeline_map_key,
         };
 
         self.send(&req);

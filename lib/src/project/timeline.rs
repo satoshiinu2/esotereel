@@ -11,7 +11,7 @@ pub struct Timeline {
 }
 
 impl Timeline {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let mut s = Self {
             layers: LayerMap::new(),
             fps: 60.0,
