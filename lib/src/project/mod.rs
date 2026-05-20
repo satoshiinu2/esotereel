@@ -58,7 +58,7 @@ impl Project {
             };
 
             let layers = &mut self.timelines.get_mut(&key).unwrap().layers;
-            let key = layers.get_cureent_new_key(i as usize);
+            let key = layers.get_current_new_key(i as usize);
 
             layers.modify_layer(&key, |l| l.clips.insert(new_pl_clip));
         }
