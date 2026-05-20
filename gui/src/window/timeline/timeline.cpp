@@ -60,7 +60,7 @@ std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, co
     }
 
     int64_t frame = this->XToFrame(local.x());
-    size_t layerIdx = this->YToLayerIdx(local.y());
+    size_t layerIdx = this->YToLayerOrder(local.y());
 
     // range check
     if (layerIdx >= timeline.layersCount()) {

@@ -88,7 +88,7 @@ void req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
 void req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
                             uintptr_t timeline_idx,
                             int64_t position,
-                            uintptr_t layer_idx);
+                            uint32_t layer_order);
 
 uintptr_t debug_streams_get_resources_arr_size(const ClientNetworkHandler *ptr_network);
 

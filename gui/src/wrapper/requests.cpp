@@ -2,6 +2,7 @@
 #include "esotereel_gui_helper.h"
 #include "network.h"
 #include "stringview.h"
+#include <cstdint>
 
 Requests::Requests(const ClientNetworkHandler *network) : raw_ptr(*network) {}
 
@@ -15,8 +16,8 @@ void Requests::moveClips(uint64_t timelineIdx, const std::vector<uint64_t> &clip
                                                 durationMoved, layerMoved);
 }
 
-void Requests::addClipAt(uint64_t timelineIdx, int64_t position, size_t layerIdx) noexcept {
-    esotereel_gui_helper::req_cmd_add_clip_dummy(raw_ptr, timelineIdx, position, layerIdx);
+void Requests::addClipAt(uint64_t timelineIdx, int64_t position, uint64_t layerOrder) noexcept {
+    esotereel_gui_helper::req_cmd_add_clip_dummy(raw_ptr, timelineIdx, position, layerOrder);
 }
 
 void Requests::loadStream(QString path) noexcept {

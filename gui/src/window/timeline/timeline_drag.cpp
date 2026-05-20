@@ -39,7 +39,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timel
 
 void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoint &mousePos) {
     int64_t frame = this->XToFrame(mousePos.x());
-    ssize_t layerIdx = this->YToLayerIdx(mousePos.y());
+    ssize_t layerIdx = this->YToLayerOrder(mousePos.y());
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {

@@ -74,7 +74,7 @@ class TimelineWidget : public QWidget {
         return layer_idx * LAYER_HEIGHT + RULER_HEIGHT - this->scroll.y();
     }
 
-    int YToLayerIdx(double_t y) const noexcept {
+    int YToLayerOrder(double_t y) const noexcept {
         return std::floor((y - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
     }
 

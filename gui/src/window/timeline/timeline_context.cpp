@@ -40,7 +40,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
 
 void TimelineWidget::addClipAt(const QPoint &local) {
     int64_t frame = this->XToFrame(local.x());
-    size_t layerIdx = this->YToLayerIdx(local.y());
+    size_t layerOrder = this->YToLayerOrder(local.y());
 
-    windowState->network->requests().addClipAt(this->timelineIdx, frame, layerIdx);
+    windowState->network->requests().addClipAt(this->timelineIdx, frame, layerOrder);
 }

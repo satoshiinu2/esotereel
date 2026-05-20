@@ -62,7 +62,7 @@ pub extern "C" fn req_cmd_add_clip_dummy(
     ptr_network: *const ClientNetworkHandler,
     timeline_idx: usize,
     position: i64,
-    layer_idx: usize,
+    layer_order: u32,
 ) {
     let network = unsafe { &*ptr_network };
     let app_state = network.app_state.lock().expect("mutex poisoned");
@@ -75,7 +75,7 @@ pub extern "C" fn req_cmd_add_clip_dummy(
         return;
     };
 
-    let layer_map_key = timeline.layers.get_cureent_new_key(layer_idx);
+    let layer_map_key = timeline.layers.get_layer_map_key_by_order(layer_order);
 
     let clip_data = ClipData::Video {
         path: "/home/satoshiinu/Videos/3.mp4".to_string(),
