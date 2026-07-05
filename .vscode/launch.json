@@ -22,7 +22,7 @@
       "linux": {
         "env": {
           "RUST_BACKTRACE": "1",
-          "QT_QPA_PLATFORM": "xcb"
+          // "QT_QPA_PLATFORM": "xcb"
         }
       }
     }

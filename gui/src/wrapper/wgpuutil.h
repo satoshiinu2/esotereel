@@ -1,11 +1,11 @@
 #pragma once
 
+#include "../util.h"
 #include "network.h"
 #include "project/camera.fwd.h"
 #include "project/forwards.h"
 #include <QMatrix4x4>
 #include <cstdint>
-#include <qwindowdefs.h>
 
 namespace esotereel_gui_helper {
 struct WGpuUtil;
@@ -14,16 +14,18 @@ struct CameraInfo;
 
 using RawWGpuUtil = esotereel_gui_helper::WGpuUtil;
 using CameraInfo = esotereel_gui_helper::CameraInfo;
+using NativeWindowHandle = esotereel_gui_helper::NativeWindowHandle;
 
 class WGpuUtil {
 
   private:
     RawWGpuUtil *wgpuutil_ptr;
-    bool isWayland;
     ClientNetworkHandler &network;
 
   public:
-    WGpuUtil(ClientNetworkHandler *network, WId winId, void *display, uint32_t width, uint32_t height);
+    // handle は util.h の getNativeWindowHandle() が返すアプリ側の型。
+    // Rust/cbindgen生成の生の型への変換はwgpuutil.cpp内で行う。
+    WGpuUtil(ClientNetworkHandler *network, const NativeWindowHandle &handle, uint32_t width, uint32_t height);
     ~WGpuUtil();
 
     WGpuUtil(const WGpuUtil &) = delete;
@@ -34,6 +36,6 @@ class WGpuUtil {
 
     bool isValid() const;
     void renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t currentFrame);
-    void updateSurface(WId winId, void *display);
+    void updateSurface(const NativeWindowHandle &handle);
     void updateSize(uint32_t width, uint32_t height);
 };

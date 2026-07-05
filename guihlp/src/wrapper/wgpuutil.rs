@@ -1,12 +1,10 @@
-use std::{
-    ffi::c_void,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
     project::{camera::CameraInfo, timeline::Timeline},
     render::{
-        surfacetarget::get_surface_target, video::request::request_stream_packets_for_time,
+        surfacetarget::{NativeWindowHandle, get_surface_target},
+        video::request::request_stream_packets_for_time,
         wgpuutil::WGpuUtil,
     },
 };
@@ -18,28 +16,36 @@ use crate::{
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wgpuutil_init_surface(
-    window_ptr: *mut c_void,
-    display_ptr: *mut c_void,
+    handle: NativeWindowHandle,
     width: u32,
     height: u32,
-    is_wayland: bool,
     out: *mut *mut WGpuUtil,
 ) -> StringView {
     log::debug!("wgpu initing");
-    log::debug!("window_ptr: {:x}", window_ptr as usize);
-    log::debug!("display_ptr: {:x}", display_ptr as usize);
+    log::debug!("kind: {:?}", handle.kind);
+    log::debug!("window_ptr: {:x}", handle.window_ptr as usize);
+    log::debug!("display_ptr: {:x}", handle.display_ptr as usize);
     log::debug!("width: {}, height: {}", width, height);
-    log::debug!("is_wayland: {}", is_wayland);
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let surface = get_surface_target(window_ptr, display_ptr, is_wayland);
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
+        let surface = get_surface_target(handle)?;
 
         let wpguutil = WGpuUtil::new(surface, width, height);
         unsafe { *out = Box::into_raw(Box::new(wpguutil)) }
+        Ok(())
     }));
 
-    let msg = log_if_panicked(result, "render_frame");
-    StringView::from_option_str(msg.as_deref())
+    match result {
+        Ok(Ok(())) => StringView::from_option_str(None),
+        Ok(Err(err)) => {
+            log::error!("wgpuutil_init_surface: {}", err);
+            StringView::from_str(&err)
+        }
+        Err(panic) => {
+            let msg = log_if_panicked(Err::<(), _>(panic), "wgpuutil_init_surface");
+            StringView::from_option_str(msg.as_deref())
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -59,24 +65,31 @@ pub unsafe extern "C" fn wgpuutil_drop(ptr: *mut WGpuUtil) -> StringView {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wgpuutil_update_surface(
     ptr: *mut WGpuUtil,
-    window_ptr: *mut c_void,
-    display_ptr: *mut c_void,
-    is_wayland: bool,
+    handle: NativeWindowHandle,
 ) -> StringView {
     if ptr.is_null() {
         return StringView::from_str("nullptr");
     }
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
         let wgpuutil = unsafe { &mut (*ptr) };
 
-        let surface = get_surface_target(window_ptr, display_ptr, is_wayland);
-
+        let surface = get_surface_target(handle)?;
         wgpuutil.update_surface(surface);
+        Ok(())
     }));
 
-    let msg = log_if_panicked(result, "render_frame");
-    StringView::from_option_str(msg.as_deref())
+    match result {
+        Ok(Ok(())) => StringView::from_option_str(None),
+        Ok(Err(err)) => {
+            log::error!("wgpuutil_update_surface: {}", err);
+            StringView::from_str(&err)
+        }
+        Err(panic) => {
+            let msg = log_if_panicked(Err::<(), _>(panic), "wgpuutil_update_surface");
+            StringView::from_option_str(msg.as_deref())
+        }
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -8,6 +8,7 @@
 #include <QTimer>
 #include <QWindow>
 #include <cstdint>
+#include <wayland-client.h>
 
 WgpuCanvasWidget::WgpuCanvasWidget(WindowGState *windowState) : windowState(windowState) {
     // OS がこのウィンドウに直接描画するのを許可する（Qtのバックバッファをスキップ）
@@ -24,11 +25,6 @@ void WgpuCanvasWidget::showEvent(QShowEvent *event) {
         windowHandle()->setSurfaceType(QSurface::VulkanSurface);
     }
 
-    int w = this->width() * this->devicePixelRatio();
-    int h = this->height() * this->devicePixelRatio();
-
-    this->wgpuutil = WGpuUtil(windowState->network, this->winId(), getNativeDisplay(windowHandle()), w, h);
-
     renderTimer = new QTimer(this);
     connect(renderTimer, &QTimer::timeout, this, [this]() { update(); });
     renderTimer->start(16);
@@ -39,6 +35,15 @@ void WgpuCanvasWidget::paintEvent(QPaintEvent *event) {
 }
 
 bool WgpuCanvasWidget::tryRender() {
+    if (!this->wgpuutil.has_value()) {
+        int w = this->width() * this->devicePixelRatio();
+        int h = this->height() * this->devicePixelRatio();
+
+        NativeWindowHandle handle = getNativeWindowHandle(windowHandle());
+
+        this->wgpuutil = WGpuUtil(windowState->network, handle, w, h);
+    }
+
     if (this->wgpuutil.has_value()) {
         auto project = windowState->network->getProject();
 

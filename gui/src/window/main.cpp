@@ -64,9 +64,6 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     viewMenu->addAction(previewDock->toggleViewAction());
     viewMenu->addAction(timelineDock->toggleViewAction());
     viewMenu->addAction(debugStreamsDock->toggleViewAction());
-
-    qDebug() << previewWidget->minimumSize();
-    qDebug() << previewWidget->maximumSize();
 }
 
 void MainWindow::markDirtyTimeline(size_t timelineId) {

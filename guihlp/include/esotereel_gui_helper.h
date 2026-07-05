@@ -21,6 +21,14 @@ enum class WrapperErrorCode {
   Panic = 4,
 };
 
+enum class PlatformKind : uint32_t {
+  Unknown = 0,
+  Xcb = 1,
+  Wayland = 2,
+  Win32 = 3,
+  AppKit = 4,
+};
+
 enum class Direction {
   Front,
   Back,
@@ -80,6 +88,12 @@ struct ClipRenderInfo {
   int64_t duration;
   bool is_composite;
   bool is_open;
+};
+
+struct NativeWindowHandle {
+  PlatformKind kind;
+  void *window_ptr;
+  void *display_ptr;
 };
 
 struct CameraInfo {
@@ -208,19 +222,14 @@ WrapperResult render_rows_get_clips(const RenderRowsResult *ptr,
                                     const ClipRenderInfo **out_ptr,
                                     uintptr_t *out_len);
 
-StringView wgpuutil_init_surface(void *window_ptr,
-                                 void *display_ptr,
+StringView wgpuutil_init_surface(NativeWindowHandle handle,
                                  uint32_t width,
                                  uint32_t height,
-                                 bool is_wayland,
                                  WGpuUtil **out);
 
 StringView wgpuutil_drop(WGpuUtil *ptr);
 
-StringView wgpuutil_update_surface(WGpuUtil *ptr,
-                                   void *window_ptr,
-                                   void *display_ptr,
-                                   bool is_wayland);
+StringView wgpuutil_update_surface(WGpuUtil *ptr, NativeWindowHandle handle);
 
 StringView wgpuutil_update_size(WGpuUtil *ptr, uint32_t width, uint32_t height);
 

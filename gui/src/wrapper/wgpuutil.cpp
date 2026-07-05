@@ -6,11 +6,11 @@
 #include <QMatrix4x4>
 #include <stdexcept>
 
-WGpuUtil::WGpuUtil(ClientNetworkHandler *network, WId winId, void *display, uint32_t width, uint32_t height)
+using NativeWindowHandle = esotereel_gui_helper::NativeWindowHandle;
+
+WGpuUtil::WGpuUtil(ClientNetworkHandler *network, const NativeWindowHandle &handle, uint32_t width, uint32_t height)
     : network(*network) {
-    this->isWayland = getLinuxDisplayType() == LinuxDisplayType::WAYLAND;
-    auto result = esotereel_gui_helper::wgpuutil_init_surface((void *)winId, display, width, height, this->isWayland,
-                                                              &wgpuutil_ptr);
+    auto result = esotereel_gui_helper::wgpuutil_init_surface(handle, width, height, &wgpuutil_ptr);
     if (!StringView::isZero(result)) {
         wgpuutil_ptr = nullptr;
         throw std::runtime_error(StringView::toStdString(result));
@@ -54,11 +54,11 @@ void WGpuUtil::renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t curr
     }
 }
 
-void WGpuUtil::updateSurface(WId winId, void *display) {
+void WGpuUtil::updateSurface(const NativeWindowHandle &handle) {
     if (!isValid())
         return;
 
-    auto result = esotereel_gui_helper::wgpuutil_update_surface(wgpuutil_ptr, (void *)winId, display, this->isWayland);
+    auto result = esotereel_gui_helper::wgpuutil_update_surface(wgpuutil_ptr, handle);
     if (!StringView::isZero(result)) {
         throw std::runtime_error(StringView::toStdString(result));
     }

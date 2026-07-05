@@ -1,7 +1,9 @@
 #pragma once
 
+#include "esotereel_gui_helper.h"
 #include <QtGlobal>
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <qguiapplication_platform.h>
 #include <qlogging.h>
@@ -29,4 +31,5 @@ template <typename T> T sat_sub(T a, T b) {
 enum class LinuxDisplayType { UNKNOWN, XCB, WAYLAND };
 
 LinuxDisplayType getLinuxDisplayType();
-void *getNativeDisplay(QWindow *windowhandle);
+
+esotereel_gui_helper::NativeWindowHandle getNativeWindowHandle(QWindow *windowhandle);

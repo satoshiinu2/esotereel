@@ -1,9 +1,40 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, num::NonZeroIsize, num::NonZeroU32, ptr::NonNull};
 
 use raw_window_handle::{
-    DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle,
-    RawWindowHandle, WindowHandle,
+    AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle,
+    RawDisplayHandle, RawWindowHandle, WaylandDisplayHandle, WaylandWindowHandle,
+    Win32WindowHandle, WindowHandle, WindowsDisplayHandle, XcbDisplayHandle, XcbWindowHandle,
 };
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlatformKind {
+    Unknown = 0,
+    Xcb = 1,
+    Wayland = 2,
+    Win32 = 3,
+    AppKit = 4,
+}
+
+impl PlatformKind {
+    fn from_u32(v: u32) -> Self {
+        match v {
+            0 => PlatformKind::Unknown,
+            1 => PlatformKind::Xcb,
+            2 => PlatformKind::Wayland,
+            3 => PlatformKind::Win32,
+            4 => PlatformKind::AppKit,
+            _ => PlatformKind::Unknown,
+        }
+    }
+}
+
+#[repr(C)]
+pub struct NativeWindowHandle {
+    pub kind: PlatformKind,
+    pub window_ptr: *mut c_void,
+    pub display_ptr: *mut c_void,
+}
 
 pub struct SurfaceTarget {
     pub window: RawWindowHandle,
@@ -24,91 +55,50 @@ impl HasDisplayHandle for SurfaceTarget {
     }
 }
 
-pub fn get_surface_target(
-    window_ptr: *mut c_void,
-    display_ptr: *mut c_void,
-    is_wayland: bool,
-) -> SurfaceTarget {
-    // 1. Window Handle の作成
-    let window_handle = {
-        #[cfg(target_os = "windows")]
-        {
-            use std::num::NonZeroIsize;
+pub fn get_surface_target(handle: NativeWindowHandle) -> Result<SurfaceTarget, String> {
+    let (window, display) = match handle.kind {
+        PlatformKind::Xcb => {
+            let window_id =
+                NonZeroU32::new(handle.window_ptr as u32).ok_or("xcb window_ptr is zero")?;
+            let w = XcbWindowHandle::new(window_id);
 
-            let mut h = raw_window_handle::Win32WindowHandle::new(
-                NonZeroIsize::new(window_ptr as isize).expect("window_ptr is zero"),
-            );
+            let conn = NonNull::new(handle.display_ptr);
+            let d = XcbDisplayHandle::new(conn, 0);
 
-            // display_ptrを hinstance として使う
-            h.hinstance = NonZeroIsize::new(display_ptr as isize);
-            RawWindowHandle::Win32(h)
+            (RawWindowHandle::Xcb(w), RawDisplayHandle::Xcb(d))
         }
+        PlatformKind::Wayland => {
+            let surface =
+                NonNull::new(handle.window_ptr).ok_or("wayland window_ptr (wl_surface) is null")?;
+            let w = WaylandWindowHandle::new(surface);
 
-        #[cfg(target_os = "linux")]
-        {
-            if is_wayland {
-                use std::ptr::NonNull;
+            let display = NonNull::new(handle.display_ptr)
+                .ok_or("wayland display_ptr (wl_display) is null")?;
+            let d = WaylandDisplayHandle::new(display);
 
-                let h = raw_window_handle::WaylandWindowHandle::new(
-                    NonNull::new(window_ptr).expect("window_ptr is zero"),
-                );
-                RawWindowHandle::Wayland(h)
-            } else {
-                use std::num::NonZeroU32;
-
-                let h = raw_window_handle::XcbWindowHandle::new(
-                    NonZeroU32::new(window_ptr as u32).expect("window_ptr is zero"),
-                );
-                RawWindowHandle::Xcb(h)
-            }
+            (RawWindowHandle::Wayland(w), RawDisplayHandle::Wayland(d))
         }
+        PlatformKind::Win32 => {
+            let hwnd = NonZeroIsize::new(handle.window_ptr as isize).ok_or("win32 hwnd is zero")?;
+            let mut w = Win32WindowHandle::new(hwnd);
+            w.hinstance = NonZeroIsize::new(handle.display_ptr as isize);
 
-        #[cfg(target_os = "macos")]
-        {
-            use std::ptr::NonNull;
-
-            let h = raw_window_handle::AppKitWindowHandle::new(
-                NonNull::new(window_ptr).expect("window_ptr is zero"),
-            );
-            RawWindowHandle::AppKit(h)
+            (
+                RawWindowHandle::Win32(w),
+                RawDisplayHandle::Windows(WindowsDisplayHandle::new()),
+            )
         }
+        PlatformKind::AppKit => {
+            let ns_view = NonNull::new(handle.window_ptr).ok_or("appkit ns_view is null")?;
+            let w = AppKitWindowHandle::new(ns_view);
+
+            (
+                RawWindowHandle::AppKit(w),
+                RawDisplayHandle::AppKit(raw_window_handle::AppKitDisplayHandle::new()),
+            )
+        }
+        PlatformKind::Unknown => return Err("unknown platform kind from C++ side".into()),
     };
 
-    // 2. Display Handle の作成 (Linuxでは必須、他は空でOK)
-    let display_handle = {
-        #[cfg(target_os = "linux")]
-        {
-            use std::ptr::NonNull;
-            if is_wayland {
-                let h = raw_window_handle::WaylandDisplayHandle::new(
-                    NonNull::new(display_ptr).expect("display_ptr is zero"),
-                );
-                RawDisplayHandle::Wayland(h)
-            } else {
-                let h = raw_window_handle::XcbDisplayHandle::new(NonNull::new(display_ptr), 0);
-                RawDisplayHandle::Xcb(h)
-            }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::new())
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            RawDisplayHandle::AppKit(raw_window_handle::AppKitDisplayHandle::new())
-        }
-
-        // それ以外（もしあれば）
-        #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
-        {
-            RawDisplayHandle::UiKit(raw_window_handle::UiKitDisplayHandle::new())
-        }
-    };
-
-    SurfaceTarget {
-        window: window_handle,
-        display: display_handle,
-    }
+    Ok(SurfaceTarget { window, display })
 }
