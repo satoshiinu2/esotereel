@@ -1,7 +1,6 @@
 #pragma once
 
 #include "project/forwards.h"
-#include "stringview.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
 #include <qguiapplication_platform.h>
@@ -11,7 +10,7 @@
 
 class Requests;
 namespace esotereel_gui_helper {
-struct _ClientNetworkHandler;
+struct ClientNetworkHandler;
 }
 
 using RawClientNetworkHandler = esotereel_gui_helper::ClientNetworkHandler;

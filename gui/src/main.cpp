@@ -56,7 +56,7 @@ void setCallBacks() {
     esotereel_gui_helper::GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {};
-    callbacks.redraw_timeline = +[](size_t id) { window->redrawTimeline(id); };
+    callbacks.mark_dirty_timeline = +[](size_t id) { window->markDirtyTimeline(id); };
 
     esotereel_gui_helper::init();
     esotereel_gui_helper::init_rust_logger(q_log_callback);

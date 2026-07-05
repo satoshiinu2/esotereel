@@ -3,6 +3,7 @@
 #include "exception.h"
 #include "project/project.h"
 #include "requests.h"
+#include "stringview.h"
 
 using WrapperResult = esotereel_gui_helper::WrapperResult;
 

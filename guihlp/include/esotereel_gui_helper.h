@@ -40,13 +40,15 @@ struct Layer;
 
 struct Project;
 
+struct RenderRowsResult;
+
 struct Timeline;
 
 struct WGpuUtil;
 
 struct GuiCallbacks {
   void (*on_test)();
-  void (*redraw_timeline)(uintptr_t timeline_type);
+  void (*mark_dirty_timeline)(uintptr_t timeline_type);
 };
 
 using OnConnectedFn = void(*)();
@@ -64,6 +66,21 @@ struct WrapperResult {
 using OnServerReadyFn = void(*)(bool);
 
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
+
+struct FfiLayerRow {
+  uint32_t layer_order;
+  uint32_t depth;
+  uint32_t clip_start;
+  uint32_t clip_count;
+};
+
+struct ClipRenderInfo {
+  uint64_t clip_id;
+  int64_t abs_frame;
+  int64_t duration;
+  bool is_composite;
+  bool is_open;
+};
 
 struct CameraInfo {
   QVector3D position;
@@ -174,6 +191,22 @@ bool timeline_can_place_clip_at(const Timeline *ptr,
                                 uintptr_t exclude_ids_len);
 
 double timeline_get_fps(const Timeline *ptr);
+
+WrapperResult render_rows_build(const Project *project,
+                                const Timeline *timeline,
+                                const uint64_t *open_ids_ptr,
+                                uintptr_t open_ids_len,
+                                RenderRowsResult **out);
+
+void render_rows_free(RenderRowsResult *ptr);
+
+WrapperResult render_rows_get_rows(const RenderRowsResult *ptr,
+                                   const FfiLayerRow **out_ptr,
+                                   uintptr_t *out_len);
+
+WrapperResult render_rows_get_clips(const RenderRowsResult *ptr,
+                                    const ClipRenderInfo **out_ptr,
+                                    uintptr_t *out_len);
 
 StringView wgpuutil_init_surface(void *window_ptr,
                                  void *display_ptr,

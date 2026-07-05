@@ -2,7 +2,7 @@ If:
   OS: linux
 CompileFlags:
   CompilationDatabase: build
-  Compiler: /usr/bin/g++
+  Compiler: /usr/bin/clang++
   Add: [
     "-Igui",
     "-Iguihlp/include",

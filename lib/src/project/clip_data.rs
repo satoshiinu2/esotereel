@@ -1,6 +1,8 @@
-use std::num::NonZeroUsize;
+
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
+
+use crate::util::slot_map::SlotMapKey;
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
@@ -9,8 +11,11 @@ pub enum ClipData {
     Dummy,
     Video { path: String, media_offset: f64 },
     Audio { path: String, media_offset: f64 },
-    Composite { timeline_id: Option<NonZeroUsize> },
+    Composite { timeline_id: Option<SlotMapKey> },
+    Area2D { timeline_id: Option<SlotMapKey> },
+    Area3D { timeline_id: Option<SlotMapKey> },
 }
+
 impl ClipData {
     pub fn get_media_seconds(
         global_fps: f64,

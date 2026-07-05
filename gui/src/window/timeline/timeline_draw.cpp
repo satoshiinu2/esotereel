@@ -1,9 +1,11 @@
 #include "../../util.h"
 #include "../../wrapper/network.h"
-#include "../../wrapper/project/project.h"         // IWYU pragma: keep
-#include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
-#include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
+#include "../../wrapper/project/clip_render_info.h" // IWYU pragma: keep
+#include "../../wrapper/project/project.h"          // IWYU pragma: keep
+#include "../../wrapper/project/timeline.h"         // IWYU pragma: keep
+#include "../../wrapper/project/timeline_layers.h"  // IWYU pragma: keep
 #include "../main.h"
+#include "esotereel_gui_helper.h"
 #include "timeline.h"
 #include <QBrush>
 #include <QColor>
@@ -21,22 +23,20 @@ QRect TimelineWidget::getInnerRect() const noexcept {
     return innerRect;
 }
 
-void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRect &r) const {
-    // setup clipping
+void TimelineWidget::drawLayers(const Project &project, const Timeline &timeline, QPainter &p, const QRect &r) const {
     QRect bgRect = getInnerRect();
-    bgRect.setLeft(0); // 左端まで
+    bgRect.setLeft(0);
     QRect innerRect = getInnerRect();
+    const RenderRows &rr = getRows(project, timeline);
 
-    // draw main
-    size_t layerIdx = 0;
-    for (auto const &layer : timeline.layers()) {
+    size_t rowIdx = 0;
+    for (auto const &row : rr.rows()) {
         p.setClipRect(bgRect);
-        double_t y = r.top() + this->layerToY(layerIdx);
+        double_t y = r.top() + this->rowToY(rowIdx);
 
-        // クリップエリアの背景
+        // コンテンツ背景
         QRect contentArea(r.left() + LABEL_WIDTH, y, r.width() - LABEL_WIDTH, LAYER_HEIGHT);
-        QColor contentColor = (layerIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
-        // 背景色に応じて明るくするか暗くするかを切り替える
+        QColor contentColor = (rowIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
         if (contentColor.lightness() < 128) {
             contentColor = contentColor.lighter(150);
         } else {
@@ -45,65 +45,54 @@ void TimelineWidget::drawLayers(const Timeline &timeline, QPainter &p, const QRe
         p.fillRect(contentArea, contentColor);
 
         // レイヤーラベル
-        QColor labelColor = this->getLabelBgColor();
-
         QRect labelRect(r.left(), y, LABEL_WIDTH, LAYER_HEIGHT);
-        p.fillRect(labelRect, labelColor);
+        p.fillRect(labelRect, getLabelBgColor());
 
-        QPoint pos(r.left() + 4, y + LAYER_HEIGHT / 2);
+        // インデント + Composite▶▼
+        int textX = r.left() + 4 + row.depth * INDENT_WIDTH;
+        QString label;
+        // if (row.is_composite) {
+        //     label = (row.is_open ? "▼ " : "▶ ");
+        // }
+        label += QString("Layer %1").arg(row.layer_order);
 
+        QRect textRect(textX, y, LABEL_WIDTH - textX, LAYER_HEIGHT);
         p.setPen(palette().text().color());
-
-        QRect textRect(r.left() + 4, y, r.width(), LAYER_HEIGHT);
-        p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, layer.name());
+        p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, label);
 
         // クリップ描画
-        p.setClipRect(innerRect);
-        for (auto const &clip : layer.clips()) {
-            this->drawClip(layerIdx, clip, p, r);
+        for (auto const &clip : rr.clipsFor(row)) {
+            drawClip(clip, p, r, y);
         }
-
-        layerIdx++;
+        rowIdx++;
     }
 
-    // 境界線を描画してさらに見やすくする
     p.setPen(palette().mid().color());
     p.drawLine(r.left() + LABEL_WIDTH, r.top(), r.left() + LABEL_WIDTH, r.bottom());
-
     p.setClipping(false);
 }
 
-void TimelineWidget::drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const {
-    bool isSelected = contains(this->selectedClipIds, clip.id());
+void TimelineWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const {
+    bool isSelected = contains(this->selectedClipIds, info.clip_id);
     bool isDragging = std::holds_alternative<DragClip>(this->dragState);
 
-    // ドラッグ中は元の位置に半透明で残す
     QColor bgColor;
     if (isSelected) {
-        if (isDragging) {
-            bgColor = QColor(70, 130, 180, 50);
-        } else {
-            bgColor = QColor(100, 150, 200);
-        }
+        bgColor = isDragging ? QColor(70, 130, 180, 50) : QColor(100, 150, 200);
     } else {
         bgColor = QColor(70, 130, 180);
     }
 
     QColor strokeColor;
     if (isSelected) {
-        if (isDragging) {
-            strokeColor = QColor(100, 160, 210, 50);
-        } else {
-            strokeColor = QColor(150, 200, 255);
-        }
+        strokeColor = isDragging ? QColor(100, 160, 210, 50) : QColor(150, 200, 255);
     } else {
         strokeColor = QColor(100, 160, 210);
     }
 
-    double_t x = r.left() + this->frameToX(clip.position());
-    double_t y = r.top() + this->layerToY(layer_idx);
-    double_t w = clip.duration() * this->zoom;
-    QRect clipRect(x, y + 2.0, w, LAYER_HEIGHT - 4.0);
+    double_t x = r.left() + this->frameToX(info.abs_frame);
+    double_t w = info.duration * this->zoom;
+    QRectF clipRect(x, y + 2.0, w, LAYER_HEIGHT - 4.0);
 
     p.setBrush(bgColor);
     p.setPen(QPen(strokeColor, 1));
@@ -167,11 +156,11 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    auto project = windowState->network->getProject();
+    auto project = windowState.network->getProject();
     Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     if (timeline.isValid()) {
         // レイヤーラベルと区切り線
-        this->drawLayers(timeline, p, r);
+        this->drawLayers(project, timeline, p, r);
 
         // ゴースト
         this->drawDragGhost(timeline, p, r);

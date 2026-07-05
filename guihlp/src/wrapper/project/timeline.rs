@@ -2,7 +2,7 @@ use esotereel_lib::
     project::{clip::Clip, layer::Layer, timeline::Timeline}
 ;
 
-use crate::WrapperResult;
+use crate::{WrapperResult, slice_from_ptr_safe};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_get_layer_by_order(
@@ -87,7 +87,7 @@ pub unsafe extern "C" fn timeline_can_place_clip_at(
     }
     let timeline = unsafe { &(*ptr) };
 
-    let exclude_ids = unsafe { std::slice::from_raw_parts(exclude_ids_ptr, exclude_ids_len) };
+    let exclude_ids = slice_from_ptr_safe(exclude_ids_ptr, exclude_ids_len) ;
 
     let Some(layer_map_key) = timeline.layers.get_layer_map_key_by_order(layer_order) else {
         return false;

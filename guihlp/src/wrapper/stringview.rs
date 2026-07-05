@@ -1,3 +1,5 @@
+use crate::slice_from_ptr_safe;
+
 #[repr(C)]
 pub struct StringView {
     pub ptr: *const u8,
@@ -27,7 +29,7 @@ impl StringView {
         if self.ptr.is_null() {
             return None;
         }
-        let slice = unsafe { std::slice::from_raw_parts(self.ptr, self.len) };
+        let slice = unsafe { slice_from_ptr_safe(self.ptr, self.len) };
         std::str::from_utf8(slice).ok()
     }
 
@@ -35,7 +37,7 @@ impl StringView {
         if self.ptr.is_null() {
             return String::new();
         }
-        let slice = unsafe { std::slice::from_raw_parts(self.ptr, self.len) };
+        let slice = unsafe { slice_from_ptr_safe(self.ptr, self.len) };
         String::from_utf8_lossy(slice).into_owned()
     }
 

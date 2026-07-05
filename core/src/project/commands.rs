@@ -1,7 +1,4 @@
-use std::{
-    num::NonZeroUsize,
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use esotereel_lib::{
     project::{
@@ -53,9 +50,7 @@ pub fn handle_command_action(
                 let new_key = project.timelines.insert(new_timeline);
 
                 ClipData::Composite {
-                    timeline_id: Some(
-                        NonZeroUsize::new(new_key.index).expect("sub timeline should be non zero"),
-                    ),
+                    timeline_id: Some(new_key),
                 }
             } else {
                 clip_data

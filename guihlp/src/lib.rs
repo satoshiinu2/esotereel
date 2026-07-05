@@ -76,7 +76,7 @@ impl WrapperResult {
 #[repr(C)]
 pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
-    pub redraw_timeline: extern "C" fn(timeline_type: usize),
+    pub mark_dirty_timeline: extern "C" fn(timeline_type: usize),
 }
 
 #[unsafe(no_mangle)]
@@ -87,8 +87,16 @@ pub unsafe extern "C" fn set_gui_callbacks(callbacks: GuiCallbacks) {
     GUI_CALLBACKS.set(callbacks).ok();
 }
 
-fn update_timeline(timeline_type: usize) {
+pub fn mark_dirty_timeline(timeline_type: usize) {
     if let Some(cb) = GUI_CALLBACKS.get() {
-        (cb.redraw_timeline)(timeline_type);
+        (cb.mark_dirty_timeline)(timeline_type);
+    }
+}
+
+pub fn slice_from_ptr_safe<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 || ptr.is_null() {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }

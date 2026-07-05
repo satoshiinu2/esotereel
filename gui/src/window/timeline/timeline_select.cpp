@@ -1,8 +1,9 @@
-
-#include "../../wrapper/project/clip.h"            // IWYU pragma: keep
-#include "../../wrapper/project/layer.h"           // IWYU pragma: keep
-#include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
-#include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
+#include "../../wrapper/project/clip.h"             // IWYU pragma: keep
+#include "../../wrapper/project/clip_render_info.h" // IWYU pragma: keep
+#include "../../wrapper/project/layer.h"            // IWYU pragma: keep
+#include "../../wrapper/project/layer_clips.h"      // IWYU pragma: keep
+#include "../../wrapper/project/timeline.h"         // IWYU pragma: keep
+#include "esotereel_gui_helper.h"
 #include "timeline.h"
 #include <QEvent>
 #include <cmath>
@@ -61,7 +62,7 @@ void TimelineWidget::handleAreaSelContinue(const QPoint &mousePos) {
     update();
 }
 
-void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
+void TimelineWidget::handleAreaSelEnd(const Project &project, const Timeline &timeline) {
     auto *sel = std::get_if<DragAreaSel>(&this->dragState);
     if (!sel) {
         return;
@@ -70,19 +71,21 @@ void TimelineWidget::handleAreaSelEnd(const Timeline &timeline) {
     QRect selRect(sel->start.toPoint(), sel->current.toPoint());
 
     // TODO: optimize
+    const RenderRows &rr = getRows(project, timeline);
     size_t layerIdx = 0;
-    for (auto layer : timeline.layers()) {
+    for (auto const &row : rr.rows()) {
         size_t clipIdx = 0;
-        for (auto clip : layer.clips()) {
-            double_t clipXStart = this->frameToX(clip.position());
-            double_t clipXEnd = this->frameToX(clip.position() + clip.duration());
-            double_t clipYStart = this->layerToY(layerIdx);
+        for (auto const &info : rr.clipsFor(row)) {
+
+            double_t clipXStart = this->frameToX(info.abs_frame);
+            double_t clipXEnd = this->frameToX(info.abs_frame + info.duration);
+            double_t clipYStart = this->rowToY(layerIdx);
             double_t clipYEnd = clipYStart + LAYER_HEIGHT;
 
             QRect clip_rect(clipXStart, clipYStart, clipXEnd, clipYEnd);
 
             if (selRect.intersects(clip_rect)) {
-                this->selectedClipIds.insert(clip.id());
+                this->selectedClipIds.insert(info.clip_id);
             }
             clipIdx++;
         }

@@ -2,9 +2,15 @@
 
 #include "../exception.h"
 #include "clip.h"
-#include "esotereel_gui_helper.h"
 #include <cstdint>
 #include <iterator>
+
+namespace esotereel_gui_helper {
+    struct Layer;
+    struct Clip;
+    struct ClipIterator;
+    struct WrapperResult;
+}
 
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
@@ -15,36 +21,16 @@ class ClipsIterator {
     RawClipIterator *raw_iter_ptr;
     const RawClip *raw_cur_ptr;
 
-    static RawClipIterator *getBegin(const RawLayer *t) {
-        if (!t)
-            return nullptr;
+    static RawClipIterator *getBegin(const RawLayer *t) ;
 
-        RawClipIterator *ptr_iter = nullptr;
-        
-        auto result = esotereel_gui_helper::layer_clips_begin(t, &ptr_iter);
-        if (!checkWrapperResult(result)) {
-            return nullptr;
-        }
-        return ptr_iter;
-    }
-
-    static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame) {
-        if (!t)
-            return nullptr;
-
-        RawClipIterator *ptr_iter = nullptr;
-
-        auto result = esotereel_gui_helper::layer_clips_in_range_begin(t, startFrame, endFrame, &ptr_iter);
-        if (!checkWrapperResult(result)) {
-            return nullptr;
-        }
-        return ptr_iter;
-    }
+    static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame);
 
   public:
     using iterator_category = std::forward_iterator_tag;
     using value_type = Clip;
-    // ... (other traits)
+    using difference_type = std::ptrdiff_t;
+    using pointer = ClipsIterator *;
+    using reference = ClipsIterator;
 
     // begin用
     ClipsIterator(const RawLayer *t) noexcept : raw_iter_ptr(ClipsIterator::getBegin(t)), raw_cur_ptr(nullptr) {
@@ -59,9 +45,7 @@ class ClipsIterator {
     // end用
     ClipsIterator() noexcept : raw_iter_ptr(nullptr), raw_cur_ptr(nullptr) {}
 
-    // コピー禁止 (重要！二重解放を防ぐ)
-    // std::forward_iterator はコピー可能である必要がありますが、
-    // Rustのイテレータを直接持つ場合は move だけにするか、ポインタ管理を工夫する必要があります。
+    // コピー禁止
     ClipsIterator(const ClipsIterator &) = delete;
     ClipsIterator &operator=(const ClipsIterator &) = delete;
 
@@ -70,16 +54,7 @@ class ClipsIterator {
         other.raw_iter_ptr = nullptr;
     }
 
-    void advance() noexcept {
-        if (raw_iter_ptr) {
-            auto result = esotereel_gui_helper::clip_iter_next(raw_iter_ptr, &raw_cur_ptr);
-            if (!checkWrapperResult(result)) {
-                raw_cur_ptr = nullptr;
-                esotereel_gui_helper::clip_iter_free(raw_iter_ptr);
-                raw_iter_ptr = nullptr;
-            }
-        }
-    }
+    void advance() noexcept ;
 
     ClipsIterator &operator++() noexcept {
         advance(); // 内部で free まで完結させる
@@ -87,7 +62,6 @@ class ClipsIterator {
     }
 
     bool operator!=(const ClipsIterator &other) const noexcept {
-        // rust_iter_ptr ではなく、指しているデータ (cur_ptr) で比較するのが確実
         return raw_cur_ptr != other.raw_cur_ptr;
     }
 
@@ -95,12 +69,8 @@ class ClipsIterator {
         return Clip(raw_cur_ptr);
     }
 
-    // デストラクタ: もし途中でループを抜けても Rust 側をリークさせない
-    ~ClipsIterator() {
-        if (raw_iter_ptr) {
-            esotereel_gui_helper::clip_iter_free(raw_iter_ptr);
-        }
-    }
+    // デストラクタ
+    ~ClipsIterator();
 };
 
 class ClipsIterable {
@@ -112,9 +82,7 @@ class ClipsIterable {
         return raw_ptr != nullptr;
     }
 
-    size_t clipsCount() const noexcept {
-        return raw_ptr ? esotereel_gui_helper::layer_get_clips_count(raw_ptr) : 0;
-    }
+    size_t clipsCount() const noexcept ;
 
     // forループの開始点
     ClipsIterator begin() const noexcept {

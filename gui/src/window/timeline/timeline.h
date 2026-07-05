@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../wrapper/project/clip_render_info.fwd.h"
 #include "../../wrapper/project/forwards.h"
 #include <QElapsedTimer>
 #include <QEvent>
@@ -21,6 +22,7 @@ struct WindowGState;
 constexpr qreal CLIP_ROUND_RADIUS = 3;
 constexpr int RULER_STEP = 10;
 
+constexpr float_t INDENT_WIDTH = 1.0;
 constexpr float_t LAYER_HEIGHT = 32.0;
 constexpr float_t RULER_HEIGHT = 24.0;
 constexpr float_t LABEL_WIDTH = 80.0;
@@ -60,7 +62,8 @@ class TimelineWidget : public QWidget {
     int64_t playhead = 0;
     std::set<uint64_t> selectedClipIds; // clipid
 
-    explicit TimelineWidget(WindowGState *windowState, size_t timelineType);
+    explicit TimelineWidget(WindowGState &windowState, size_t timelineType);
+    ~TimelineWidget();
 
     double_t frameToX(int64_t frame) const noexcept {
         return frame * this->zoom - this->scroll.x() + LABEL_WIDTH;
@@ -70,11 +73,11 @@ class TimelineWidget : public QWidget {
         return std::floor((x - LABEL_WIDTH + this->scroll.x()) / this->zoom);
     }
 
-    double_t layerToY(size_t layer_idx) const noexcept {
-        return layer_idx * LAYER_HEIGHT + RULER_HEIGHT - this->scroll.y();
+    double_t rowToY(size_t rowIdx) const noexcept {
+        return rowIdx * LAYER_HEIGHT + RULER_HEIGHT - this->scroll.y();
     }
 
-    int YToLayerOrder(double_t y) const noexcept {
+    int YToRow(double_t y) const noexcept {
         return std::floor((y - RULER_HEIGHT + this->scroll.y()) / LAYER_HEIGHT);
     }
 
@@ -88,6 +91,7 @@ class TimelineWidget : public QWidget {
     }
 
     Timeline getTimeline(Project &project);
+    void markRowsDirty();
 
   protected:
     void paintEvent(QPaintEvent *e) override;
@@ -110,19 +114,23 @@ class TimelineWidget : public QWidget {
 
     // states
     DragState dragState = DragNone{};
-    WindowGState *windowState;
+    WindowGState &windowState;
     std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
     int64_t playbackStartFrame;
     bool isPlaying;
+    std::vector<uint64_t> openCompositeIds;
+    mutable std::unique_ptr<RenderRows> cachedRows;
+    mutable bool rowsDirty = true;
 
     // functions
     QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
     std::tuple<Clip, size_t> findClipAt(const Timeline &timeline, const QPoint &local) const;
+    const RenderRows &getRows(const Project &project, const Timeline &timeline) const;
 
-    void drawLayers(const Timeline &timeline, QPainter &p, const QRect &r) const;
-    void drawClip(size_t layer_idx, const Clip &clip, QPainter &p, const QRect &r) const;
+    void drawLayers(const Project &project, const Timeline &timeline, QPainter &p, const QRect &r) const;
+    void drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const;
     void drawPlayhead(const int64_t playhead_frame, QPainter &p, const QRect &r) const;
     void drawRuler(QPainter &p, const QRect &r) const;
     void drawSelectionRect(QPainter &p, const QRect &r) const;
@@ -135,7 +143,7 @@ class TimelineWidget : public QWidget {
     bool handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
-    void handleAreaSelEnd(const Timeline &timeline);
+    void handleAreaSelEnd(const Project &project, const Timeline &timeline);
 
     DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
@@ -146,4 +154,5 @@ class TimelineWidget : public QWidget {
 
     void togglePlayback();
     void addClipAt(const QPoint &local);
+    void toggleComposite(uint64_t clipId);
 };

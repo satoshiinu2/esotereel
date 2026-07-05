@@ -1,9 +1,11 @@
 #pragma once
 
-#include "esotereel_gui_helper.h"
 #include "layer.h"
 #include <iterator>
 
+namespace esotereel_gui_helper {
+    struct Timeline;
+}
 using RawTimeline = esotereel_gui_helper::Timeline;
 
 class LayersIterator {
@@ -11,7 +13,6 @@ class LayersIterator {
     size_t index;
 
   public:
-    // 必須の型定義（標準ライブラリとの互換性のため）
     using iterator_category = std::forward_iterator_tag;
     using value_type = Layer;
     using difference_type = std::ptrdiff_t;
@@ -32,9 +33,7 @@ class LayersIterator {
     }
 
     // 間接参照 (*it) -> ここで LayerRef を生成して返す
-    Layer operator*() const noexcept {
-        return Layer(esotereel_gui_helper::timeline_get_layer_by_order(raw_ptr, index));
-    }
+    Layer operator*() const noexcept;
 };
 
 class LayersIterable {
@@ -46,9 +45,7 @@ class LayersIterable {
         return raw_ptr != nullptr;
     }
 
-    size_t layersCount() const noexcept {
-        return esotereel_gui_helper::timeline_get_layers_count(raw_ptr);
-    }
+    size_t layersCount() const noexcept;
 
     // forループの開始点
     LayersIterator begin() const noexcept {

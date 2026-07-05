@@ -1,6 +1,5 @@
 #pragma once
 
-#include "esotereel_gui_helper.h"
 #include "network.h"
 #include "project/camera.fwd.h"
 #include "project/forwards.h"
@@ -9,8 +8,8 @@
 #include <qwindowdefs.h>
 
 namespace esotereel_gui_helper {
-struct _WGpuUtil;
-struct _CameraInfo;
+struct WGpuUtil;
+struct CameraInfo;
 } // namespace esotereel_gui_helper
 
 using RawWGpuUtil = esotereel_gui_helper::WGpuUtil;

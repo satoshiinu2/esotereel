@@ -20,7 +20,7 @@ class MainWindow : public QMainWindow {
   public:
     explicit MainWindow(ClientNetworkHandler &network, QWidget *parent = nullptr);
 
-    void redrawTimeline(size_t timelineId);
+    void markDirtyTimeline(size_t timelineId);
 
   protected:
     WindowGState windowState;

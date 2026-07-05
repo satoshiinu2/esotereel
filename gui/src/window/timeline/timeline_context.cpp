@@ -1,4 +1,7 @@
 #include "../../wrapper/network.h"
+#include "../../wrapper/project/clip.h"            // IWYU pragma: keep
+#include "../../wrapper/project/layer.h"           // IWYU pragma: keep
+#include "../../wrapper/project/layer_clips.h"     // IWYU pragma: keep
 #include "../../wrapper/project/project.h"         // IWYU pragma: keep
 #include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
 #include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
@@ -15,7 +18,7 @@
 void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
     QMenu menu(this);
 
-    auto project = windowState->network->getProject();
+    auto project = windowState.network->getProject();
     Timeline timeline = getTimeline(project);
     if (timeline.isValid()) {
         auto [clip, layerIdx] = this->findClipAt(timeline, e->pos());
@@ -40,7 +43,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
 
 void TimelineWidget::addClipAt(const QPoint &local) {
     int64_t frame = this->XToFrame(local.x());
-    size_t layerOrder = this->YToLayerOrder(local.y());
+    size_t layerOrder = this->YToRow(local.y());
 
-    windowState->network->requests().addClipAt(this->timelineIdx, frame, layerOrder);
+    windowState.network->requests().addClipAt(this->timelineIdx, frame, layerOrder);
 }

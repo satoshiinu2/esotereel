@@ -12,7 +12,7 @@ use esotereel_lib::{
 };
 use rkyv::{Deserialize, de::deserializers::SharedDeserializeMap};
 
-use crate::{network::ClientNetworkHandler, project::clip_apply_updates, update_timeline};
+use crate::{mark_dirty_timeline, network::ClientNetworkHandler, project::clip_apply_updates};
 
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
@@ -38,7 +38,7 @@ pub(super) fn on_responce_recveve(
 
             // dbg!(real_project.clone());
             for i in 0..timeline_len {
-                update_timeline(i);
+                mark_dirty_timeline(i);
             }
         }
         ArchivedResponse::ClipUpdates {
@@ -56,7 +56,7 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::InvalidTimeline)?;
 
                 clip_apply_updates(timeline, updates)?;
-                update_timeline(timeline_map_key.index);
+                mark_dirty_timeline(timeline_map_key.index);
             };
         }
         ArchivedResponse::StreamMetadata {

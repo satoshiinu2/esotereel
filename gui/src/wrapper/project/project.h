@@ -18,6 +18,10 @@ class Project {
     Project(const void *g, const RawProject *p);
     ~Project();
 
+    operator const RawProject *() const noexcept {
+        return project_ptr;
+    }
+
     static Project byGuard(const void *guard_ptr);
     static Project invalid();
 

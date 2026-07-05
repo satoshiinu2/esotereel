@@ -9,7 +9,7 @@ use esotereel_lib::{
     util::types::ClipMoveCtx,
 };
 
-use crate::{WrapperResult, network::ClientNetworkHandler};
+use crate::{WrapperResult, network::ClientNetworkHandler, slice_from_ptr_safe};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_cmd_clip_move_mul(
@@ -34,7 +34,7 @@ pub extern "C" fn req_cmd_clip_move_mul(
         return WrapperResult::not_found(Some("timeline not found"));
     };
 
-    let clip_ids = unsafe { slice::from_raw_parts(ptr, len) };
+    let clip_ids =  slice_from_ptr_safe(ptr, len) ;
 
     let clip_ctxs = clip_ids
         .iter()

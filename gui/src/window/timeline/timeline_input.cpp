@@ -1,8 +1,8 @@
-
 #include "../../wrapper/network.h"
 #include "../../wrapper/project/project.h"
 #include "../../wrapper/project/timeline.h"
 #include "../main.h"
+#include "esotereel_gui_helper.h"
 #include "timeline.h"
 #include <QDebug>
 #include <QEvent>
@@ -60,7 +60,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
         // クリック時にこのウィジェットにフォーカスを移す
         this->setFocus();
         // update focused widget
-        this->windowState->focusedTimeline = this;
+        this->windowState.focusedTimeline = this;
 
         if (isOnRuler(mousePos)) {
             this->handleCtrlPlayhead(mousePos);
@@ -86,7 +86,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     QWidget::mouseReleaseEvent(e);
 
-    Project project = windowState->network->getProject();
+    Project project = windowState.network->getProject();
     Timeline timeline = getTimeline(project);
 
     bool ctrl = e->modifiers() & Qt::ControlModifier;
@@ -108,7 +108,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
-    Project project = windowState->network->getProject();
+    Project project = windowState.network->getProject();
     Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
@@ -136,7 +136,7 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
 }
 
 void TimelineWidget::onDragContinue(QMouseEvent *e) {
-    Project project = windowState->network->getProject();
+    Project project = windowState.network->getProject();
     Timeline timeline = getTimeline(project);
 
     std::visit(
@@ -159,7 +159,7 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
 }
 
 void TimelineWidget::onDragEnd(QMouseEvent *e) {
-    auto project = windowState->network->getProject();
+    Project project = windowState.network->getProject();
     Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
@@ -171,7 +171,7 @@ void TimelineWidget::onDragEnd(QMouseEvent *e) {
             using T = std::decay_t<decltype(state)>;
 
             if constexpr (std::is_same_v<T, DragAreaSel>) {
-                this->handleAreaSelEnd(timeline);
+                this->handleAreaSelEnd(project, timeline);
             } else if constexpr (std::is_same_v<T, DragPlayHead>) {
 
             } else if constexpr (std::is_same_v<T, DragClip>) {

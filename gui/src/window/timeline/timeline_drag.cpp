@@ -1,10 +1,14 @@
 #include "../../util.h"
 #include "../../wrapper/network.h"
+#include "../../wrapper/project/clip.h"            // IWYU pragma: keep
+#include "../../wrapper/project/layer.h"           // IWYU pragma: keep
+#include "../../wrapper/project/layer_clips.h"     // IWYU pragma: keep
 #include "../../wrapper/project/project.h"         // IWYU pragma: keep
 #include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
 #include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "../../wrapper/requests.h"
 #include "../main.h"
+#include "esotereel_gui_helper.h"
 #include "timeline.h"
 #include <QColor>
 #include <QEvent>
@@ -39,7 +43,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timel
 
 void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoint &mousePos) {
     int64_t frame = this->XToFrame(mousePos.x());
-    ssize_t layerIdx = this->YToLayerOrder(mousePos.y());
+    ssize_t layerIdx = this->YToRow(mousePos.y());
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {
@@ -105,7 +109,7 @@ send_drop:
     update();
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
-    this->windowState->network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
+    this->windowState.network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
 }
 
 void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const {
@@ -133,7 +137,7 @@ void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const 
         int redius = 3;
         double_t w = clip.duration() * this->zoom;
         double_t x = r.left() + this->frameToX(newClipPosition);
-        double_t y = r.top() + this->layerToY(targetLayerIdx);
+        double_t y = r.top() + this->rowToY(targetLayerIdx);
 
         QRect ghostRect(x, y + 2.0, w, LAYER_HEIGHT - 4.0);
         QColor bgColor;

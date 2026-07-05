@@ -1,12 +1,14 @@
 #include "main.h"
+#include "../wrapper/project/camera.h"
 #include "ads_globals.h"
 #include "preview/wgpu_canvas.h"
 #include "timeline/timeline.h"
 #include <DockManager.h>
 #include <QLabel>
+#include <QMenuBar>
 #include <QTimer>
 #include <QVector3D>
-#include <qvectornd.h>
+#include <QWidget>
 
 #define SHOW_DEBUG_STREAMS 1
 
@@ -28,8 +30,8 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     resize(1280, 720);
     setWindowTitle("Esotereel");
 
-    this->dockManager = new ads::CDockManager(this);
     ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
+    this->dockManager = new ads::CDockManager(this);
 
     // タブの文字色をスタイルシートで設定
     this->dockManager->setStyleSheet(
@@ -43,7 +45,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     previewDock->setWidget(previewWidget);
     dockManager->addDockWidget(ads::TopDockWidgetArea, previewDock);
 
-    this->timelineWidget = new TimelineWidget(&windowState, 0);
+    this->timelineWidget = new TimelineWidget(windowState, 0);
     auto *timelineDock = new ads::CDockWidget(dockManager, "Timeline");
     timelineDock->setWidget(timelineWidget);
     dockManager->addDockWidget(ads::BottomDockWidgetArea, timelineDock);
@@ -57,8 +59,17 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
 
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;
+
+    QMenu *viewMenu = menuBar()->addMenu("表示");
+    viewMenu->addAction(previewDock->toggleViewAction());
+    viewMenu->addAction(timelineDock->toggleViewAction());
+    viewMenu->addAction(debugStreamsDock->toggleViewAction());
+
+    qDebug() << previewWidget->minimumSize();
+    qDebug() << previewWidget->maximumSize();
 }
 
-void MainWindow::redrawTimeline(size_t timelineId) {
+void MainWindow::markDirtyTimeline(size_t timelineId) {
     timelineWidget->update();
+    timelineWidget->markRowsDirty();
 }

@@ -11,6 +11,7 @@ pub mod clip;
 pub mod debug;
 pub mod layer;
 pub mod timeline;
+pub mod clip_render_info;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn project_get_timeline(ptr: *const Project, id: usize) -> *const Timeline {
