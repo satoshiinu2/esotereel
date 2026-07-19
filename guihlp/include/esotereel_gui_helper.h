@@ -229,6 +229,18 @@ StringView wgpuutil_init_surface(NativeWindowHandle handle,
 
 StringView wgpuutil_drop(WGpuUtil *ptr);
 
+/// wgpu内部でパニック(バリデーションエラー等)が発生した後のWGpuUtilは、
+/// 内部状態(ロック中のデータ構造やGPUリソースの参照カウントなど)が
+/// 中途半端に書き換わったまま巻き戻っている可能性があり、
+/// 通常のDrop(=wgpuutil_drop)を走らせるとその破損した状態を読みに行って
+/// 二次的なクラッシュ(heap-use-after-freeなど)を引き起こしうる。
+///
+/// そのためパニックをcatchした後は、このwgpuutil_leakで
+/// **Dropを一切走らせずに**ポインタだけ手放す(意図的なメモリリーク)。
+/// リソースは解放されないままになるが、破損した状態への追撃読み書きよりは
+/// 安全側に倒した選択。
+void wgpuutil_leak(WGpuUtil *ptr);
+
 StringView wgpuutil_update_surface(WGpuUtil *ptr, NativeWindowHandle handle);
 
 StringView wgpuutil_update_size(WGpuUtil *ptr, uint32_t width, uint32_t height);

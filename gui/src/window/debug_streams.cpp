@@ -62,7 +62,7 @@ void DebugStreamsWidget::paintEvent(QPaintEvent *e) {
         p.setPen(QPen(palette().text().color(), 1));
         p.drawLine(x, -50, x, -30);
         // 秒とフレーム数を表示
-        p.drawText(x + 3, -35, QString("%1s").arg(s*pixelsPerSecond));
+        p.drawText(x + 3, -35, QString("%1s").arg(s * pixelsPerSecond));
 
         // 10フレームごとの小さな目盛り
         p.setPen(palette().mid().color());
@@ -85,7 +85,7 @@ void DebugStreamsWidget::paintEvent(QPaintEvent *e) {
         p.drawLine(startX, timelineY, endX, timelineY);
 
         // ストリームのパルスを描画
-        p.setPen(QPen(palette().highlight().color(), 1)); 
+        p.setPen(QPen(palette().highlight().color(), 1));
         for (double ts : streams) {
             int x = static_cast<int>(ts * pixelsPerSecond);
             p.drawLine(x, timelineY - 15, x, timelineY + 15);

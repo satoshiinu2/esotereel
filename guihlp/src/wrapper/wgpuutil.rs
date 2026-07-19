@@ -35,6 +35,8 @@ pub extern "C" fn wgpuutil_init_surface(
         Ok(())
     }));
 
+    // catch_unwind自体のパニックと、get_surface_targetが返すResult::Errの
+    // 両方をここで一本化してStringViewに落とす
     match result {
         Ok(Ok(())) => StringView::from_option_str(None),
         Ok(Err(err)) => {
@@ -58,8 +60,30 @@ pub unsafe extern "C" fn wgpuutil_drop(ptr: *mut WGpuUtil) -> StringView {
         unsafe { drop(Box::from_raw(ptr)) };
     }));
 
-    let msg = log_if_panicked(result, "render_frame");
+    let msg = log_if_panicked(result, "wgpuutil_drop");
     StringView::from_option_str(msg.as_deref())
+}
+
+/// wgpu内部でパニック(バリデーションエラー等)が発生した後のWGpuUtilは、
+/// 内部状態(ロック中のデータ構造やGPUリソースの参照カウントなど)が
+/// 中途半端に書き換わったまま巻き戻っている可能性があり、
+/// 通常のDrop(=wgpuutil_drop)を走らせるとその破損した状態を読みに行って
+/// 二次的なクラッシュ(heap-use-after-freeなど)を引き起こしうる。
+///
+/// そのためパニックをcatchした後は、このwgpuutil_leakで
+/// **Dropを一切走らせずに**ポインタだけ手放す(意図的なメモリリーク)。
+/// リソースは解放されないままになるが、破損した状態への追撃読み書きよりは
+/// 安全側に倒した選択。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn wgpuutil_leak(ptr: *mut WGpuUtil) {
+    if ptr.is_null() {
+        return;
+    }
+
+    // Box::from_rawで所有権を取り戻した直後、dropを呼ばずBox::leakで手放す。
+    // catch_unwindで包む必要はない(Drop自体を呼ばないのでパニックしようがない)。
+    let boxed = unsafe { Box::from_raw(ptr) };
+    Box::leak(boxed);
 }
 
 #[unsafe(no_mangle)]
@@ -112,7 +136,7 @@ pub unsafe extern "C" fn wgpuutil_update_size(
             .configure(&wgpuutil.device, &wgpuutil.config);
     }));
 
-    let msg = log_if_panicked(result, "render_frame");
+    let msg = log_if_panicked(result, "wgpuutil_update_size");
     StringView::from_option_str(msg.as_deref())
 }
 

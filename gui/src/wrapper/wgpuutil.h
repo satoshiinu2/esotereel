@@ -1,19 +1,15 @@
 #pragma once
 
 #include "../util.h"
+#include "esotereel_gui_helper.h"
 #include "network.h"
 #include "project/camera.fwd.h"
 #include "project/forwards.h"
 #include <QMatrix4x4>
 #include <cstdint>
 
-namespace esotereel_gui_helper {
-struct WGpuUtil;
-struct CameraInfo;
-} // namespace esotereel_gui_helper
-
 using RawWGpuUtil = esotereel_gui_helper::WGpuUtil;
-using CameraInfo = esotereel_gui_helper::CameraInfo;
+using RawWGpuUtil = esotereel_gui_helper::WGpuUtil;
 using NativeWindowHandle = esotereel_gui_helper::NativeWindowHandle;
 
 class WGpuUtil {
@@ -38,4 +34,10 @@ class WGpuUtil {
     void renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t currentFrame);
     void updateSurface(const NativeWindowHandle &handle);
     void updateSize(uint32_t width, uint32_t height);
+
+    // wgpu内部でパニック(バリデーションエラー等)をcatchした直後に呼ぶこと。
+    // 通常のDrop(デストラクタ)を一切走らせず、意図的にリークして手放す。
+    // 破損している可能性のある内部状態への追撃読み書きを避けるための安全策。
+    // 呼んだ後はこのWGpuUtilは空(isValid() == false)になる。
+    void abandon();
 };
