@@ -5,14 +5,13 @@
 #include <QString>
 
 namespace esotereel_gui_helper {
-    struct Layer;
-    struct Clip;
-    struct WrapperResult;
-}
+struct Layer;
+struct Clip;
+struct WrapperResult;
+} // namespace esotereel_gui_helper
 
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 class Layer {
   public:

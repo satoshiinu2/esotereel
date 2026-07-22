@@ -1,28 +1,29 @@
 #include "exception.h"
+#include "QDebug"
 #include "esotereel_gui_helper.h"
 #include "stringview.h"
-#include "QDebug"
 
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
 
-bool checkWrapperResult(WrapperResult result) {
-    switch (result.code) {
+bool checkWrapperResult(WrapperErrorCode code) {
+
+    const char *msg = esotereel_gui_helper::get_last_err_msg();
+    switch (code) {
     case WrapperErrorCode::Ok:
     case WrapperErrorCode::NotFound:
         break;
 
     case WrapperErrorCode::Error:
-        qCritical() << "Wrapper error Error: " << StringView::toStdString(result.message).c_str();
-        throw WrapperException(StringView::toStdString(result.message), result.code);
+        qCritical() << "Wrapper error Error: " << msg;
+        throw WrapperException(msg, code);
 
     case WrapperErrorCode::NullPtr:
-        qCritical() << "Wrapper error NullPtr: " << StringView::toStdString(result.message).c_str();
-        throw WrapperFatalException(StringView::toStdString(result.message), result.code);
+        qCritical() << "Wrapper error NullPtr: " << msg;
+        throw WrapperFatalException(msg, code);
     case WrapperErrorCode::Panic:
-        qCritical() << "Wrapper error Panic: " << StringView::toStdString(result.message).c_str();
-        throw WrapperFatalException(StringView::toStdString(result.message), result.code);
+        qCritical() << "Wrapper error Panic: " << msg;
+        throw WrapperFatalException(msg, code);
     }
 
-    return result.code == WrapperErrorCode::Ok;
+    return code == WrapperErrorCode::Ok;
 }

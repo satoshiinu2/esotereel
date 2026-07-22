@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use esotereel_lib::project::{clip::Clip, layer::Layer};
 
-use crate::{WrapperResult, wrapper::stringview::StringView};
+use crate::{WrapperErrorCode, wrapper::stringview::StringView};
 
 pub enum ClipIteratorInner<'a> {
     Iter(std::collections::btree_map::Iter<'a, i64, Arc<Clip>>),
@@ -28,20 +28,20 @@ pub extern "C" fn layer_find_clip_at_frame(
     ptr: *const Layer,
     frame: i64,
     out: *mut *const Clip,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if ptr.is_null() || out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let layer = unsafe { &(*ptr) };
     let clip = layer.clips.get_at(frame);
 
     let Some(clip) = clip else {
-        return WrapperResult::not_found(Some("clip"));
+        return WrapperErrorCode::not_found(Some("clip"));
     };
 
     unsafe { *out = clip.as_ref() };
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
@@ -65,9 +65,9 @@ pub extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
 pub extern "C" fn layer_clips_begin(
     layer: &Layer,
     out: *mut *mut ClipIterator<'static>,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let iter = Box::new(ClipIterator {
@@ -83,7 +83,7 @@ pub extern "C" fn layer_clips_begin(
         // 参照を増やしてuaf防止
         Arc::increment_strong_count(layer);
     }
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn layer_clips_in_range_begin(
@@ -91,9 +91,9 @@ pub extern "C" fn layer_clips_in_range_begin(
     start: i64,
     end: i64,
     out: *mut *mut ClipIterator<'static>,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let range = start..end;
@@ -110,16 +110,16 @@ pub extern "C" fn layer_clips_in_range_begin(
         // 参照を増やしてuaf防止
         Arc::increment_strong_count(layer);
     }
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn clip_iter_next<'a>(
     iter_ptr: *mut ClipIterator<'a>,
     out: *mut *const Clip,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if iter_ptr.is_null() || out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let iter = unsafe { &mut *iter_ptr };
@@ -129,19 +129,19 @@ pub extern "C" fn clip_iter_next<'a>(
     match next {
         Some(clip) => {
             unsafe { *out = clip.as_ref() };
-            WrapperResult::ok()
+            WrapperErrorCode::ok()
         }
         None => {
             unsafe { *out = std::ptr::null() };
-            WrapperResult::not_found(Some("next clip"))
+            WrapperErrorCode::not_found(Some("next clip"))
         }
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) -> WrapperResult {
+pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) -> WrapperErrorCode {
     if iter.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
     unsafe {
         // 参照を減らす
@@ -149,5 +149,5 @@ pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) -> WrapperResult {
         drop(Box::from_raw(iter));
     };
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }

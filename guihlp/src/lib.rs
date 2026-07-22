@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+use std::ffi::{CStr, CString, c_char};
 use std::sync::OnceLock;
 
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
@@ -8,7 +10,6 @@ pub use esotereel_lib::project::timeline::Timeline;
 
 use crate::network::OnConnectedFn;
 use crate::responces::on_responce_recveve;
-use crate::wrapper::stringview::StringView;
 
 mod network;
 pub mod project;
@@ -17,6 +18,10 @@ pub mod wrapper;
 
 static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
 static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();
+
+thread_local! {
+    static LAST_ERR_MSG:RefCell<CString>=RefCell::new(CString::new("").unwrap());
+}
 
 #[repr(C)]
 pub enum WrapperErrorCode {
@@ -27,50 +32,51 @@ pub enum WrapperErrorCode {
     Panic = 4,
 }
 
-#[repr(C)]
-pub struct WrapperResult {
-    pub code: WrapperErrorCode,
-    pub message: StringView,
-}
+impl WrapperErrorCode {
+    pub fn set_last_err_msg(message: Option<&str>) {
+        let c_str = message
+            .and_then(|msg| CString::new(msg).ok())
+            .unwrap_or_default();
 
-impl WrapperResult {
+        LAST_ERR_MSG.with(|e| {
+            *e.borrow_mut() = c_str;
+        });
+    }
+
     pub fn ok() -> Self {
-        Self {
-            code: WrapperErrorCode::Ok,
-            message: StringView::zero(),
-        }
+        Self::set_last_err_msg(None);
+        WrapperErrorCode::Ok
     }
+
     pub fn null_ptr() -> Self {
-        Self {
-            code: WrapperErrorCode::NullPtr,
-            message: StringView::zero(),
-        }
+        Self::set_last_err_msg(None);
+        WrapperErrorCode::NullPtr
     }
+
     pub fn not_found(message: Option<&str>) -> Self {
-        Self {
-            code: WrapperErrorCode::NotFound,
-            message: StringView::from_option_str(message),
-        }
+        Self::set_last_err_msg(message);
+        WrapperErrorCode::NotFound
     }
+
     pub fn error(message: Option<&str>) -> Self {
-        Self {
-            code: WrapperErrorCode::Error,
-            message: StringView::from_option_str(message),
-        }
+        Self::set_last_err_msg(message);
+        WrapperErrorCode::Error
     }
+
     pub fn panic(message: Option<&str>) -> Self {
-        Self {
-            code: WrapperErrorCode::Panic,
-            message: StringView::from_option_str(message),
-        }
+        Self::set_last_err_msg(message);
+        WrapperErrorCode::Panic
     }
 
     pub fn invalid_string_error() -> Self {
-        Self {
-            code: WrapperErrorCode::Error,
-            message: StringView::from_str("invalid string"),
-        }
+        Self::set_last_err_msg(Some("invalid string"));
+        WrapperErrorCode::Error
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_last_err_msg() -> *const c_char {
+    LAST_ERR_MSG.with(|e| e.borrow().as_ptr())
 }
 
 #[repr(C)]

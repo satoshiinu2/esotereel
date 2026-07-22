@@ -32,6 +32,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
 
     ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
     this->dockManager = new ads::CDockManager(this);
+    setCentralWidget(this->dockManager);
 
     // タブの文字色をスタイルシートで設定
     this->dockManager->setStyleSheet(
@@ -67,6 +68,8 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
 }
 
 void MainWindow::markDirtyTimeline(size_t timelineId) {
-    timelineWidget->update();
-    timelineWidget->markRowsDirty();
+    QTimer::singleShot(0, this, [this]() {
+        timelineWidget->markRowsDirty();
+        timelineWidget->update();
+    });
 }

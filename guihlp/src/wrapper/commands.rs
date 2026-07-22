@@ -1,5 +1,3 @@
-use std::slice;
-
 use esotereel_lib::{
     project::{
         clip_data::ClipData,
@@ -9,7 +7,7 @@ use esotereel_lib::{
     util::types::ClipMoveCtx,
 };
 
-use crate::{WrapperResult, network::ClientNetworkHandler, slice_from_ptr_safe};
+use crate::{WrapperErrorCode, network::ClientNetworkHandler, slice_from_ptr_safe};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_cmd_clip_move_mul(
@@ -20,21 +18,21 @@ pub extern "C" fn req_cmd_clip_move_mul(
     position_moved: i64,
     duration_added: i64,
     layer_moved: isize,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     let network = unsafe { &*ptr_network };
     let app_state = network.app_state.lock().expect("mutex poisoned");
 
     let lock = app_state.project.read().unwrap();
     let Some(project) = lock.as_ref() else {
-        return WrapperResult::not_found(Some("project not found"));
+        return WrapperErrorCode::not_found(Some("project not found"));
     };
     let timeline_map_key = project.timelines.get_cureent_new_key(timeline_idx);
 
     let Some(timeline) = project.timelines.get(&timeline_map_key) else {
-        return WrapperResult::not_found(Some("timeline not found"));
+        return WrapperErrorCode::not_found(Some("timeline not found"));
     };
 
-    let clip_ids =  slice_from_ptr_safe(ptr, len) ;
+    let clip_ids = slice_from_ptr_safe(ptr, len);
 
     let clip_ctxs = clip_ids
         .iter()
@@ -58,7 +56,7 @@ pub extern "C" fn req_cmd_clip_move_mul(
 
     network.req_command(timeline_map_key, command);
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
@@ -67,22 +65,22 @@ pub extern "C" fn req_cmd_add_clip_dummy(
     timeline_idx: usize,
     position: i64,
     layer_order: u32,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     let network = unsafe { &*ptr_network };
     let app_state = network.app_state.lock().expect("mutex poisoned");
 
     let lock = app_state.project.read().unwrap();
     let Some(project) = lock.as_ref() else {
-        return WrapperResult::not_found(Some("project not found"));
+        return WrapperErrorCode::not_found(Some("project not found"));
     };
     let timeline_map_key = project.timelines.get_cureent_new_key(timeline_idx);
 
     let Some(timeline) = project.timelines.get(&timeline_map_key) else {
-        return WrapperResult::not_found(Some("timeline not found"));
+        return WrapperErrorCode::not_found(Some("timeline not found"));
     };
 
     let Some(layer_map_key) = timeline.layers.get_layer_map_key_by_order(layer_order) else {
-        return WrapperResult::not_found(Some("layer not found"));
+        return WrapperErrorCode::not_found(Some("layer not found"));
     };
 
     let clip_data = ClipData::Video {
@@ -106,5 +104,5 @@ pub extern "C" fn req_cmd_add_clip_dummy(
 
     network.req_command(timeline_map_key, command);
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }

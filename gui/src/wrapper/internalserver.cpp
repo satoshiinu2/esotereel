@@ -3,8 +3,6 @@
 #include "exception.h"
 #include "stringview.h"
 
-using WrapperResult = esotereel_gui_helper::WrapperResult;
-
 bool InternalServer::start(QString addr, void (*OnConnectedFn)(bool)) {
     QByteArray addrUtf8 = addr.toUtf8();
     auto addrView = StringView::fromQUtf8String(addrUtf8);

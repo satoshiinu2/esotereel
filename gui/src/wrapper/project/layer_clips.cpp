@@ -7,7 +7,6 @@
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
 using RawClipIterator = esotereel_gui_helper::ClipIterator;
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 RawClipIterator *ClipsIterator::getBegin(const RawLayer *t) {
     if (!t)

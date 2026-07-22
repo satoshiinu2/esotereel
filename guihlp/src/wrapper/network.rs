@@ -1,7 +1,7 @@
 use esotereel_lib::{ClientState, project::Project};
 
 use crate::{
-    WrapperResult,
+    WrapperErrorCode,
     network::ClientNetworkHandler,
     wrapper::{log_if_panicked, stringview::StringView},
 };
@@ -14,9 +14,9 @@ use std::{
 pub extern "C" fn client_network_handler_run(
     ptr: *const ClientNetworkHandler,
     addr: StringView,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if ptr.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let network_arc = unsafe { Arc::from_raw(ptr) };
@@ -25,7 +25,7 @@ pub extern "C" fn client_network_handler_run(
     let _ = Arc::into_raw(network_arc);
 
     let Some(addr_str) = addr.as_str() else {
-        return WrapperResult::invalid_string_error();
+        return WrapperErrorCode::invalid_string_error();
     };
     let addr = addr_str.to_string();
 
@@ -46,14 +46,14 @@ pub extern "C" fn client_network_handler_run(
         log::info!("Client worker thread exited");
     });
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn client_network_handler_new(
     out: *mut *const ClientNetworkHandler,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let network = ClientNetworkHandler::new(Arc::new(Mutex::new(ClientState::new())));
@@ -62,31 +62,33 @@ pub extern "C" fn client_network_handler_new(
         *out = Arc::into_raw(Arc::new(network));
     }
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn client_network_handler_drop(ptr: *const ClientNetworkHandler) -> WrapperResult {
+pub extern "C" fn client_network_handler_drop(
+    ptr: *const ClientNetworkHandler,
+) -> WrapperErrorCode {
     if ptr.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let _ = unsafe { Arc::from_raw(ptr) };
-        WrapperResult::ok()
+        WrapperErrorCode::ok()
     }));
 
     let msg = log_if_panicked(result, "client_network_handler_drop");
-    WrapperResult::panic(msg.as_deref())
+    WrapperErrorCode::panic(msg.as_deref())
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
     ptr: *const ClientNetworkHandler,
     out: *mut *const c_void,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if ptr.is_null() || out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let handler = unsafe { &*ptr };
@@ -96,17 +98,17 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
     if lock.as_ref().is_some() {
         // ロックを維持するためにガードを leak させる
         unsafe { *out = Box::into_raw(Box::new(lock)) as *const c_void };
-        WrapperResult::ok()
+        WrapperErrorCode::ok()
     } else {
         unsafe { *out = std::ptr::null_mut() as *const c_void };
-        WrapperResult::not_found(Some("project not found"))
+        WrapperErrorCode::not_found(Some("project not found"))
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
     guard_ptr: *const c_void,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if !guard_ptr.is_null() {
         // leak させた Box を戻してドロップ
         unsafe {
@@ -114,8 +116,8 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
                 guard_ptr as *mut RwLockReadGuard<Option<Arc<Project>>>,
             ))
         };
-        WrapperResult::ok()
+        WrapperErrorCode::ok()
     } else {
-        WrapperResult::null_ptr()
+        WrapperErrorCode::null_ptr()
     }
 }

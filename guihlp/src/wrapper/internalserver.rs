@@ -1,4 +1,4 @@
-use crate::WrapperResult;
+use crate::WrapperErrorCode;
 use crate::wrapper::stringview::StringView;
 use esotereel_core::{OnServerReadyFn, server_network_start};
 
@@ -6,9 +6,9 @@ use esotereel_core::{OnServerReadyFn, server_network_start};
 pub extern "C" fn internal_server_start(
     addr: StringView,
     on_server_ready: OnServerReadyFn,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     let Some(addr_str) = addr.as_str() else {
-        return WrapperResult::invalid_string_error();
+        return WrapperErrorCode::invalid_string_error();
     };
     let addr = addr_str.to_string();
 
@@ -25,5 +25,5 @@ pub extern "C" fn internal_server_start(
         }
     });
 
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }

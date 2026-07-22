@@ -7,11 +7,10 @@ enum class WrapperErrorCode;
 struct WrapperResult;
 } // namespace esotereel_gui_helper
 
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 using WrapperErrorCode = esotereel_gui_helper::WrapperErrorCode;
 
 // return true if result is ok
-bool checkWrapperResult(WrapperResult result);
+bool checkWrapperResult(WrapperErrorCode result);
 
 class WrapperException : public std::runtime_error {
   public:

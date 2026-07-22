@@ -6,22 +6,21 @@
 #include <iterator>
 
 namespace esotereel_gui_helper {
-    struct Layer;
-    struct Clip;
-    struct ClipIterator;
-    struct WrapperResult;
-}
+struct Layer;
+struct Clip;
+struct ClipIterator;
+struct WrapperResult;
+} // namespace esotereel_gui_helper
 
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
 using RawClipIterator = esotereel_gui_helper::ClipIterator;
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 class ClipsIterator {
     RawClipIterator *raw_iter_ptr;
     const RawClip *raw_cur_ptr;
 
-    static RawClipIterator *getBegin(const RawLayer *t) ;
+    static RawClipIterator *getBegin(const RawLayer *t);
 
     static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame);
 
@@ -54,7 +53,7 @@ class ClipsIterator {
         other.raw_iter_ptr = nullptr;
     }
 
-    void advance() noexcept ;
+    void advance() noexcept;
 
     ClipsIterator &operator++() noexcept {
         advance(); // 内部で free まで完結させる
@@ -82,7 +81,7 @@ class ClipsIterable {
         return raw_ptr != nullptr;
     }
 
-    size_t clipsCount() const noexcept ;
+    size_t clipsCount() const noexcept;
 
     // forループの開始点
     ClipsIterator begin() const noexcept {

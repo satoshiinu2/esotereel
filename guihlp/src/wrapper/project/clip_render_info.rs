@@ -2,7 +2,7 @@ use std::{collections::HashSet, num::NonZeroU64};
 
 use esotereel_lib::project::{Project, clip_data::ClipData, timeline::Timeline};
 
-use crate::{WrapperResult, slice_from_ptr_safe};
+use crate::{WrapperErrorCode, slice_from_ptr_safe};
 
 #[repr(C)]
 pub struct ClipRenderInfo {
@@ -39,14 +39,16 @@ pub unsafe extern "C" fn render_rows_build(
     open_ids_ptr: *const u64,
     open_ids_len: usize,
     out: *mut *mut RenderRowsResult,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if project.is_null() || timeline.is_null() || out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::NullPtr;
     }
     let project = unsafe { &*project };
     let timeline = unsafe { &*timeline };
-    let open_ids: HashSet<u64> =
-        slice_from_ptr_safe(open_ids_ptr, open_ids_len).iter().cloned().collect();
+    let open_ids: HashSet<u64> = slice_from_ptr_safe(open_ids_ptr, open_ids_len)
+        .iter()
+        .cloned()
+        .collect();
 
     let mut layer_rows = Vec::new();
     build_layer_rows(project, timeline, &open_ids, 0, 0, &mut layer_rows);
@@ -67,7 +69,7 @@ pub unsafe extern "C" fn render_rows_build(
     }
 
     unsafe { *out = Box::into_raw(Box::new(RenderRowsResult { rows, clips })) };
-    WrapperResult::ok()
+    WrapperErrorCode::Ok
 }
 
 #[unsafe(no_mangle)]
@@ -82,14 +84,16 @@ pub unsafe extern "C" fn render_rows_get_rows(
     ptr: *const RenderRowsResult,
     out_ptr: *mut *const FfiLayerRow,
     out_len: *mut usize,
-) -> WrapperResult {
-    if ptr.is_null() { return WrapperResult::null_ptr(); }
+) -> WrapperErrorCode {
+    if ptr.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
     let result = unsafe { &*ptr };
     unsafe {
         *out_ptr = result.rows.as_ptr();
         *out_len = result.rows.len();
     }
-    WrapperResult::ok()
+    WrapperErrorCode::Ok
 }
 
 #[unsafe(no_mangle)]
@@ -97,14 +101,16 @@ pub unsafe extern "C" fn render_rows_get_clips(
     ptr: *const RenderRowsResult,
     out_ptr: *mut *const ClipRenderInfo,
     out_len: *mut usize,
-) -> WrapperResult {
-    if ptr.is_null() { return WrapperResult::null_ptr(); }
+) -> WrapperErrorCode {
+    if ptr.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
     let result = unsafe { &*ptr };
     unsafe {
         *out_ptr = result.clips.as_ptr();
         *out_len = result.clips.len();
     }
-    WrapperResult::ok()
+    WrapperErrorCode::Ok
 }
 
 fn build_layer_rows(
@@ -135,9 +141,15 @@ fn build_layer_rows(
 
             if is_open {
                 if let Some(key) = match &clip.clip_data {
-                    ClipData::Composite { timeline_id: Some(key) }
-                    | ClipData::Area2D { timeline_id: Some(key) }
-                    | ClipData::Area3D { timeline_id: Some(key) } => Some(key),
+                    ClipData::Composite {
+                        timeline_id: Some(key),
+                    }
+                    | ClipData::Area2D {
+                        timeline_id: Some(key),
+                    }
+                    | ClipData::Area3D {
+                        timeline_id: Some(key),
+                    } => Some(key),
                     _ => None,
                 } {
                     if let Some(child_timeline) = project.timelines.get(key) {

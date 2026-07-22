@@ -7,7 +7,6 @@
 
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
-using WrapperResult = esotereel_gui_helper::WrapperResult;
 
 size_t Layer::clipsCount() const noexcept {
     return esotereel_gui_helper::layer_get_clips_count(raw_ptr);

@@ -5,8 +5,6 @@
 #include "requests.h"
 #include "stringview.h"
 
-using WrapperResult = esotereel_gui_helper::WrapperResult;
-
 ClientNetworkHandler::ClientNetworkHandler() {
     auto result = esotereel_gui_helper::client_network_handler_new(&network_ptr);
     checkWrapperResult(result);

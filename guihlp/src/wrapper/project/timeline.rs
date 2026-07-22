@@ -1,8 +1,6 @@
-use esotereel_lib::
-    project::{clip::Clip, layer::Layer, timeline::Timeline}
-;
+use esotereel_lib::project::{clip::Clip, layer::Layer, timeline::Timeline};
 
-use crate::{WrapperResult, slice_from_ptr_safe};
+use crate::{WrapperErrorCode, slice_from_ptr_safe};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_get_layer_by_order(
@@ -56,21 +54,21 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
     clip_id: u64,
     out_clip: *mut *const Clip,
     out_layer_idx: *mut u32,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if ptr.is_null() | out_clip.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let project = unsafe { &(*ptr) };
 
     let Some((_, clip, layer_idx)) = project.layers.find_orderd_clip_by_id(clip_id) else {
-        return WrapperResult::not_found(Some("clip not found"));
+        return WrapperErrorCode::not_found(Some("clip not found"));
     };
     unsafe {
         *out_clip = clip.as_ref();
         *out_layer_idx = layer_idx;
     };
-    WrapperResult::ok()
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
@@ -87,7 +85,7 @@ pub unsafe extern "C" fn timeline_can_place_clip_at(
     }
     let timeline = unsafe { &(*ptr) };
 
-    let exclude_ids = slice_from_ptr_safe(exclude_ids_ptr, exclude_ids_len) ;
+    let exclude_ids = slice_from_ptr_safe(exclude_ids_ptr, exclude_ids_len);
 
     let Some(layer_map_key) = timeline.layers.get_layer_map_key_by_order(layer_order) else {
         return false;

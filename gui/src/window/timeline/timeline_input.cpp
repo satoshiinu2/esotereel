@@ -102,6 +102,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     if (e->button() & Qt::LeftButton && !std::holds_alternative<DragNone>(this->dragState)) {
         this->onDragEnd(e);
         this->dragState = DragNone{};
+        update();
     }
 }
 

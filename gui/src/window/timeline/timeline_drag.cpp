@@ -106,10 +106,12 @@ void TimelineWidget::handleClipDraggingDrop(const Timeline &timeline, const QPoi
     }
 
 send_drop:
-    update();
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->windowState.network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
+
+    this->markRowsDirty();
+    update();
 }
 
 void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const {

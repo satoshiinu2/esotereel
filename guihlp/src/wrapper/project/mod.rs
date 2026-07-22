@@ -5,13 +5,13 @@ use std::{
 
 use esotereel_lib::project::{Project, timeline::Timeline};
 
-use crate::WrapperResult;
+use crate::WrapperErrorCode;
 
 pub mod clip;
+pub mod clip_render_info;
 pub mod debug;
 pub mod layer;
 pub mod timeline;
-pub mod clip_render_info;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn project_get_timeline(ptr: *const Project, id: usize) -> *const Timeline {
@@ -42,9 +42,9 @@ pub extern "C" fn project_get_timeline_count(ptr: *const Project) -> usize {
 pub unsafe extern "C" fn project_guard_get_project_from_guard(
     guard_ptr: *const c_void,
     out: *mut *const Project,
-) -> WrapperResult {
+) -> WrapperErrorCode {
     if guard_ptr.is_null() || out.is_null() {
-        return WrapperResult::null_ptr();
+        return WrapperErrorCode::null_ptr();
     }
 
     let guard = unsafe { &*(guard_ptr as *const RwLockReadGuard<Option<Arc<Project>>>) };
@@ -53,11 +53,11 @@ pub unsafe extern "C" fn project_guard_get_project_from_guard(
     match guard.as_ref() {
         Some(p) => {
             unsafe { *out = Arc::as_ptr(p) };
-            WrapperResult::ok()
+            WrapperErrorCode::ok()
         }
         None => {
             unsafe { *out = std::ptr::null() };
-            WrapperResult::not_found(Some("project not found"))
+            WrapperErrorCode::not_found(Some("project not found"))
         }
     }
 }
