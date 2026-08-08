@@ -2,30 +2,33 @@
 
 #include "../../wrapper/project/camera.fwd.h"
 #include "../../wrapper/project/timeline.h"
-#include "../../wrapper/wgpuutil.h"
 #include "../main.h"
 #include "../timeline/timeline.h"
+#include "esotereel_gui_helper.h"
 #include <QObject>
 #include <QThread>
-class WgpuRenderWorker : public QObject {
+
+using WGpuUtil = esotereel_gui_helper::WGpuUtil;
+using OffscreenTarget = esotereel_gui_helper::OffscreenTarget;
+class GpuRenderWorker : public QObject {
     Q_OBJECT
   public:
-    explicit WgpuRenderWorker(WindowGState *windowState, QObject *parent = nullptr)
-        : QObject(parent), windowState(windowState) {}
+    explicit GpuRenderWorker(WindowGState *windowState) : windowState(windowState) {}
+    ~GpuRenderWorker();
 
   public slots:
-    void initialize(NativeWindowHandle handle, int w, int h);
+    void initialize(int w, int h);
     void resize(int w, int h);
-    void updateSurface(NativeWindowHandle handle);
-    void destroySurface();
     void renderFrame(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
 
   signals:
-    void frameFailed(QString reason);
+    void frameReady(QImage img);
     void initFailed(QString reason);
+    void frameFailed(QString reason);
 
   private:
     WindowGState *windowState;
-    std::optional<WGpuUtil> wgpuutil;
+    WGpuUtil *wgpuutil_ptr = nullptr;
+    OffscreenTarget *offscreen_ptr = nullptr;
     bool busy = false;
 };

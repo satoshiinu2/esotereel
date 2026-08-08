@@ -8,9 +8,12 @@ sys_includes = ["QVector3D", "QMatrix4x4", "cstdint"]
 [parse]
 parse_deps = true
 clean = true
-include = ["esotereel_lib"] 
+include = ["esotereel_lib"]
 
 
 [export.rename]
 "Vec3" = "QVector3D"
 "Mat4" = "QMatrix4x4"
+
+[export]
+include = ["NativeWindowHandle"]

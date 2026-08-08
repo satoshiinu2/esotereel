@@ -21,14 +21,6 @@ enum class WrapperErrorCode {
   Panic = 4,
 };
 
-enum class PlatformKind : uint32_t {
-  Unknown = 0,
-  Xcb = 1,
-  Wayland = 2,
-  Win32 = 3,
-  AppKit = 4,
-};
-
 enum class Direction {
   Front,
   Back,
@@ -38,6 +30,14 @@ enum class Direction {
   Right,
 };
 
+enum class PlatformKind : uint32_t {
+  Unknown = 0,
+  Xcb = 1,
+  Wayland = 2,
+  Win32 = 3,
+  AppKit = 4,
+};
+
 struct ClientNetworkHandler;
 
 struct Clip;
@@ -45,6 +45,8 @@ struct Clip;
 struct ClipIterator;
 
 struct Layer;
+
+struct OffscreenTarget;
 
 struct Project;
 
@@ -85,12 +87,6 @@ struct ClipRenderInfo {
   bool is_open;
 };
 
-struct NativeWindowHandle {
-  PlatformKind kind;
-  void *window_ptr;
-  void *display_ptr;
-};
-
 struct CameraInfo {
   QVector3D position;
   QVector3D rotation;
@@ -98,6 +94,12 @@ struct CameraInfo {
   Direction orthographic_direction;
   float scale_factor;
   float fov;
+};
+
+struct NativeWindowHandle {
+  PlatformKind kind;
+  void *window_ptr;
+  void *display_ptr;
 };
 
 extern "C" {
@@ -225,24 +227,29 @@ void req_new_project(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode req_load_stream(const ClientNetworkHandler *ptr_network, StringView path);
 
-WrapperErrorCode wgpuutil_init_surface(NativeWindowHandle handle,
-                                       uint32_t width,
-                                       uint32_t height,
-                                       WGpuUtil **out);
+WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
 
 WrapperErrorCode wgpuutil_drop(WGpuUtil *ptr);
 
-WrapperErrorCode wgpuutil_detach_surface(WGpuUtil *ptr);
+WrapperErrorCode offscreen_target_new(WGpuUtil *ptr_wgpu,
+                                      uint32_t width,
+                                      uint32_t height,
+                                      OffscreenTarget **out);
 
-WrapperErrorCode wgpuutil_attach_surface(WGpuUtil *ptr, NativeWindowHandle handle);
+WrapperErrorCode offscreen_target_drop(OffscreenTarget *ptr);
 
-WrapperErrorCode wgpuutil_update_size(WGpuUtil *ptr, uint32_t width, uint32_t height);
+WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
+                                                 OffscreenTarget *ptr_offscreen,
+                                                 const ClientNetworkHandler *ptr_network,
+                                                 const Timeline *ptr_timeline,
+                                                 const CameraInfo *ptr_camera_info,
+                                                 int64_t current_frame,
+                                                 uint8_t **out_data,
+                                                 uintptr_t *out_len,
+                                                 uint32_t *out_width,
+                                                 uint32_t *out_height);
 
-WrapperErrorCode wgpuutil_render_frame(WGpuUtil *ptr_wgpu,
-                                       const ClientNetworkHandler *ptr_network,
-                                       const Timeline *ptr_timeline,
-                                       const CameraInfo *ptr_camera_info,
-                                       int64_t current_frame);
+void wgpuutil_free_buffer(uint8_t *ptr, uintptr_t len);
 
 }  // extern "C"
 

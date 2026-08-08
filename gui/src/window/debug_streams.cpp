@@ -96,26 +96,26 @@ void DebugStreamsWidget::paintEvent(QPaintEvent *e) {
 }
 
 void DebugStreamsWidget::updateMap() {
-    const esotereel_gui_helper::ClientNetworkHandler *network = *windowState->network;
+    const esotereel_gui_helper::ClientNetworkHandler *raw_network = *windowState->network;
 
-    size_t resourceCount = esotereel_gui_helper::debug_streams_get_resources_arr_size(network);
+    size_t resourceCount = esotereel_gui_helper::debug_streams_get_resources_arr_size(raw_network);
 
     std::vector<uint32_t> resources(resourceCount);
 
     if (resourceCount > 0) {
-        if (!esotereel_gui_helper::debug_streams_write_resources_arr(network, resources.data(), resources.size())) {
+        if (!esotereel_gui_helper::debug_streams_write_resources_arr(raw_network, resources.data(), resources.size())) {
             return;
         }
     }
     streamMap.clear();
 
     for (uint32_t resourceId : resources) {
-        size_t secCount = esotereel_gui_helper::debug_streams_get_loaded_streams_sec_arr_size(network, resourceId);
+        size_t secCount = esotereel_gui_helper::debug_streams_get_loaded_streams_sec_arr_size(raw_network, resourceId);
 
         std::vector<double> secs(secCount);
 
         if (secCount > 0) {
-            if (!esotereel_gui_helper::debug_streams_write_loaded_streams_sec_arr(network, resourceId, secs.data(),
+            if (!esotereel_gui_helper::debug_streams_write_loaded_streams_sec_arr(raw_network, resourceId, secs.data(),
                                                                                   secs.size())) {
                 continue;
             }

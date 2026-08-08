@@ -1,4 +1,7 @@
-use crate::{project::camera::CameraInfo, render::video::update_timline_clips_texture};
+use crate::{
+    project::camera::CameraInfo,
+    render::{video::update_timline_clips_texture, wgpuutil::OffscreenTarget},
+};
 use glam::Mat4;
 use wgpu::CurrentSurfaceTexture;
 
@@ -22,38 +25,19 @@ pub struct RenderBatch {
     pub transform: Mat4,
 }
 
-pub fn render_frame(
+pub fn render_frame_offscreen(
     util: &mut WGpuUtil,
+    offscreen: &OffscreenTarget,
     timeline: &Timeline,
     app_state: &ClientState,
     camera_info: &CameraInfo,
     current_frame: i64,
 ) -> Result<(), String> {
-    if util.config.width == 0 || util.config.height == 0 {
+    if offscreen.width == 0 || offscreen.height == 0 {
         return Err("window size is 0".into());
     }
 
-    let surface = util.surface.as_ref().ok_or("surface is none")?;
-
-    let output = match surface.get_current_texture() {
-        CurrentSurfaceTexture::Success(t) => t,
-        CurrentSurfaceTexture::Suboptimal(t) => t,
-        _ => return Err("could not get next frame texture".into()),
-    };
-
-    let view = output
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = util
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Encoder"),
-        });
-
-    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
-    update_timline_clips_texture(util, app_state, timeline, current_frame);
-
-    let screen_size = [util.config.width as f32, util.config.height as f32];
+    let screen_size = [offscreen.width as f32, offscreen.height as f32];
 
     // ビュープロジェクション行列の計算
     let proj_matrix = camera_info.get_proj_mat(screen_size);
@@ -96,6 +80,16 @@ pub fn render_frame(
         );
     }
 
+    let view = &offscreen.view;
+    let mut encoder = util
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Encoder"),
+        });
+
+    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
+    update_timline_clips_texture(util, app_state, timeline, current_frame);
+
     {
         // RenderPass の作成
         let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -129,7 +123,28 @@ pub fn render_frame(
     }
 
     // 5. GPUへ送信
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo {
+            texture: &offscreen.texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        wgpu::TexelCopyBufferInfo {
+            buffer: &offscreen.buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(offscreen.padded_bytes_per_row),
+                rows_per_image: Some(offscreen.height),
+            },
+        },
+        wgpu::Extent3d {
+            width: offscreen.width,
+            height: offscreen.height,
+            depth_or_array_layers: 1,
+        },
+    );
+
     util.queue.submit(std::iter::once(encoder.finish()));
-    output.present();
     Ok(())
 }

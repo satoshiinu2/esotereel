@@ -7,6 +7,7 @@ pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::clip::Clip;
 pub use esotereel_lib::project::layer::Layer;
 pub use esotereel_lib::project::timeline::Timeline;
+pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
 
 use crate::network::OnConnectedFn;
 use crate::responces::on_responce_recveve;

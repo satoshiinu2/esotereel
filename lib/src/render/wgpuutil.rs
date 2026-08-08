@@ -8,27 +8,34 @@ use crate::render::{
     surfacetarget::{self, SurfaceTarget},
 };
 
+pub enum RenderTarget<'a> {
+    Surface(&'a wgpu::Surface<'static>),
+    Offscreen(&'a OffscreenTarget),
+}
+
+pub enum RenderSourceTarget {
+    Surface(SurfaceTarget),
+    Offscreen,
+}
+
 pub struct WGpuUtil {
     pub instance: wgpu::Instance,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub surface: Option<wgpu::Surface<'static>>,
-    pub config: wgpu::SurfaceConfiguration,
+    pub format: wgpu::TextureFormat,
+    pub config_width: u32,
+    pub config_height: u32,
     pub resources: WgpuRenderResources,
     pub textures: HashMap<u32, (wgpu::Texture, wgpu::BindGroup)>,
 }
 
 impl WGpuUtil {
-    pub fn new(surface_target: SurfaceTarget, width: u32, height: u32) -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::default();
 
-        let surface_target = Arc::new(surface_target);
-        let surface = instance
-            .create_surface(surface_target.clone())
-            .expect("Failed to create surface");
-
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            compatible_surface: Some(&surface),
+            compatible_surface: None, // Offscreen専用なのでウィンドウ互換性は不要
+            power_preference: wgpu::PowerPreference::HighPerformance,
             ..Default::default()
         }))
         .expect("Could not get an adapter (GPU).");
@@ -43,56 +50,116 @@ impl WGpuUtil {
         }))
         .expect("Failed to create device");
 
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface.get_capabilities(&adapter).formats[0],
-            width,
-            height,
-            present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            view_formats: vec![],
-            desired_maximum_frame_latency: 1,
-        };
-
-        surface.configure(&device, &config);
-
-        let surface = Some(surface);
-
-        let resources = WgpuRenderResources::new(&device, &queue, config.format);
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let resources = WgpuRenderResources::new(&device, &queue, format);
 
         Self {
             instance,
             device,
             queue,
-            surface,
-            config,
+            format,
+            config_width: width,
+            config_height: height,
             resources,
             textures: HashMap::new(),
         }
     }
+}
 
-    pub fn get_surface(
-        instance: &wgpu::Instance,
-        target: impl HasWindowHandle + HasDisplayHandle + Clone + Send + Sync + 'static,
-    ) -> wgpu::Surface<'static> {
-        instance
-            .create_surface(target)
-            .expect("Failed to create surface")
+pub struct OffscreenTarget {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub buffer: wgpu::Buffer,
+    pub width: u32,
+    pub height: u32,
+    pub padded_bytes_per_row: u32,
+    pub unpadded_bytes_per_row: u32,
+}
+
+const BYTES_PER_PIXEL: u32 = 4; // RGBA8
+
+impl OffscreenTarget {
+    pub fn new(
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("offscreen render target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // wgpuはcopy_texture_to_bufferで各行を256バイト境界に揃える必要がある
+        let unpadded_bytes_per_row = width * BYTES_PER_PIXEL;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_bytes_per_row = (unpadded_bytes_per_row + align - 1) / align * align;
+
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback buffer"),
+            size: (padded_bytes_per_row * height) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            texture,
+            view,
+            buffer,
+            width,
+            height,
+            padded_bytes_per_row,
+            unpadded_bytes_per_row,
+        }
     }
 
-    pub fn detach_surface(&mut self) {
-        self.surface = None; // Dropが走ってGPU側surfaceだけ解放。device等は無傷
-    }
+    /// copy_texture_to_bufferでコピー済みのbufferをCPU側に読み戻し、
+    /// パディングを除去したtightly-packedなRGBAバイト列を返す
+    pub fn readback(&self, device: &wgpu::Device) -> Result<Vec<u8>, String> {
+        let slice = self.buffer.slice(..);
 
-    pub fn attach_surface(&mut self, target: SurfaceTarget) {
-        let target_arc = std::sync::Arc::new(target);
-        let surface = self
-            .instance
-            .create_surface(target_arc)
-            .expect("Failed to create surface");
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
 
-        surface.configure(&self.device, &self.config);
+        // GPU側の完了を待つ(copy_texture_to_bufferのコマンドがsubmit済みである前提)
+        device
+            .poll(wgpu::PollType::Wait {
+                submission_index: None, // 直近のsubmissionを待つ
+                timeout: None,          // 無期限に待つ(エラー検知するまで)
+            })
+            .map_err(|e| format!("device poll failed: {e:?}"))?;
 
-        self.surface = Some(surface);
+        rx.recv()
+            .map_err(|e| format!("map_async channel recv failed: {e}"))?
+            .map_err(|e| format!("buffer map failed: {e:?}"))?;
+
+        let data = slice.get_mapped_range();
+
+        // 各行がpadded_bytes_per_rowでアラインされているので、
+        // unpadded_bytes_per_row分だけ取り出して詰め直す
+        let mut out = Vec::with_capacity((self.unpadded_bytes_per_row * self.height) as usize);
+        for row in 0..self.height {
+            let start = (row * self.padded_bytes_per_row) as usize;
+            let end = start + self.unpadded_bytes_per_row as usize;
+            out.extend_from_slice(&data[start..end]);
+        }
+
+        drop(data);
+        self.buffer.unmap();
+
+        Ok(out)
     }
 }

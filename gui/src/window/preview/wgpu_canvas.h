@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../../util.h"
-#include "../../wrapper/wgpuutil.h"
 #include "../main.h"
 #include "render_worker.h"
 #include <QPlatformSurfaceEvent>
@@ -11,33 +10,35 @@
 #include <QWidget>
 #include <QWindow>
 
-class WgpuRenderWindow : public QWindow {
+class GpuPreviewWidget : public QWidget {
     Q_OBJECT
   public:
-    explicit WgpuRenderWindow(WindowGState *windowState, QWindow *parent = nullptr);
-    ~WgpuRenderWindow() override;
-
-  signals:
-    void requestInit(NativeWindowHandle handle, int w, int h);
-    void requestResize(int w, int h);
-    void requestSurfaceUpdate(NativeWindowHandle handle);
-    void requestSurfaceDestroy();
-    void requestRender(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
+    explicit GpuPreviewWidget(WindowGState *windowState, QWidget *parent = nullptr);
+    ~GpuPreviewWidget() override;
 
   protected:
-    void exposeEvent(QExposeEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
-    bool event(QEvent *ev) override;
+    void showEvent(QShowEvent *event) override;
 
-  private:
-    void ensureInitialized();
-    void renderFrame();
+  signals:
+    void requestInit(int w, int h);
+    void requestResize(int w, int h);
+    void requestRender(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
+
+  private slots:
+    void onFrameReady(QImage img);
     void onInitFailed(QString reason);
     void onFrameFailed(QString reason);
 
+  private:
+    void ensureInitialized();
+    void triggerRenderFrame();
+
     WindowGState *windowState;
     QThread *m_thread;
-    WgpuRenderWorker *m_worker;
+    GpuRenderWorker *m_worker;
     QTimer *renderTimer;
+    QImage m_currentFrame;
     bool m_initialized = false;
 };
