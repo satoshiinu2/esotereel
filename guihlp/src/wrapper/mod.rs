@@ -10,9 +10,9 @@ pub mod internalserver;
 pub mod logger;
 pub mod network;
 pub mod project;
-pub mod wgpuutil;
 pub mod requests;
 pub mod stringview;
+pub mod wgpuutil;
 
 pub type OnServerReadyFn = extern "C" fn(bool);
 

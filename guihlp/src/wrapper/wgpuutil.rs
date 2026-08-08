@@ -9,10 +9,7 @@ use esotereel_lib::{
     },
 };
 
-use crate::{
-    network::ClientNetworkHandler,
-    wrapper::{log_if_panicked, stringview::StringView},
-};
+use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::log_if_panicked};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wgpuutil_init_surface(
@@ -20,7 +17,7 @@ pub extern "C" fn wgpuutil_init_surface(
     width: u32,
     height: u32,
     out: *mut *mut WGpuUtil,
-) -> StringView {
+) -> WrapperErrorCode {
     log::debug!("wgpu initing");
     log::debug!("kind: {:?}", handle.kind);
     log::debug!("window_ptr: {:x}", handle.window_ptr as usize);
@@ -38,22 +35,22 @@ pub extern "C" fn wgpuutil_init_surface(
     // catch_unwind自体のパニックと、get_surface_targetが返すResult::Errの
     // 両方をここで一本化してStringViewに落とす
     match result {
-        Ok(Ok(())) => StringView::from_option_str(None),
+        Ok(Ok(())) => WrapperErrorCode::ok(),
         Ok(Err(err)) => {
             log::error!("wgpuutil_init_surface: {}", err);
-            StringView::from_str(&err)
+            WrapperErrorCode::error(Some(&err))
         }
         Err(panic) => {
             let msg = log_if_panicked(Err::<(), _>(panic), "wgpuutil_init_surface");
-            StringView::from_option_str(msg.as_deref())
+            WrapperErrorCode::error(msg.as_deref())
         }
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wgpuutil_drop(ptr: *mut WGpuUtil) -> StringView {
+pub unsafe extern "C" fn wgpuutil_drop(ptr: *mut WGpuUtil) -> WrapperErrorCode {
     if ptr.is_null() {
-        return StringView::from_str("nullptr");
+        return WrapperErrorCode::null_ptr();
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -61,57 +58,49 @@ pub unsafe extern "C" fn wgpuutil_drop(ptr: *mut WGpuUtil) -> StringView {
     }));
 
     let msg = log_if_panicked(result, "wgpuutil_drop");
-    StringView::from_option_str(msg.as_deref())
+    WrapperErrorCode::error(msg.as_deref())
 }
 
-/// wgpu内部でパニック(バリデーションエラー等)が発生した後のWGpuUtilは、
-/// 内部状態(ロック中のデータ構造やGPUリソースの参照カウントなど)が
-/// 中途半端に書き換わったまま巻き戻っている可能性があり、
-/// 通常のDrop(=wgpuutil_drop)を走らせるとその破損した状態を読みに行って
-/// 二次的なクラッシュ(heap-use-after-freeなど)を引き起こしうる。
-///
-/// そのためパニックをcatchした後は、このwgpuutil_leakで
-/// **Dropを一切走らせずに**ポインタだけ手放す(意図的なメモリリーク)。
-/// リソースは解放されないままになるが、破損した状態への追撃読み書きよりは
-/// 安全側に倒した選択。
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wgpuutil_leak(ptr: *mut WGpuUtil) {
+pub unsafe extern "C" fn wgpuutil_detach_surface(ptr: *mut WGpuUtil) -> WrapperErrorCode {
     if ptr.is_null() {
-        return;
+        return WrapperErrorCode::null_ptr();
     }
 
-    // Box::from_rawで所有権を取り戻した直後、dropを呼ばずBox::leakで手放す。
-    // catch_unwindで包む必要はない(Drop自体を呼ばないのでパニックしようがない)。
-    let boxed = unsafe { Box::from_raw(ptr) };
-    Box::leak(boxed);
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let wgpuutil = unsafe { &mut *ptr };
+        wgpuutil.detach_surface(); // surfaceフィールドをNoneにするだけ。Box自体は無傷
+    }));
+    let msg = log_if_panicked(result, "wgpuutil_drop");
+    WrapperErrorCode::error_from_option(msg.as_deref())
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn wgpuutil_update_surface(
+pub unsafe extern "C" fn wgpuutil_attach_surface(
     ptr: *mut WGpuUtil,
     handle: NativeWindowHandle,
-) -> StringView {
+) -> WrapperErrorCode {
     if ptr.is_null() {
-        return StringView::from_str("nullptr");
+        return WrapperErrorCode::null_ptr();
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), String> {
         let wgpuutil = unsafe { &mut (*ptr) };
 
         let surface = get_surface_target(handle)?;
-        wgpuutil.update_surface(surface);
+        wgpuutil.attach_surface(surface);
         Ok(())
     }));
 
     match result {
-        Ok(Ok(())) => StringView::from_option_str(None),
+        Ok(Ok(())) => WrapperErrorCode::ok(),
         Ok(Err(err)) => {
             log::error!("wgpuutil_update_surface: {}", err);
-            StringView::from_str(&err)
+            WrapperErrorCode::error(Some(&err))
         }
         Err(panic) => {
             let msg = log_if_panicked(Err::<(), _>(panic), "wgpuutil_update_surface");
-            StringView::from_option_str(msg.as_deref())
+            WrapperErrorCode::error_from_option(msg.as_deref())
         }
     }
 }
@@ -121,9 +110,9 @@ pub unsafe extern "C" fn wgpuutil_update_size(
     ptr: *mut WGpuUtil,
     width: u32,
     height: u32,
-) -> StringView {
+) -> WrapperErrorCode {
     if ptr.is_null() {
-        return StringView::from_str("nullptr");
+        return WrapperErrorCode::null_ptr();
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -131,13 +120,13 @@ pub unsafe extern "C" fn wgpuutil_update_size(
 
         wgpuutil.config.width = width;
         wgpuutil.config.height = height;
-        wgpuutil
-            .surface
-            .configure(&wgpuutil.device, &wgpuutil.config);
+        if let Some(surface) = &wgpuutil.surface {
+            surface.configure(&wgpuutil.device, &wgpuutil.config);
+        }
     }));
 
     let msg = log_if_panicked(result, "wgpuutil_update_size");
-    StringView::from_option_str(msg.as_deref())
+    WrapperErrorCode::error_from_option(msg.as_deref())
 }
 
 #[unsafe(no_mangle)]
@@ -147,13 +136,13 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
     ptr_timeline: *const Timeline,
     ptr_camera_info: *const CameraInfo,
     current_frame: i64,
-) -> StringView {
+) -> WrapperErrorCode {
     if ptr_wgpu.is_null()
         || ptr_network.is_null()
         || ptr_timeline.is_null()
         || ptr_camera_info.is_null()
     {
-        return StringView::from_str("nullptr");
+        return WrapperErrorCode::null_ptr();
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| {
@@ -186,5 +175,5 @@ pub unsafe extern "C" fn wgpuutil_render_frame(
     }));
 
     let msg = log_if_panicked(result, "render_frame");
-    StringView::from_option_str(msg.as_deref())
+    WrapperErrorCode::error_from_option(msg.as_deref())
 }

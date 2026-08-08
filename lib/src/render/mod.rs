@@ -33,7 +33,9 @@ pub fn render_frame(
         return Err("window size is 0".into());
     }
 
-    let output = match util.surface.get_current_texture() {
+    let surface = util.surface.as_ref().ok_or("surface is none")?;
+
+    let output = match surface.get_current_texture() {
         CurrentSurfaceTexture::Success(t) => t,
         CurrentSurfaceTexture::Suboptimal(t) => t,
         _ => return Err("could not get next frame texture".into()),
@@ -125,6 +127,7 @@ pub fn render_frame(
                 .record_render_commands(&mut rpass, &batches, &util.device);
         }
     }
+
     // 5. GPUへ送信
     util.queue.submit(std::iter::once(encoder.finish()));
     output.present();

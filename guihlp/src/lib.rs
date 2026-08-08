@@ -49,7 +49,7 @@ impl WrapperErrorCode {
     }
 
     pub fn null_ptr() -> Self {
-        Self::set_last_err_msg(None);
+        Self::set_last_err_msg(Some(""));
         WrapperErrorCode::NullPtr
     }
 
@@ -66,6 +66,13 @@ impl WrapperErrorCode {
     pub fn panic(message: Option<&str>) -> Self {
         Self::set_last_err_msg(message);
         WrapperErrorCode::Panic
+    }
+
+    pub fn error_from_option(message: Option<&str>) -> Self {
+        match message {
+            Some(_) => WrapperErrorCode::error(message),
+            None => WrapperErrorCode::ok(),
+        }
     }
 
     pub fn invalid_string_error() -> Self {

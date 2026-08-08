@@ -1,16 +1,18 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wgpu::ExperimentalFeatures;
 
-use crate::render::{pipeline::WgpuRenderResources, surfacetarget::SurfaceTarget};
+use crate::render::{
+    pipeline::WgpuRenderResources,
+    surfacetarget::{self, SurfaceTarget},
+};
 
 pub struct WGpuUtil {
     pub instance: wgpu::Instance,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    pub surface: wgpu::Surface<'static>,
-    pub surface_target: std::sync::Arc<SurfaceTarget>,
+    pub surface: Option<wgpu::Surface<'static>>,
     pub config: wgpu::SurfaceConfiguration,
     pub resources: WgpuRenderResources,
     pub textures: HashMap<u32, (wgpu::Texture, wgpu::BindGroup)>,
@@ -20,7 +22,7 @@ impl WGpuUtil {
     pub fn new(surface_target: SurfaceTarget, width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::default();
 
-        let surface_target = std::sync::Arc::new(surface_target);
+        let surface_target = Arc::new(surface_target);
         let surface = instance
             .create_surface(surface_target.clone())
             .expect("Failed to create surface");
@@ -54,6 +56,8 @@ impl WGpuUtil {
 
         surface.configure(&device, &config);
 
+        let surface = Some(surface);
+
         let resources = WgpuRenderResources::new(&device, &queue, config.format);
 
         Self {
@@ -61,7 +65,6 @@ impl WGpuUtil {
             device,
             queue,
             surface,
-            surface_target,
             config,
             resources,
             textures: HashMap::new(),
@@ -77,15 +80,19 @@ impl WGpuUtil {
             .expect("Failed to create surface")
     }
 
-    pub fn update_surface(&mut self, target: SurfaceTarget) {
+    pub fn detach_surface(&mut self) {
+        self.surface = None; // Dropが走ってGPU側surfaceだけ解放。device等は無傷
+    }
+
+    pub fn attach_surface(&mut self, target: SurfaceTarget) {
         let target_arc = std::sync::Arc::new(target);
         let surface = self
             .instance
             .create_surface(target_arc)
             .expect("Failed to create surface");
 
-        self.surface = surface;
+        surface.configure(&self.device, &self.config);
 
-        self.surface.configure(&self.device, &self.config);
+        self.surface = Some(surface);
     }
 }

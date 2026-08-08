@@ -14,14 +14,14 @@ bool checkWrapperResult(WrapperErrorCode code) {
         break;
 
     case WrapperErrorCode::Error:
-        qCritical() << "Wrapper error Error: " << msg;
+        qCritical() << "Wrapper error [Error]: " << msg;
         throw WrapperException(msg, code);
 
     case WrapperErrorCode::NullPtr:
-        qCritical() << "Wrapper error NullPtr: " << msg;
+        qCritical() << "Wrapper error [NullPtr]: " << msg;
         throw WrapperFatalException(msg, code);
     case WrapperErrorCode::Panic:
-        qCritical() << "Wrapper error Panic: " << msg;
+        qCritical() << "Wrapper error [Panic]: " << msg;
         throw WrapperFatalException(msg, code);
     }
 

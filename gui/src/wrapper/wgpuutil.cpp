@@ -1,6 +1,7 @@
 #include "wgpuutil.h"
 #include "../util.h"
 #include "esotereel_gui_helper.h"
+#include "exception.h"
 #include "project/timeline.h"
 #include "stringview.h"
 #include <QMatrix4x4>
@@ -25,9 +26,8 @@ NativeWindowHandle toRawHandle(const NativeWindowHandle &handle) {
 WGpuUtil::WGpuUtil(ClientNetworkHandler *network, const NativeWindowHandle &handle, uint32_t width, uint32_t height)
     : network(*network) {
     auto result = esotereel_gui_helper::wgpuutil_init_surface(toRawHandle(handle), width, height, &wgpuutil_ptr);
-    if (!StringView::isZero(result)) {
+    if (!checkWrapperResult(result)) {
         wgpuutil_ptr = nullptr;
-        throw std::runtime_error(StringView::toStdString(result));
     }
 }
 
@@ -63,18 +63,25 @@ void WGpuUtil::renderFrame(Timeline &timeline, CameraInfo *camera, uint64_t curr
 
     auto result = esotereel_gui_helper::wgpuutil_render_frame(wgpuutil_ptr, network, timeline, camera, currentFrame);
 
-    if (!StringView::isZero(result)) {
-        throw std::runtime_error(StringView::toStdString(result));
+    if (!checkWrapperResult(result)) {
     }
 }
 
-void WGpuUtil::updateSurface(const NativeWindowHandle &handle) {
+void WGpuUtil::attachSurface(const NativeWindowHandle &handle) {
     if (!isValid())
         return;
 
-    auto result = esotereel_gui_helper::wgpuutil_update_surface(wgpuutil_ptr, toRawHandle(handle));
-    if (!StringView::isZero(result)) {
-        throw std::runtime_error(StringView::toStdString(result));
+    auto result = esotereel_gui_helper::wgpuutil_attach_surface(wgpuutil_ptr, toRawHandle(handle));
+    if (!checkWrapperResult(result)) {
+    }
+}
+
+void WGpuUtil::detachSurface() {
+    if (!isValid())
+        return;
+
+    auto result = esotereel_gui_helper::wgpuutil_detach_surface(wgpuutil_ptr);
+    if (!checkWrapperResult(result)) {
     }
 }
 
@@ -83,14 +90,6 @@ void WGpuUtil::updateSize(uint32_t width, uint32_t height) {
         return;
 
     auto result = esotereel_gui_helper::wgpuutil_update_size(wgpuutil_ptr, width, height);
-    if (!StringView::isZero(result)) {
-        throw std::runtime_error(StringView::toStdString(result));
-    }
-}
-
-void WGpuUtil::abandon() {
-    if (wgpuutil_ptr) {
-        esotereel_gui_helper::wgpuutil_leak(wgpuutil_ptr);
-        wgpuutil_ptr = nullptr;
+    if (!checkWrapperResult(result)) {
     }
 }

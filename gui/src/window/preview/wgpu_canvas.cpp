@@ -4,166 +4,128 @@
 #include "../../wrapper/project/timeline.h"
 #include "../../wrapper/wgpuutil.h"
 #include "../timeline/timeline.h"
+#include "render_worker.h"
 #include <QDebug>
+#include <QEvent>
+#include <QPlatformSurfaceEvent>
 #include <QPointer>
+#include <QThread>
 #include <QVBoxLayout>
-#include <stdexcept>
-
-// ============================ WgpuRenderWindow ============================
 
 WgpuRenderWindow::WgpuRenderWindow(WindowGState *windowState, QWindow *parent)
     : QWindow(parent), windowState(windowState) {
-    setSurfaceType(QSurface::VulkanSurface);
+    setSurfaceType(QSurface::VulkanSurface); // もしくはOpenGLSurface/RasterSurface、wgpuバックエンドに合わせる
+    // WA_NativeWindow等のQWidget属性は不要(QWindowは元々ネイティブ)
+
+    m_thread = new QThread(this);
+    m_worker = new WgpuRenderWorker(windowState);
+    m_worker->moveToThread(m_thread);
+    connect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    m_thread->start();
+
+    connect(this, &WgpuRenderWindow::requestRender, m_worker, &WgpuRenderWorker::renderFrame, Qt::QueuedConnection);
+    connect(this, &WgpuRenderWindow::requestResize, m_worker, &WgpuRenderWorker::resize, Qt::QueuedConnection);
+    connect(this, &WgpuRenderWindow::requestSurfaceUpdate, m_worker, &WgpuRenderWorker::updateSurface,
+            Qt::BlockingQueuedConnection);
+    connect(this, &WgpuRenderWindow::requestSurfaceDestroy, m_worker, &WgpuRenderWorker::destroySurface,
+            Qt::BlockingQueuedConnection);
+    connect(this, &WgpuRenderWindow::requestInit, m_worker, &WgpuRenderWorker::initialize, Qt::QueuedConnection);
+    connect(m_worker, &WgpuRenderWorker::initFailed, this, &WgpuRenderWindow::onInitFailed, Qt::QueuedConnection);
+    connect(m_worker, &WgpuRenderWorker::frameFailed, this, &WgpuRenderWindow::onFrameFailed, Qt::QueuedConnection);
 
     renderTimer = new QTimer(this);
-    connect(renderTimer, &QTimer::timeout, this, [this]() { requestRender(); });
+    connect(renderTimer, &QTimer::timeout, this, &WgpuRenderWindow::renderFrame);
     renderTimer->start(16);
 }
 
-void WgpuRenderWindow::exposeEvent(QExposeEvent *event) {
-    QWindow::exposeEvent(event);
-    if (isExposed()) {
-        ensureInitialized();
-    } else {
-        // 遷移中は描画もサーフェス操作も止める
-        renderTimer->stop();
+WgpuRenderWindow::~WgpuRenderWindow() {
+    renderTimer->stop();
+    if (m_initialized) {
+        QMetaObject::invokeMethod(m_worker, "destroySurface", Qt::BlockingQueuedConnection);
+        m_initialized = false;
     }
+    m_thread->quit();
+    m_thread->wait();
+    delete m_worker;
 }
-void WgpuRenderWindow::resizeEvent(QResizeEvent *event) {
-    QWindow::resizeEvent(event);
 
-    if (!wgpuutil.has_value()) {
+void WgpuRenderWindow::renderFrame() {
+    ensureInitialized();
+
+    auto project = windowState->network->getProject();
+    auto focusedTimelineWidget = windowState->focusedTimeline;
+    if (!project.isValid() || !focusedTimelineWidget)
         return;
-    }
+
+    Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineIdx);
+    CameraInfo *camera = windowState->camera;
+    int64_t currentFrame = focusedTimelineWidget->playhead;
+
+    emit requestRender(timeline, camera, currentFrame);
+}
+
+void WgpuRenderWindow::ensureInitialized() {
+    qDebug() << "ensureInitialized called, initialized=" << m_initialized << "exposed=" << isExposed()
+             << "size=" << width() << height();
+
+    if (m_initialized || !isExposed())
+        return;
 
     int w = this->width() * this->devicePixelRatio();
     int h = this->height() * this->devicePixelRatio();
+    if (w == 0 || h == 0)
+        return;
 
-    // Qt/glib のイベントディスパッチの奥深くから呼ばれるため、
-    // ここから先で例外を外に漏らすとC言語(glib)のスタックフレームを
-    // アンワインドすることになり未定義動作になる。必ずここで握りつぶす。
-    QPointer<WgpuRenderWindow> self(this);
-    QTimer::singleShot(0, this, [self]() {
-        if (!self || !self->wgpuutil.has_value()) {
-            return;
-        }
-        int w = self->width() * self->devicePixelRatio();
-        int h = self->height() * self->devicePixelRatio();
-        try {
-            self->wgpuutil->updateSize(w, h);
-        } catch (const std::exception &e) {
-            qWarning() << "WgpuRenderWindow: updateSize failed, abandoning surface:" << e.what();
-            self->wgpuutil->abandon();
-            self->wgpuutil.reset();
-        }
-    });
+    NativeWindowHandle handle = getNativeWindowHandle(this); // QWindow*版が既にある
+    m_initialized = true;
+    emit requestInit(handle, w, h);
+}
+
+void WgpuRenderWindow::onInitFailed(QString reason) {
+    qWarning() << "WgpuRenderWindow: init failed:" << reason;
+    m_initialized = false;
+}
+
+void WgpuRenderWindow::onFrameFailed(QString reason) {
+    qWarning() << "WgpuRenderWindow: frame failed:" << reason;
+    // m_initialized = false; // 次のrenderFrameでensureInitializedが再初期化を試みる
+}
+
+void WgpuRenderWindow::exposeEvent(QExposeEvent *event) {
+    Q_UNUSED(event);
+    qDebug() << "exposeEvent" << isExposed() << width() << height();
+    ensureInitialized();
+}
+
+void WgpuRenderWindow::resizeEvent(QResizeEvent *event) {
+    QWindow::resizeEvent(event);
+    if (!m_initialized)
+        return;
+
+    int w = this->width() * this->devicePixelRatio();
+    int h = this->height() * this->devicePixelRatio();
+    if (w == 0 || h == 0)
+        return;
+
+    emit requestResize(w, h); // QueuedConnectionで十分(連続リサイズは最終値だけ反映されればOK)
 }
 
 bool WgpuRenderWindow::event(QEvent *ev) {
     if (ev->type() == QEvent::PlatformSurface) {
         auto *surfaceEvent = static_cast<QPlatformSurfaceEvent *>(ev);
-        switch (surfaceEvent->surfaceEventType()) {
-        case QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed:
-            // ネイティブサーフェス(wl_surfaceなど)が実際に破棄される前に、
-            // Vulkan側の参照を先に手放しておく。ここでdropしないと、
-            // 破棄済みのサーフェスに対してVulkanが操作を続けてしまい、
-            // ERROR_SURFACE_LOST_KHRやプロトコルエラーの原因になる。
-            wgpuutil.reset();
-            break;
-        case QPlatformSurfaceEvent::SurfaceCreated:
-            if (!isExposed()) {
-                // まだcompositor側の準備が終わっていない可能性がある
-                break;
+        if (surfaceEvent->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed) {
+            if (m_initialized) {
+                emit requestSurfaceDestroy();
+                // m_initialized はfalseにしない。wgpuutil自体(device等)は生きてる。
             }
-            // ドッキングのフローティング化などで親トップレベルが変わると、
-            // ネイティブサーフェスが作り直されることがある。
-            // 既存のwgpuutilがあれば新しいハンドルに張り替え、
-            // なければ通常の初期化を試みる。
-            if (wgpuutil.has_value()) {
-                try {
-                    NativeWindowHandle handle = getNativeWindowHandle(this);
-                    wgpuutil->updateSurface(handle);
-                } catch (const std::exception &e) {
-                    qWarning() << "WgpuRenderWindow: updateSurface failed, abandoning surface:" << e.what();
-                    wgpuutil->abandon();
-                    wgpuutil.reset();
-                }
+        } else if (surfaceEvent->surfaceEventType() == QPlatformSurfaceEvent::SurfaceCreated) {
+            if (m_initialized) {
+                NativeWindowHandle handle = getNativeWindowHandle(this);
+                emit requestSurfaceUpdate(handle); // 常にattachSurface経路
             } else {
-                ensureInitialized();
+                ensureInitialized(); // 起動直後、wgpuutil自体がまだない場合のみ
             }
-            break;
-        default:
-            break;
         }
     }
-
     return QWindow::event(ev);
-}
-
-void WgpuRenderWindow::ensureInitialized() {
-    if (wgpuutil.has_value()) {
-        return;
-    }
-    if (!isExposed()) {
-        return;
-    }
-
-    int w = this->width() * this->devicePixelRatio();
-    int h = this->height() * this->devicePixelRatio();
-    if (w == 0 || h == 0) {
-        return;
-    }
-
-    try {
-        NativeWindowHandle handle = getNativeWindowHandle(this);
-        wgpuutil = WGpuUtil(windowState->network, handle, w, h);
-    } catch (const std::exception &e) {
-        qWarning() << "WgpuRenderWindow: failed to initialize surface, abandoning:" << e.what();
-        if (wgpuutil.has_value()) {
-            wgpuutil->abandon();
-        }
-        wgpuutil.reset();
-    }
-}
-
-bool WgpuRenderWindow::requestRender() {
-    ensureInitialized();
-
-    if (!wgpuutil.has_value()) {
-        return false;
-    }
-
-    auto project = windowState->network->getProject();
-    auto focusedTimelineWidget = windowState->focusedTimeline;
-    if (!project.isValid() || !focusedTimelineWidget) {
-        return false;
-    }
-
-    Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineIdx);
-    int64_t currentFrame = focusedTimelineWidget->playhead;
-
-    // 同上の理由でここも必ず握りつぶす。QTimer::timeoutからの呼び出しなので
-    // resizeEventほど深いCコールスタックは挟まないことが多いが、
-    // 予防的に統一しておく。
-    try {
-        wgpuutil->renderFrame(timeline, windowState->camera, currentFrame);
-    } catch (const std::exception &e) {
-        qWarning() << "WgpuRenderWindow: renderFrame failed, abandoning surface:" << e.what();
-        wgpuutil->abandon();
-        wgpuutil.reset();
-        return false;
-    }
-    return true;
-}
-
-// ============================ WgpuCanvasWidget ============================
-
-WgpuCanvasWidget::WgpuCanvasWidget(WindowGState *windowState) {
-    renderWindow = new WgpuRenderWindow(windowState);
-    container = QWidget::createWindowContainer(renderWindow, this);
-
-    auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    layout->addWidget(container);
 }

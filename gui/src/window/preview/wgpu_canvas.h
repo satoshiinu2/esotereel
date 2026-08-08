@@ -3,53 +3,41 @@
 #include "../../util.h"
 #include "../../wrapper/wgpuutil.h"
 #include "../main.h"
-#include <QResizeEvent>
+#include "render_worker.h"
 #include <QPlatformSurfaceEvent>
+#include <QResizeEvent>
+#include <QThread>
 #include <QTimer>
 #include <QWidget>
 #include <QWindow>
-#include <optional>
 
-// 実際にVulkanでレンダリングする側。QWidgetの子ネイティブウィンドウ(subsurface)としてではなく、
-// createWindowContainer経由で埋め込む独立したQWindowにすることで、
-// Qt自身のバックストア管理から完全に外れたサーフェスを持たせる。
 class WgpuRenderWindow : public QWindow {
     Q_OBJECT
-
   public:
     explicit WgpuRenderWindow(WindowGState *windowState, QWindow *parent = nullptr);
+    ~WgpuRenderWindow() override;
 
-    WgpuRenderWindow(const WgpuRenderWindow &) = delete;
-    WgpuRenderWindow &operator=(const WgpuRenderWindow &) = delete;
+  signals:
+    void requestInit(NativeWindowHandle handle, int w, int h);
+    void requestResize(int w, int h);
+    void requestSurfaceUpdate(NativeWindowHandle handle);
+    void requestSurfaceDestroy();
+    void requestRender(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
 
   protected:
     void exposeEvent(QExposeEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
-    bool event(QEvent *event) override;
+    bool event(QEvent *ev) override;
 
   private:
-    bool requestRender();
     void ensureInitialized();
+    void renderFrame();
+    void onInitFailed(QString reason);
+    void onFrameFailed(QString reason);
 
     WindowGState *windowState;
-    std::optional<WGpuUtil> wgpuutil;
-    QTimer *renderTimer = nullptr;
-};
-
-// レイアウトに置けるようにするための薄いラッパー。
-// 中身の実体はWgpuRenderWindow(QWindow)で、createWindowContainerで包んでいるだけ。
-class WgpuCanvasWidget : public QWidget {
-    Q_OBJECT
-
-  public:
-    explicit WgpuCanvasWidget(WindowGState *windowState);
-
-    WgpuCanvasWidget(const WgpuCanvasWidget &) = delete;
-    WgpuCanvasWidget(WgpuCanvasWidget &&) = delete;
-    WgpuCanvasWidget &operator=(const WgpuCanvasWidget &) = delete;
-    WgpuCanvasWidget &operator=(WgpuCanvasWidget &&) = delete;
-
-  private:
-    WgpuRenderWindow *renderWindow = nullptr;
-    QWidget *container = nullptr;
+    QThread *m_thread;
+    WgpuRenderWorker *m_worker;
+    QTimer *renderTimer;
+    bool m_initialized = false;
 };

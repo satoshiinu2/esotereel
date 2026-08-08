@@ -41,9 +41,10 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
         "font-weight: bold; }" // アクティブ（標準の文字色）
     );
 
-    auto *previewWidget = new WgpuCanvasWidget(&windowState);
+    auto *previewWindow = new WgpuRenderWindow(&windowState);
+    QWidget *previewContainer = QWidget::createWindowContainer(previewWindow, this);
     auto *previewDock = new ads::CDockWidget(dockManager, "Preview");
-    previewDock->setWidget(previewWidget);
+    previewDock->setWidget(previewContainer);
     dockManager->addDockWidget(ads::TopDockWidgetArea, previewDock);
 
     this->timelineWidget = new TimelineWidget(windowState, 0);
