@@ -61,7 +61,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;
 
-    QMenu *viewMenu = menuBar()->addMenu("表示");
+    QMenu *viewMenu = menuBar()->addMenu(tr("View"));
     viewMenu->addAction(previewDock->toggleViewAction());
     viewMenu->addAction(timelineDock->toggleViewAction());
     viewMenu->addAction(debugStreamsDock->toggleViewAction());

@@ -95,7 +95,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     if (!std::holds_alternative<DragClip>(this->dragState) && e->button() & Qt::LeftButton) {
 
         if (timeline.isValid()) {
-            this->handleSelectClip(timeline, e->pos(), ctrl);
+            this->handleSelectClip(project, timeline, e->pos(), ctrl);
         }
     }
 
@@ -117,7 +117,7 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     }
 
     // 1. クリップを掴めるかチェック
-    auto clipGrabResult = this->handleClipDragGrab(timeline, firstClickPos, ctrl);
+    auto clipGrabResult = this->handleClipDragGrab(project, timeline, firstClickPos, ctrl);
     if (clipGrabResult.has_value()) {
         return clipGrabResult.value();
     }

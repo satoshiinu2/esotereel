@@ -126,7 +126,7 @@ class TimelineWidget : public QWidget {
     // functions
     QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
-    std::tuple<Clip, size_t> findClipAt(const Timeline &timeline, const QPoint &local) const;
+    std::tuple<Clip, size_t> findClipAt(const Project &project, const Timeline &timeline, const QPoint &local) const;
     const RenderRows &getRows(const Project &project, const Timeline &timeline) const;
 
     void drawLayers(const Project &project, const Timeline &timeline, QPainter &p, const QRect &r) const;
@@ -136,11 +136,12 @@ class TimelineWidget : public QWidget {
     void drawSelectionRect(QPainter &p, const QRect &r) const;
     void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
 
-    std::optional<DragClip> handleClipDragGrab(const Timeline &timeline, const QPoint &local, bool ctrl);
+    std::optional<DragClip> handleClipDragGrab(const Project &project, const Timeline &timeline, const QPoint &local,
+                                               bool ctrl);
     void handleClipDragContinue(const Timeline &timeline, const QPoint &local);
     void handleClipDraggingDrop(const Timeline &timeline, const QPoint &local);
 
-    bool handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl);
+    bool handleSelectClip(const Project &project, Timeline &timeline, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
     void handleAreaSelEnd(const Project &project, const Timeline &timeline);

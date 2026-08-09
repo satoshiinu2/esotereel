@@ -1,25 +1,10 @@
-use std::sync::Arc;
-
-use esotereel_lib::project::{clip::Clip, layer::Layer};
+use esotereel_lib::project::{Clip, Layer};
 
 use crate::{WrapperErrorCode, wrapper::stringview::StringView};
 
-pub enum ClipIteratorInner<'a> {
-    Iter(std::collections::btree_map::Iter<'a, i64, Arc<Clip>>),
-    Range(std::collections::btree_map::Range<'a, i64, Arc<Clip>>),
-}
-
-impl<'a> ClipIteratorInner<'a> {
-    pub fn next(&mut self) -> Option<&Arc<Clip>> {
-        match self {
-            ClipIteratorInner::Iter(i) => i.next().map(|(_, clip)| clip),
-            ClipIteratorInner::Range(i) => i.next().map(|(_, clip)| clip),
-        }
-    }
-}
-
 pub struct ClipIterator<'a> {
-    inner: ClipIteratorInner<'a>,
+    // どんなイテレータでも保持できるように dyn Iterator にする
+    inner: Box<dyn Iterator<Item = &'a Clip> + 'a>,
     parent: &'a Layer,
 }
 
@@ -40,7 +25,7 @@ pub extern "C" fn layer_find_clip_at_frame(
         return WrapperErrorCode::not_found(Some("clip"));
     };
 
-    unsafe { *out = clip.as_ref() };
+    unsafe { *out = clip as *const Clip };
     WrapperErrorCode::ok()
 }
 
@@ -71,20 +56,17 @@ pub extern "C" fn layer_clips_begin(
     }
 
     let iter = Box::new(ClipIterator {
-        inner: ClipIteratorInner::Iter(layer.clips.into_iter()),
+        inner: Box::new(layer.clips.iter()),
         parent: layer,
     });
 
     unsafe {
-        // 寿命の強制変換
         let raw_iter = Box::into_raw(iter);
         *out = std::mem::transmute::<*mut ClipIterator<'_>, *mut ClipIterator<'static>>(raw_iter);
-
-        // 参照を増やしてuaf防止
-        Arc::increment_strong_count(layer);
     }
     WrapperErrorCode::ok()
 }
+
 #[unsafe(no_mangle)]
 pub extern "C" fn layer_clips_in_range_begin(
     layer: &Layer,
@@ -96,19 +78,14 @@ pub extern "C" fn layer_clips_in_range_begin(
         return WrapperErrorCode::null_ptr();
     }
 
-    let range = start..end;
     let iter = Box::new(ClipIterator {
-        inner: ClipIteratorInner::Range(layer.clips.range(range)),
+        inner: Box::new(layer.clips.range(start..end)),
         parent: layer,
     });
 
     unsafe {
-        // 寿命の強制変換
         let raw_iter = Box::into_raw(iter);
         *out = std::mem::transmute::<*mut ClipIterator<'_>, *mut ClipIterator<'static>>(raw_iter);
-
-        // 参照を増やしてuaf防止
-        Arc::increment_strong_count(layer);
     }
     WrapperErrorCode::ok()
 }
@@ -128,7 +105,7 @@ pub extern "C" fn clip_iter_next<'a>(
 
     match next {
         Some(clip) => {
-            unsafe { *out = clip.as_ref() };
+            unsafe { *out = clip as *const Clip };
             WrapperErrorCode::ok()
         }
         None => {
@@ -144,8 +121,6 @@ pub extern "C" fn clip_iter_free(iter: *mut ClipIterator) -> WrapperErrorCode {
         return WrapperErrorCode::null_ptr();
     }
     unsafe {
-        // 参照を減らす
-        Arc::decrement_strong_count((*iter).parent);
         drop(Box::from_raw(iter));
     };
 

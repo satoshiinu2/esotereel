@@ -1,12 +1,53 @@
 #include "project.h"
 #include "../exception.h"
+#include "../network.h"
 #include "esotereel_gui_helper.h"
 #include "timeline.h"
 
 Project::Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr(p) {}
 
 Project::~Project() {
-    esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+    if (guard_ptr) {
+        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+    }
+}
+
+// 移動コンストラクタの実装
+Project::Project(Project &&other) noexcept : guard_ptr(other.guard_ptr), project_ptr(other.project_ptr) {
+    other.guard_ptr = nullptr;
+    other.project_ptr = nullptr;
+}
+
+// 移動代入演算子の実装
+Project &Project::operator=(Project &&other) noexcept {
+    if (this != &other) {
+        // 既存のガードを解放
+        if (guard_ptr) {
+            esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+        }
+        // リソースの所有権を移動
+        guard_ptr = other.guard_ptr;
+        project_ptr = other.project_ptr;
+
+        other.guard_ptr = nullptr;
+        other.project_ptr = nullptr;
+    }
+    return *this;
+}
+
+Project Project::lockRead(const ClientNetworkHandler *network) {
+    if (!network || !network->isValid())
+        return Project::invalid();
+
+    const void *guard_ptr = nullptr;
+    // C++ クラスが保持する FFI 用ポインタ (raw_ptr) を渡す
+    auto result = esotereel_gui_helper::client_network_handler_app_state_project_lock_read(*network, &guard_ptr);
+
+    if (!checkWrapperResult(result) || !guard_ptr) {
+        return Project::invalid();
+    }
+
+    return Project::byGuard(guard_ptr);
 }
 
 Project Project::byGuard(const void *guard_ptr) {
@@ -16,6 +57,7 @@ Project Project::byGuard(const void *guard_ptr) {
     const RawProject *project_ptr = nullptr;
     auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
     if (!checkWrapperResult(result)) {
+        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
         return Project::invalid();
     }
 

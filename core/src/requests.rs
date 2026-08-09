@@ -3,13 +3,10 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
-    project::{ClipUpdateMap, Project, layer::Layer, timeline::Timeline, util::ProjectMutExt},
+    project::{ClipUpdateMap, Layer, Project},
     requests::ArchivedRequest,
     responces::Response,
-    util::{
-        result::{EsotereelError, EsotereelResult, LockExt},
-        slot_map::SlotMapKey,
-    },
+    util::result::{EsotereelError, EsotereelResult, LockExt},
 };
 use rkyv::Deserialize;
 
@@ -31,26 +28,23 @@ pub fn on_request_receive(
             );
             let mut lock = app_state.project.write_or_err()?;
             let mut new_project = Project::new();
-            let mut timeline = Timeline::new();
+            let placeholder_fps = 60.0;
+            let timeline_key = new_project.insert_timeline(placeholder_fps);
 
-            timeline
-                .layers
-                .insert(Arc::new(Layer::new(0, "Layer 0".to_string())));
-            timeline
-                .layers
-                .insert(Arc::new(Layer::new(1, "Layer 1".to_string())));
-            timeline
-                .layers
-                .insert(Arc::new(Layer::new(2, "Layer 2".to_string())));
-            timeline
-                .layers
-                .insert(Arc::new(Layer::new(3, "Layer 3".to_string())));
+            assert!(timeline_key == 0, "main timeline should be first");
 
-            let key = new_project.timelines.insert(timeline);
-            assert!(key.index == 0, "main timeline should be first");
+            if let Some(timeline) = new_project.timeline_mut(timeline_key) {
+                for i in 0..4 {
+                    timeline.insert_layer(Layer::new(
+                        i as u64,
+                        i as u32,
+                        format!("Layer{}", i + 1),
+                    ))?;
+                }
+            };
 
             let cmd = Response::ProjectAll {
-                project: new_project.clone(),
+                project: new_project.to_model(),
             };
 
             *lock = Some(new_project);
@@ -58,10 +52,10 @@ pub fn on_request_receive(
         }
         ArchivedRequest::ProjectAll => {
             let mut lock = app_state.project.write_or_err()?;
-            let project = lock.project_mut_err()?;
+            let project = lock.as_mut().unwrap();
 
             let cmd = Response::ProjectAll {
-                project: project.clone(),
+                project: project.to_model(),
             };
 
             network.send(client_id, &cmd);
@@ -70,16 +64,13 @@ pub fn on_request_receive(
             command,
             timeline_map_key,
         } => {
-            let timeline_map_key: SlotMapKey =
-                timeline_map_key.deserialize(&mut rkyv::Infallible).unwrap();
-
+            let timeline_map_key = *timeline_map_key;
             let mut lock = app_state.project.write_or_err()?;
-            let project = lock.project_mut_err()?;
+            let mut project = lock.as_mut().unwrap();
 
             let mut updates: Option<ClipUpdateMap> = Some(HashMap::new());
-            
 
-            handle_command_action(command, project, &timeline_map_key, &mut updates)?;
+            handle_command_action(command, &mut project, timeline_map_key, &mut updates)?;
 
             // send updates
             let updates = updates.unwrap_or_default();

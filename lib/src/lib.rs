@@ -2,9 +2,10 @@ use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicU32};
 
 use std::sync::atomic::Ordering;
 
+use crate::project::Project;
 use crate::{
     decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer},
-    project::Project,
+    project::model::ProjectModel,
 };
 use dashmap::DashMap;
 
@@ -45,7 +46,7 @@ impl StreamState {
     }
 }
 pub struct ClientState {
-    pub project: RwLock<Option<Arc<Project>>>,
+    pub project: Option<Arc<RwLock<Project>>>,
 
     pub path_to_stream: Arc<DashMap<String, StreamState>>,
     pub streams: Arc<DashMap<u32, StreamPlayer>>,
@@ -54,7 +55,7 @@ pub struct ClientState {
 impl ClientState {
     pub fn new() -> Self {
         Self {
-            project: RwLock::new(None),
+            project: None,
             path_to_stream: Arc::new(DashMap::new()),
             streams: Arc::new(DashMap::new()),
         }

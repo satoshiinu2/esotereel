@@ -1,12 +1,13 @@
 use std::cell::RefCell;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CString, c_char};
 use std::sync::OnceLock;
 
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
+pub use esotereel_lib::project::Layer;
 pub use esotereel_lib::project::Project;
+pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
-pub use esotereel_lib::project::layer::Layer;
-pub use esotereel_lib::project::timeline::Timeline;
+use esotereel_lib::project::ids::TimelineId;
 pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
 
 use crate::network::OnConnectedFn;
@@ -90,7 +91,7 @@ pub unsafe extern "C" fn get_last_err_msg() -> *const c_char {
 #[repr(C)]
 pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
-    pub mark_dirty_timeline: extern "C" fn(timeline_type: usize),
+    pub mark_dirty_timeline: extern "C" fn(timeline_type: TimelineId),
 }
 
 #[unsafe(no_mangle)]
@@ -101,7 +102,7 @@ pub unsafe extern "C" fn set_gui_callbacks(callbacks: GuiCallbacks) {
     GUI_CALLBACKS.set(callbacks).ok();
 }
 
-pub fn mark_dirty_timeline(timeline_type: usize) {
+pub fn mark_dirty_timeline(timeline_type: TimelineId) {
     if let Some(cb) = GUI_CALLBACKS.get() {
         (cb.mark_dirty_timeline)(timeline_type);
     }

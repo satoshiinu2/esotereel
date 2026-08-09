@@ -56,9 +56,11 @@ struct Timeline;
 
 struct WGpuUtil;
 
+using TimelineId = uint64_t;
+
 struct GuiCallbacks {
   void (*on_test)();
-  void (*mark_dirty_timeline)(uintptr_t timeline_type);
+  void (*mark_dirty_timeline)(TimelineId timeline_type);
 };
 
 using OnConnectedFn = void(*)();
@@ -113,7 +115,7 @@ void set_gui_callbacks(GuiCallbacks callbacks);
 void set_on_connected_callback(OnConnectedFn callback);
 
 WrapperErrorCode req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
-                                       uintptr_t timeline_idx,
+                                       TimelineId timeline_id,
                                        const uint64_t *ptr,
                                        uintptr_t len,
                                        int64_t position_moved,
@@ -121,7 +123,7 @@ WrapperErrorCode req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
                                        intptr_t layer_moved);
 
 WrapperErrorCode req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
-                                        uintptr_t timeline_idx,
+                                        TimelineId timeline_id,
                                         int64_t position,
                                         uint32_t layer_order);
 
@@ -150,15 +152,18 @@ WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out);
 WrapperErrorCode client_network_handler_drop(const ClientNetworkHandler *ptr);
 
 WrapperErrorCode client_network_handler_app_state_project_lock_read(const ClientNetworkHandler *ptr,
-                                                                    const void **out);
+                                                                    const void **out_guard);
 
+/// ガードをドロップ（アンロック）する関数
 WrapperErrorCode client_network_handler_app_state_project_unlock_read(const void *guard_ptr);
 
-const Timeline *project_get_timeline(const Project *ptr, uintptr_t id);
+const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
 uintptr_t project_get_timeline_count(const Project *ptr);
 
-WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr, const Project **out);
+/// ガード（guard_ptr）から *const Project を安全に取り出す関数
+WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
+                                                      const Project **out_project);
 
 uint64_t clip_get_id(const Clip *ptr);
 

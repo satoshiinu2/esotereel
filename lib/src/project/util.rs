@@ -1,6 +1,6 @@
 use std::sync::RwLockReadGuard;
 
-use crate::{project::Project, util::result::EsotereelResult};
+use crate::{project::runtime::Project, util::result::EsotereelResult};
 
 pub trait ProjectExt {
     fn project_err(&self) -> EsotereelResult<&Project>;

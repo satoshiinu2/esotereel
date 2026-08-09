@@ -82,40 +82,61 @@ pub extern "C" fn client_network_handler_drop(
     WrapperErrorCode::panic(msg.as_deref())
 }
 
+pub struct ProjectReadGuard<'a> {
+    _guard: RwLockReadGuard<'a, Project>,
+    pub project_ptr: *const Project,
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
     ptr: *const ClientNetworkHandler,
-    out: *mut *const c_void,
+    out_guard: *mut *const c_void,
 ) -> WrapperErrorCode {
-    if ptr.is_null() || out.is_null() {
+    if ptr.is_null() || out_guard.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let handler = unsafe { &*ptr };
-    // ガード自体をヒープに置いて、その「鍵」を返す
-    let lock = handler.app_state.lock().expect("mutex poisoned");
-    let lock = lock.project.read().unwrap();
-    if lock.as_ref().is_some() {
-        // ロックを維持するためにガードを leak させる
-        unsafe { *out = Box::into_raw(Box::new(lock)) as *const c_void };
-        WrapperErrorCode::ok()
-    } else {
-        unsafe { *out = std::ptr::null_mut() as *const c_void };
-        WrapperErrorCode::not_found(Some("project not found"))
+    let network = unsafe { &*ptr };
+
+    let Ok(app_state) = network.app_state.lock() else {
+        return WrapperErrorCode::panic(Some("mutex poisoned"));
+    };
+
+    let Some(project_arc) = app_state.project.as_ref() else {
+        return WrapperErrorCode::not_found(Some("project not found"));
+    };
+
+    let lock = match project_arc.read() {
+        Ok(guard) => guard,
+        Err(_) => return WrapperErrorCode::panic(Some("rwlock poisoned")),
+    };
+
+    let project_ptr: *const Project = &*lock;
+
+    let wrapper = Box::new(ProjectReadGuard {
+        _guard: lock,
+        project_ptr,
+    });
+
+    unsafe {
+        let raw_wrapper = Box::into_raw(wrapper);
+        *out_guard = std::mem::transmute::<*mut ProjectReadGuard<'_>, *mut ProjectReadGuard<'static>>(
+            raw_wrapper,
+        ) as *const c_void;
     }
+
+    WrapperErrorCode::ok()
 }
 
+/// ガードをドロップ（アンロック）する関数
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
     guard_ptr: *const c_void,
 ) -> WrapperErrorCode {
     if !guard_ptr.is_null() {
-        // leak させた Box を戻してドロップ
         unsafe {
-            drop(Box::from_raw(
-                guard_ptr as *mut RwLockReadGuard<Option<Arc<Project>>>,
-            ))
-        };
+            drop(Box::from_raw(guard_ptr as *mut ProjectReadGuard<'static>));
+        }
         WrapperErrorCode::ok()
     } else {
         WrapperErrorCode::null_ptr()

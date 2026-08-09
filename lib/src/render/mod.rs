@@ -1,13 +1,11 @@
 use crate::{
-    project::camera::CameraInfo,
+    project::{Timeline, camera::CameraInfo},
     render::{video::update_timline_clips_texture, wgpuutil::OffscreenTarget},
 };
 use glam::Mat4;
-use wgpu::CurrentSurfaceTexture;
 
 use crate::{
     ClientState,
-    project::timeline::Timeline,
     render::{builder::build_vertices, vertex::Vertex, wgpuutil::WGpuUtil},
 };
 

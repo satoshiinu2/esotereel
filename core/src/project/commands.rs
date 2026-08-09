@@ -1,34 +1,27 @@
-use std::sync::Arc;
-
 use esotereel_lib::{
     project::{
-        Project, clip_data::ClipData, clip_translate::ClipTranslates, commands::ArchivedCommand,
-        layer::Layer, timeline::Timeline,
+        Clip, ClipUpdateMap, Project, clip::ClipData, commands::ArchivedCommand, ids::TimelineId,
+        transform::ClipTranslates,
     },
-    util::{
-        result::{EsotereelError, EsotereelResult},
-        slot_map::SlotMapKey,
-    },
+    util::result::{EsotereelError, EsotereelResult},
 };
 
 use rkyv::Deserialize as _;
 
-use crate::project::{ClipUpdateMap, clip_add, clip_move_mul_core};
+use crate::project::{ClipUpdateExt, clip_move_mul_core};
 
 pub fn handle_command_action(
     request: &ArchivedCommand,
     project: &mut Project,
-    timeline_key: &SlotMapKey,
-    updates: &mut Option<ClipUpdateMap>,
+    timeline_key: TimelineId,
+    updates_map: &mut Option<ClipUpdateMap>,
 ) -> EsotereelResult<()> {
-    let timeline = project
-        .timelines
-        .get_mut(timeline_key)
-        .ok_or(EsotereelError::InvalidTimeline)?;
-
     match request {
         ArchivedCommand::ClipsMove { clips } => {
-            clip_move_mul_core(timeline, clips.as_slice(), updates);
+            let timeline = project
+                .timeline_mut(timeline_key)
+                .ok_or(EsotereelError::InvalidTimeline)?;
+            clip_move_mul_core(timeline, clips.as_slice(), updates_map);
         }
         ArchivedCommand::AddClip {
             layer_map_key,
@@ -39,34 +32,33 @@ pub fn handle_command_action(
         } => {
             let clip_data: ClipData = clip_data.deserialize(&mut rkyv::Infallible).unwrap();
             let translates: ClipTranslates = translates.deserialize(&mut rkyv::Infallible).unwrap();
-            let key: SlotMapKey = layer_map_key.deserialize(&mut rkyv::Infallible).unwrap();
 
             let clip_data = if let ClipData::Composite { .. } = &clip_data {
-                let mut new_timeline = Timeline::new();
-                new_timeline
-                    .layers
-                    .insert(Arc::new(Layer::new(0, "Layer 0".to_string())));
-
-                let new_key = project.timelines.insert(new_timeline);
+                // 新しいタイムラインを作成 (Project::new_timeline を使用)
+                let new_timeline_id = project.insert_timeline(60.0);
 
                 ClipData::Composite {
-                    timeline_id: Some(new_key),
+                    timeline_id: Some(new_timeline_id),
                 }
             } else {
                 clip_data
             };
 
-            // ここで改めてtimelineを借用
+            let id_generator = project.id_generator_mut();
             let timeline = project
-                .timelines
-                .get_mut(timeline_key)
+                .timeline_mut(timeline_key)
                 .ok_or(EsotereelError::InvalidTimeline)?;
 
-            let new_clip = timeline
-                .layers
-                .new_clip(*position, *duration, clip_data, translates);
-
-            clip_add(timeline, &key, new_clip, updates);
+            // key (u32) をそのまま渡してクリップを追加
+            let new_clip_id = project.new_clip_in_timeline(
+                timeline_key,
+                *layer_map_key,
+                *position,
+                *duration,
+                clip_data,
+                translates,
+                Some(|c: &Clip| updates_map.push_clip(*layer_map_key, c.clone())),
+            )?;
         }
     }
     Ok(())

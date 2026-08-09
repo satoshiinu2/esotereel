@@ -19,7 +19,7 @@ pub extern "C" fn req_new_project(ptr_network: *const ClientNetworkHandler) {
 }
 
 impl ClientNetworkHandler {
-    pub(super) fn req_command(&self, timeline_map_key: SlotMapKey, command: Command) {
+    pub(super) fn req_command(&self, timeline_map_key: u64, command: Command) {
         let req = Request::Command {
             command,
             timeline_map_key,

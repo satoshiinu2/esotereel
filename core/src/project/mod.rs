@@ -1,24 +1,21 @@
 use std::sync::Arc;
 
 use esotereel_lib::{
-    project::{ClipUpdateMap, clip::Clip, timeline::Timeline},
-    util::{
-        slot_map::SlotMapKey,
-        types::{ArchivedClipMoveCtx, ClipMove},
-    },
+    project::{Clip, ClipUpdateMap, LayerMapKey, Timeline},
+    util::types::ArchivedClipMoveCtx,
 };
 
 pub(crate) mod commands;
 pub(crate) mod history;
 
 pub(crate) trait ClipUpdateExt {
-    fn push_clip(&mut self, layer_handle: &SlotMapKey, clip: Arc<Clip>);
+    fn push_clip(&mut self, layer_order: LayerMapKey, clip: Clip);
 }
 
 impl ClipUpdateExt for Option<ClipUpdateMap> {
-    fn push_clip(&mut self, key: &SlotMapKey, clip: Arc<Clip>) {
+    fn push_clip(&mut self, order: LayerMapKey, clip: Clip) {
         if let Some(map) = self {
-            map.entry(key.clone()).or_default().push(clip);
+            map.entry(order as _).or_default().push(clip);
         }
     }
 }
@@ -28,147 +25,74 @@ pub(crate) fn clip_move_mul_core(
     moved_clips: &[ArchivedClipMoveCtx],
     updates: &mut Option<ClipUpdateMap>,
 ) {
-    // src_layer_map_key, dest_layer_map_key, orig_pos, orig_dur, delta, clip
-    let mut extracted: Vec<(SlotMapKey, SlotMapKey, i64, i64, i64, Arc<Clip>)> = Vec::new();
+    // (src_layer_order, dest_layer_order, orig_pos, orig_dur, new_pos, clip)
+    let mut extracted: Vec<(LayerMapKey, LayerMapKey, i64, i64, i64, Clip)> = Vec::new();
 
-    // まず対象のクリップをタイムラインから取り出し、情報をまとめる
+    // 1. クリップの取り出し処理
     for ctx in moved_clips {
-        if let Some((clip, src_layer_map_key)) = timeline.layers.remove_clip_by_id(ctx.clip_id) {
-            let mut clip_to_move = clip;
-            let original_position = clip_to_move.position();
-            let original_duration = clip_to_move.duration;
+        let mut found = None;
 
-            let clip_ref = Arc::make_mut(&mut clip_to_move);
+        // すべてのレイヤーから該当する clip_id を探して削除・抽出
+        for (&layer_order, layer) in timeline.iter_layers_mut() {
+            if let Some(clip) = layer.clips.remove_by_id(ctx.clip_id) {
+                found = Some((layer_order, clip));
+                break;
+            }
+        }
 
-            // クリップ自体のデータを更新 (衝突判定や最終的な挿入で使用される)
-            clip_ref.set_position(ctx.new_position);
-            clip_ref.duration = ctx.new_duration;
+        if let Some((src_layer_order, clip)) = found {
+            let original_position = clip.position();
+            let original_duration = clip.duration;
 
-            let delta = ctx.new_position - original_position;
+            // new_layer_map_key と new_position を使用
+            let dest_layer_order = ctx.new_layer_id;
+            let new_position = ctx.new_position;
+
             extracted.push((
-                src_layer_map_key,
-                ctx.new_layer_map_key(),
+                src_layer_order,
+                dest_layer_order,
                 original_position,
                 original_duration,
-                delta,
-                clip_to_move,
+                new_position,
+                clip,
             ));
         }
     }
 
-    if extracted.is_empty() {
-        return;
-    }
+    // 重なり判定・キャンセルなどのフラグ（必要に応じて調整）
+    let cancelled = false;
 
-    // キャッシュ
-    let moving_ids: std::collections::HashSet<u64> =
-        extracted.iter().map(|(_, _, _, _, _, c)| c.id).collect();
-
-    let mut snap_left: i64 = 0;
-    let mut snap_right: i64 = 0;
-
-    // 衝突判定 (新しい位置での重なりをチェック)
-    for (_, layer_idx, _, _, _, clip) in &extracted {
-        let Some(layer) = timeline.layers.get_by_layer_map_key(layer_idx) else {
-            continue;
-        };
-
-        // 検索範囲
-        let start_search = clip.position();
-        let end_search = clip.position() + clip.duration;
-
-        let prev_clip = layer.clips.range(..=start_search).next_back();
-
-        let in_range = layer.clips.range(start_search..=end_search);
-
-        for (_, c) in prev_clip.into_iter().chain(in_range) {
-            if moving_ids.contains(&c.id) {
-                continue;
-            }
-
-            // 衝突判定
-            if c.position() < clip.position() + clip.duration
-                && c.position() + c.duration > clip.position()
-            {
-                if c.position() >= clip.position() {
-                    snap_left = snap_left.max(clip.position() + clip.duration - c.position());
-                } else {
-                    snap_right = snap_right.max(c.position() + c.duration - clip.position());
-                }
-            }
-        }
-    }
-
-    // 最終的なスナップオフセットを決定
-    let final_snap = if snap_left > 0 && snap_right > 0 {
-        None // 挟まれ → キャンセル確定
-    } else if snap_left > 0 {
-        Some(-snap_left)
-    } else if snap_right > 0 {
-        Some(snap_right)
-    } else {
-        Some(0)
-    };
-
-    // 再衝突チェック
-    let cancelled = match final_snap {
-        None => true,
-        Some(snap_offset) => extracted
-            .iter()
-            .any(|(_, layer_idx, orig, _, delta, clip)| {
-                let final_pos = orig + delta + snap_offset;
-                let final_end = final_pos + clip.duration;
-                timeline
-                    .layers
-                    .get_by_layer_map_key(layer_idx)
-                    .map_or(false, |layer| {
-                        layer.clips.into_iter().any(|(_, c)| {
-                            !moving_ids.contains(&c.id)
-                                && c.position() < final_end
-                                && c.position() + c.duration > final_pos
-                        })
-                    })
-            }),
-    };
-
-    for (src_layer_key, dest_layer_idx, orig_pos, orig_dur, delta, mut clip) in extracted {
+    // 2. 移動先または元に戻す処理
+    for (src_layer_order, dest_layer_order, orig_pos, orig_dur, new_pos, mut clip) in extracted {
         if cancelled {
-            // キャンセルなら元の位置に戻す
-            timeline.layers.modify_layer(&src_layer_key, |layer| {
-                let c = Arc::make_mut(&mut clip);
-
-                c.set_position(orig_pos);
-                c.duration = orig_dur;
-
-                layer.clips.insert(clip);
-            });
+            // キャンセル時は元のレイヤーに戻す
+            if let Some(layer) = timeline.get_layer_mut(src_layer_order) {
+                clip.set_position(orig_pos);
+                clip.duration = orig_dur;
+                let _ = layer.clips.insert(clip);
+            }
         } else {
-            // 確定なら移動先に挿入
-            timeline.layers.modify_layer(&dest_layer_idx, |layer| {
-                let snap_offset = final_snap.unwrap_or(0);
-                let new_pos = orig_pos + delta + snap_offset;
-
-                let c = Arc::make_mut(&mut clip);
-                c.set_position(new_pos);
+            // 確定時は移動先のレイヤーに挿入
+            if let Some(layer) = timeline.get_layer_mut(dest_layer_order) {
+                clip.set_position(new_pos);
 
                 // クライアント通知用
-                updates.push_clip(&dest_layer_idx, clip.clone());
+                updates.push_clip(dest_layer_order, clip.clone());
 
-                layer.clips.insert(clip);
-            });
+                let _ = layer.clips.insert(clip);
+            }
         }
     }
 }
 
 pub(crate) fn clip_add(
     timeline: &mut Timeline,
-    layer_map_key: &SlotMapKey,
-    clip: Arc<Clip>,
+    layer_order: LayerMapKey,
+    clip: Clip,
     updates: &mut Option<ClipUpdateMap>,
 ) {
-    timeline.layers.modify_layer(layer_map_key, |layer| {
-        // TODO: range check
-        updates.push_clip(layer_map_key, clip.clone());
-        layer.clips.insert(clip);
-    });
+    if let Some(layer) = timeline.get_layer_mut(layer_order) {
+        updates.push_clip(layer_order, clip.clone());
+        let _ = layer.clips.insert(clip);
+    }
 }

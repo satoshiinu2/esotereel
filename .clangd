@@ -2,13 +2,13 @@ If:
   OS: linux
 CompileFlags:
   CompilationDatabase: build
-  Compiler: /usr/bin/clang++
+  Compiler: /usr/bin/g++
   Add: [
     "-Igui",
     "-Iguihlp/include",
     "-Ibuild/_deps/ads-src/src",
-    "-I/home/satoshiinu/Qt/6.7.3/gcc_64/include/QtCore",
-    "-I/home/satoshiinu/Qt/6.7.3/gcc_64/include",
+    "-I/usr/include/qt6/QtCore",
+    "-I/usr/include/qt6",
     "-isystem", "/usr/include",
 
     "-std=c++17"

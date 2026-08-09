@@ -8,8 +8,8 @@ crate-type = ["rlib"]
 
 [dependencies]
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
-rkyv = { version = "0.7.46", features = ["validation"] }
-log = "0.4.29"
-chrono = "0.4.44"
-send_wrapper = "0.6.0"
-tokio = { version = "1.51.1", features = ["full"]}
+rkyv = { version = "0.7", features = ["validation"] }
+log = "0.4"
+chrono = "0.4"
+send_wrapper = "0.6"
+tokio = { version = "1", features = ["full"]}

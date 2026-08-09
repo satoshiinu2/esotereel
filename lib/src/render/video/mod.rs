@@ -4,7 +4,7 @@ use ffmpeg::util::frame::video::Video;
 
 use crate::{
     StreamState,
-    project::{clip_data::ClipData, timeline::Timeline},
+    project::{Timeline, clip::ClipData},
     render::wgpuutil::WGpuUtil,
 };
 
@@ -16,15 +16,15 @@ pub(crate) fn update_timline_clips_texture(
     timeline: &Timeline,
     current_frame: i64,
 ) {
-    for layer in &timeline.layers {
-        if let Some(clip) = layer.clips.get_at(current_frame) {
-            if let ClipData::Video { path, media_offset } = &clip.clip_data {
+    for layer in timeline.iter_layers() {
+        if let Some(clip) = layer.1.clips.get_at(current_frame) {
+            if let ClipData::Video { path, media_offset } = &clip.data {
                 if let Some(resource_id_ref) = app_state.path_to_stream.get(path) {
                     if let StreamState::Loaded(resource_id) = *resource_id_ref {
                         if let Some(player) = app_state.streams.get(&resource_id) {
                             let media_seconds = ClipData::get_media_seconds(
                                 timeline.fps,
-                                clip.position(),
+                                clip.position,
                                 current_frame,
                                 *media_offset,
                             );

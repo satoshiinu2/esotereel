@@ -1,6 +1,6 @@
-use std::{collections::HashSet, num::NonZeroU64};
+use std::collections::HashSet;
 
-use esotereel_lib::project::{Project, clip_data::ClipData, timeline::Timeline};
+use esotereel_lib::project::{Project, Timeline, clip::ClipData};
 
 use crate::{WrapperErrorCode, slice_from_ptr_safe};
 
@@ -113,6 +113,43 @@ pub unsafe extern "C" fn render_rows_get_clips(
     WrapperErrorCode::Ok
 }
 
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use esotereel_lib::project::{Layer, Project, Timeline};
+
+    use super::build_layer_rows;
+
+    #[test]
+    fn build_layer_rows_follows_layer_order() {
+        let mut project = Project::new();
+        let timeline_id = project.insert_timeline(60.0);
+
+        {
+            let timeline = project.timeline_mut(timeline_id).unwrap();
+            timeline
+                .insert_layer(Layer::new(100, 5, "five".into()))
+                .unwrap();
+            timeline
+                .insert_layer(Layer::new(200, 1, "one".into()))
+                .unwrap();
+            timeline
+                .insert_layer(Layer::new(300, 3, "three".into()))
+                .unwrap();
+        }
+
+        let mut rows = Vec::new();
+        {
+            let timeline = project.timeline(timeline_id).unwrap();
+            build_layer_rows(&project, timeline, &HashSet::new(), 0, 0, &mut rows);
+        }
+
+        let orders: Vec<u32> = rows.iter().map(|row| row.layer_order).collect();
+        assert_eq!(orders, vec![1, 3, 5]);
+    }
+}
+
 fn build_layer_rows(
     project: &Project,
     timeline: &Timeline,
@@ -121,14 +158,21 @@ fn build_layer_rows(
     depth: u32,
     result: &mut Vec<LayerRow>,
 ) {
-    // まず、このtimelineの各レイヤーを1行ずつ作る
-    for (layer_order, layer) in timeline.layers.get_sorted_iter().enumerate() {
+    // HashMap の反復順ではレイヤー表示順が崩れるので、order順で排出する
+    for layer_order in timeline.iter_sorted().map(|layer| layer.order) {
+        let Some(layer) = timeline
+            .get_layer_id_by_order(layer_order)
+            .and_then(|layer_id| timeline.get_layer(layer_id))
+        else {
+            continue;
+        };
+
         let mut clips = Vec::new();
         let mut opened: Vec<(i64, &Timeline)> = Vec::new(); // (abs_frame, 子timeline) を後で展開
 
-        for (_, clip) in &layer.clips {
-            let abs_frame = parent_abs_frame + clip.position();
-            let is_composite = matches!(clip.clip_data, ClipData::Composite { .. });
+        for clip in layer.clips.iter() {
+            let abs_frame = parent_abs_frame + clip.position;
+            let is_composite = matches!(clip.data, ClipData::Composite { .. });
             let is_open = is_composite && open_ids.contains(&clip.id);
 
             clips.push(ClipRenderInfo {
@@ -140,7 +184,7 @@ fn build_layer_rows(
             });
 
             if is_open {
-                if let Some(key) = match &clip.clip_data {
+                if let Some(key) = match clip.data {
                     ClipData::Composite {
                         timeline_id: Some(key),
                     }
@@ -152,7 +196,7 @@ fn build_layer_rows(
                     } => Some(key),
                     _ => None,
                 } {
-                    if let Some(child_timeline) = project.timelines.get(key) {
+                    if let Some(child_timeline) = project.timeline(key) {
                         opened.push((abs_frame, child_timeline));
                     }
                 }
@@ -160,7 +204,7 @@ fn build_layer_rows(
         }
 
         result.push(LayerRow {
-            layer_order: layer_order as u32,
+            layer_order,
             depth,
             clips,
         });

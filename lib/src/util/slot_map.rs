@@ -8,7 +8,7 @@ pub struct Slot<T> {
     generation: u32, // 削除・再利用を検知する
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Eq, Hash)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, Eq, Hash)]
 #[archive_attr(derive(CheckBytes, Eq, Hash))]
 #[repr(C)]
 pub struct SlotMapKey {

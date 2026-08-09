@@ -58,7 +58,7 @@ else()
 endif()
 
 # Qt6 components - Wayland is platform-specific
-set(QT_COMPONENTS Widgets Network Gui Core)
+set(QT_COMPONENTS Widgets Network Gui Core LinguistTools)
 if(UNIX AND NOT APPLE)
     list(APPEND QT_COMPONENTS WaylandClient)
 endif()
@@ -112,9 +112,11 @@ file(GLOB_RECURSE RUST_SRC_FILES
 )
 
 # rustビルドするやつ
+set(RUST_BUILD_ENV)
+
 add_custom_command(
     OUTPUT ${GUI_HLP_LIB} ${CORE_EXE}
-    COMMAND cargo build ${RUST_FLAG}
+    COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG}
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
     USES_TERMINAL 
@@ -163,6 +165,9 @@ target_link_libraries(esotereel_gui PRIVATE
 )
 
 if(TARGET Qt6::WaylandClient)
+ # Qt6.10以降のために、Privateモジュールを明示的に探索させる
+    find_package(Qt6WaylandClientPrivate REQUIRED)
+    
     target_link_libraries(esotereel_gui PRIVATE Qt6::WaylandClient Qt6::WaylandClientPrivate)
 endif()
 
@@ -171,6 +176,12 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_link_options(esotereel_gui PRIVATE -fsanitize=address)
 endif()
 
+# translate 
+qt_add_translations(esotereel_gui
+    TS_FILES
+        esotereel_ja.ts  
+        esotereel_en.ts  
+)
 
 # .clangd ファイルの動的生成設定
 set(CLANGD_CONTENT

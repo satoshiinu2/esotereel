@@ -1,9 +1,12 @@
-use std::{ops::Range, sync::Arc};
+use std::{
+    ops::Range,
+    sync::{Arc, RwLock},
+};
 
 use esotereel_lib::{
     StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
-    project::Project,
+    project::{Project, ids::TimelineId, model::ProjectModel},
     responces::ArchivedResponse,
     util::{
         result::{EsotereelError, EsotereelResult},
@@ -18,46 +21,42 @@ pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
     network: &Arc<ClientNetworkHandler>,
 ) -> EsotereelResult<()> {
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let mut app_state = network.app_state.lock().expect("mutex poisoned");
 
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectAll { project } => {
             // log::info!("Client: Received ProjectAll response");
 
-            let mut real_project: Project = project
+            let real_project: ProjectModel = project
                 .deserialize(&mut SharedDeserializeMap::new())
                 .unwrap();
 
-            real_project.rebuild_id_map()?;
+            let real_project = Project::from_model(real_project);
 
-            let timeline_len = real_project.timelines.len();
-            let project_arc = Arc::new(real_project);
+            let timeline_len = real_project.timeline_count();
+            let project_arc = Arc::new(RwLock::new(real_project));
 
-            *app_state.project.write().unwrap() = Some(project_arc.clone());
+            app_state.project = Some(project_arc.clone());
 
             // dbg!(real_project.clone());
             for i in 0..timeline_len {
-                mark_dirty_timeline(i);
+                mark_dirty_timeline(i as TimelineId);
             }
         }
         ArchivedResponse::ClipUpdates {
             timeline_map_key,
             updates,
         } => {
-            let timeline_map_key: SlotMapKey =
-                timeline_map_key.deserialize(&mut rkyv::Infallible).unwrap();
-
-            if let Some(project) = app_state.project.write().unwrap().as_mut() {
-                let project = Arc::make_mut(project);
-                let timeline: &mut esotereel_lib::project::timeline::Timeline = project
-                    .timelines
-                    .get_mut(&timeline_map_key)
+            if let Some(project_arc) = app_state.project.as_ref() {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_map_key)
                     .ok_or(EsotereelError::InvalidTimeline)?;
 
                 clip_apply_updates(timeline, updates)?;
-                mark_dirty_timeline(timeline_map_key.index);
-            };
+                mark_dirty_timeline(*timeline_map_key);
+            }
         }
         ArchivedResponse::StreamMetadata {
             path,

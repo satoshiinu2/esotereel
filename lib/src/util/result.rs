@@ -13,11 +13,13 @@ pub enum EsotereelError {
     DecodeError(String),
     ProjectNotFound,
     TimelineNotFound(usize),
+    LayerNotFound,
     ClipNotFound(u64),
     StreamNotFound(u32),
     InvalidTimeline,
     InvalidCommand,
     ClipOverlap,
+    DuplicateLayerOrder,
 }
 
 pub type EsotereelResult<T> = Result<T, EsotereelError>;

@@ -13,8 +13,8 @@
 #include <qpoint.h>
 
 // return true if selected
-bool TimelineWidget::handleSelectClip(Timeline &timeline, const QPoint &mousePos, bool ctrl) {
-    auto [clip, layerIdx] = this->findClipAt(timeline, mousePos);
+bool TimelineWidget::handleSelectClip(const Project &project, Timeline &timeline, const QPoint &mousePos, bool ctrl) {
+    auto [clip, layerIdx] = this->findClipAt(project, timeline, mousePos);
     if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();

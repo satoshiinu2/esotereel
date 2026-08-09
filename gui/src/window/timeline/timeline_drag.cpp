@@ -18,11 +18,11 @@
 #include <cstdint>
 #include <optional>
 
-std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Timeline &timeline, const QPoint &mousePos,
-                                                           bool ctrl) {
+std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &project, const Timeline &timeline,
+                                                           const QPoint &mousePos, bool ctrl) {
     int64_t frame = this->XToFrame(mousePos.x());
 
-    auto [clip, layerIdx] = this->findClipAt(timeline, mousePos);
+    auto [clip, layerIdx] = this->findClipAt(project, timeline, mousePos);
     if (!clip.isValid()) {
         return std::nullopt;
     }

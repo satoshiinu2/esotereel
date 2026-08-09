@@ -1,6 +1,6 @@
 use crate::{
     ClientState,
-    project::{clip_data::ClipData, timeline::Timeline},
+    project::{Timeline, clip::ClipData},
     render::vertex::Vertex,
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
@@ -18,9 +18,9 @@ pub fn build_vertices(
 ) -> Vec<VertexBatch> {
     let mut batches = vec![];
 
-    for layer in timeline.layers.get_sorted_iter() {
+    for layer in timeline.iter_sorted() {
         if let Some(clip) = layer.clips.get_at(current_frame) {
-            let texture_id = if let ClipData::Video { path, .. } = &clip.clip_data {
+            let texture_id = if let ClipData::Video { path, .. } = &clip.data {
                 app_state
                     .path_to_stream
                     .get(path)
@@ -31,7 +31,7 @@ pub fn build_vertices(
             };
 
             let color = [1.0, 1.0, 1.0, 1.0];
-            
+
             let rect = Vertex::rect(0.0, 0.0, 1.0, 1.0, color);
 
             let clip_trans = clip.translates.get_translate_at();

@@ -57,30 +57,43 @@ void TimelineWidget::resizeEvent(QResizeEvent *event) {
     vScrollBar->setGeometry(width() - sw, 0, sw, height() - sw);
 }
 
-std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Timeline &timeline, const QPoint &local) const {
-    // ルーラー領域、またはレイヤーラベル領域へのクリックは、クリップ選択の対象外とする
+std::tuple<Clip, size_t> TimelineWidget::findClipAt(const Project &project, const Timeline &timeline,
+                                                    const QPoint &local) const {
+    // 1. ルーラー領域、またはレイヤーラベル領域へのクリックは対象外
     if (local.x() < LABEL_WIDTH || local.y() < RULER_HEIGHT) {
         return std::make_tuple(Clip::Empty(), 0);
     }
 
     int64_t frame = this->XToFrame(local.x());
-    size_t row = this->YToRow(local.y());
+    size_t rowIdx = this->YToRow(local.y());
 
-    // range check
-    if (row >= timeline.layersCount()) {
-        return std::make_tuple(Clip::Empty(), 0);
-    }
-    Layer layer = timeline.layerSortedAt(row);
-    if (!layer.isValid()) {
-        return std::make_tuple(Clip::Empty(), 0);
-    }
+    // 2. 展開済みの階層行情報（RenderRows）を取得
+    const RenderRows &renderRows = this->getRows(project, timeline);
+    auto rows = renderRows.rows();
 
-    Clip clip = layer.findClipAtFrame(frame);
-    if (!clip.isValid()) {
+    // 範囲チェック（画面上の行インデックスが実際の行数を超えている場合）
+    if (rowIdx >= rows.size()) {
         return std::make_tuple(Clip::Empty(), 0);
     }
 
-    return std::make_tuple(clip, row);
+    const FfiLayerRow &row = rows[rowIdx];
+    auto clips = renderRows.clipsFor(row);
+
+    // 3. 該当行の中にあるクリップから、クリックされたフレームに位置するものを探す
+    for (const auto &clipInfo : clips) {
+        int64_t clipStart = clipInfo.abs_frame;
+        int64_t clipEnd = clipInfo.abs_frame + clipInfo.duration;
+
+        if (frame >= clipStart && frame < clipEnd) {
+            auto [clip, _layer] = timeline.findClipById(clipInfo.clip_id);
+
+            if (clip.isValid()) {
+                return std::make_tuple(clip, rowIdx);
+            }
+        }
+    }
+
+    return std::make_tuple(Clip::Empty(), 0);
 }
 
 Timeline TimelineWidget::getTimeline(Project &project) {

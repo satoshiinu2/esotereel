@@ -1,6 +1,11 @@
-use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
+use rkyv::{
+    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+};
+use serde::{Deserialize, Serialize};
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(
+    Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone, PartialEq,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipTranslate {
     pub position: [f32; 3],
@@ -8,7 +13,9 @@ pub struct ClipTranslate {
     pub scale: [f32; 3],
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
+#[derive(
+    Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone, PartialEq,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub enum ClipTranslates {
     Normal(ClipTranslate),

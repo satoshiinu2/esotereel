@@ -3,7 +3,7 @@ use std::{ops::Range, time};
 use crate::{
     ClientState, StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
-    project::{clip::Clip, clip_data::ClipData, timeline::Timeline},
+    project::{Clip, Timeline, clip::ClipData},
     requests::Request,
 };
 
@@ -21,18 +21,9 @@ pub fn request_stream_packets_for_time(
     frame_range: Range<i64>,
 ) -> Vec<Request> {
     timeline
-        .layers
-        .iter()
-        .filter_map(|layer| {
-            layer
-                .clips
-                .get_clips_in_range(frame_range.clone())
-                .first()
-                .cloned()
-        })
-        .filter_map(|clip| {
-            collect_request_for_clip(timeline, app_state, &clip, frame_range.clone())
-        })
+        .iter_layers()
+        .filter_map(|layer| layer.1.clips.range(frame_range.clone()).next())
+        .filter_map(|clip| collect_request_for_clip(timeline, app_state, clip, frame_range.clone()))
         .collect()
 }
 
@@ -42,7 +33,7 @@ fn collect_request_for_clip(
     clip: &Clip,
     frame_range: Range<i64>,
 ) -> Option<Request> {
-    let (path, media_offset) = match &clip.clip_data {
+    let (path, media_offset) = match &clip.data {
         ClipData::Video { path, media_offset } => Some((path, media_offset)),
         _ => None,
     }?;
@@ -54,7 +45,7 @@ fn collect_request_for_clip(
 
         let start_seconds = ClipData::get_media_seconds(
             timeline.fps,
-            clip.position(),
+            clip.position,
             frame_range.start,
             *media_offset,
         );
