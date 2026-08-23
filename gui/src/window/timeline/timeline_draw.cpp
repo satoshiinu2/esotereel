@@ -4,6 +4,7 @@
 #include "../../wrapper/project/project.h"          // IWYU pragma: keep
 #include "../../wrapper/project/timeline.h"         // IWYU pragma: keep
 #include "../../wrapper/project/timeline_layers.h"  // IWYU pragma: keep
+#include "../../wrapper/result.h"
 #include "../main.h"
 #include "esotereel_gui_helper.h"
 #include "timeline.h"
@@ -156,7 +157,16 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    auto project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        // 選択エリア
+        this->drawSelectionRect(p, r);
+
+        // 再生ヘッド
+        this->drawPlayhead(this->playhead, p, r);
+        return;
+    }
+    auto project = projectResult.unwrapOrMove();
     Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
     if (timeline.isValid()) {
         // レイヤーラベルと区切り線

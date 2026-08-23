@@ -6,6 +6,7 @@
 #include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
 #include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
 #include "../../wrapper/requests.h"
+#include "../../wrapper/result.h"
 #include "../main.h"
 #include "timeline.h"
 #include <QContextMenuEvent>
@@ -18,7 +19,12 @@
 void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
     QMenu menu(this);
 
-    auto project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        menu.exec(e->globalPos());
+        return;
+    }
+    auto project = projectResult.unwrapOrMove();
     Timeline timeline = getTimeline(project);
     if (timeline.isValid()) {
         auto [clip, layerIdx] = this->findClipAt(project, timeline, e->pos());

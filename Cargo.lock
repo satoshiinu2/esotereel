@@ -506,6 +506,7 @@ dependencies = [
 name = "esotereel_core"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "chrono",
  "esotereel_lib",
  "log",
@@ -518,6 +519,7 @@ dependencies = [
 name = "esotereel_gui_helper"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytecheck",
  "esotereel_core",
  "esotereel_lib",
@@ -531,6 +533,7 @@ dependencies = [
 name = "esotereel_lib"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "dashmap",
  "ffmpeg-next",

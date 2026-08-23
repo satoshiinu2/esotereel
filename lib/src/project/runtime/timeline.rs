@@ -48,7 +48,7 @@ impl Timeline {
 
     pub fn insert_layer(&mut self, layer: Layer) -> EsotereelResult<()> {
         if self.layer_order.contains_key(&layer.order) {
-            return Err(EsotereelError::DuplicateLayerOrder);
+            return Err(anyhow::Error::from(EsotereelError::DuplicateLayerOrder));
         }
         self.layer_order.insert(layer.order, layer.id);
         self.layers.insert(layer.id, layer);
@@ -63,7 +63,7 @@ impl Timeline {
         let layer = self
             .layers
             .get_mut(&id)
-            .ok_or(EsotereelError::LayerNotFound)?;
+            .ok_or_else(|| anyhow::Error::from(EsotereelError::LayerNotFound))?;
         let old_order = layer.order;
         f(layer);
         let new_order = layer.order;
@@ -71,7 +71,7 @@ impl Timeline {
         if new_order != old_order {
             if self.layer_order.contains_key(&new_order) {
                 layer.order = old_order; // ロールバック
-                return Err(EsotereelError::DuplicateLayerOrder);
+                return Err(anyhow::Error::from(EsotereelError::DuplicateLayerOrder));
             }
             self.layer_order.remove(&old_order);
             self.layer_order.insert(new_order, id);

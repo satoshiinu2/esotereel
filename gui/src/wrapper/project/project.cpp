@@ -35,33 +35,34 @@ Project &Project::operator=(Project &&other) noexcept {
     return *this;
 }
 
-Project Project::lockRead(const ClientNetworkHandler *network) {
+esotereel_gui_helper::Result<Project> Project::lockRead(const ClientNetworkHandler *network) {
     if (!network || !network->isValid())
-        return Project::invalid();
+        return esotereel_gui_helper::Result<Project>::error("Invalid network handler");
 
     const void *guard_ptr = nullptr;
     // C++ クラスが保持する FFI 用ポインタ (raw_ptr) を渡す
     auto result = esotereel_gui_helper::client_network_handler_app_state_project_lock_read(*network, &guard_ptr);
 
-    if (!checkWrapperResult(result) || !guard_ptr) {
-        return Project::invalid();
+    if (result != WrapperErrorCode::Ok || !guard_ptr) {
+        return wrapperResultToResult<Project>(result, Project::invalid());
     }
 
     return Project::byGuard(guard_ptr);
 }
 
-Project Project::byGuard(const void *guard_ptr) {
+esotereel_gui_helper::Result<Project> Project::byGuard(const void *guard_ptr) {
     if (!guard_ptr)
-        return Project::invalid();
+        return esotereel_gui_helper::Result<Project>::error("Guard pointer is null");
 
     const RawProject *project_ptr = nullptr;
     auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
-    if (!checkWrapperResult(result)) {
+    
+    if (result != WrapperErrorCode::Ok) {
         esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
-        return Project::invalid();
+        return wrapperResultToResult<Project>(result, Project::invalid());
     }
 
-    return Project{guard_ptr, project_ptr};
+    return esotereel_gui_helper::Result<Project>::ok(Project{guard_ptr, project_ptr});
 }
 
 Project Project::invalid() {

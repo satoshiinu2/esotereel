@@ -3,6 +3,7 @@
 #include "../../wrapper/network.h"
 #include "../../wrapper/project/project.h"
 #include "../../wrapper/project/timeline.h"
+#include "../../wrapper/result.h"
 #include "../timeline/timeline.h"
 #include "render_worker.h"
 #include <QDebug>
@@ -75,7 +76,11 @@ void GpuPreviewWidget::triggerRenderFrame() {
     if (!m_initialized)
         return;
 
-    auto project = windowState->network->getProject();
+    auto projectResult = windowState->network->getProject();
+    if (projectResult.isError()) {
+        return;
+    }
+    auto project = projectResult.unwrapOrMove();
     auto focusedTimelineWidget = windowState->focusedTimeline;
     if (!project.isValid() || !focusedTimelineWidget)
         return;

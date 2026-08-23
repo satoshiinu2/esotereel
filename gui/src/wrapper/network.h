@@ -1,6 +1,7 @@
 #pragma once
 
 #include "project/forwards.h"
+#include "result.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
 #include <qguiapplication_platform.h>
@@ -39,7 +40,7 @@ class ClientNetworkHandler {
     }
 
     bool run(QString addr);
-    Project getProject() const;
+    esotereel_gui_helper::Result<Project> getProject() const;
 
     Requests requests() const;
 };

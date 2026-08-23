@@ -1,6 +1,7 @@
 #include "../../wrapper/network.h"
 #include "../../wrapper/project/project.h"
 #include "../../wrapper/project/timeline.h"
+#include "../../wrapper/result.h"
 #include "../main.h"
 #include "esotereel_gui_helper.h"
 #include "timeline.h"
@@ -86,7 +87,11 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
 void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     QWidget::mouseReleaseEvent(e);
 
-    Project project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        return; // Handle error appropriately
+    }
+    Project project = projectResult.unwrapOrMove();
     Timeline timeline = getTimeline(project);
 
     bool ctrl = e->modifiers() & Qt::ControlModifier;
@@ -109,7 +114,11 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
 DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
-    Project project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        return DragOther{};
+    }
+    Project project = projectResult.unwrapOrMove();
     Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {
@@ -137,7 +146,11 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
 }
 
 void TimelineWidget::onDragContinue(QMouseEvent *e) {
-    Project project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        return;
+    }
+    Project project = projectResult.unwrapOrMove();
     Timeline timeline = getTimeline(project);
 
     std::visit(
@@ -160,7 +173,11 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
 }
 
 void TimelineWidget::onDragEnd(QMouseEvent *e) {
-    Project project = windowState.network->getProject();
+    auto projectResult = windowState.network->getProject();
+    if (projectResult.isError()) {
+        return;
+    }
+    Project project = projectResult.unwrapOrMove();
     Timeline timeline = getTimeline(project);
 
     if (!timeline.isValid()) {

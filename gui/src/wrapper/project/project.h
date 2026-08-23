@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <utility>
+#include "../result.h"
 
 // C-FFI (esotereel_gui_helper) 側の型のプロトタイプ宣言
 namespace esotereel_gui_helper {
@@ -37,9 +38,9 @@ class Project {
     }
 
     // C++ の ClientNetworkHandler インスタンスから 1 行で Project ロックを取得する静的関数
-    static Project lockRead(const ClientNetworkHandler *network);
+    static esotereel_gui_helper::Result<Project> lockRead(const ClientNetworkHandler *network);
 
-    static Project byGuard(const void *guard_ptr);
+    static esotereel_gui_helper::Result<Project> byGuard(const void *guard_ptr);
     static Project invalid();
 
     bool isValid() const noexcept;

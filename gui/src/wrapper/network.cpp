@@ -42,13 +42,18 @@ bool ClientNetworkHandler::run(QString addr) {
     return checkWrapperResult(result);
 }
 
-Project ClientNetworkHandler::getProject() const {
+esotereel_gui_helper::Result<Project> ClientNetworkHandler::getProject() const {
     if (!isValid()) {
-        return Project::invalid();
+        return esotereel_gui_helper::Result<Project>::error("Invalid network handler");
     }
 
     const void *guard_ptr;
-    esotereel_gui_helper::client_network_handler_app_state_project_lock_read(network_ptr, &guard_ptr);
+    auto result = esotereel_gui_helper::client_network_handler_app_state_project_lock_read(network_ptr, &guard_ptr);
+    
+    if (result != WrapperErrorCode::Ok) {
+        return wrapperResultToResult<Project>(result, Project::invalid());
+    }
+    
     return Project::byGuard(guard_ptr);
 }
 

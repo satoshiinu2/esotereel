@@ -11,7 +11,8 @@ use std::ops::Range;
 use std::path::Path;
 
 use crate::responces::Response;
-use crate::util::result::{EsotereelError, EsotereelResult};
+use crate::util::result::EsotereelResult;
+use anyhow::Context;
 
 const AV_TIME_BASE: f64 = 1_000_000.0;
 pub struct VideoStreamer {
@@ -150,7 +151,7 @@ impl VideoStreamer {
 
         if needs_seek {
             self.seek(seek_sec_range.start)
-                .map_err(|e| EsotereelError::AccessError(e.to_string()))?;
+                .context("Failed to seek during range request")?;
             self.needs_discontinuity_flag = true;
         }
 

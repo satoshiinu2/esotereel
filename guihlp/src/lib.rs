@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::ffi::{CString, c_char};
 use std::sync::OnceLock;
 
+use anyhow::Context;
+
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
 pub use esotereel_lib::project::Layer;
 pub use esotereel_lib::project::Project;
@@ -80,6 +82,22 @@ impl WrapperErrorCode {
     pub fn invalid_string_error() -> Self {
         Self::set_last_err_msg(Some("invalid string"));
         WrapperErrorCode::Error
+    }
+
+    // anyhow::ErrorからWrapperErrorCodeへの変換
+    pub fn from_anyhow(err: anyhow::Error) -> Self {
+        let error_msg = err.to_string();
+        
+        // エラーの種類に基づいて分類
+        if error_msg.contains("not found") || error_msg.contains("NotFound") {
+            Self::not_found(Some(&error_msg))
+        } else if error_msg.contains("null") || error_msg.contains("NullPtr") {
+            Self::null_ptr()
+        } else if error_msg.contains("panic") || error_msg.contains("Panic") {
+            Self::panic(Some(&error_msg))
+        } else {
+            Self::error(Some(&error_msg))
+        }
     }
 }
 

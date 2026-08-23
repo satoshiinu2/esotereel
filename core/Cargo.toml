@@ -7,6 +7,7 @@ edition = "2024"
 crate-type = ["rlib"]
 
 [dependencies]
+anyhow = "1.0"
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
 rkyv = { version = "0.7", features = ["validation"] }
 log = "0.4"
