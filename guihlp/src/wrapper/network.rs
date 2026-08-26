@@ -82,9 +82,15 @@ pub extern "C" fn client_network_handler_drop(
     WrapperErrorCode::panic(msg.as_deref())
 }
 
-pub struct ProjectReadGuard<'a> {
-    _guard: RwLockReadGuard<'a, Project>,
-    pub project_ptr: *const Project,
+// Opaque pointer for C++ - hides the actual guard type
+#[repr(C)]
+pub struct ProjectReadGuard {
+    _private: [u8; 0], // opaque - size and alignment are flexible
+}
+
+struct ProjectReadGuardInner {
+    _guard: RwLockReadGuard<'static, Project>,
+    project_ptr: *const Project,
 }
 
 #[unsafe(no_mangle)]
@@ -106,23 +112,33 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_lock_read(
         return WrapperErrorCode::not_found(Some("project not found"));
     };
 
-    let lock = match project_arc.read() {
+    // Use try_read to avoid blocking the UI thread - if lock is not immediately available, return error
+    let lock = match project_arc.try_read() {
         Ok(guard) => guard,
-        Err(_) => return WrapperErrorCode::panic(Some("rwlock poisoned")),
+        Err(_) => return WrapperErrorCode::error(Some("lock busy - retry later")),
     };
 
     let project_ptr: *const Project = &*lock;
 
-    let wrapper = Box::new(ProjectReadGuard {
-        _guard: lock,
+    // Extend lifetime to 'static - this is safe because:
+    // 1. The guard is owned by the Box and will only be freed when unlock is called
+    // 2. The project_ptr remains valid as long as the guard is held
+    // 3. C++ side is responsible for calling unlock to free the guard
+    let extended_guard = unsafe {
+        std::mem::transmute::<RwLockReadGuard<'_, Project>, RwLockReadGuard<'static, Project>>(lock)
+    };
+
+    let inner = ProjectReadGuardInner {
+        _guard: extended_guard,
         project_ptr,
-    });
+    };
+
+    // Box the inner struct and cast to opaque pointer
+    let boxed_inner = Box::new(inner);
+    let opaque_ptr = Box::into_raw(boxed_inner) as *const c_void;
 
     unsafe {
-        let raw_wrapper = Box::into_raw(wrapper);
-        *out_guard = std::mem::transmute::<*mut ProjectReadGuard<'_>, *mut ProjectReadGuard<'static>>(
-            raw_wrapper,
-        ) as *const c_void;
+        *out_guard = opaque_ptr;
     }
 
     WrapperErrorCode::ok()
@@ -135,10 +151,30 @@ pub unsafe extern "C" fn client_network_handler_app_state_project_unlock_read(
 ) -> WrapperErrorCode {
     if !guard_ptr.is_null() {
         unsafe {
-            drop(Box::from_raw(guard_ptr as *mut ProjectReadGuard<'static>));
+            // Cast back to inner type and drop
+            let inner_ptr = guard_ptr as *mut ProjectReadGuardInner;
+            drop(Box::from_raw(inner_ptr));
         }
         WrapperErrorCode::ok()
     } else {
         WrapperErrorCode::null_ptr()
     }
+}
+
+/// ガードからprojectポインタを取得する関数
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn project_guard_get_project_from_guard(
+    guard_ptr: *const c_void,
+    out_project: *mut *const Project,
+) -> WrapperErrorCode {
+    if guard_ptr.is_null() || out_project.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
+
+    unsafe {
+        let inner = &*(guard_ptr as *const ProjectReadGuardInner);
+        *out_project = inner.project_ptr;
+    }
+
+    WrapperErrorCode::ok()
 }

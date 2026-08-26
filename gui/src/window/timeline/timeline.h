@@ -1,13 +1,5 @@
 #pragma once
 
-#include "../../wrapper/project/clip_render_info.fwd.h"
-#include "../../wrapper/project/forwards.h"
-#include <QElapsedTimer>
-#include <QEvent>
-#include <QPainter>
-#include <QScrollBar>
-#include <QTimer>
-#include <QWidget>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -17,12 +9,33 @@
 #include <set>
 #include <variant>
 
+#include <QBrush>
+#include <QColor>
+#include <QElapsedTimer>
+#include <QEvent>
+#include <QLine>
+#include <QPainter>
+#include <QScrollBar>
+#include <QTimer>
+#include <QVariant>
+#include <QWidget>
+
+#include "window/main.h"
+#include "wrapper/project/clip.h"
+#include "wrapper/project/clip_render_info.h"
+#include "wrapper/project/layer.h"
+#include "wrapper/project/project.h"
+#include "wrapper/project/timeline.h"
+
+#include "esotereel_gui_helper.h"
+
 struct WindowGState;
+class QMenu;
 
 constexpr qreal CLIP_ROUND_RADIUS = 3;
 constexpr int RULER_STEP = 10;
 
-constexpr float_t INDENT_WIDTH = 1.0;
+constexpr float_t INDENT_WIDTH = 12.0;
 constexpr float_t LAYER_HEIGHT = 32.0;
 constexpr float_t RULER_HEIGHT = 24.0;
 constexpr float_t LABEL_WIDTH = 80.0;
@@ -51,18 +64,19 @@ struct DragAreaSel {
 struct DragPlayHead {};
 
 using DragState = std::variant<DragNone, DragOther, DragClip, DragAreaSel, DragPlayHead>;
+using TimelineId = esotereel_gui_helper::TimelineId;
 
 class TimelineWidget : public QWidget {
     Q_OBJECT
 
   public:
-    size_t timelineIdx;
+    TimelineId timelineIdx;
     float_t zoom = 4;
     QPointF scroll = QPointF();
     int64_t playhead = 0;
     std::set<uint64_t> selectedClipIds; // clipid
 
-    explicit TimelineWidget(WindowGState &windowState, size_t timelineType);
+    explicit TimelineWidget(WindowGState &windowState, size_t timelineIdx);
     ~TimelineWidget();
 
     double_t frameToX(int64_t frame) const noexcept {
@@ -117,34 +131,42 @@ class TimelineWidget : public QWidget {
     WindowGState &windowState;
     std::optional<QPoint> firstClickPos = std::nullopt;
     float_t last_pinch_dist = 0.0f;
-    int64_t playbackStartFrame;
-    bool isPlaying;
+    int64_t playbackStartFrame = 0;
+    bool isPlaying = false;
     std::vector<uint64_t> openCompositeIds;
+    std::vector<uint64_t> openFolderIds; // 開いているフォルダー(Layer)のid
     mutable std::unique_ptr<RenderRows> cachedRows;
     mutable bool rowsDirty = true;
+    mutable bool fetchPending = false;
 
     // functions
     QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
-    std::tuple<Clip, size_t> findClipAt(const Project &project, const Timeline &timeline, const QPoint &local) const;
-    const RenderRows &getRows(const Project &project, const Timeline &timeline) const;
+    std::tuple<Clip, uint64_t> findClipAt(const Project &project, const QPoint &local) const;
+    void updateSnapshot() const;
 
-    void drawLayers(const Project &project, const Timeline &timeline, QPainter &p, const QRect &r) const;
+    void drawLayers(const Project &project, QPainter &p, const QRect &r) const;
+    QColor rowContentBackgroundColor(size_t rowIdx) const noexcept;
+    void drawRowLabel(const Project &project, const FfiLayerRow &row, QPainter &p, const QRect &r,
+                      double_t y) const;
     void drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const;
     void drawPlayhead(const int64_t playhead_frame, QPainter &p, const QRect &r) const;
     void drawRuler(QPainter &p, const QRect &r) const;
     void drawSelectionRect(QPainter &p, const QRect &r) const;
-    void drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const;
+    void drawDragGhost(const Project &project, QPainter &p, const QRect &r) const;
 
-    std::optional<DragClip> handleClipDragGrab(const Project &project, const Timeline &timeline, const QPoint &local,
-                                               bool ctrl);
-    void handleClipDragContinue(const Timeline &timeline, const QPoint &local);
-    void handleClipDraggingDrop(const Timeline &timeline, const QPoint &local);
+    std::optional<DragClip> handleClipDragGrab(const Project &project, const QPoint &local, bool ctrl);
+    void handleClipDragContinue(const Project &project, const QPoint &local);
+    void handleClipDraggingDrop(const Project &project, const QPoint &local);
+    // 選択中の全クリップを、指定した移動量(frameMoved/layerMoved)の位置へ
+    // 配置できるかを判定する。handleClipDragContinue(仮置きの可否判定)と
+    // drawDragGhost(ゴースト描画の色分け)で共有するロジック。
+    bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, int32_t layerMoved) const;
 
-    bool handleSelectClip(const Project &project, Timeline &timeline, const QPoint &mousePos, bool ctrl);
+    bool handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
-    void handleAreaSelEnd(const Project &project, const Timeline &timeline);
+    void handleAreaSelEnd(const Project &project);
 
     DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
@@ -153,7 +175,20 @@ class TimelineWidget : public QWidget {
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
 
+    void debugProjectLog();
     void togglePlayback();
     void addClipAt(const QPoint &local);
     void toggleComposite(uint64_t clipId);
+    void toggleFolder(uint64_t layerId);
+    void openFolder(uint64_t layerId);
+    bool handleFolderLabelClick(const Project &project, const QPoint &local);
+    void buildLayerContextMenu(const Project &project, QMenu &menu, const QPoint &local);
+    void addLayer(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex, bool isFolder);
+
+    void requestFrameFetch();
+    void processPendingFetch();
+    // 再生タイマーのtick毎に呼ばれる。経過時間からplayheadを進める。
+    void advancePlaybackFrame();
+
+    std::pair<int64_t, int64_t> getVisibleFrameRange() const noexcept;
 };

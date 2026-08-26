@@ -11,6 +11,7 @@ anyhow = "1.0"
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
 rkyv = { version = "0.7", features = ["validation"] }
 log = "0.4"
+colored = "3.0"
 chrono = "0.4"
 send_wrapper = "0.6"
-tokio = { version = "1", features = ["full"]}
+tokio = { version = "1", features = ["full"] }

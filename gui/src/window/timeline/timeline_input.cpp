@@ -1,20 +1,5 @@
-#include "../../wrapper/network.h"
-#include "../../wrapper/project/project.h"
-#include "../../wrapper/project/timeline.h"
-#include "../../wrapper/result.h"
-#include "../main.h"
-#include "esotereel_gui_helper.h"
 #include "timeline.h"
-#include <QDebug>
-#include <QEvent>
-#include <QNativeGestureEvent>
-#include <QPainter>
-#include <QPair>
-#include <QPoint>
-#include <QWidget>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
+#include "wrapper/network.h"
 
 void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
     double_t mouseX = mousePos.x();
@@ -22,6 +7,8 @@ void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
 
     int64_t frame = this->XToFrame(mouseX);
     this->playhead = frame;
+
+    this->requestFrameFetch();
     update();
 }
 
@@ -65,6 +52,16 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
 
         if (isOnRuler(mousePos)) {
             this->handleCtrlPlayhead(mousePos);
+        } else {
+            // フォルダー行のラベル(▶▼)クリックは開閉トグルのみ行い、
+            // ドラッグ選択/クリップドラッグは開始しない
+            auto projectResult = windowState.network->getProject();
+            if (!projectResult.isError()) {
+                auto project = projectResult.unwrapOrMove();
+                if (this->handleFolderLabelClick(project, mousePos)) {
+                    return;
+                }
+            }
         }
         this->firstClickPos = mousePos;
         this->dragState = DragNone{};
@@ -92,16 +89,13 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
         return; // Handle error appropriately
     }
     Project project = projectResult.unwrapOrMove();
-    Timeline timeline = getTimeline(project);
 
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
     // ドラッグしていないなら１つセレクト
     if (!std::holds_alternative<DragClip>(this->dragState) && e->button() & Qt::LeftButton) {
 
-        if (timeline.isValid()) {
-            this->handleSelectClip(project, timeline, e->pos(), ctrl);
-        }
+        this->handleSelectClip(project, e->pos(), ctrl);
     }
 
     if (e->button() & Qt::LeftButton && !std::holds_alternative<DragNone>(this->dragState)) {
@@ -119,14 +113,9 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
         return DragOther{};
     }
     Project project = projectResult.unwrapOrMove();
-    Timeline timeline = getTimeline(project);
-
-    if (!timeline.isValid()) {
-        return DragOther{};
-    }
 
     // 1. クリップを掴めるかチェック
-    auto clipGrabResult = this->handleClipDragGrab(project, timeline, firstClickPos, ctrl);
+    auto clipGrabResult = this->handleClipDragGrab(project, firstClickPos, ctrl);
     if (clipGrabResult.has_value()) {
         return clipGrabResult.value();
     }
@@ -151,21 +140,20 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
         return;
     }
     Project project = projectResult.unwrapOrMove();
-    Timeline timeline = getTimeline(project);
 
     std::visit(
         [&](auto &&state) {
             using T = std::decay_t<decltype(state)>;
 
             // タイムラインないならセレクトだけする
-            if (!timeline.isValid()) {
+            if (!project.isValid()) {
                 this->handleAreaSelContinue(e->pos());
             } else if constexpr (std::is_same_v<T, DragAreaSel>) {
                 this->handleAreaSelContinue(e->pos());
             } else if constexpr (std::is_same_v<T, DragPlayHead>) {
                 this->handleCtrlPlayhead(e->pos());
             } else if constexpr (std::is_same_v<T, DragClip>) {
-                this->handleClipDragContinue(timeline, e->pos());
+                this->handleClipDragContinue(project, e->pos());
                 this->checkEdgeScroll(e->pos(), rect());
             }
         },
@@ -178,22 +166,17 @@ void TimelineWidget::onDragEnd(QMouseEvent *e) {
         return;
     }
     Project project = projectResult.unwrapOrMove();
-    Timeline timeline = getTimeline(project);
-
-    if (!timeline.isValid()) {
-        return;
-    }
 
     std::visit(
         [&](auto &&state) {
             using T = std::decay_t<decltype(state)>;
 
             if constexpr (std::is_same_v<T, DragAreaSel>) {
-                this->handleAreaSelEnd(project, timeline);
+                this->handleAreaSelEnd(project);
             } else if constexpr (std::is_same_v<T, DragPlayHead>) {
 
             } else if constexpr (std::is_same_v<T, DragClip>) {
-                this->handleClipDraggingDrop(timeline, e->pos());
+                this->handleClipDraggingDrop(project, e->pos());
             }
         },
         this->dragState);

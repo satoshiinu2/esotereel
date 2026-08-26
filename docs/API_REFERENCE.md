@@ -6,7 +6,7 @@ This document provides detailed information about the key APIs and interfaces in
 
 ### Project Types
 
-#### `Project` (lib/src/project/runtime/mod.rs)
+#### `Project` (lib/src/project/project.rs)
 Runtime project structure used during application execution.
 
 ```rust
@@ -21,51 +21,68 @@ pub struct Project {
 - `insert_timeline(fps)` - Add new timeline with specified FPS
 - `timeline(id)` - Get timeline by ID
 - `timeline_mut(id)` - Get mutable timeline by ID
-- `to_model()` - Convert to domain model for serialization
-- `from_model(model)` - Create from domain model
+- `new_clip_in_timeline(...)` - Add clip to timeline layer
+- `make_independent(source)` - Deep clone timeline for independent use
+- `remove_timeline(id)` - Remove timeline
+- `drain_changes()` - Collect pending changes from all timelines
+- `propagate_nested_dirty(changed)` - Propagate changes to parent timelines
+- `timelines_meta()` - Get lightweight metadata for ProjectAll sync
+- `from_meta(timelines)` - Create project from metadata
 
-#### `ProjectModel` (lib/src/project/model/project.rs)
-Domain model for project serialization.
-
-```rust
-pub struct ProjectModel {
-    pub timelines: BTreeMap<u64, TimelineModel>,
-    id_generator: IdGenerator,
-}
-```
-
-**Key Methods:**
-- `new()` - Create empty project model
-- `new_timeline(fps)` - Create and add timeline
-- `get_timeline(id)` - Get timeline by ID
-- `observe_timeline_id(id)` - Update ID generator from loaded data
-
-#### `Timeline` (lib/src/project/runtime/timeline.rs)
-Runtime timeline with optimized structures for rendering.
-
-**Key Methods:**
-- `new(id, fps)` - Create timeline
-- `get_layer(id)` - Get layer by ID
-- `new_clip_in(...)` - Add clip to layer
-- `to_model()` - Convert to domain model
-
-#### `TimelineModel` (lib/src/project/model/timeline.rs)
-Domain model for timeline serialization.
+#### `Timeline` (lib/src/project/timeline.rs)
+Runtime timeline with layer hierarchy and clip storage.
 
 ```rust
-pub struct TimelineModel {
+pub struct Timeline {
     pub id: u64,
     pub fps: f64,
-    pub layers: BTreeMap<u32, LayerModel>,
-    next_clip_id: u64,
+    root_layers: Vec<LayerId>,
+    layers: HashMap<LayerId, Layer>,
+    clips: HashMap<ClipId, Clip>,
+    chunk_index: RwLock<Option<ChunkIndex>>,
+    pending: ChangeSet,
 }
 ```
 
 **Key Methods:**
 - `new(id, fps)` - Create timeline with default 4 layers
-- `new_clip_in(...)` - Add clip to layer with ID generation
-- `get_layer(order)` - Get layer by order
-- `modify_layer_order(old, new)` - Change layer order
+- `insert_layer(layer, parent, index)` - Add layer with hierarchy support
+- `get_layer(id)` - Get layer by ID
+- `get_layer_mut(id)` - Get mutable layer by ID
+- `reorder_child(parent, id, new_index)` - Reorder layer in hierarchy
+- `iter_execution_order()` - Flatten layer hierarchy for execution
+- `new_clip_in(...)` - Add clip to layer with overlap detection
+- `remove_clip_by_id(clip_id)` - Remove clip and return it
+- `place_clip(layer_id, clip)` - Place existing clip at position
+- `get_clip(id)` - Get clip by ID
+- `get_clip_mut(id)` - Get mutable clip by ID
+- `move_clip(clip_id, new_position)` - Move clip to new position
+- `query_range(range)` - Query clips in time range using ChunkIndex
+- `drain_changes()` - Get pending changes
+- `has_pending_changes()` - Check if changes exist
+- `from_meta(meta)` - Create timeline from metadata
+- `merge_fetched_clips(entries)` - Merge fetched clips from network
+- `upsert_clip_from_network(layer_id, clip)` - Upsert clip from network sync
+
+#### `Layer` (lib/src/project/layer.rs)
+Layer with folder support and clip position tracking.
+
+```rust
+pub struct Layer {
+    pub id: LayerId,
+    pub name: String,
+    pub enabled: bool,
+    pub parent: Option<LayerId>,
+    pub children: Vec<LayerId>,
+    pub clips: BTreeMap<i64, ClipId>,
+}
+```
+
+**Key Methods:**
+- `new(id, name)` - Create layer
+- `is_folder()` - Check if layer is a folder (has children)
+- `get_clip_id_at(pos)` - Get clip ID at position
+- `remove_clip(clip_id)` - Remove clip reference from layer
 
 ### Clip Types
 
@@ -360,14 +377,58 @@ pub struct GuiCallbacks {
 - Clip management
 
 #### Timeline Operations
-- Timeline creation
-- Layer management
+- Timeline creation with hierarchy support
+- Layer management with folder support
 - FPS control
+- Range queries using ChunkIndex
 
 #### Clip Operations
-- Clip creation
+- Clip creation with overlap detection
 - Position and duration modification
 - Transform operations
+- Change tracking via ChangeSet
+
+## Change Tracking API
+
+### ChangeSet (lib/src/project/change.rs)
+
+Change tracking for network synchronization.
+
+```rust
+pub struct ChangeSet {
+    pub upserted: HashSet<ClipId>,
+    pub removed: HashMap<ClipId, RemovedClipInfo>,
+}
+
+pub struct RemovedClipInfo {
+    pub layer_id: LayerId,
+    pub position: i64,
+    pub duration: i64,
+}
+```
+
+**Key Methods:**
+- `is_empty()` - Check if changes exist
+- `mark_upserted(id)` - Mark clip as upserted
+- `mark_removed(id, info)` - Mark clip as removed
+- `merge(other)` - Merge another ChangeSet
+
+### ChunkIndex (lib/src/project/chunk_index.rs)
+
+Spatial index for efficient time-range queries.
+
+```rust
+pub struct ChunkIndex {
+    map: BTreeMap<ChunkId, Vec<(LayerId, ClipId)>>,
+}
+```
+
+**Key Methods:**
+- `build(entries)` - Build index from clip entries
+- `candidates(range)` - Get candidate clips for time range
+
+**Constants:**
+- `CHUNK_TICKS: i64 = 30_000` - Size of each time chunk
 
 ## Command Pattern API
 
@@ -538,6 +599,11 @@ pub const NO_CLIENT: u32 = u32::MAX;   // No specific client
 ### Video Constants
 ```rust
 const AV_TIME_BASE: f64 = 1_000_000.0;  // FFmpeg time base
+```
+
+### Timeline Constants
+```rust
+pub const MAX_NESTED_DEPTH: u32 = 32;  // Maximum nesting depth for composite/mirror
 ```
 
 ## Logging API

@@ -5,19 +5,27 @@
 #include <cstdint>
 #include <vector>
 
-class ClientNetworkHandler;
-namespace esotereel_gui_helper {
-struct ClientNetworkHandler;
-}
+#include "esotereel_gui_helper.h"
+#include "wrapper/network.h"
+
+using TimelineId = esotereel_gui_helper::TimelineId;
+using LayerId = esotereel_gui_helper::LayerId;
+using ClipId = esotereel_gui_helper::ClipId;
+using Tick = esotereel_gui_helper::Tick;
 
 class Requests {
-    const esotereel_gui_helper::ClientNetworkHandler *raw_ptr;
+    const esotereel_gui_helper::ClientNetworkHandler *ptr_network;
 
   public:
     Requests(const ClientNetworkHandler *network);
     void newProject();
-    void moveClips(uint64_t timelineIdx, const std::vector<uint64_t> &clipIds, int64_t posMoved, int64_t durationMoved,
+    void moveClips(TimelineId timelineIdx, const std::vector<ClipId> &clipIds, Tick posMoved, Tick durationMoved,
                    int64_t layerMoved) noexcept;
-    void addClipAt(uint64_t timelineIdx, int64_t position, size_t layerIdx) noexcept;
+    void addClipAt(TimelineId timelineIdx, Tick position, uint64_t layerId) noexcept;
+    void addLayer(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
+                  const std::string &name, bool isFolder) noexcept;
     void loadStream(QString path) noexcept;
+    void fetchFrame(TimelineId timelineIdx, Tick playhead, std::pair<Tick, Tick> visible_range) noexcept;
+
+    void debugProjectLog() noexcept;
 };

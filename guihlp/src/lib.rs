@@ -2,21 +2,18 @@ use std::cell::RefCell;
 use std::ffi::{CString, c_char};
 use std::sync::OnceLock;
 
-use anyhow::Context;
-
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
 pub use esotereel_lib::project::Layer;
 pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
-use esotereel_lib::project::ids::TimelineId;
+pub use esotereel_lib::project::ids::{ClipId, LayerId, ScriptId, TimelineId};
 pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
 
 use crate::network::OnConnectedFn;
 use crate::responces::on_responce_recveve;
 
 mod network;
-pub mod project;
 pub mod responces;
 pub mod wrapper;
 
@@ -84,10 +81,10 @@ impl WrapperErrorCode {
         WrapperErrorCode::Error
     }
 
-    // anyhow::ErrorからWrapperErrorCodeへの変換
+    /// anyhow::ErrorからWrapperErrorCodeへの変換
     pub fn from_anyhow(err: anyhow::Error) -> Self {
         let error_msg = err.to_string();
-        
+
         // エラーの種類に基づいて分類
         if error_msg.contains("not found") || error_msg.contains("NotFound") {
             Self::not_found(Some(&error_msg))
@@ -126,7 +123,12 @@ pub fn mark_dirty_timeline(timeline_type: TimelineId) {
     }
 }
 
-pub fn slice_from_ptr_safe<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+/// # Safety
+///
+/// If `len > 0` and `ptr` is non-null, `ptr` must point to a valid
+/// contiguous array of at least `len` initialized `T`s, and the memory
+/// must remain valid for the returned slice's lifetime.
+pub unsafe fn slice_from_ptr_or_empty<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
     if len == 0 || ptr.is_null() {
         &[]
     } else {

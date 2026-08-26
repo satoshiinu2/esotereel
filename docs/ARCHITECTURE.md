@@ -116,21 +116,21 @@ The system uses a custom binary protocol over TCP:
 
 ### Project Model
 
-**Domain Model** (`lib/src/project/model/`):
-- `ProjectModel` - Container for timelines
-- `TimelineModel` - Timeline with layers and clips
-- `LayerModel` - Layer containing clips
+**Runtime Model** (`lib/src/project/`):
+- `Project` - Runtime project state with timeline management
+- `Timeline` - Runtime timeline with layer hierarchy and clip storage
+- `Layer` - Layer with folder support and clip position tracking
 - `Clip` - Individual media clip with transforms
+- `ChangeSet` - Change tracking for network synchronization
+- `ChunkIndex` - Spatial index for efficient time-range queries
 
-**Runtime Model** (`lib/src/project/runtime/`):
-- `Project` - Runtime project state
-- `Timeline` - Runtime timeline with optimized structures
-- `ClipIndex` - Spatial index for clip lookup
-
-**Command Pattern** (`lib/src/project/commands.rs`):
-- Commands for all project modifications
-- Undo/redo support through history system
-- Optimized updates for client synchronization
+**Key Features**:
+- Timeline hierarchy with folder support (parent/children)
+- Clip overlap detection and positioning
+- Change tracking with upserted/removed clip tracking
+- Efficient spatial queries using chunk-based indexing
+- Network synchronization with metadata-based ProjectAll sync
+- Independent timeline creation for composite clips
 
 ### Rendering Architecture
 
@@ -174,16 +174,19 @@ The system uses a custom binary protocol over TCP:
 
 **Creating a Project**:
 1. GUI sends `NewProject` request
-2. Core creates empty `ProjectModel`
-3. Core sends `ProjectAll` response
-4. GUI updates with new project state
+2. Core creates empty `Project` with default timeline
+3. Core sends `ProjectAll` response with timeline metadata
+4. GUI creates timeline structure from metadata (no clips yet)
+5. GUI fetches clips as needed for visible range
 
 **Adding a Clip**:
 1. GUI creates clip data
 2. Sends `Command::AddClip` request
 3. Core executes command on project
-4. Core sends `ClipUpdates` response
-5. GUI updates timeline with new clip
+4. Timeline tracks change in ChangeSet
+5. Core sends `ClipUpdates` response
+6. GUI updates timeline with new clip
+7. Nested timeline changes are propagated to parent timelines
 
 **Video Preview**:
 1. GUI requests frame at specific time
@@ -295,6 +298,7 @@ The system uses a custom binary protocol over TCP:
 2. Implement command handler in `core/src/project/commands.rs`
 3. Add FFI wrapper in `guihlp/src/wrapper/commands.rs`
 4. Create C++ wrapper in `gui/src/wrapper/`
+5. Ensure change tracking in Timeline (touch_upsert/touch_removed)
 
 ### Adding New Clip Types
 1. Extend `ClipData` enum in `lib/src/project/clip.rs`
@@ -344,3 +348,4 @@ The system uses a custom binary protocol over TCP:
 - **Testing**: Increase test coverage
 - **Performance**: Profile and optimize hot paths
 - **Code Organization**: Further modularization where needed
+- **Change Propagation**: Optimize nested timeline change propagation

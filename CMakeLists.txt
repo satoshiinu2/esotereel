@@ -126,10 +126,12 @@ add_custom_command(
 add_custom_target(rust_workspace ALL DEPENDS ${GUI_HLP_LIB} ${CORE_EXE})
 
 
+# Clangのエラー回避
+string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
 # 実行ファイル
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
 add_executable(esotereel_gui ${SRC_FILES})
-
 
 # dll deploy
 if(WIN32)
@@ -156,7 +158,7 @@ endif()
 # add_dependencies(esotereel_gui rust_workspace cleanup_port)
 
 # ライブラリリンク
-target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include")
+target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include" "${CMAKE_SOURCE_DIR}/gui/src")
 target_link_libraries(esotereel_gui PRIVATE 
     Qt6::Widgets 
     Qt6::Network

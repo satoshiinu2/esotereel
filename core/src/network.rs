@@ -1,11 +1,13 @@
+use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
 use rkyv::{AlignedVec, check_archived_root};
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::{Arc, Mutex, RwLock};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpListener;
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 use esotereel_lib::ServerState;
 
@@ -18,7 +20,9 @@ pub static INSTANCE: RwLock<Option<Arc<ServerNetworkHandler>>> = RwLock::new(Non
 
 pub struct ServerNetworkHandler {
     pub app_state: Arc<Mutex<ServerState>>,
+    pub dirty_signal: Arc<Notify>,
     clients: RwLock<HashMap<u32, ClientSender>>,
+    client_views: RwLock<HashMap<u32, HashMap<TimelineId, Range<i64>>>>,
 }
 
 impl ServerNetworkHandler {
@@ -32,9 +36,12 @@ impl ServerNetworkHandler {
     }
 
     pub fn new(app_state: Arc<Mutex<ServerState>>) -> Self {
+        let dirty_signal = app_state.lock().unwrap().dirty_signal.clone();
         Self {
             app_state,
+            dirty_signal,
             clients: RwLock::new(HashMap::new()),
+            client_views: RwLock::new(HashMap::new()),
         }
     }
 
@@ -135,6 +142,58 @@ impl ServerNetworkHandler {
         }
     }
 
+    /// FetchClipsInRange受信時に呼び出し、クライアントの表示範囲を更新する
+    pub fn update_client_view(&self, client_id: u32, timeline_id: TimelineId, range: Range<i64>) {
+        if let Ok(mut views) = self.client_views.write() {
+            views
+                .entry(client_id)
+                .or_default()
+                .insert(timeline_id, range);
+        }
+    }
+
+    /// 指定したtimeline上のposition_rangeに範囲が重なっているクライアントID一覧を返す
+    pub fn clients_watching_in(
+        &self,
+        timeline_id: TimelineId,
+        position_range: &Range<i64>,
+    ) -> Vec<u32> {
+        let Ok(views) = self.client_views.read() else {
+            return vec![];
+        };
+        views
+            .iter()
+            .filter_map(|(client_id, timelines)| {
+                let view_range = timelines.get(&timeline_id)?;
+                // 範囲が重なっているか
+                let overlap =
+                    view_range.start < position_range.end && position_range.start < view_range.end;
+                overlap.then_some(*client_id)
+            })
+            .collect()
+    }
+
+    /// 指定したtimelineを見ているクライアントID一覧を返す
+    pub fn clients_watching_timeline(&self, timeline_id: TimelineId) -> Vec<u32> {
+        let Ok(views) = self.client_views.read() else {
+            return vec![];
+        };
+        views
+            .iter()
+            .filter_map(|(client_id, timelines)| timelines.get(&timeline_id).map(|_| *client_id))
+            .collect()
+    }
+
+    fn remove_client_view(&self, client_id: u32) {
+        if let Ok(mut views) = self.client_views.write() {
+            views.remove(&client_id);
+        }
+    }
+
+    pub fn notify_dirty(&self) {
+        self.dirty_signal.notify_one();
+    }
+
     pub fn send(&self, client_id: u32, request: &Response) {
         let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
         self.send_bytes(client_id, bytes);
@@ -143,6 +202,19 @@ impl ServerNetworkHandler {
     pub fn send_all(&self, request: &Response) {
         let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
         self.send_bytes_all(bytes);
+    }
+
+    pub fn send_to_many(&self, client_ids: &[u32], request: &Response) {
+        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
+        if let Ok(clients) = self.clients.read() {
+            for id in client_ids {
+                if let Some(tx) = clients.get(id) {
+                    if let Err(_) = tx.send(bytes.clone()) {
+                        log::error!("Failed to send to client {}: channel closed", id);
+                    }
+                }
+            }
+        }
     }
 
     fn send_bytes_all(&self, bytes: AlignedVec) {

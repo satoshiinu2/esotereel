@@ -10,6 +10,7 @@ pub mod internalserver;
 pub mod logger;
 pub mod network;
 pub mod project;
+pub mod render;
 pub mod requests;
 pub mod stringview;
 pub mod wgpuutil;

@@ -6,5 +6,5 @@ pub extern "C" fn project_debug_log(ptr: *const Project) {
         return;
     }
 
-    unsafe { log::debug!("{:?}", (&*ptr)) };
+    unsafe { log::debug!("{:#?}", (&*ptr)) };
 }

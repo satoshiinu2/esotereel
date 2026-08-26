@@ -1,9 +1,9 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{ops::Range, sync::Arc};
 
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
-    project::{ClipUpdateMap, Layer, Project},
+    project::Project,
     requests::ArchivedRequest,
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt},
@@ -33,18 +33,18 @@ pub fn on_request_receive(
 
             assert!(timeline_key == 0, "main timeline should be first");
 
-            if let Some(timeline) = new_project.timeline_mut(timeline_key) {
-                for i in 0..4 {
-                    timeline.insert_layer(Layer::new(
-                        i as u64,
-                        i as u32,
-                        format!("Layer{}", i + 1),
-                    ))?;
-                }
-            };
+            // Timeline::new()ですでに4つのデフォルトレイヤーを作成しているので、
+            // ここで重複して挿入する必要はない
 
-            let cmd = Response::ProjectAll {
-                project: new_project.to_model(),
+            let timelines = new_project.timelines_meta();
+
+            // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
+            for timeline in &timelines {
+                network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
+            }
+
+            let cmd = Response::ProjectMeta {
+                timelines,
             };
 
             *lock = Some(new_project);
@@ -54,31 +54,34 @@ pub fn on_request_receive(
             let mut lock = app_state.project.write_or_err()?;
             let project = lock.as_mut().unwrap();
 
-            let cmd = Response::ProjectAll {
-                project: project.to_model(),
+            let timelines = project.timelines_meta();
+
+            // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
+            for timeline in &timelines {
+                network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
+            }
+
+            let cmd = Response::ProjectMeta {
+                timelines,
             };
 
             network.send(client_id, &cmd);
         }
         ArchivedRequest::Command {
             command,
-            timeline_map_key,
+            timeline_id,
         } => {
-            let timeline_map_key = *timeline_map_key;
-            let mut lock = app_state.project.write_or_err()?;
-            let mut project = lock.as_mut().unwrap();
+            let timeline_id = *timeline_id;
 
-            let mut updates: Option<ClipUpdateMap> = Some(HashMap::new());
+            {
+                let mut lock = app_state.project.write_or_err()?;
+                let mut project = lock.as_mut().unwrap();
 
-            handle_command_action(command, &mut project, timeline_map_key, &mut updates)?;
+                handle_command_action(command, &mut project, timeline_id)?;
+            }
+            drop(app_state);
 
-            // send updates
-            let updates = updates.unwrap_or_default();
-            let cmd = Response::ClipUpdates {
-                timeline_map_key,
-                updates,
-            };
-            network.send_all(&cmd);
+            network.notify_dirty();
         }
         ArchivedRequest::InitStream { path } => {
             let path = path.as_ref();
@@ -108,11 +111,11 @@ pub fn on_request_receive(
             resource_id,
             seek_range_sec,
         } => {
-            log::info!(
-                "Received FetchStreamData request for resource_id: {} at:{:?}",
-                resource_id,
-                seek_range_sec
-            );
+            // log::info!(
+            //     "Received FetchStreamData request for resource_id: {} at:{:?}",
+            //     resource_id,
+            //     seek_range_sec
+            // );
 
             let seek_range_sec: Range<f64> =
                 seek_range_sec.deserialize(&mut rkyv::Infallible).unwrap();
@@ -127,6 +130,53 @@ pub fn on_request_receive(
             for res in to_send {
                 network.send(client_id, &res);
             }
+        }
+        ArchivedRequest::FetchClipsInRange {
+            timeline_key,
+            range,
+        } => {
+            // log::info!(
+            //     "Received FetchClipsInRange request for timeline_key: {} in:{:?}",
+            //     timeline_key,
+            //     range
+            // );
+
+            let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
+
+            // クライアントの表示範囲をサーバーに記憶させる
+            network.update_client_view(client_id, *timeline_key, range.clone());
+
+            let project_arc = app_state.project.clone();
+            drop(app_state);
+
+            // 範囲内のクリップ送信（読み取りのみなので read ロック）
+            let lock = project_arc.read_or_err()?;
+            let project = lock.as_ref().ok_or(EsotereelError::InvalidTimeline)?;
+            let timeline = project
+                .timeline(*timeline_key)
+                .ok_or(EsotereelError::InvalidTimeline)?;
+
+            let clips = timeline
+                .query_range(range)
+                .into_iter()
+                .map(|(layer, clip)| (layer.id, clip.clone()))
+                .collect();
+
+            network.send(
+                client_id,
+                &Response::UpdateClip {
+                    timeline_id: *timeline_key,
+                    clips,
+                },
+            );
+        }
+        ArchivedRequest::DebugFetchProjectStruct => {
+            let mut lock = app_state.project.write_or_err()?;
+            let project = lock.as_mut().unwrap();
+
+            let str = format!("{:#?}", project);
+
+            network.send(client_id, &&Response::DebugProjectStruct(str));
         }
     }
     Ok(())

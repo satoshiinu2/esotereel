@@ -1,12 +1,10 @@
 use std::sync::{Arc, OnceLock, RwLock, atomic::AtomicU32};
+use tokio::sync::Notify;
 
 use std::sync::atomic::Ordering;
 
+use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::project::Project;
-use crate::{
-    decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer},
-    project::model::ProjectModel,
-};
 use dashmap::DashMap;
 
 pub mod decode;
@@ -68,6 +66,8 @@ pub struct ServerState {
     pub path_to_stream: Arc<DashMap<String, StreamState>>,
     pub streams: Arc<DashMap<u32, VideoStreamer>>,
     pub next_resource_id: Arc<AtomicU32>,
+
+    pub dirty_signal: Arc<Notify>,
 }
 
 impl ServerState {
@@ -77,6 +77,7 @@ impl ServerState {
             path_to_stream: Arc::new(DashMap::new()),
             streams: Arc::new(DashMap::new()),
             next_resource_id: Arc::new(AtomicU32::new(0)),
+            dirty_signal: Arc::new(Notify::new()),
         }
     }
     pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {

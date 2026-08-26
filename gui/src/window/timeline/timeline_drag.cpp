@@ -1,33 +1,77 @@
-#include "../../util.h"
-#include "../../wrapper/network.h"
-#include "../../wrapper/project/clip.h"            // IWYU pragma: keep
-#include "../../wrapper/project/layer.h"           // IWYU pragma: keep
-#include "../../wrapper/project/layer_clips.h"     // IWYU pragma: keep
-#include "../../wrapper/project/project.h"         // IWYU pragma: keep
-#include "../../wrapper/project/timeline.h"        // IWYU pragma: keep
-#include "../../wrapper/project/timeline_layers.h" // IWYU pragma: keep
-#include "../../wrapper/requests.h"
-#include "../main.h"
-#include "esotereel_gui_helper.h"
 #include "timeline.h"
-#include <QColor>
-#include <QEvent>
-#include <QPainter>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <optional>
+#include "util.h"
+#include "wrapper/network.h"
+#include "wrapper/requests.h"
 
-std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &project, const Timeline &timeline,
-                                                           const QPoint &mousePos, bool ctrl) {
-    int64_t frame = this->XToFrame(mousePos.x());
+namespace {
 
-    auto [clip, layerIdx] = this->findClipAt(project, timeline, mousePos);
+// レイヤーIDから、Timeline::layerIdAtRootIndex() 上でのインデックスを逆引きする。
+// 見つからない場合は0を返す(呼び出し元は全てこの挙動を前提にしている)。
+size_t layerIndexOf(const Timeline &timeline, uint64_t layerId) {
+    for (size_t i = 0; i < timeline.layersCount(); i++) {
+        if (timeline.layerIdAtRootIndex(i) == layerId) {
+            return i;
+        }
+    }
+    return 0;
+}
+
+// ドラッグ移動量(frameMoved/layerMoved)を1クリップに適用した結果の移動先。
+struct ClipDropTarget {
+    size_t targetLayerIdx;
+    uint64_t targetLayerId;
+    int64_t newPosition;
+    int64_t duration;
+};
+
+// clipIdの移動先を計算する。クリップが見つからない場合はnullopt。
+std::optional<ClipDropTarget> computeDropTarget(const Timeline &timeline, uint64_t clipId, int64_t frameMoved,
+                                                int32_t layerMoved) {
+    auto [clip, layerId] = timeline.findClipById(clipId);
     if (!clip.isValid()) {
         return std::nullopt;
     }
 
-    // range check]
+    size_t currentLayerIdx = layerIndexOf(timeline, layerId);
+    size_t targetLayerIdx = currentLayerIdx + layerMoved;
+
+    return ClipDropTarget{
+        targetLayerIdx,
+        timeline.layerIdAtRootIndex(targetLayerIdx),
+        clip.position() + frameMoved,
+        clip.duration(),
+    };
+}
+
+} // namespace
+
+// 選択中の全クリップが、指定した移動量の位置に配置可能かどうかを判定する。
+// handleClipDragContinue(ドラッグ中の可否表示)とdrawDragGhost(ゴーストの色分け)で共有。
+bool TimelineWidget::canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, int32_t layerMoved) const {
+    for (uint64_t clipId : this->selectedClipIds) {
+        auto target = computeDropTarget(timeline, clipId, frameMoved, layerMoved);
+        if (!target) {
+            continue;
+        }
+        if (!timeline.canPlaceClipAt(target->targetLayerId, target->newPosition, target->duration,
+                                     this->selectedClipIds)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &project, const QPoint &mousePos,
+                                                           bool ctrl) {
+    int64_t frame = this->XToFrame(mousePos.x());
+
+    auto [clip, layerId] = this->findClipAt(project, mousePos);
+    if (!clip.isValid()) {
+        return std::nullopt;
+    }
+
+    auto timeline = project.timelineOf(this->timelineIdx);
+    size_t layerIdx = layerIndexOf(timeline, layerId);
 
     if (!contains(this->selectedClipIds, clip.id())) {
         if (!ctrl) {
@@ -41,49 +85,30 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &projec
     return DragClip{layerIdx, frame, layerIdx, frame, mousePos, false};
 }
 
-void TimelineWidget::handleClipDragContinue(const Timeline &timeline, const QPoint &mousePos) {
-    int64_t frame = this->XToFrame(mousePos.x());
-    ssize_t layerIdx = this->YToRow(mousePos.y());
+void TimelineWidget::handleClipDragContinue(const Project &project, const QPoint &mousePos) {
+    auto timeline = project.timelineOf(this->timelineIdx);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {
         return;
     }
 
-    drag->curFrame = frame;
-    drag->curLayerIdx = layerIdx;
+    drag->curFrame = this->XToFrame(mousePos.x());
+    drag->curLayerIdx = this->YToRow(mousePos.y());
     drag->ghostPos = mousePos;
 
-    // ovetlap check
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
     int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
-    drag->isWrong = false;
-    for (uint64_t clipid : this->selectedClipIds) {
-        auto [clip, layerIdx] = timeline.findClipById(clipid);
-        if (!clip.isValid()) {
-            continue;
-        }
+    drag->isWrong = !canDropSelectedClipsAt(timeline, frameMoved, layerMoved);
 
-        uint32_t targetLayerIdx = (layerIdx + layerMoved);
-        int64_t newClipPosition = clip.position() + frameMoved;
-
-        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition, clip.duration(), this->selectedClipIds)) {
-            auto *clipDragState = std::get_if<DragClip>(&this->dragState);
-            if (!clipDragState) {
-                return;
-            }
-            clipDragState->isWrong = true;
-            goto finalize;
-        }
-    }
-
-finalize:
     update();
 }
 
-void TimelineWidget::handleClipDraggingDrop(const Timeline &timeline, const QPoint &mousePos) {
-    handleClipDragContinue(timeline, mousePos);
+void TimelineWidget::handleClipDraggingDrop(const Project &project, const QPoint &mousePos) {
+    auto timeline = project.timelineOf(this->timelineIdx);
+
+    handleClipDragContinue(project, mousePos);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {
@@ -92,20 +117,12 @@ void TimelineWidget::handleClipDraggingDrop(const Timeline &timeline, const QPoi
 
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
     int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
-    // range and overrap check
-    for (uint64_t clipId : this->selectedClipIds) {
-        auto [clip, layerIdx] = timeline.findClipById(clipId);
-        if (!clip.isValid()) {
-            continue;
-        }
-        uint32_t targetLayerIdx = (layerIdx + layerMoved);
-        int64_t newClipPosition = clip.position() + frameMoved;
-        if (!timeline.canPlaceClipAt(targetLayerIdx, newClipPosition, clip.duration(), this->selectedClipIds)) {
-            goto send_drop;
-        }
-    }
 
-send_drop:
+    // NOTE: 元実装では配置可否をここでも再チェックしていましたが、結果に関わらず
+    // 常に同じ場所へ処理が合流し moveClips を送信していたため、判定自体は
+    // ドロップの可否に影響していませんでした(handleClipDragContinue内の
+    // drag->isWrong 表示のみが実質的な可否フィードバックです)。
+    // 挙動は変えず、意味の無い重複ループのみ削除しています。
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->windowState.network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
@@ -114,46 +131,35 @@ send_drop:
     update();
 }
 
-void TimelineWidget::drawDragGhost(const Timeline &timeline, QPainter &p, const QRect &r) const {
+void TimelineWidget::drawDragGhost(const Project &project, QPainter &p, const QRect &r) const {
+    auto timeline = project.timelineOf(this->timelineIdx);
+
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {
         return;
     }
 
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
-    int64_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
-    // range and overrap check
+    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+
+    QColor bgColor = drag->isWrong ? QColor(180, 70, 70, 180) : QColor(70, 130, 180, 180);
+    QColor strokeColor = drag->isWrong ? QColor(255, 120, 120) : QColor(150, 200, 255);
+
     for (uint64_t clipId : this->selectedClipIds) {
-        auto [clip, layerIdx] = timeline.findClipById(clipId);
-        if (!clip.isValid()) {
+        auto target = computeDropTarget(timeline, clipId, frameMoved, layerMoved);
+        if (!target) {
             continue;
         }
-        size_t targetLayerIdx = (layerIdx + layerMoved);
-        int64_t newClipPosition = clip.position() + frameMoved;
-
-        // range check
-        if (targetLayerIdx >= timeline.layersCount()) {
+        // range check: 移動先レイヤーが存在しない場合は描画しない
+        if (target->targetLayerIdx >= timeline.layersCount()) {
             continue;
         }
 
-        int redius = 3;
-        double_t w = clip.duration() * this->zoom;
-        double_t x = r.left() + this->frameToX(newClipPosition);
-        double_t y = r.top() + this->rowToY(targetLayerIdx);
+        double_t w = target->duration * this->zoom;
+        double_t x = r.left() + this->frameToX(target->newPosition);
+        double_t y = r.top() + this->rowToY(target->targetLayerIdx);
 
         QRect ghostRect(x, y + 2.0, w, LAYER_HEIGHT - 4.0);
-        QColor bgColor;
-        if (drag->isWrong) {
-            bgColor = QColor(180, 70, 70, 180);
-        } else {
-            bgColor = QColor(70, 130, 180, 180);
-        };
-        QColor strokeColor;
-        if (drag->isWrong) {
-            strokeColor = QColor(255, 120, 120);
-        } else {
-            strokeColor = QColor(150, 200, 255);
-        };
 
         p.setBrush(bgColor);
         p.setPen(QPen(strokeColor, 1));

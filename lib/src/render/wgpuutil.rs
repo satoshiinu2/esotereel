@@ -1,12 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use wgpu::ExperimentalFeatures;
 
-use crate::render::{
-    pipeline::WgpuRenderResources,
-    surfacetarget::{self, SurfaceTarget},
-};
+use crate::render::{pipeline::WgpuRenderResources, surfacetarget::SurfaceTarget};
 
 pub enum RenderTarget<'a> {
     Surface(&'a wgpu::Surface<'static>),

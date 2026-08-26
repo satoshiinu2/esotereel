@@ -2,24 +2,29 @@ use rkyv::{
     Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
-use crate::project::{ids::TimelineId, transform::ClipTranslates};
+use crate::project::{
+    Tick,
+    ids::{ClipId, ScriptId, TimelineId},
+    transform::ClipTranslates,
+};
 
 #[derive(Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Clip {
-    pub id: u64,
-    pub position: i64,
-    pub duration: i64,
+    pub id: ClipId,
+    pub position: Tick,
+    pub duration: Tick,
     pub data: ClipData,
     pub translates: ClipTranslates,
 }
 
 impl Clip {
     pub fn new(
-        id: u64,
-        position: i64,
-        duration: i64,
+        id: ClipId,
+        position: Tick,
+        duration: Tick,
         clip_data: ClipData,
         translates: ClipTranslates,
     ) -> Self {
@@ -41,15 +46,70 @@ impl Clip {
     }
 }
 
+/// Compositionへの参照。Mirrorは複数Clipが同じTimelineIdを共有し、
+/// Independentはこのclip専用のprivate Timelineを指す。
+#[derive(
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+#[archive_attr(derive(CheckBytes))]
+pub enum CompositionRef {
+    Mirror(TimelineId),
+    Independent(TimelineId),
+}
+
+impl CompositionRef {
+    pub fn timeline_id(&self) -> TimelineId {
+        match self {
+            CompositionRef::Mirror(id) | CompositionRef::Independent(id) => *id,
+        }
+    }
+}
+
+/// Scriptに渡すパラメータ。今はプレースホルダー。
+/// rhai等のスクリプトエンジンと繋ぐ際に型を差し替える想定。
+#[derive(
+    Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone, Default,
+)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ScriptParams(pub BTreeMap<String, String>);
+
 #[derive(Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub enum ClipData {
     Dummy,
-    Video { path: String, media_offset: f64 },
-    Audio { path: String, media_offset: f64 },
-    Composite { timeline_id: Option<TimelineId> },
-    Area2D { timeline_id: Option<TimelineId> },
-    Area3D { timeline_id: Option<TimelineId> },
+    Video {
+        path: String,
+        media_offset: f64,
+    },
+    Audio {
+        path: String,
+        media_offset: f64,
+    },
+    Composite {
+        source: CompositionRef,
+    },
+    Area2D {
+        source: CompositionRef,
+    },
+    Area3D {
+        source: CompositionRef,
+    },
+    /// スクリプトが生成した構造の出力先Timeline。
+    /// 初回評価前はNone、評価後にTimelineIdが入る。
+    Script {
+        script_id: ScriptId,
+        params: ScriptParams,
+        generated: Option<TimelineId>,
+    },
 }
 
 impl ClipData {
@@ -64,6 +124,18 @@ impl ClipData {
             return media_offset;
         }
         (relative_frame as f64 / global_fps) + media_offset
+    }
+
+    /// このClipが下位Timelineを参照している場合、そのidを返す。
+    /// Composite/Area2D/Area3D/Script(生成済み)すべてで共通に使える。
+    pub fn nested_timeline_id(&self) -> Option<TimelineId> {
+        match self {
+            ClipData::Composite { source }
+            | ClipData::Area2D { source }
+            | ClipData::Area3D { source } => Some(source.timeline_id()),
+            ClipData::Script { generated, .. } => *generated,
+            _ => None,
+        }
     }
 }
 

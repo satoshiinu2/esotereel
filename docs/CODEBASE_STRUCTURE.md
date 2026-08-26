@@ -109,6 +109,7 @@ guihlp/
 │       ├── internalserver.rs # Internal server management
 │       ├── logger.rs     # Logging integration
 │       ├── network.rs    # Network wrappers
+│       ├── render.rs     # Render frame FFI wrapper
 │       ├── stringview.rs # String view utilities
 │       ├── wgpuutil.rs   # WebGPU utilities
 │       └── project/
@@ -144,6 +145,12 @@ guihlp/
 - Command pattern implementation for FFI
 - Type-safe command execution
 - Error handling and validation
+
+#### `wrapper/render.rs`
+- FFI wrapper for render_frame_offscreen
+- Safe interface to GPU rendering
+- Error handling with panic recovery
+- Output buffer management
 
 ## Core Component (`core/`)
 
@@ -204,22 +211,18 @@ lib/
     ├── responces.rs          # Response type definitions
     ├── project/
     │   ├── mod.rs            # Project module exports
-    │   ├── clip.rs           # Clip data structures
     │   ├── camera.rs         # Camera implementation
+    │   ├── change.rs         # Change tracking for synchronization
+    │   ├── chunk_index.rs    # Spatial index for clip queries
+    │   ├── clip.rs           # Clip data structures
     │   ├── commands.rs       # Command definitions
     │   ├── ids.rs            # ID generation and management
+    │   ├── layer.rs          # Layer data structures
+    │   ├── project.rs        # Project runtime implementation
     │   ├── save.rs           # Project save/load
+    │   ├── timeline.rs       # Timeline runtime implementation
     │   ├── transform.rs      # Transform data structures
-    │   ├── util.rs           # Project utilities
-    │   ├── model/
-    │   │   ├── mod.rs        # Model module exports
-    │   │   ├── project.rs    # Project domain model
-    │   │   ├── timeline.rs   # Timeline domain model
-    │   │   └── layer.rs     # Layer domain model
-    │   └── runtime/
-    │       ├── mod.rs        # Runtime module exports
-    │       ├── timeline.rs   # Runtime timeline
-    │       └── clip_index.rs # Clip spatial index
+    │   └── util.rs           # Project utilities
     ├── render/
     │   ├── mod.rs            # Render module exports
     │   ├── builder.rs        # Vertex building
@@ -274,23 +277,39 @@ lib/
 - Transform data
 - Time calculation utilities
 
-#### `project/model/project.rs`
-- ProjectModel domain model
-- Timeline management
-- ID generation
-- Serialization support
+#### `project/project.rs`
+- Project runtime implementation
+- Timeline management with BTreeMap
+- ID generation and observation
+- Independent timeline creation (deep clone)
+- Change set collection and propagation
+- Timeline metadata for ProjectAll sync
 
-#### `project/model/timeline.rs`
-- TimelineModel domain model
-- Layer management
-- Clip creation and management
-- Order-based layer organization
+#### `project/timeline.rs`
+- Timeline runtime implementation
+- Layer hierarchy management (folder support)
+- Clip storage and positioning
+- Change tracking (ChangeSet)
+- ChunkIndex for spatial queries
+- Clip overlap detection
+- Range queries for visible clips
+- Network sync support (merge_fetched_clips, upsert_clip_from_network)
 
-#### `project/runtime/mod.rs`
-- Runtime project implementation
-- Timeline management
-- Model conversion (runtime ↔ domain)
-- ID management
+#### `project/layer.rs`
+- Layer data structures
+- Folder hierarchy support (children)
+- Clip position tracking (BTreeMap)
+- Layer metadata for network sync
+
+#### `project/change.rs`
+- Change tracking for synchronization
+- ChangeSet with upserted/removed clip tracking
+- Change merging for nested timeline propagation
+
+#### `project/chunk_index.rs`
+- Spatial index for efficient time-range queries
+- Chunk-based clip lookup
+- Lazy rebuilding when invalidated
 
 #### `render/mod.rs`
 - Main render function: `render_frame_offscreen`

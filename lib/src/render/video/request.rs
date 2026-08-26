@@ -22,11 +22,10 @@ pub fn request_stream_packets_for_time(
 ) -> Vec<Request> {
     timeline
         .iter_layers()
-        .filter_map(|layer| layer.1.clips.range(frame_range.clone()).next())
+        .filter_map(|(&layer_id, _)| timeline.get_clip_at(layer_id, frame_range.start))
         .filter_map(|clip| collect_request_for_clip(timeline, app_state, clip, frame_range.clone()))
         .collect()
 }
-
 fn collect_request_for_clip(
     timeline: &Timeline,
     app_state: &ClientState,

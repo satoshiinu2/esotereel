@@ -16,12 +16,13 @@ pub enum EsotereelError {
     ProjectNotFound,
     TimelineNotFound(usize),
     LayerNotFound,
+    DuplicateLayerId(u64),
     ClipNotFound(u64),
     StreamNotFound(u32),
     InvalidTimeline,
     InvalidCommand,
     ClipOverlap,
-    DuplicateLayerOrder,
+    InvalidLayerMove,
 }
 
 impl fmt::Display for EsotereelError {
@@ -34,12 +35,13 @@ impl fmt::Display for EsotereelError {
             EsotereelError::ProjectNotFound => write!(f, "Project not found"),
             EsotereelError::TimelineNotFound(idx) => write!(f, "Timeline {} not found", idx),
             EsotereelError::LayerNotFound => write!(f, "Layer not found"),
+            EsotereelError::DuplicateLayerId(id) => write!(f, "Duplicate layer ID {}", id),
             EsotereelError::ClipNotFound(id) => write!(f, "Clip {} not found", id),
             EsotereelError::StreamNotFound(id) => write!(f, "Stream {} not found", id),
             EsotereelError::InvalidTimeline => write!(f, "Invalid timeline"),
             EsotereelError::InvalidCommand => write!(f, "Invalid command"),
             EsotereelError::ClipOverlap => write!(f, "Clip overlap"),
-            EsotereelError::DuplicateLayerOrder => write!(f, "Duplicate layer order"),
+            EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),
         }
     }
 }

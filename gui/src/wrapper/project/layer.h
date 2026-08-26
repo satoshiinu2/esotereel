@@ -13,6 +13,8 @@ struct WrapperResult;
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
 
+class Timeline; // Forward declaration
+
 class Layer {
   public:
     const RawLayer *raw_ptr;
@@ -21,13 +23,13 @@ class Layer {
 
     size_t clipsCount() const noexcept;
 
-    ClipsIterable clips() const noexcept;
+    ClipsIterable clips(const Timeline &timeline) const noexcept;
 
     bool isValid() const noexcept {
         return raw_ptr != nullptr;
     }
 
-    Clip findClipAtFrame(int64_t frame) const noexcept;
+    Clip findClipAtFrame(int64_t frame, const Timeline &timeline) const noexcept;
 
     QString name() const noexcept;
 };

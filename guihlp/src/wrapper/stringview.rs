@@ -1,4 +1,5 @@
-use crate::slice_from_ptr_safe;
+use crate::slice_from_ptr_or_empty;
+use std::borrow::Cow;
 
 #[repr(C)]
 pub struct StringView {
@@ -25,20 +26,20 @@ impl StringView {
         }
     }
 
-    pub fn as_str<'a>(&self) -> Option<&'a str> {
+    pub fn as_str(&self) -> Option<&str> {
         if self.ptr.is_null() {
             return None;
         }
-        let slice = unsafe { slice_from_ptr_safe(self.ptr, self.len) };
+        let slice = unsafe { slice_from_ptr_or_empty(self.ptr, self.len) };
         std::str::from_utf8(slice).ok()
     }
 
-    pub fn as_string_lossy<'a>(&self) -> String {
+    pub fn as_string_lossy(&self) -> Cow<'_, str> {
         if self.ptr.is_null() {
-            return String::new();
+            return Cow::Owned(String::new());
         }
-        let slice = unsafe { slice_from_ptr_safe(self.ptr, self.len) };
-        String::from_utf8_lossy(slice).into_owned()
+        let slice = unsafe { slice_from_ptr_or_empty(self.ptr, self.len) };
+        String::from_utf8_lossy(slice)
     }
 
     pub fn is_null(&self) -> bool {
@@ -58,7 +59,7 @@ impl From<StringView> for String {
     where
         Self: Sized,
     {
-        StringView::as_string_lossy(&value)
+        StringView::as_string_lossy(&value).into_owned()
     }
 }
 

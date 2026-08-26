@@ -7,8 +7,11 @@
 Project::Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr(p) {}
 
 Project::~Project() {
+    // RAII: Ensure lock is released even if exception occurs
     if (guard_ptr) {
         esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+        guard_ptr = nullptr;
+        project_ptr = nullptr;
     }
 }
 
@@ -21,7 +24,7 @@ Project::Project(Project &&other) noexcept : guard_ptr(other.guard_ptr), project
 // 移動代入演算子の実装
 Project &Project::operator=(Project &&other) noexcept {
     if (this != &other) {
-        // 既存のガードを解放
+        // 既存のガードを解放（例外安全のため）
         if (guard_ptr) {
             esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
         }
@@ -58,6 +61,7 @@ esotereel_gui_helper::Result<Project> Project::byGuard(const void *guard_ptr) {
     auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
     
     if (result != WrapperErrorCode::Ok) {
+        // Clean up guard on error
         esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
         return wrapperResultToResult<Project>(result, Project::invalid());
     }

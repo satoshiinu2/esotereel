@@ -1,20 +1,8 @@
-#include "../../wrapper/project/clip.h"             // IWYU pragma: keep
-#include "../../wrapper/project/clip_render_info.h" // IWYU pragma: keep
-#include "../../wrapper/project/layer.h"            // IWYU pragma: keep
-#include "../../wrapper/project/layer_clips.h"      // IWYU pragma: keep
-#include "../../wrapper/project/timeline.h"         // IWYU pragma: keep
-#include "esotereel_gui_helper.h"
 #include "timeline.h"
-#include <QEvent>
-#include <cmath>
-#include <cstdint>
-#include <optional>
-#include <qpainter.h>
-#include <qpoint.h>
 
 // return true if selected
-bool TimelineWidget::handleSelectClip(const Project &project, Timeline &timeline, const QPoint &mousePos, bool ctrl) {
-    auto [clip, layerIdx] = this->findClipAt(project, timeline, mousePos);
+bool TimelineWidget::handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl) {
+    auto [clip, layerId] = this->findClipAt(project, mousePos);
     if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();
@@ -62,21 +50,23 @@ void TimelineWidget::handleAreaSelContinue(const QPoint &mousePos) {
     update();
 }
 
-void TimelineWidget::handleAreaSelEnd(const Project &project, const Timeline &timeline) {
+void TimelineWidget::handleAreaSelEnd(const Project &project) {
     auto *sel = std::get_if<DragAreaSel>(&this->dragState);
     if (!sel) {
         return;
     }
 
-    QRect selRect(sel->start.toPoint(), sel->current.toPoint());
+    QRect selRect = QRect(sel->start.toPoint(), sel->current.toPoint()).normalized();
+
+    std::unique_ptr<RenderRows> &rr = this->cachedRows;
+    if (!rr) {
+        return;
+    }
 
     // TODO: optimize
-    const RenderRows &rr = getRows(project, timeline);
     size_t layerIdx = 0;
-    for (auto const &row : rr.rows()) {
-        size_t clipIdx = 0;
-        for (auto const &info : rr.clipsFor(row)) {
-
+    for (auto const &row : rr->rows()) {
+        for (auto const &info : rr->clipsFor(row)) {
             double_t clipXStart = this->frameToX(info.abs_frame);
             double_t clipXEnd = this->frameToX(info.abs_frame + info.duration);
             double_t clipYStart = this->rowToY(layerIdx);
@@ -87,7 +77,6 @@ void TimelineWidget::handleAreaSelEnd(const Project &project, const Timeline &ti
             if (selRect.intersects(clip_rect)) {
                 this->selectedClipIds.insert(info.clip_id);
             }
-            clipIdx++;
         }
         layerIdx++;
     }

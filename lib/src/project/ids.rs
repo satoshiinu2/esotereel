@@ -1,11 +1,17 @@
-use rkyv::{Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck};
+use rkyv::{
+    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+};
 use serde::{Deserialize, Serialize};
 
 pub type TimelineId = u64;
 pub type LayerId = u64;
 pub type ClipId = u64;
+pub type ScriptId = u64;
+pub type ResourceId = u32;
 
-#[derive(Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Default, Clone)]
+#[derive(
+    Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Default, Clone,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct IdGenerator {
     next_timeline: TimelineId,

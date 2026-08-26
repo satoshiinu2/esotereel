@@ -1,21 +1,6 @@
-#include "../../util.h"
-#include "../../wrapper/network.h"
-#include "../../wrapper/project/clip_render_info.h" // IWYU pragma: keep
-#include "../../wrapper/project/project.h"          // IWYU pragma: keep
-#include "../../wrapper/project/timeline.h"         // IWYU pragma: keep
-#include "../../wrapper/project/timeline_layers.h"  // IWYU pragma: keep
-#include "../../wrapper/result.h"
-#include "../main.h"
-#include "esotereel_gui_helper.h"
 #include "timeline.h"
-#include <QBrush>
-#include <QColor>
-#include <QLine>
-#include <QPainter>
-#include <QVariant>
-#include <QWidget>
-#include <cmath>
-#include <cstdint>
+#include "util.h"
+#include "wrapper/network.h"
 
 QRect TimelineWidget::getInnerRect() const noexcept {
     QRect innerRect = rect();
@@ -24,53 +9,70 @@ QRect TimelineWidget::getInnerRect() const noexcept {
     return innerRect;
 }
 
-void TimelineWidget::drawLayers(const Project &project, const Timeline &timeline, QPainter &p, const QRect &r) const {
+void TimelineWidget::drawLayers(const Project &project, QPainter &p, const QRect &r) const {
     QRect bgRect = getInnerRect();
     bgRect.setLeft(0);
     QRect innerRect = getInnerRect();
-    const RenderRows &rr = getRows(project, timeline);
+
+    std::unique_ptr<RenderRows> &rr = this->cachedRows;
+    if (!rr) {
+        return;
+    }
 
     size_t rowIdx = 0;
-    for (auto const &row : rr.rows()) {
+    for (auto const &row : rr->rows()) {
         p.setClipRect(bgRect);
         double_t y = r.top() + this->rowToY(rowIdx);
 
         // コンテンツ背景
         QRect contentArea(r.left() + LABEL_WIDTH, y, r.width() - LABEL_WIDTH, LAYER_HEIGHT);
-        QColor contentColor = (rowIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
-        if (contentColor.lightness() < 128) {
-            contentColor = contentColor.lighter(150);
-        } else {
-            contentColor = contentColor.darker(125);
-        }
-        p.fillRect(contentArea, contentColor);
-
-        // レイヤーラベル
-        QRect labelRect(r.left(), y, LABEL_WIDTH, LAYER_HEIGHT);
-        p.fillRect(labelRect, getLabelBgColor());
-
-        // インデント + Composite▶▼
-        int textX = r.left() + 4 + row.depth * INDENT_WIDTH;
-        QString label;
-        // if (row.is_composite) {
-        //     label = (row.is_open ? "▼ " : "▶ ");
-        // }
-        label += QString("Layer %1").arg(row.layer_order);
-
-        QRect textRect(textX, y, LABEL_WIDTH - textX, LAYER_HEIGHT);
-        p.setPen(palette().text().color());
-        p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, label);
+        p.fillRect(contentArea, rowContentBackgroundColor(rowIdx));
 
         // クリップ描画
-        for (auto const &clip : rr.clipsFor(row)) {
+        for (auto const &clip : rr->clipsFor(row)) {
             drawClip(clip, p, r, y);
         }
+
+        // レイヤーラベル
+        drawRowLabel(project, row, p, r, y);
+
         rowIdx++;
     }
 
     p.setPen(palette().mid().color());
     p.drawLine(r.left() + LABEL_WIDTH, r.top(), r.left() + LABEL_WIDTH, r.bottom());
     p.setClipping(false);
+}
+
+// 行の縞模様の背景色。paletteの基準色を、明暗どちらのテーマでも
+// 視認しやすい方向にlighter/darkerで補正する。
+QColor TimelineWidget::rowContentBackgroundColor(size_t rowIdx) const noexcept {
+    QColor contentColor = (rowIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
+    if (contentColor.lightness() < 128) {
+        contentColor = contentColor.lighter(150);
+    } else {
+        contentColor = contentColor.darker(125);
+    }
+    return contentColor;
+}
+
+// レイヤーラベル領域(背景・インデント・フォルダーの開閉矢印・名前)を1行分描画する。
+void TimelineWidget::drawRowLabel(const Project &project, const FfiLayerRow &row, QPainter &p, const QRect &r,
+                                  double_t y) const {
+    QRect labelRect(r.left(), y, LABEL_WIDTH, LAYER_HEIGHT);
+    p.fillRect(labelRect, getLabelBgColor());
+
+    // インデント + フォルダー▶▼
+    int textX = r.left() + 4 + row.depth * INDENT_WIDTH;
+    QString label;
+    if (row.is_folder) {
+        label = (row.is_folder_open ? QStringLiteral("\u25BC ") : QStringLiteral("\u25B6 "));
+    }
+    label += project.timelineOf(this->timelineIdx).layerById(row.layer_id).name();
+
+    QRect textRect(textX, y, LABEL_WIDTH - textX, LAYER_HEIGHT);
+    p.setPen(palette().text().color());
+    p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, label);
 }
 
 void TimelineWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const {
@@ -139,8 +141,6 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
         p.setPen(palette().windowText().color());
 
         QString text = QString::number(frame);
-        QPointF pos(x + 2.0, r.top() + 4.0);
-
         QRectF textRect(x + 2.0, r.top(), 100.0, RULER_HEIGHT);
         p.drawText(textRect, Qt::AlignTop | Qt::AlignLeft, text);
     }
@@ -148,6 +148,8 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
 
 void TimelineWidget::paintEvent(QPaintEvent *e) {
     QWidget::paintEvent(e);
+
+    this->updateSnapshot();
 
     QPainter p(this);
     QRect r = rect();
@@ -157,8 +159,10 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    auto projectResult = windowState.network->getProject();
+    auto projectResult = this->windowState.network->getProject();
     if (projectResult.isError()) {
+        // Lock is busy - skip project rendering and continue with basic UI elements
+        // This prevents UI deadlock when network thread holds write lock
         // 選択エリア
         this->drawSelectionRect(p, r);
 
@@ -167,13 +171,12 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
         return;
     }
     auto project = projectResult.unwrapOrMove();
-    Timeline timeline = project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
-    if (timeline.isValid()) {
+    if (project.isValid()) {
         // レイヤーラベルと区切り線
-        this->drawLayers(project, timeline, p, r);
+        this->drawLayers(project, p, r);
 
         // ゴースト
-        this->drawDragGhost(timeline, p, r);
+        this->drawDragGhost(project, p, r);
     }
     // 選択エリア
     this->drawSelectionRect(p, r);

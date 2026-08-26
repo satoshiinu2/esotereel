@@ -8,21 +8,23 @@
 namespace esotereel_gui_helper {
 struct Layer;
 struct Clip;
-struct ClipIterator;
-struct WrapperResult;
+struct Timeline;
 } // namespace esotereel_gui_helper
 
 using RawLayer = esotereel_gui_helper::Layer;
 using RawClip = esotereel_gui_helper::Clip;
-using RawClipIterator = esotereel_gui_helper::ClipIterator;
+using RawTimeline = esotereel_gui_helper::Timeline;
+
+class Timeline; // Forward declaration
 
 class ClipsIterator {
-    RawClipIterator *raw_iter_ptr;
+    const RawLayer *raw_layer_ptr;
+    const RawTimeline *timeline_ptr;
     const RawClip *raw_cur_ptr;
+    size_t current_index;
+    size_t total_count;
 
-    static RawClipIterator *getBegin(const RawLayer *t);
-
-    static RawClipIterator *getBeginInRange(const RawLayer *t, int64_t startFrame, int64_t endFrame);
+    void initialize() noexcept;
 
   public:
     using iterator_category = std::forward_iterator_tag;
@@ -32,36 +34,42 @@ class ClipsIterator {
     using reference = ClipsIterator;
 
     // begin用
-    ClipsIterator(const RawLayer *t) noexcept : raw_iter_ptr(ClipsIterator::getBegin(t)), raw_cur_ptr(nullptr) {
-        advance();
-    }
+    ClipsIterator(const RawLayer *t, const RawTimeline *timeline) noexcept;
 
-    ClipsIterator(const RawLayer *t, int64_t startFrame, int64_t endFrame) noexcept
-        : raw_iter_ptr(ClipsIterator::getBeginInRange(t, startFrame, endFrame)), raw_cur_ptr(nullptr) {
-        advance();
-    }
+    ClipsIterator(const RawLayer *t, const RawTimeline *timeline, int64_t startFrame, int64_t endFrame) noexcept;
 
     // end用
-    ClipsIterator() noexcept : raw_iter_ptr(nullptr), raw_cur_ptr(nullptr) {}
+    ClipsIterator() noexcept : raw_layer_ptr(nullptr), timeline_ptr(nullptr), raw_cur_ptr(nullptr), current_index(0), total_count(0) {}
 
-    // コピー禁止
-    ClipsIterator(const ClipsIterator &) = delete;
-    ClipsIterator &operator=(const ClipsIterator &) = delete;
+    // コピー許可（index-basedなので安全）
+    ClipsIterator(const ClipsIterator &other) noexcept 
+        : raw_layer_ptr(other.raw_layer_ptr), timeline_ptr(other.timeline_ptr), 
+          raw_cur_ptr(other.raw_cur_ptr), current_index(other.current_index), total_count(other.total_count) {}
 
-    // Moveは許可
-    ClipsIterator(ClipsIterator &&other) noexcept : raw_iter_ptr(other.raw_iter_ptr), raw_cur_ptr(other.raw_cur_ptr) {
-        other.raw_iter_ptr = nullptr;
+    ClipsIterator &operator=(const ClipsIterator &other) noexcept {
+        if (this != &other) {
+            raw_layer_ptr = other.raw_layer_ptr;
+            timeline_ptr = other.timeline_ptr;
+            raw_cur_ptr = other.raw_cur_ptr;
+            current_index = other.current_index;
+            total_count = other.total_count;
+        }
+        return *this;
     }
 
     void advance() noexcept;
 
     ClipsIterator &operator++() noexcept {
-        advance(); // 内部で free まで完結させる
+        advance();
         return *this;
     }
 
     bool operator!=(const ClipsIterator &other) const noexcept {
         return raw_cur_ptr != other.raw_cur_ptr;
+    }
+
+    bool operator==(const ClipsIterator &other) const noexcept {
+        return raw_cur_ptr == other.raw_cur_ptr;
     }
 
     Clip operator*() const noexcept {
@@ -74,9 +82,10 @@ class ClipsIterator {
 
 class ClipsIterable {
     const RawLayer *raw_ptr;
+    const RawTimeline *timeline_ptr;
 
   public:
-    ClipsIterable(const RawLayer *p) noexcept : raw_ptr(p) {}
+    ClipsIterable(const RawLayer *p, const Timeline &timeline) noexcept;
     bool isValid() const noexcept {
         return raw_ptr != nullptr;
     }
@@ -85,11 +94,16 @@ class ClipsIterable {
 
     // forループの開始点
     ClipsIterator begin() const noexcept {
-        return ClipsIterator(raw_ptr);
+        return ClipsIterator(raw_ptr, timeline_ptr);
     }
 
     // forループの終点
     ClipsIterator end() const noexcept {
         return ClipsIterator();
+    }
+
+    // 範囲指定イテレータ
+    ClipsIterator range(int64_t startFrame, int64_t endFrame) const noexcept {
+        return ClipsIterator(raw_ptr, timeline_ptr, startFrame, endFrame);
     }
 };

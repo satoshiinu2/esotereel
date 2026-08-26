@@ -16,4 +16,13 @@ include = ["esotereel_lib"]
 "Mat4" = "QMatrix4x4"
 
 [export]
-include = ["NativeWindowHandle"]
+include = [
+    "NativeWindowHandle",
+    "TimelineId",
+    "ClipId",
+    "LayerId",
+    "ScriptId",
+    "Clip",
+    "Project",
+    "Timeline",
+]

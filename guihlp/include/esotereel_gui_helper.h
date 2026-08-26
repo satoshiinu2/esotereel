@@ -42,8 +42,9 @@ struct ClientNetworkHandler;
 
 struct Clip;
 
-struct ClipIterator;
-
+/// レイヤーには特定の役割を持たせない(Video/Audio/Effectで型を分けない)。
+/// children があれば Folder として振る舞う。実行時にフラット化するかは
+/// executor 側の責務で、データ構造上は葉レイヤーと区別しない。
 struct Layer;
 
 struct OffscreenTarget;
@@ -65,6 +66,8 @@ struct GuiCallbacks {
 
 using OnConnectedFn = void(*)();
 
+using LayerId = uint64_t;
+
 struct StringView {
   const uint8_t *ptr;
   uintptr_t len;
@@ -75,8 +78,11 @@ using OnServerReadyFn = void(*)(bool);
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
 
 struct FfiLayerRow {
-  uint32_t layer_order;
+  LayerId layer_id;
+  TimelineId timeline_id;
   uint32_t depth;
+  bool is_folder;
+  bool is_folder_open;
   uint32_t clip_start;
   uint32_t clip_count;
 };
@@ -98,11 +104,17 @@ struct CameraInfo {
   float fov;
 };
 
+using Tick = int64_t;
+
 struct NativeWindowHandle {
   PlatformKind kind;
   void *window_ptr;
   void *display_ptr;
 };
+
+using ClipId = uint64_t;
+
+using ScriptId = uint64_t;
 
 extern "C" {
 
@@ -125,7 +137,16 @@ WrapperErrorCode req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
 WrapperErrorCode req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
                                         TimelineId timeline_id,
                                         int64_t position,
-                                        uint32_t layer_order);
+                                        LayerId layer_id);
+
+WrapperErrorCode req_cmd_add_layer(const ClientNetworkHandler *ptr_network,
+                                   TimelineId timeline_id,
+                                   bool has_parent,
+                                   LayerId parent_layer_id,
+                                   bool has_insert_index,
+                                   uintptr_t insert_index,
+                                   StringView name,
+                                   bool is_folder);
 
 uintptr_t debug_streams_get_resources_arr_size(const ClientNetworkHandler *ptr_network);
 
@@ -145,6 +166,8 @@ WrapperErrorCode internal_server_start(StringView addr, OnServerReadyFn on_serve
 
 void init_rust_logger(LogOutCStrFn callback);
 
+void set_log_level(StringView target, uintptr_t level);
+
 WrapperErrorCode client_network_handler_run(const ClientNetworkHandler *ptr, StringView addr);
 
 WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out);
@@ -157,13 +180,13 @@ WrapperErrorCode client_network_handler_app_state_project_lock_read(const Client
 /// ガードをドロップ（アンロック）する関数
 WrapperErrorCode client_network_handler_app_state_project_unlock_read(const void *guard_ptr);
 
+/// ガードからprojectポインタを取得する関数
+WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
+                                                      const Project **out_project);
+
 const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
 uintptr_t project_get_timeline_count(const Project *ptr);
-
-/// ガード（guard_ptr）から *const Project を安全に取り出す関数
-WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
-                                                      const Project **out_project);
 
 uint64_t clip_get_id(const Clip *ptr);
 
@@ -175,6 +198,8 @@ WrapperErrorCode render_rows_build(const Project *project,
                                    const Timeline *timeline,
                                    const uint64_t *open_ids_ptr,
                                    uintptr_t open_ids_len,
+                                   const uint64_t *open_folder_ids_ptr,
+                                   uintptr_t open_folder_ids_len,
                                    RenderRowsResult **out);
 
 void render_rows_free(RenderRowsResult *ptr);
@@ -189,22 +214,24 @@ WrapperErrorCode render_rows_get_clips(const RenderRowsResult *ptr,
 
 void project_debug_log(const Project *ptr);
 
-WrapperErrorCode layer_find_clip_at_frame(const Layer *ptr, int64_t frame, const Clip **out);
+WrapperErrorCode layer_find_clip_at_frame(const Layer *layer_ptr,
+                                          const Timeline *timeline_ptr,
+                                          int64_t frame,
+                                          const Clip **out);
 
 uintptr_t layer_get_clips_count(const Layer *ptr);
 
 StringView layer_get_name(const Layer *ptr);
 
-WrapperErrorCode layer_clips_begin(const Layer *layer, ClipIterator **out);
+WrapperErrorCode layer_get_clip_at_index(const Layer *layer_ptr,
+                                         const Timeline *timeline_ptr,
+                                         uintptr_t index,
+                                         const Clip **out);
 
-WrapperErrorCode layer_clips_in_range_begin(const Layer *layer,
-                                            int64_t start,
-                                            int64_t end,
-                                            ClipIterator **out);
-
-WrapperErrorCode clip_iter_next(ClipIterator *iter_ptr, const Clip **out);
-
-WrapperErrorCode clip_iter_free(ClipIterator *iter);
+WrapperErrorCode layer_get_clip_at_position(const Layer *layer_ptr,
+                                            const Timeline *timeline_ptr,
+                                            int64_t position,
+                                            const Clip **out);
 
 const Layer *timeline_get_layer_by_order(const Timeline *ptr, uint32_t order);
 
@@ -215,10 +242,10 @@ uintptr_t timeline_get_layers_count(const Timeline *ptr);
 WrapperErrorCode timeline_find_clip_by_id(const Timeline *ptr,
                                           uint64_t clip_id,
                                           const Clip **out_clip,
-                                          uint32_t *out_layer_idx);
+                                          uint64_t *out_layer_id);
 
 bool timeline_can_place_clip_at(const Timeline *ptr,
-                                uint32_t layer_order,
+                                uint64_t layer_id,
                                 int64_t position,
                                 int64_t duration,
                                 const uint64_t *exclude_ids_ptr,
@@ -226,9 +253,32 @@ bool timeline_can_place_clip_at(const Timeline *ptr,
 
 double timeline_get_fps(const Timeline *ptr);
 
+const Layer *timeline_get_layer_by_id(const Timeline *ptr, uint64_t layer_id);
+
+uint64_t timeline_get_layer_id_at_root_index(const Timeline *ptr, uintptr_t index);
+
+WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
+                                                 OffscreenTarget *ptr_offscreen,
+                                                 const ClientNetworkHandler *ptr_network,
+                                                 const Timeline *ptr_timeline,
+                                                 const CameraInfo *ptr_camera_info,
+                                                 int64_t current_frame,
+                                                 uint8_t **out_data,
+                                                 uintptr_t *out_len,
+                                                 uint32_t *out_width,
+                                                 uint32_t *out_height);
+
 void req_test(const ClientNetworkHandler *ptr_network);
 
 void req_new_project(const ClientNetworkHandler *ptr_network);
+
+WrapperErrorCode req_fetch_frame(const ClientNetworkHandler *ptr_network,
+                                 uint64_t timeline_id,
+                                 Tick current_frame,
+                                 Tick visible_range_start,
+                                 Tick visible_range_end);
+
+void req_project_log(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode req_load_stream(const ClientNetworkHandler *ptr_network, StringView path);
 
@@ -242,17 +292,6 @@ WrapperErrorCode offscreen_target_new(WGpuUtil *ptr_wgpu,
                                       OffscreenTarget **out);
 
 WrapperErrorCode offscreen_target_drop(OffscreenTarget *ptr);
-
-WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
-                                                 OffscreenTarget *ptr_offscreen,
-                                                 const ClientNetworkHandler *ptr_network,
-                                                 const Timeline *ptr_timeline,
-                                                 const CameraInfo *ptr_camera_info,
-                                                 int64_t current_frame,
-                                                 uint8_t **out_data,
-                                                 uintptr_t *out_len,
-                                                 uint32_t *out_width,
-                                                 uint32_t *out_height);
 
 void wgpuutil_free_buffer(uint8_t *ptr, uintptr_t len);
 

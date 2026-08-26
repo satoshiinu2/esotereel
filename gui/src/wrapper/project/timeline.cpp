@@ -30,18 +30,26 @@ Layer Timeline::layerSortedAt(uint32_t index) const noexcept {
     return Layer(esotereel_gui_helper::timeline_get_layer_by_sorted_idx(raw_ptr, index));
 }
 
-std::tuple<Clip, uint32_t> Timeline::findClipById(uint64_t id) const noexcept {
-    const esotereel_gui_helper::Clip *raw_clip;
-    uint32_t layerIdx;
+Layer Timeline::layerById(uint64_t layer_id) const noexcept {
+    return Layer(esotereel_gui_helper::timeline_get_layer_by_id(raw_ptr, layer_id));
+}
 
-    auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerIdx);
+uint64_t Timeline::layerIdAtRootIndex(size_t index) const noexcept {
+    return esotereel_gui_helper::timeline_get_layer_id_at_root_index(raw_ptr, index);
+}
+
+std::tuple<Clip, uint64_t> Timeline::findClipById(uint64_t id) const noexcept {
+    const esotereel_gui_helper::Clip *raw_clip = nullptr;
+    uint64_t layerId = 0;
+
+    auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerId);
     if (!checkWrapperResult(result)) {
         return std::make_tuple(Clip::Empty(), 0);
     }
-    return std::make_tuple(Clip(raw_clip), layerIdx);
+    return std::make_tuple(Clip(raw_clip), layerId);
 }
 
-bool Timeline::canPlaceClipAt(uint32_t layerOrder, int64_t position, int64_t duration,
+bool Timeline::canPlaceClipAt(uint64_t layer_id, int64_t position, int64_t duration,
                               const std::set<uint64_t> &exclude_set) const {
     if (!raw_ptr)
         return false;
@@ -49,7 +57,7 @@ bool Timeline::canPlaceClipAt(uint32_t layerOrder, int64_t position, int64_t dur
     // そこまでsetは大きくないと信じてコピー
     std::vector<uint64_t> exclude_vec(exclude_set.begin(), exclude_set.end());
 
-    return esotereel_gui_helper::timeline_can_place_clip_at(raw_ptr, layerOrder, position, duration, exclude_vec.data(),
+    return esotereel_gui_helper::timeline_can_place_clip_at(raw_ptr, layer_id, position, duration, exclude_vec.data(),
                                                             exclude_vec.size());
 }
 

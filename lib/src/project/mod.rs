@@ -1,19 +1,16 @@
 pub mod camera;
+pub mod change;
+pub mod chunk_index;
 pub mod clip;
 pub mod commands;
 pub mod ids;
-pub mod model;
-pub mod runtime;
+pub mod layer;
+pub mod project;
 pub mod save;
+pub mod timeline;
 pub mod transform;
 pub mod util;
 
-use std::{collections::HashMap, sync::Arc};
+pub use {clip::Clip, layer::Layer, project::Project, timeline::Timeline};
 
-pub use {
-    clip::Clip,
-    runtime::{Project, timeline::Layer, timeline::Timeline},
-};
-
-pub type LayerMapKey = u64;
-pub type ClipUpdateMap = HashMap<LayerMapKey, Vec<Clip>>;
+pub type Tick = i64;

@@ -9,9 +9,10 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0"
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
-esotereel_core= { package = "esotereel_core", path = "../core" }
+esotereel_core = { package = "esotereel_core", path = "../core" }
 rkyv = { version = "0.7", features = ["validation"] }
 bytecheck = "0.6"
 log = "0.4"
-tokio = { version = "1", features = ["full"]}
+colored = "3.0"
+tokio = { version = "1", features = ["full"] }
 glam = { version = "0.32", features = ["bytemuck"] }
