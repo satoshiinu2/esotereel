@@ -13,4 +13,5 @@ pub mod util;
 
 pub use {clip::Clip, layer::Layer, project::Project, timeline::Timeline};
 
-pub type Tick = i64;
+pub type TimelineTick = i64;
+pub type MediaSec = f64;

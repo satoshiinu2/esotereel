@@ -236,6 +236,7 @@ pub(super) fn on_responce_recveve(
             dts,
             is_key,
             discontinuous,
+            generation,
         } => {
             let pts: Option<i64> = pts.deserialize(&mut rkyv::Infallible).unwrap();
             let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
@@ -245,26 +246,23 @@ pub(super) fn on_responce_recveve(
                 if let Some(mut player) = app_state.streams.get_mut(resource_id) {
                     // パケットをデコードしてフレームを取得
                     player
-                        .process_packet(data, pts, dts, *is_key, *discontinuous)
+                        .process_packet(data, pts, dts, *is_key, *discontinuous, *generation)
                         .map_err(|e| EsotereelError::DecodeError(e.to_string()))?;
                 }
             }
         }
         ArchivedResponse::StreamDataEnd {
             resource_id,
-            fetched_range,
+            fetched_ranges,
+            generation,
         } => {
-            let fetched_range: Range<f64> =
-                fetched_range.deserialize(&mut rkyv::Infallible).unwrap();
+            let fetched_ranges: Vec<Range<f64>> =
+                fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                if let Some(mut player) = app_state.streams.get_mut(resource_id) {
-                    // fetch_state を元の状態に戻して待機
-                    player.fetch_state = FetchState::Idle;
-
-                    player.free_no_needed_frames(fetched_range);
-                }
+            let app_state = network.app_state.lock().expect("mutex poisoned");
+            if let Some(mut player) = app_state.streams.get_mut(resource_id) {
+                player.fetch_state = FetchState::Idle;
+                player.free_no_needed_frames(&fetched_ranges); // Vec対応版
             }
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {

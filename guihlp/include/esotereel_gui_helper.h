@@ -113,7 +113,7 @@ struct CameraInfo {
   float fov;
 };
 
-using Tick = int64_t;
+using TimelineTick = int64_t;
 
 struct NativeWindowHandle {
   PlatformKind kind;
@@ -282,10 +282,10 @@ void req_test(const ClientNetworkHandler *ptr_network);
 void req_new_project(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode req_fetch_frame(const ClientNetworkHandler *ptr_network,
-                                 uint64_t timeline_id,
-                                 Tick current_frame,
-                                 Tick visible_range_start,
-                                 Tick visible_range_end);
+                                 TimelineId timeline_id,
+                                 TimelineTick current_frame,
+                                 TimelineTick visible_range_start,
+                                 TimelineTick visible_range_end);
 
 void req_project_log(const ClientNetworkHandler *ptr_network);
 

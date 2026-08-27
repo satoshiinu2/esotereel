@@ -1,7 +1,7 @@
 use anyhow::Ok;
 use esotereel_lib::{
     project::{
-        Clip, Project, Tick,
+        Clip, Project, TimelineTick,
         clip::{ClipData, CompositionRef},
         ids::{LayerId, TimelineId},
         transform::ClipTranslates,
@@ -70,8 +70,8 @@ pub(crate) fn clip_add_core(
     project: &mut Project,
     timeline_id: TimelineId,
     layer_id: LayerId,
-    position: Tick,
-    duration: Tick,
+    position: TimelineTick,
+    duration: TimelineTick,
     clip_data: ClipData,
     translates: ClipTranslates,
 ) -> anyhow::Result<()> {

@@ -11,14 +11,16 @@ use std::io::Write;
 use std::ops::Range;
 use std::time;
 
-const BUFFER_KEEP_SECONDS_BEFORE: f64 = 2.0; // 現在位置より前に保持する秒数
-const BUFFER_KEEP_SECONDS_AFTER: f64 = 5.0; // 現在位置より後に保持する秒数
+use crate::project::MediaSec;
+
+const BUFFER_KEEP_SECONDS_BEFORE: MediaSec = 2.0; // 現在位置より前に保持する秒数
+const BUFFER_KEEP_SECONDS_AFTER: MediaSec = 5.0; // 現在位置より後に保持する秒数
 
 pub enum FetchState {
     Idle,
     Fetching {
         requested_at: time::Instant,
-        seek_range_sec: Range<f64>,
+        seek_ranges: Vec<Range<f64>>,
     },
 }
 
@@ -41,9 +43,12 @@ pub struct StreamPlayer {
     target_width: u32,
     target_height: u32,
     frame_count: u32,
-    pub frames: BTreeMap<ordered_float::OrderedFloat<f64>, Video>, // (秒数, フレーム) のペアで保持
-    pub time_base: f64,                                            // 1単位あたりの秒数 (1/fps 等)
+    current_generation: u64,
+
+    pub frames: BTreeMap<ordered_float::OrderedFloat<MediaSec>, Video>, // (秒数, フレーム) のペアで保持
+    pub time_base: MediaSec, // 1単位あたりの秒数 (1/fps 等)
     pub fetch_state: FetchState,
+    pub active_windows: Vec<Range<MediaSec>>,
 }
 
 impl fmt::Debug for StreamPlayer {
@@ -106,6 +111,8 @@ impl StreamPlayer {
             frames: BTreeMap::new(),
             time_base,
             fetch_state: FetchState::Idle,
+            current_generation: 0,
+            active_windows: Vec::new(),
         })
     }
 
@@ -117,7 +124,13 @@ impl StreamPlayer {
         dts: Option<i64>,
         is_key: bool,
         discontinuous: bool,
+        generation: u64,
     ) -> Result<(), ffmpeg::util::error::Error> {
+        if generation < self.current_generation {
+            return Ok(()); // 古い世代のパケットは無視(重なりで来た過去のフェッチの残骸)
+        }
+        self.current_generation = generation;
+
         if discontinuous {
             self.flush();
         }
@@ -163,12 +176,21 @@ impl StreamPlayer {
 
         Ok(())
     }
-    pub fn free_no_needed_frames(&mut self, fetched_range: Range<f64>) {
-        let keep_start = OrderedFloat(fetched_range.start - BUFFER_KEEP_SECONDS_BEFORE);
-        let keep_end = OrderedFloat(fetched_range.end + BUFFER_KEEP_SECONDS_AFTER);
 
-        self.frames = self.frames.split_off(&keep_start);
-        self.frames.split_off(&keep_end);
+    pub fn free_no_needed_frames(&mut self, active_ranges: &[Range<f64>]) {
+        if active_ranges.is_empty() {
+            return;
+        }
+        let keep_start = active_ranges
+            .iter()
+            .map(|r| r.start)
+            .fold(f64::MAX, f64::min)
+            - BUFFER_KEEP_SECONDS_BEFORE;
+        let keep_end = active_ranges.iter().map(|r| r.end).fold(f64::MIN, f64::max)
+            + BUFFER_KEEP_SECONDS_AFTER;
+
+        self.frames = self.frames.split_off(&OrderedFloat(keep_start));
+        self.frames.split_off(&OrderedFloat(keep_end));
     }
 
     /// 指定した秒数に最も近いフレームをバッファから取得する

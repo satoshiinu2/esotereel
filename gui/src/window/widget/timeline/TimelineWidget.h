@@ -66,6 +66,7 @@ struct DragPlayHead {};
 
 using DragState = std::variant<DragNone, DragOther, DragClip, DragAreaSel, DragPlayHead>;
 using TimelineId = esotereel_gui_helper::TimelineId;
+using TimelineTick = esotereel_gui_helper::TimelineTick;
 
 class TimelineWidget : public QWidget {
     Q_OBJECT
@@ -190,6 +191,6 @@ class TimelineWidget : public QWidget {
     // 再生タイマーのtick毎に呼ばれる。経過時間からplayheadを進める。
     void advancePlaybackFrame();
 
-    std::pair<int64_t, int64_t> getVisibleFrameRange() const noexcept;
+    std::pair<TimelineTick, TimelineTick> getVisibleFrameRange() const noexcept;
 };
 } // namespace esotereel::window

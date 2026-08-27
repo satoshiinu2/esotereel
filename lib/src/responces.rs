@@ -49,10 +49,12 @@ pub enum Response {
         dts: Option<i64>,
         is_key: bool,
         discontinuous: bool,
+        generation: u64,
     },
     StreamDataEnd {
         resource_id: ResourceId,
-        fetched_range: Range<f64>,
+        fetched_ranges: Vec<Range<f64>>,
+        generation: u64,
     },
     DebugProjectStruct(String),
 }

@@ -6,10 +6,9 @@ use glam::Mat4;
 
 use crate::{
     ClientState,
-    render::{builder::build_vertices, vertex::Vertex, wgpuutil::WGpuUtil},
+    render::{vertex::Vertex, video::builder::build_vertices, wgpuutil::WGpuUtil},
 };
 
-pub mod builder;
 pub mod pipeline;
 pub mod surfacetarget;
 pub mod uniform;

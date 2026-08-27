@@ -12,13 +12,13 @@ void Requests::newProject() {
     esotereel_gui_helper::req_new_project(ptr_network);
 }
 
-void Requests::moveClips(TimelineId timelineId, const std::vector<ClipId> &clipIds, Tick posMoved, Tick durationMoved,
-                         int64_t layerMoved) noexcept {
+void Requests::moveClips(TimelineId timelineId, const std::vector<ClipId> &clipIds, TimelineTick posMoved,
+                         TimelineTick durationMoved, int64_t layerMoved) noexcept {
     esotereel_gui_helper::req_cmd_clip_move_mul(ptr_network, timelineId, clipIds.data(), clipIds.size(), posMoved,
                                                 durationMoved, layerMoved);
 }
 
-void Requests::addClipAt(TimelineId timelineId, Tick position, LayerId layerId) noexcept {
+void Requests::addClipAt(TimelineId timelineId, TimelineTick position, LayerId layerId) noexcept {
     esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_network, timelineId, position, layerId);
 }
 
@@ -36,7 +36,8 @@ void Requests::loadStream(QString path) noexcept {
     esotereel_gui_helper::req_load_stream(ptr_network, pathView);
 }
 
-void Requests::fetchFrame(TimelineId timelineId, Tick playhead, std::pair<Tick, Tick> visible_range) noexcept {
+void Requests::fetchFrame(TimelineId timelineId, TimelineTick playhead,
+                          std::pair<TimelineTick, TimelineTick> visible_range) noexcept {
     esotereel_gui_helper::req_fetch_frame(ptr_network, timelineId, playhead, visible_range.first, visible_range.second);
 }
 

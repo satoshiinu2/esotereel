@@ -1,7 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
-    project::{Tick, commands::Command},
+    project::{TimelineTick, commands::Command, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
 };
@@ -31,10 +31,10 @@ pub extern "C" fn req_new_project(ptr_network: *const ClientNetworkHandler) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_fetch_frame(
     ptr_network: *const ClientNetworkHandler,
-    timeline_id: u64, // ポインタではなくIDで受け取る
-    current_frame: Tick,
-    visible_range_start: Tick,
-    visible_range_end: Tick,
+    timeline_id: TimelineId, // ポインタではなくIDで受け取る
+    current_frame: TimelineTick,
+    visible_range_start: TimelineTick,
+    visible_range_end: TimelineTick,
 ) -> WrapperErrorCode {
     if ptr_network.is_null() {
         return WrapperErrorCode::null_ptr();

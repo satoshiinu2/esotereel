@@ -19,7 +19,7 @@ pub const MAX_NESTED_DEPTH: u32 = 32;
 #[archive_attr(derive(CheckBytes))]
 pub struct Timeline {
     pub id: u64,
-    pub fps: f64,
+    pub tps: f64,
     root_layers: Vec<LayerId>,
     layers: HashMap<LayerId, Layer>,
 
@@ -41,7 +41,7 @@ impl Clone for Timeline {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
-            fps: self.fps,
+            tps: self.tps,
             root_layers: self.root_layers.clone(),
             layers: self.layers.clone(),
             clips: self.clips.clone(),
@@ -56,7 +56,7 @@ impl Timeline {
     pub fn new(id: u64, fps: f64, ids: &mut IdGenerator) -> Self {
         let mut tl = Self {
             id,
-            fps,
+            tps: fps,
             root_layers: Vec::new(),
             layers: HashMap::new(),
             clips: HashMap::new(),
@@ -72,10 +72,10 @@ impl Timeline {
         tl
     }
 
-    pub fn new_empty(id: u64, fps: f64) -> Self {
+    pub fn new_empty(id: u64, tps: f64) -> Self {
         Self {
             id,
-            fps,
+            tps,
             root_layers: Vec::new(),
             layers: HashMap::new(),
             clips: HashMap::new(),
@@ -667,7 +667,7 @@ impl Timeline {
 
         Self {
             id: meta.id,
-            fps: meta.fps,
+            tps: meta.fps,
             root_layers: meta.root_layers.clone(),
             layers,
             clips: HashMap::new(),
@@ -720,7 +720,7 @@ impl From<&Timeline> for TimelineMeta {
     fn from(tl: &Timeline) -> Self {
         Self {
             id: tl.id,
-            fps: tl.fps,
+            fps: tl.tps,
             root_layers: tl.root_layers.clone(),
             layers: tl.layers_meta(),
         }

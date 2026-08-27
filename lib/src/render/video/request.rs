@@ -3,7 +3,7 @@ use std::{ops::Range, time};
 use crate::{
     ClientState, StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
-    project::{Clip, Timeline, clip::ClipData},
+    project::{Timeline, TimelineTick, clip::ClipData, ids::ResourceId},
     requests::Request,
 };
 
@@ -18,81 +18,119 @@ pub const BUFFER_LOOKAHEAD_THRESHOLD: f64 = 1.0; // バッファの先読み量
 pub fn request_stream_packets_for_time(
     timeline: &Timeline,
     app_state: &ClientState,
-    frame_range: Range<i64>,
+    frame_range: Range<TimelineTick>,
 ) -> Vec<Request> {
-    timeline
-        .iter_layers()
-        .filter_map(|(&layer_id, _)| timeline.get_clip_at(layer_id, frame_range.start))
-        .filter_map(|clip| collect_request_for_clip(timeline, app_state, clip, frame_range.clone()))
-        .collect()
-}
-fn collect_request_for_clip(
-    timeline: &Timeline,
-    app_state: &ClientState,
-    clip: &Clip,
-    frame_range: Range<i64>,
-) -> Option<Request> {
-    let (path, media_offset) = match &clip.data {
-        ClipData::Video { path, media_offset } => Some((path, media_offset)),
-        _ => None,
-    }?;
+    use std::collections::HashMap;
+    let mut needs_by_resource: HashMap<ResourceId, Vec<f64>> = HashMap::new();
+    let mut init_requests = Vec::new();
 
-    if let Some(resource_id_ref) = app_state.path_to_stream.get(path) {
-        let StreamState::Loaded(resource_id) = *resource_id_ref else {
-            return None;
+    // 必要なパケットをresource_idごとにまとめる
+    for (&layer_id, _) in timeline.iter_layers() {
+        let Some(clip) = timeline.get_clip_at(layer_id, frame_range.start) else {
+            continue;
+        };
+        let ClipData::Video { path, media_offset } = &clip.data else {
+            continue;
         };
 
-        let start_seconds = ClipData::get_media_seconds(
-            timeline.fps,
-            clip.position,
-            frame_range.start,
-            *media_offset,
-        );
-
-        if let Some(mut player) = app_state.streams.get_mut(&resource_id) {
-            if player.fetch_state.is_active() {
-                return None;
+        match app_state.path_to_stream.get(path).map(|r| *r) {
+            Some(StreamState::Loaded(resource_id)) => {
+                let start_seconds = ClipData::get_media_seconds(
+                    timeline.tps,
+                    clip.position,
+                    frame_range.start,
+                    *media_offset,
+                );
+                needs_by_resource
+                    .entry(resource_id)
+                    .or_default()
+                    .push(start_seconds);
             }
-
-            let buffer_need = assess_buffer(&player, start_seconds);
-
-            if player.fetch_state.is_active() {
-                return None;
+            None => {
+                app_state
+                    .path_to_stream
+                    .insert(path.to_owned(), StreamState::Loading);
+                init_requests.push(Request::InitStream {
+                    path: path.to_owned(),
+                });
             }
-
-            let fetch_from = match buffer_need {
-                BufferNeed::Sufficient => return None,
-                BufferNeed::Stale => start_seconds, // シーク後は現在位置から取り直し
-                BufferNeed::NeedMore { fetch_from } => {
-                    if player.fetch_state.is_active() {
-                        return None;
-                    }
-                    fetch_from
-                }
-            };
-
-            let seek_range_sec = fetch_from..fetch_from + BUFFER_LOOKAHEAD_THRESHOLD;
-
-            player.fetch_state = FetchState::Fetching {
-                requested_at: time::Instant::now(),
-                seek_range_sec: seek_range_sec.clone(),
-            };
-
-            Some(Request::FetchStreamData {
-                resource_id,
-                seek_range_sec: seek_range_sec.clone(),
-            })
-        } else {
-            None
+            _ => {}
         }
-    } else {
-        app_state
-            .path_to_stream
-            .insert(path.to_owned(), StreamState::Loading);
-        Some(Request::InitStream {
-            path: path.to_owned(),
-        })
     }
+
+    // 今フレーム参照されなかったストリームの active_windows をクリア
+    for mut entry in app_state.streams.iter_mut() {
+        let (resource_id, player) = entry.pair_mut();
+        if !needs_by_resource.contains_key(resource_id) {
+            player.active_windows.clear();
+        }
+    }
+
+    let mut requests = init_requests;
+    requests.extend(
+        needs_by_resource
+            .into_iter()
+            .filter_map(|(resource_id, needed)| {
+                collect_request_for_resource(app_state, resource_id, needed)
+            }),
+    );
+    requests
+}
+
+fn collect_request_for_resource(
+    app_state: &ClientState,
+    resource_id: u32,
+    needed_seconds: Vec<f64>,
+) -> Option<Request> {
+    let mut player = app_state.streams.get_mut(&resource_id)?;
+
+    // このフレームで必要な窓は、フェッチ中でも消されないよう先に記録
+    player.active_windows = needed_seconds
+        .iter()
+        .map(|&s| s..s + BUFFER_LOOKAHEAD_THRESHOLD)
+        .collect();
+
+    if player.fetch_state.is_active() {
+        return None; // デコーダは1本なので進行中バッチが終わるまで待つ
+    }
+
+    // 本当に足りていない窓だけを抜き出してまとめて送る
+    let mut ranges: Vec<Range<f64>> = needed_seconds
+        .into_iter()
+        .filter(|&s| !matches!(assess_buffer(&player, s), BufferNeed::Sufficient))
+        .map(|s| s..s + BUFFER_LOOKAHEAD_THRESHOLD)
+        .collect();
+
+    if ranges.is_empty() {
+        return None;
+    }
+
+    merge_overlapping_ranges(&mut ranges); // 隣接/重複区間は1つに統合しておく
+
+    player.fetch_state = FetchState::Fetching {
+        requested_at: time::Instant::now(),
+        seek_ranges: ranges.clone(),
+    };
+
+    Some(Request::FetchStreamData {
+        resource_id,
+        ranges,
+    })
+}
+
+fn merge_overlapping_ranges(ranges: &mut Vec<Range<f64>>) {
+    ranges.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+    let mut merged: Vec<Range<f64>> = Vec::new();
+    for r in ranges.drain(..) {
+        if let Some(last) = merged.last_mut() {
+            if r.start <= last.end + 0.001 {
+                last.end = last.end.max(r.end);
+                continue;
+            }
+        }
+        merged.push(r);
+    }
+    *ranges = merged;
 }
 
 fn assess_buffer(player: &StreamPlayer, current_seconds: f64) -> BufferNeed {

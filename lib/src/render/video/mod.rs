@@ -8,6 +8,7 @@ use crate::{
     render::wgpuutil::WGpuUtil,
 };
 
+pub mod builder;
 pub mod request;
 
 pub(crate) fn update_timline_clips_texture(
@@ -32,7 +33,7 @@ pub(crate) fn update_timline_clips_texture(
                 if let StreamState::Loaded(resource_id) = *resource_id_ref {
                     if let Some(player) = app_state.streams.get(&resource_id) {
                         let media_seconds = ClipData::get_media_seconds(
-                            timeline.fps,
+                            timeline.tps,
                             clip.position,
                             current_frame,
                             *media_offset,

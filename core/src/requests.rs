@@ -43,9 +43,7 @@ pub fn on_request_receive(
                 network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
             }
 
-            let cmd = Response::ProjectMeta {
-                timelines,
-            };
+            let cmd = Response::ProjectMeta { timelines };
 
             *lock = Some(new_project);
             network.send(client_id, &cmd);
@@ -61,9 +59,7 @@ pub fn on_request_receive(
                 network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
             }
 
-            let cmd = Response::ProjectMeta {
-                timelines,
-            };
+            let cmd = Response::ProjectMeta { timelines };
 
             network.send(client_id, &cmd);
         }
@@ -109,24 +105,24 @@ pub fn on_request_receive(
         }
         ArchivedRequest::FetchStreamData {
             resource_id,
-            seek_range_sec,
+            ranges,
         } => {
-            // log::info!(
-            //     "Received FetchStreamData request for resource_id: {} at:{:?}",
-            //     resource_id,
-            //     seek_range_sec
-            // );
+            log::info!(
+                "Received FetchStreamData request for resource_id: {} ranges: {:?}",
+                resource_id,
+                ranges
+            );
 
-            let seek_range_sec: Range<f64> =
-                seek_range_sec.deserialize(&mut rkyv::Infallible).unwrap();
+            let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
             let mut streamer = app_state
                 .streams
                 .get_mut(resource_id)
                 .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
 
-            let to_send = streamer.fetch_stream_data(*resource_id, seek_range_sec)?;
+            let generation = streamer.next_generation();
 
+            let to_send = streamer.fetch_stream_data_batch(*resource_id, ranges, generation)?;
             for res in to_send {
                 network.send(client_id, &res);
             }
@@ -135,11 +131,11 @@ pub fn on_request_receive(
             timeline_key,
             range,
         } => {
-            // log::info!(
-            //     "Received FetchClipsInRange request for timeline_key: {} in:{:?}",
-            //     timeline_key,
-            //     range
-            // );
+            log::info!(
+                "Received FetchClipsInRange request for timeline_key: {} in:{:?}",
+                timeline_key,
+                range
+            );
 
             let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
 

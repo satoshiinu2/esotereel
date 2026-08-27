@@ -29,6 +29,7 @@ pub fn set_send_response_callback(callback: OnSendFn) {
     SEND_RESPONSE_CALLBACK.set(callback).ok();
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum StreamState {
     Loading,
     Loaded(u32),

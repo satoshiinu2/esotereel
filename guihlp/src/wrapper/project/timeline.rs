@@ -101,7 +101,7 @@ pub unsafe extern "C" fn timeline_get_fps(ptr: *const Timeline) -> f64 {
     }
     let timeline = unsafe { &(*ptr) };
 
-    timeline.fps
+    timeline.tps
 }
 
 #[unsafe(no_mangle)]

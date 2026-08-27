@@ -10,6 +10,7 @@ use std::mem;
 use std::ops::Range;
 use std::path::Path;
 
+use crate::project::MediaSec;
 use crate::responces::Response;
 use crate::util::result::EsotereelResult;
 use anyhow::Context;
@@ -23,6 +24,7 @@ pub struct VideoStreamer {
     pub time_base: f64,
     pub last_pts: Option<i64>,
     needs_discontinuity_flag: bool,
+    generation: u64,
 }
 
 impl VideoStreamer {
@@ -60,7 +62,13 @@ impl VideoStreamer {
             time_base,
             last_pts: None,
             needs_discontinuity_flag: false,
+            generation: 0,
         })
+    }
+
+    pub fn next_generation(&mut self) -> u64 {
+        self.generation += 1;
+        self.generation
     }
 
     /// 次のフレームをデコードして取得する
@@ -93,7 +101,7 @@ impl VideoStreamer {
     }
 
     /// 指定した秒数のフレームをピンポイントで取得する
-    pub fn get_frame_at_time(&mut self, seconds: f64) -> Option<Video> {
+    pub fn get_frame_at_time(&mut self, seconds: MediaSec) -> Option<Video> {
         // 1. 指定位置の直前のキーフレームへシーク
         if self.seek(seconds).is_err() {
             return None;
@@ -128,17 +136,38 @@ impl VideoStreamer {
             extradata,
         }
     }
-
-    pub fn fetch_stream_data(
+    pub fn fetch_stream_data_batch(
         &mut self,
         resource_id: u32,
-        seek_sec_range: Range<f64>,
+        mut ranges: Vec<Range<MediaSec>>,
+        generation: u64,
     ) -> EsotereelResult<Vec<Response>> {
-        log::info!(
-            "fetch_stream_data called: seek_seconds={:?}",
-            seek_sec_range
-        );
+        ranges.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
 
+        let mut to_sends = Vec::new();
+        for range in &ranges {
+            to_sends.extend(self.fetch_stream_data_single(
+                resource_id,
+                range.clone(),
+                generation,
+            )?);
+        }
+
+        to_sends.push(Response::StreamDataEnd {
+            resource_id,
+            fetched_ranges: ranges,
+            generation,
+        });
+
+        Ok(to_sends)
+    }
+
+    fn fetch_stream_data_single(
+        &mut self,
+        resource_id: u32,
+        seek_sec_range: Range<MediaSec>,
+        generation: u64,
+    ) -> EsotereelResult<Vec<Response>> {
         let current_time = self.last_pts.map(|pts| pts as f64 * self.time_base);
         let needs_seek = match current_time {
             Some(t) => {
@@ -177,6 +206,7 @@ impl VideoStreamer {
                 dts,
                 is_key: packet.is_key(),
                 discontinuous: mem::take(&mut self.needs_discontinuity_flag),
+                generation,
             };
             to_sends.push(res);
 
@@ -185,17 +215,11 @@ impl VideoStreamer {
             }
         }
 
-        // 完了通知
-        to_sends.push(Response::StreamDataEnd {
-            resource_id,
-            fetched_range: seek_sec_range,
-        });
-
         Ok(to_sends)
     }
 
     /// 指定した秒数（timestamp）にシークする
-    pub fn seek(&mut self, seconds: f64) -> Result<(), ffmpeg::Error> {
+    pub fn seek(&mut self, seconds: MediaSec) -> Result<(), ffmpeg::Error> {
         let timestamp = (seconds * AV_TIME_BASE) as i64;
         self.ictx.seek(timestamp, ..timestamp)?;
         self.decoder.flush();

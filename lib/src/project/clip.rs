@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::project::{
-    Tick,
+    TimelineTick,
     ids::{ClipId, ScriptId, TimelineId},
     transform::ClipTranslates,
 };
@@ -14,8 +14,8 @@ use crate::project::{
 #[archive_attr(derive(CheckBytes))]
 pub struct Clip {
     pub id: ClipId,
-    pub position: Tick,
-    pub duration: Tick,
+    pub position: TimelineTick,
+    pub duration: TimelineTick,
     pub data: ClipData,
     pub translates: ClipTranslates,
 }
@@ -23,8 +23,8 @@ pub struct Clip {
 impl Clip {
     pub fn new(
         id: ClipId,
-        position: Tick,
-        duration: Tick,
+        position: TimelineTick,
+        duration: TimelineTick,
         clip_data: ClipData,
         translates: ClipTranslates,
     ) -> Self {
@@ -114,7 +114,7 @@ pub enum ClipData {
 
 impl ClipData {
     pub fn get_media_seconds(
-        global_fps: f64,
+        global_tps: f64,
         clip_position: i64,
         current_frame: i64,
         media_offset: f64,
@@ -123,7 +123,7 @@ impl ClipData {
         if relative_frame < 0 {
             return media_offset;
         }
-        (relative_frame as f64 / global_fps) + media_offset
+        (relative_frame as f64 / global_tps) + media_offset
     }
 
     /// このClipが下位Timelineを参照している場合、そのidを返す。

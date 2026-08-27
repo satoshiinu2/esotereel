@@ -223,14 +223,14 @@ void TimelineWidget::processPendingFetch() {
     this->windowState.network->requests().fetchFrame(this->timelineIdx, this->playhead, visible);
 }
 
-std::pair<Tick, Tick> TimelineWidget::getVisibleFrameRange() const noexcept {
+std::pair<TimelineTick, TimelineTick> TimelineWidget::getVisibleFrameRange() const noexcept {
     const QRect r = getInnerRect();
     // ラベル分を除いた実際の描画開始x座標から終了x座標まで
-    Tick startFrame = XToFrame(r.left());
-    Tick endFrame = XToFrame(r.right());
+    TimelineTick startFrame = XToFrame(r.left());
+    TimelineTick endFrame = XToFrame(r.right());
 
     // 念のため下限をクランプ（負のフレームを送らないように）
-    startFrame = std::max((Tick)0, startFrame);
+    startFrame = std::max((TimelineTick)0, startFrame);
     endFrame = std::max(startFrame, endFrame);
 
     return {startFrame, endFrame};
