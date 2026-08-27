@@ -1,10 +1,10 @@
-#include "window/main.h"
-#include "log.h"
+#include "Logger.h"
 #include "network/boot.h"
-#include "wrapper/internalserver.h"
-#include "wrapper/network.h"
-#include "wrapper/requests.h"
-#include "wrapper/stringview.h"
+#include "window/MainWindow.h"
+#include "wrapper/ClientNetworkHandler.h"
+#include "wrapper/InternalServer.h"
+#include "wrapper/Requests.h"
+#include "wrapper/StringView.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
@@ -22,8 +22,8 @@ void bootcore(QString corePath);
 void onServerStart(bool ok);
 void setCallBacks();
 
-MainWindow *window;
-ClientNetworkHandler network;
+esotereel::window::MainWindow *window;
+esotereel::ClientNetworkHandler network;
 QString addr;
 
 int main(int argc, char **argv) {
@@ -31,12 +31,12 @@ int main(int argc, char **argv) {
 
     setCallBacks();
 
-    MainWindow w(network);
+    esotereel::window::MainWindow w(network);
     window = &w;
     w.show();
 
     addr = "0.0.0.0:12345";
-    InternalServer::start(addr, onServerStart);
+    esotereel::InternalServer::start(addr, onServerStart);
 
     return app.exec();
 }
@@ -59,7 +59,7 @@ void setCallBacks() {
     callbacks.mark_dirty_timeline = +[](size_t id) { window->markDirtyTimeline(id); };
 
     esotereel_gui_helper::init();
-    esotereel_gui_helper::init_rust_logger(q_log_callback);
+    esotereel_gui_helper::init_rust_logger(esotereel::qtLogCallback);
     esotereel_gui_helper::set_gui_callbacks(callbacks);
     esotereel_gui_helper::set_on_connected_callback(onConnectedCallBack);
 }

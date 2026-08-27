@@ -186,12 +186,14 @@ qt_add_translations(esotereel_gui
 )
 
 # .clangd ファイルの動的生成設定
+set(CLANGD_REMOVE_FLAG "  Remove: [-mno-direct-extern-access]\n")
 set(CLANGD_CONTENT
 "If:
   OS: ${CLANGD_OS}
 CompileFlags:
   CompilationDatabase: build
   Compiler: ${CLANGD_COMPILER}
+${CLANGD_REMOVE_FLAG}
   Add: [
     \"-Igui\",
     \"-Iguihlp/include\",

@@ -21,6 +21,15 @@ enum class WrapperErrorCode {
   Panic = 4,
 };
 
+enum class CLogLevel : uint8_t {
+  Off,
+  Error,
+  Warn,
+  Info,
+  Debug,
+  Trace,
+};
+
 enum class Direction {
   Front,
   Back,
@@ -166,7 +175,7 @@ WrapperErrorCode internal_server_start(StringView addr, OnServerReadyFn on_serve
 
 void init_rust_logger(LogOutCStrFn callback);
 
-void set_log_level(StringView target, uintptr_t level);
+void set_log_level(StringView target, CLogLevel level);
 
 WrapperErrorCode client_network_handler_run(const ClientNetworkHandler *ptr, StringView addr);
 

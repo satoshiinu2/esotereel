@@ -160,4 +160,4 @@ Result<T> wrapperResultToResult(WrapperErrorCode code, T value = T{}) {
 - `lib/src/util/result.rs` - Rust error handling utilities
 - `guihlp/src/lib.rs` - FFI error conversion
 - `gui/src/wrapper/result.h` - C++ Result<T> implementation
-- `gui/src/wrapper/exception.h` - Legacy exception handling (deprecated)
+- `gui/src/wrapper/Result.h` - Legacy exception handling (deprecated)

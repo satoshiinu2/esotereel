@@ -537,7 +537,7 @@ try {
 #### FFI Exception Safety
 ```cpp
 // Exception handling at FFI boundaries
-#include "wrapper/exception.h"
+#include "wrapper/Result.h"
 
 try {
     // Call Rust FFI

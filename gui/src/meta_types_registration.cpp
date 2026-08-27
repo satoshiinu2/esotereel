@@ -1,18 +1,20 @@
 #include "esotereel_gui_helper.h"
+#include "wrapper/project/Timeline.h"
 #include "wrapper/project/camera.h"
-#include "wrapper/project/timeline.h"
 #include <QMetaType>
 #include <QtCore/qcoreapplication.h>
 
+namespace esotereel {
 using NativeWindowHandle = esotereel_gui_helper::NativeWindowHandle;
+}
 
-Q_DECLARE_METATYPE(Timeline)
-Q_DECLARE_METATYPE(CameraInfo)
-Q_DECLARE_METATYPE(NativeWindowHandle)
+Q_DECLARE_METATYPE(esotereel::Timeline)
+Q_DECLARE_METATYPE(esotereel::CameraInfo)
+Q_DECLARE_METATYPE(esotereel::NativeWindowHandle)
 
 static void registerAppMetaTypes() {
-    qRegisterMetaType<Timeline>("Timeline");
-    qRegisterMetaType<CameraInfo>("CameraInfo");
-    qRegisterMetaType<NativeWindowHandle>("NativeWindowHandle");
+    qRegisterMetaType<esotereel::Timeline>("Timeline");
+    qRegisterMetaType<esotereel::CameraInfo>("CameraInfo");
+    qRegisterMetaType<esotereel::NativeWindowHandle>("NativeWindowHandle");
 }
 Q_COREAPP_STARTUP_FUNCTION(registerAppMetaTypes)

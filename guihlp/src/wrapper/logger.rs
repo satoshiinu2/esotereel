@@ -10,6 +10,29 @@ pub type LogOutCStrFn = extern "C" fn(level: usize, target: StringView, msg: Str
 
 pub(crate) static LOG_C_CALLBACK: OnceLock<LogOutCStrFn> = OnceLock::new();
 
+#[repr(u8)]
+pub enum CLogLevel {
+    Off,
+    Error,
+    Warn,
+    Info,
+    Debug,
+    Trace,
+}
+
+impl From<CLogLevel> for LevelFilter {
+    fn from(value: CLogLevel) -> Self {
+        match value {
+            CLogLevel::Off => LevelFilter::Off,
+            CLogLevel::Error => LevelFilter::Error,
+            CLogLevel::Warn => LevelFilter::Warn,
+            CLogLevel::Info => LevelFilter::Info,
+            CLogLevel::Debug => LevelFilter::Debug,
+            CLogLevel::Trace => LevelFilter::Trace,
+        }
+    }
+}
+
 #[derive(Default)]
 struct GuiLogger {
     filters: RwLock<HashMap<String, LevelFilter>>,
@@ -53,19 +76,10 @@ pub extern "C" fn init_rust_logger(callback: LogOutCStrFn) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn set_log_level(target: StringView, level: usize) {
-    let level = match level {
-        1 => LevelFilter::Error,
-        2 => LevelFilter::Warn,
-        3 => LevelFilter::Info,
-        4 => LevelFilter::Debug,
-        5 => LevelFilter::Trace,
-        _ => LevelFilter::Off,
-    };
-
+pub extern "C" fn set_log_level(target: StringView, level: CLogLevel) {
     LOGGER
         .filters
         .write()
         .unwrap()
-        .insert(target.as_string_lossy().to_string(), level);
+        .insert(target.as_string_lossy().to_string(), level.into());
 }

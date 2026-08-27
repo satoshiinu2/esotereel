@@ -3,6 +3,8 @@ If:
 CompileFlags:
   CompilationDatabase: build
   Compiler: /usr/bin/g++
+  Remove: [-mno-direct-extern-access]
+
   Add: [
     "-Igui",
     "-Iguihlp/include",

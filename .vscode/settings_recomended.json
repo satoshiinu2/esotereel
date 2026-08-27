@@ -1,7 +1,17 @@
 {
   "cmake.sourceDirectory": "${workspaceFolder}",
   "cmake.generator": "Ninja",
-  "C_Cpp.errorSquiggles": "enabled",
-  "C_Cpp.intelliSenseEngine": "default",
-  "C_Cpp.autocomplete": "default"
+  "cmake.configureSettings": {
+    "CMAKE_PREFIX_PATH": "~/Qt/6.7.3/gcc_64"
+  },
+  "C_Cpp.errorSquiggles": "disabled",
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.autocomplete": "disabled",
+  // write below on .workspace settings 
+  "files.associations": {
+    "*.ts": "xml"
+  },
+  "clangd.arguments": [
+    "--query-driver=/usr/bin/g++"
+  ]
 }
