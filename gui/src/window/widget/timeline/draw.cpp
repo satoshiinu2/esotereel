@@ -69,7 +69,7 @@ void TimelineWidget::drawRowLabel(const Project &project, const FfiLayerRow &row
     if (row.is_folder) {
         label = (row.is_folder_open ? QStringLiteral("\u25BC ") : QStringLiteral("\u25B6 "));
     }
-    label += project.timelineOf(this->timelineIdx).layerById(row.layer_id).name();
+    label += project.timelineOf(this->timelineId).layerById(row.layer_id).name();
 
     QRect textRect(textX, y, LABEL_WIDTH - textX, LAYER_HEIGHT);
     p.setPen(palette().text().color());

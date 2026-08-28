@@ -40,7 +40,7 @@ void GpuRenderWorker::resize(int w, int h) {
     }
 }
 
-void GpuRenderWorker::renderFrame(Timeline timeline, CameraInfo *camera, int64_t currentFrame) {
+void GpuRenderWorker::renderFrame(TimelineId timelineId, CameraInfo *camera, int64_t currentFrame) {
     if (!wgpuutil_ptr || !offscreen_ptr || busy)
         return;
     busy = true;
@@ -51,7 +51,7 @@ void GpuRenderWorker::renderFrame(Timeline timeline, CameraInfo *camera, int64_t
     const esotereel_gui_helper::ClientNetworkHandler *raw_network = *windowState->network;
 
     auto result = esotereel_gui_helper::wgpuutil_render_frame_offscreen(
-        wgpuutil_ptr, offscreen_ptr, raw_network, timeline, camera, currentFrame, &data, &len, &width, &height);
+        wgpuutil_ptr, offscreen_ptr, raw_network, camera, timelineId, currentFrame, &data, &len, &width, &height);
 
     if (checkWrapperResult(result) && data) {
         QImage img(data, width, height, width * 4, QImage::Format_RGBA8888);

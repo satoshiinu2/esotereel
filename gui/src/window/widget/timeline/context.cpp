@@ -116,7 +116,7 @@ void TimelineWidget::buildLayerContextMenu(const Project &project, QMenu &menu, 
 
         // Composite展開行(子Timeline)の上でのレイヤー追加は今回未対応。
         // ルートTimeline(このウィジェットが表示しているtimelineIdx)の行のみ許可。
-        if (row.timeline_id != this->timelineIdx) {
+        if (row.timeline_id != this->timelineId) {
             return;
         }
 
@@ -160,7 +160,7 @@ void TimelineWidget::addLayer(std::optional<uint64_t> parentLayerId, std::option
         return;
     }
 
-    this->windowState.network->requests().addLayer(this->timelineIdx, parentLayerId, insertIndex, name.toStdString(),
+    this->windowState.network->requests().addLayer(this->timelineId, parentLayerId, insertIndex, name.toStdString(),
                                                    isFolder);
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
@@ -196,7 +196,7 @@ void TimelineWidget::addClipAt(const QPoint &local) {
         const auto &rows = rr->rows();
         if (rowIdx >= 0 && static_cast<size_t>(rowIdx) < rows.size()) {
             const auto &row = rows[rowIdx];
-            if (row.timeline_id == this->timelineIdx) {
+            if (row.timeline_id == this->timelineId) {
                 layerId = row.layer_id;
                 canAdd = true;
             }
@@ -205,7 +205,7 @@ void TimelineWidget::addClipAt(const QPoint &local) {
 
     if (canAdd) {
         // ロックを持たない状態でネットワークへリクエスト
-        this->windowState.network->requests().addClipAt(this->timelineIdx, frame, layerId);
+        this->windowState.network->requests().addClipAt(this->timelineId, frame, layerId);
         this->markRowsDirty();
         update();
     }

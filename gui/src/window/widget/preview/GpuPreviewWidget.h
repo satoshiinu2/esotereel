@@ -25,7 +25,7 @@ class GpuPreviewWidget : public QWidget {
   signals:
     void requestInit(int w, int h);
     void requestResize(int w, int h);
-    void requestRender(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
+    void requestRender(TimelineId timelineId, CameraInfo *camera, int64_t currentFrame);
 
   private slots:
     void onFrameReady(QImage img);

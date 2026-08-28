@@ -1,5 +1,7 @@
 use std::{ops::Range, time};
 
+use ordered_float::OrderedFloat;
+
 use crate::{
     ClientState, StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
@@ -134,26 +136,27 @@ fn merge_overlapping_ranges(ranges: &mut Vec<Range<f64>>) {
 }
 
 fn assess_buffer(player: &StreamPlayer, current_seconds: f64) -> BufferNeed {
-    let buffer_front = player.frames.first_key_value().map(|(t, _)| t.0);
-    let buffer_end = player.frames.last_key_value().map(|(t, _)| t.0);
-
-    match (buffer_front, buffer_end) {
-        (None, _) | (_, None) => BufferNeed::NeedMore {
+    // current_seconds 時点(または直近)のフレームが存在するか確認
+    if player.get_frame_at(current_seconds).is_none() {
+        return BufferNeed::NeedMore {
             fetch_from: current_seconds,
-        },
-        (Some(front), Some(end)) => {
-            if current_seconds < front || current_seconds > end {
-                return BufferNeed::Stale;
-            }
-            if player.get_frame_at(current_seconds).is_none() {
-                return BufferNeed::Stale; // NeedMoreではなくStale
-            }
-            let buffered = end - current_seconds;
-            if buffered < BUFFER_LOOKAHEAD_THRESHOLD {
-                BufferNeed::NeedMore { fetch_from: end }
-            } else {
-                BufferNeed::Sufficient
-            }
+        };
+    }
+
+    // current_seconds 位置から連続して存在するバッファの末尾を探す
+    let mut end = current_seconds;
+    for (&OrderedFloat(t), _) in player.frames.range(OrderedFloat(current_seconds)..) {
+        // フレーム間の間隔が大きく開いたらバッファの切れ目と判断 (例: 0.2秒以上)
+        if t - end > 0.2 {
+            break;
         }
+        end = t;
+    }
+
+    let buffered = end - current_seconds;
+    if buffered < BUFFER_LOOKAHEAD_THRESHOLD {
+        BufferNeed::NeedMore { fetch_from: end }
+    } else {
+        BufferNeed::Sufficient
     }
 }

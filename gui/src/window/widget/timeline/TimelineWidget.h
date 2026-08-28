@@ -72,7 +72,7 @@ class TimelineWidget : public QWidget {
     Q_OBJECT
 
   public:
-    TimelineId timelineIdx;
+    TimelineId timelineId;
     float_t zoom = 4;
     QPointF scroll = QPointF();
     int64_t playhead = 0;

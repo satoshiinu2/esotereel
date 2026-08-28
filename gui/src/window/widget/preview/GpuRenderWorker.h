@@ -20,7 +20,7 @@ class GpuRenderWorker : public QObject {
   public slots:
     void initialize(int w, int h);
     void resize(int w, int h);
-    void renderFrame(Timeline timeline, CameraInfo *camera, int64_t currentFrame);
+    void renderFrame(TimelineId timelineId, CameraInfo *camera, int64_t currentFrame);
 
   signals:
     void frameReady(QImage img);

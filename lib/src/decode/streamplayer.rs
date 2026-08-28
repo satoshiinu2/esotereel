@@ -181,16 +181,14 @@ impl StreamPlayer {
         if active_ranges.is_empty() {
             return;
         }
-        let keep_start = active_ranges
-            .iter()
-            .map(|r| r.start)
-            .fold(f64::MAX, f64::min)
-            - BUFFER_KEEP_SECONDS_BEFORE;
-        let keep_end = active_ranges.iter().map(|r| r.end).fold(f64::MIN, f64::max)
-            + BUFFER_KEEP_SECONDS_AFTER;
 
-        self.frames = self.frames.split_off(&OrderedFloat(keep_start));
-        self.frames.split_off(&OrderedFloat(keep_end));
+        self.frames.retain(|OrderedFloat(t), _| {
+            active_ranges.iter().any(|r| {
+                let keep_start = r.start - BUFFER_KEEP_SECONDS_BEFORE;
+                let keep_end = r.end + BUFFER_KEEP_SECONDS_AFTER;
+                *t >= keep_start && *t <= keep_end
+            })
+        });
     }
 
     /// 指定した秒数に最も近いフレームをバッファから取得する

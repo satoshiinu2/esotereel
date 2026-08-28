@@ -6,7 +6,7 @@
 
 namespace esotereel::window {
 TimelineWidget::TimelineWidget(WindowGState &windowState, size_t timelineIdx)
-    : windowState(windowState), timelineIdx(timelineIdx) {
+    : windowState(windowState), timelineId(timelineIdx) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 
@@ -83,7 +83,7 @@ std::tuple<Clip, uint64_t> TimelineWidget::findClipAt(const Project &project, co
         int64_t clipEnd = clipInfo.abs_frame + clipInfo.duration;
 
         if (frame >= clipStart && frame < clipEnd) {
-            auto timeline = project.timelineOf(this->timelineIdx);
+            auto timeline = project.timelineOf(this->timelineId);
             auto [clip, layerId] = timeline.findClipById(clipInfo.clip_id);
 
             if (clip.isValid()) {
@@ -96,7 +96,7 @@ std::tuple<Clip, uint64_t> TimelineWidget::findClipAt(const Project &project, co
 }
 
 Timeline TimelineWidget::getTimeline(Project &project) {
-    return project.isValid() ? project.timelineOf(this->timelineIdx) : Timeline(nullptr);
+    return project.isValid() ? project.timelineOf(this->timelineId) : Timeline(nullptr);
 }
 
 void TimelineWidget::togglePlayback() {
@@ -123,7 +123,7 @@ void TimelineWidget::updateSnapshot() const {
         }
         auto project = projectResult.unwrapOrMove();
 
-        cachedRows = std::make_unique<RenderRows>(project, timelineIdx, openCompositeIds, openFolderIds);
+        cachedRows = std::make_unique<RenderRows>(project, timelineId, openCompositeIds, openFolderIds);
     } // <- ここで Project のデストラクタが走り ReadGuard 解放
 
     rowsDirty = false;
@@ -220,7 +220,7 @@ void TimelineWidget::processPendingFetch() {
     auto visible = getVisibleFrameRange();
 
     // Wrapper 経由で FFI (req_fetch_frame) を実行
-    this->windowState.network->requests().fetchFrame(this->timelineIdx, this->playhead, visible);
+    this->windowState.network->requests().fetchFrame(this->timelineId, this->playhead, visible);
 }
 
 std::pair<TimelineTick, TimelineTick> TimelineWidget::getVisibleFrameRange() const noexcept {

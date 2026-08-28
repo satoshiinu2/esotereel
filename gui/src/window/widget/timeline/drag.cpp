@@ -69,7 +69,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &projec
         return std::nullopt;
     }
 
-    auto timeline = project.timelineOf(this->timelineIdx);
+    auto timeline = project.timelineOf(this->timelineId);
     size_t layerIdx = layerIndexOf(timeline, layerId);
 
     if (!contains(this->selectedClipIds, clip.id())) {
@@ -85,7 +85,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &projec
 }
 
 void TimelineWidget::handleClipDragContinue(const Project &project, const QPoint &mousePos) {
-    auto timeline = project.timelineOf(this->timelineIdx);
+    auto timeline = project.timelineOf(this->timelineId);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {
@@ -105,7 +105,7 @@ void TimelineWidget::handleClipDragContinue(const Project &project, const QPoint
 }
 
 void TimelineWidget::handleClipDraggingDrop(const Project &project, const QPoint &mousePos) {
-    auto timeline = project.timelineOf(this->timelineIdx);
+    auto timeline = project.timelineOf(this->timelineId);
 
     handleClipDragContinue(project, mousePos);
 
@@ -124,14 +124,14 @@ void TimelineWidget::handleClipDraggingDrop(const Project &project, const QPoint
     // 挙動は変えず、意味の無い重複ループのみ削除しています。
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
-    this->windowState.network->requests().moveClips(this->timelineIdx, exclude_vec, frameMoved, 0, layerMoved);
+    this->windowState.network->requests().moveClips(this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
 
     this->markRowsDirty();
     update();
 }
 
 void TimelineWidget::drawDragGhost(const Project &project, QPainter &p, const QRect &r) const {
-    auto timeline = project.timelineOf(this->timelineIdx);
+    auto timeline = project.timelineOf(this->timelineId);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
     if (!drag) {

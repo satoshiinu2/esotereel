@@ -39,7 +39,6 @@ GpuPreviewWidget::~GpuPreviewWidget() {
     renderTimer->stop();
     m_thread->quit();
     m_thread->wait();
-    delete m_worker;
 }
 
 void GpuPreviewWidget::ensureInitialized() {
@@ -87,11 +86,11 @@ void GpuPreviewWidget::triggerRenderFrame() {
     if (!project.isValid() || !focusedTimelineWidget)
         return;
 
-    Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineIdx);
+    Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineId);
     CameraInfo *camera = windowState->camera;
     int64_t currentFrame = focusedTimelineWidget->playhead;
 
-    emit requestRender(timeline, camera, currentFrame);
+    emit requestRender(focusedTimelineWidget->timelineId, camera, currentFrame);
 }
 
 void GpuPreviewWidget::paintEvent(QPaintEvent *event) {

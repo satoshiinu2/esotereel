@@ -9,6 +9,7 @@ pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
 pub use esotereel_lib::project::ids::{ClipId, LayerId, ScriptId, TimelineId};
 pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
+use log::error;
 
 use crate::network::OnConnectedFn;
 use crate::responces::on_responce_recveve;
@@ -39,9 +40,13 @@ impl WrapperErrorCode {
             .and_then(|msg| CString::new(msg).ok())
             .unwrap_or_default();
 
-        LAST_ERR_MSG.with(|e| {
+        if let Err(e) = LAST_ERR_MSG.try_with(|e| {
             *e.borrow_mut() = c_str;
-        });
+        }) {
+            if let Some(message) = message {
+                error!("AccessError: maybe recieve error on exiting: {e} msg: {message}");
+            }
+        }
     }
 
     pub fn ok() -> Self {
