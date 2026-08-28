@@ -67,10 +67,10 @@ include(FetchContent)
 FetchContent_Declare(
     ads
     GIT_REPOSITORY https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System.git
-    GIT_TAG        5.0.0
+    GIT_TAG        5.1.1  # Update from 5.0.0 to 5.1.1 or later
 )
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)  
-set(ADS_VERSION "5.0.0" CACHE STRING "" FORCE)  
+set(ADS_VERSION "5.1.1" CACHE STRING "" FORCE)  # Match the tag
 FetchContent_MakeAvailable(ads)
 
 # ADSターゲットが存在する場合、そのターゲットに対する警告をすべて無効化する
