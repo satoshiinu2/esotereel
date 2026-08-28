@@ -65,8 +65,7 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev \
             libwayland-dev libx11-xcb-dev \
             libvulkan-dev mesa-vulkan-drivers \
-            pkg-config libavutil-dev libavcodec-dev libavformat-dev \
-            libavdevice-dev libavfilter-dev libswscale-dev libswresample-dev
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
 
       # --- macOS only: Homebrewでffmpeg(+pkg-config)を導入 ---
       - name: Install FFmpeg (macOS)
@@ -77,14 +76,7 @@ jobs:
       #     BtbNのビルド済みsharedパッケージを展開してFFMPEG_DIRを設定する ---
       - name: Install FFmpeg (Windows)
         if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          $ffmpegUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl-shared.zip"
-          Invoke-WebRequest -Uri $ffmpegUrl -OutFile ffmpeg.zip
-          Expand-Archive -Path ffmpeg.zip -DestinationPath C:\ffmpeg
-          $ffmpegDir = Get-ChildItem -Path C:\ffmpeg -Directory | Select-Object -First 1
-          echo "FFMPEG_DIR=$($ffmpegDir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$($ffmpegDir.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        run: vcpkg install ffmpeg:x64-windows
 
       # --- cbindgen: Rust側からC++ヘッダーを生成 ---
       - name: Install cbindgen
