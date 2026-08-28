@@ -230,18 +230,13 @@ jobs:
             -B build \
             -DCMAKE_BUILD_TYPE=Release
       
-      - name: Debug ADS
-        if: matrix.os == 'macos-latest'
-        run: |
-          grep -R "AGL" -n build/_deps/ads-src build/_deps/ads-build 2>/dev/null || true
-          
       - name: Inspect ADS link command
         if: matrix.os == 'macos-latest'
         run: |
           find build/_deps/ads-build \
             -name 'link.txt' \
             -print \
-            -exec grep -H "AGL" {} \;
+            -exec sh -c 'echo "===== $1 ====="; cat "$1"' _ {} \;
 
       # ============================================================
       # Build Qt/C++ layer
