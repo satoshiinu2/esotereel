@@ -219,17 +219,6 @@ jobs:
             --target ${{ matrix.target }}
 
       # ============================================================
-      # Generate FFI headers
-      # ============================================================
-
-      - name: Generate FFI headers
-        run: |
-          cbindgen \
-            --config cbindgen.toml \
-            --crate esotereel-core \
-            --output include/esotereel_ffi.h
-
-      # ============================================================
       # Configure CMake
       # ============================================================
 
