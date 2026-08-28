@@ -100,6 +100,23 @@ jobs:
       - name: Install Ninja
         uses: seanmiddleditch/gha-setup-ninja@master
 
+              # --- Linux only: Install FFmpeg ---
+      - name: Install FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libffmpeg-ocaml-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+
+      # --- macOS only: Install FFmpeg ---
+      - name: Install FFmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install ffmpeg
+
+      # --- Windows only: Install FFmpeg via vcpkg ---
+      - name: Install FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        run: vcpkg install ffmpeg:x64-windows
+
       # --- ここをプロジェクトの実際のビルド手順に置き換えてください ---
       - name: Build Rust core
         run: cargo build --release --target ${{ matrix.target }}
