@@ -214,9 +214,7 @@ jobs:
 
       - name: Build Rust core
         run: |
-          cargo build \
-            --release \
-            --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }}
 
       # ============================================================
       # Configure CMake
@@ -224,11 +222,7 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake \
-            -G Ninja \
-            -S . \
-            -B build \
-            -DCMAKE_BUILD_TYPE=Release
+          cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release
       
       - name: Inspect ADS link command
         if: matrix.os == 'macos-latest'
