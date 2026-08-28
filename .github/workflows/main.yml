@@ -21,9 +21,11 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             qt-arch: linux_gcc_64
+
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             qt-arch: win64_msvc2019_64
+
           - os: macos-latest
             target: aarch64-apple-darwin
             qt-arch: clang_64
@@ -31,23 +33,41 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # ============================================================
+      # Checkout
+      # ============================================================
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # --- Rust toolchain ---
+      # ============================================================
+      # Rust
+      # ============================================================
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo
+      - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      # --- Qt6 (aqtinstall: どのOSでも同じツールで入れられる) ---
+      # ============================================================
+      # MSVC
+      # ============================================================
+
+      - name: Set up MSVC
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # ============================================================
+      # Qt 6
+      # ============================================================
+
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
@@ -56,72 +76,183 @@ jobs:
           cache: true
           mirror: "https://download.qt.io"
 
-      # --- Linux only: Wayland/XCB周りのネイティブ依存 + FFmpeg開発パッケージ ---
-      - name: Install Linux system deps
+      # ============================================================
+      # Linux dependencies
+      # ============================================================
+
+      - name: Install Linux dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
+
           sudo apt-get install -y \
-            libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev libx11-xcb-dev \
-            libvulkan-dev mesa-vulkan-drivers \
-            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+            pkg-config \
+            ninja-build \
+            cmake \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libvulkan-dev \
+            mesa-vulkan-drivers \
+            libavcodec-dev \
+            libavdevice-dev \
+            libavfilter-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswresample-dev \
+            libswscale-dev
 
-      # --- macOS only: Homebrewでffmpeg(+pkg-config)を導入 ---
-      - name: Install FFmpeg (macOS)
+      # ============================================================
+      # macOS dependencies
+      # ============================================================
+
+      - name: Install macOS dependencies
         if: matrix.os == 'macos-latest'
-        run: brew install ffmpeg pkg-config
+        run: |
+          brew install ffmpeg pkg-config cmake ninja
 
-      # --- Windows only: ffmpeg-sys-nextはWindowsだと自力検出できないので、
-      #     BtbNのビルド済みsharedパッケージを展開してFFMPEG_DIRを設定する ---
-      - name: Install FFmpeg (Windows)
+          FFMPEG_PREFIX="$(brew --prefix ffmpeg)"
+
+          echo "FFMPEG_DIR=${FFMPEG_PREFIX}" >> "$GITHUB_ENV"
+
+          # Qt Action modifies PKG_CONFIG_PATH.
+          # Add Homebrew FFmpeg back to it.
+          echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+
+      # ============================================================
+      # Windows dependencies
+      # ============================================================
+
+      - name: Install Windows dependencies
         if: matrix.os == 'windows-latest'
-        run: vcpkg install ffmpeg:x64-windows
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = "C:\vcpkg"
 
-      # --- cbindgen: Rust側からC++ヘッダーを生成 ---
+          "VCPKG_ROOT=C:\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_TRIPLET=x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          & "$env:VCPKG_ROOT\vcpkg.exe" install ffmpeg:x64-windows
+
+          & "$env:VCPKG_ROOT\vcpkg.exe" list
+
+      # ============================================================
+      # Verify FFmpeg
+      # ============================================================
+
+      - name: Verify FFmpeg (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+
+          pkg-config --version
+
+          echo "libavutil:"
+          pkg-config --modversion libavutil
+
+          echo "libavcodec:"
+          pkg-config --modversion libavcodec
+
+          echo "libavformat:"
+          pkg-config --modversion libavformat
+
+          echo "libavfilter:"
+          pkg-config --modversion libavfilter
+
+          echo "libavdevice:"
+          pkg-config --modversion libavdevice
+
+          echo "libswscale:"
+          pkg-config --modversion libswscale
+
+          echo "libswresample:"
+          pkg-config --modversion libswresample
+
+      - name: Verify FFmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          echo "FFMPEG_DIR=$FFMPEG_DIR"
+          echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+
+          pkg-config --version
+          pkg-config --modversion libavutil
+          pkg-config --modversion libavcodec
+          pkg-config --modversion libavformat
+
+      - name: Verify FFmpeg (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT\vcpkg.exe" list
+
+          if (!(Test-Path "$env:VCPKG_ROOT\installed\x64-windows\lib\avutil.lib")) {
+            Write-Error "FFmpeg libavutil.lib was not found"
+            exit 1
+          }
+
+          Write-Host "FFmpeg installation verified."
+
+      # ============================================================
+      # cbindgen
+      # ============================================================
+
       - name: Install cbindgen
         run: cargo install cbindgen --locked
 
-      # --- Windowsのみ: NinjaはVSジェネレータと違いcl.exeを自動検出しないため、
-      #     MSVC環境変数(PATH/INCLUDE/LIB)をここで整える ---
-      - name: Set up MSVC dev environment (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+      # ============================================================
+      # Ninja
+      # ============================================================
 
-      # --- Ninja本体: 3OSとも確実に使えるように明示インストール ---
       - name: Install Ninja
+        if: matrix.os != 'ubuntu-latest'
         uses: seanmiddleditch/gha-setup-ninja@master
 
-              # --- Linux only: Install FFmpeg ---
-      - name: Install FFmpeg (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libffmpeg-ocaml-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+      # ============================================================
+      # Build Rust core
+      # ============================================================
 
-      # --- macOS only: Install FFmpeg ---
-      - name: Install FFmpeg (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install ffmpeg
-
-      # --- Windows only: Install FFmpeg via vcpkg ---
-      - name: Install FFmpeg (Windows)
-        if: matrix.os == 'windows-latest'
-        run: vcpkg install ffmpeg:x64-windows
-
-      # --- ここをプロジェクトの実際のビルド手順に置き換えてください ---
       - name: Build Rust core
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          cargo build \
+            --release \
+            --target ${{ matrix.target }}
+
+      # ============================================================
+      # Generate FFI headers
+      # ============================================================
 
       - name: Generate FFI headers
-        run: cbindgen --config cbindgen.toml --crate esotereel-core --output include/esotereel_ffi.h
-
-      - name: Configure & build Qt/C++ layer
         run: |
-          cmake -G Ninja -S '${{ github.workspace }}' -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          cbindgen \
+            --config cbindgen.toml \
+            --crate esotereel-core \
+            --output include/esotereel_ffi.h
 
-      # --- 成果物をアップロード ---
+      # ============================================================
+      # Configure CMake
+      # ============================================================
+
+      - name: Configure CMake
+        run: |
+          cmake \
+            -G Ninja \
+            -S . \
+            -B build \
+            -DCMAKE_BUILD_TYPE=Release
+
+      # ============================================================
+      # Build Qt/C++ layer
+      # ============================================================
+
+      - name: Build Qt/C++ layer
+        run: |
+          cmake --build build --config Release
+
+      # ============================================================
+      # Upload artifacts
+      # ============================================================
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
