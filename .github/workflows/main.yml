@@ -1,0 +1,102 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  QT_VERSION: "6.7.2"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            qt-arch: linux_gcc_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            qt-arch: win64_msvc2019_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            qt-arch: clang_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # --- Rust toolchain ---
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # --- Qt6 (aqtinstall: どのOSでも同じツールで入れられる) ---
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: ${{ matrix.qt-arch }}
+          cache: true
+
+      # --- Linux only: Wayland/XCB周りのネイティブ依存 ---
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev \
+            libvulkan-dev mesa-vulkan-drivers
+
+      # --- cbindgen: Rust側からC++ヘッダーを生成 ---
+      - name: Install cbindgen
+        run: cargo install cbindgen --locked
+
+      # --- Windowsのみ: NinjaはVSジェネレータと違いcl.exeを自動検出しないため、
+      #     MSVC環境変数(PATH/INCLUDE/LIB)をここで整える ---
+      - name: Set up MSVC dev environment (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # --- Ninja本体: 3OSとも確実に使えるように明示インストール ---
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+
+      # --- ここをプロジェクトの実際のビルド手順に置き換えてください ---
+      - name: Build Rust core
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Generate FFI headers
+        run: cbindgen --config cbindgen.toml --crate esotereel-core --output include/esotereel_ffi.h
+
+      - name: Configure & build Qt/C++ layer
+        run: |
+          cmake -G Ninja -S '${{ github.workspace }}' -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      # --- 成果物をアップロード ---
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-${{ matrix.target }}
+          path: |
+            build/bin/**
+            !build/bin/**/*.pdb
+          if-no-files-found: warn
