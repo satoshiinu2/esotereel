@@ -103,7 +103,7 @@ endif()
 # ライブラリとコア
 set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
-set(CORE_EXE "${RUST_TARGET_DIR}/esotereel_core")
+set(CORE_BIN "${RUST_TARGET_DIR}/esotereel_core")
 file(GLOB_RECURSE RUST_SRC_FILES
     "${CMAKE_SOURCE_DIR}/core/src/*"
     "${CMAKE_SOURCE_DIR}/lib/src/*"
@@ -114,16 +114,31 @@ file(GLOB_RECURSE RUST_SRC_FILES
 # rustビルドするやつ
 set(RUST_BUILD_ENV)
 
+# GUI Helper (ライブラリ) のビルドコマンド
 add_custom_command(
-    OUTPUT ${GUI_HLP_LIB} ${CORE_EXE}
-    COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG}
+    OUTPUT ${GUI_HLP_LIB}
+    COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_gui_helper
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
     USES_TERMINAL 
-    COMMENT "Building Rust Workspace (${RUST_PROFILE})..."
+    COMMENT "Building Rust GUI Helper (${RUST_PROFILE})..."
 )
 
-add_custom_target(rust_workspace ALL DEPENDS ${GUI_HLP_LIB} ${CORE_EXE})
+# Core (サーバー) のビルドコマンド
+add_custom_command(
+    OUTPUT ${CORE_BIN}
+    COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_core
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    DEPENDS ${RUST_SRC_FILES}
+    USES_TERMINAL 
+    COMMENT "Building Rust Core Server (${RUST_PROFILE})..."
+)
+
+# GUI実行に必要なヘルパーライブラリのみを自動ビルド対象にする
+add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_LIB})
+
+# サーバー側は必要なときだけ単体でビルドできるように分離 (ALL を外す)
+add_custom_target(rust_core DEPENDS ${CORE_BIN})
 
 
 # Clangのエラー回避

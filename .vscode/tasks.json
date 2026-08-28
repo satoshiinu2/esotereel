@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build debug",
+      "label": "build gui debug",
       "type": "shell",
       "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
       "group": "build",
@@ -20,7 +20,7 @@
       },
     },
     {
-      "label": "build release",
+      "label": "build gui release",
       "type": "shell",
       "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build",
       "group": "build",
@@ -28,6 +28,42 @@
       "windows": {
         "options": {
           "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build",
+          "shell": {
+            "executable": "cmd",
+            "args": [
+              "/c"
+            ]
+          }
+        }
+      },
+    },
+    {
+      "label": "build core debug",
+      "type": "shell",
+      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --target rust_core",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "windows": {
+        "options": {
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --target rust_core",
+          "shell": {
+            "executable": "cmd",
+            "args": [
+              "/c"
+            ]
+          }
+        }
+      },
+    },
+    {
+      "label": "build core release",
+      "type": "shell",
+      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target rust_core",
+      "group": "build",
+      "dependsOrder": "sequence",
+      "windows": {
+        "options": {
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target rust_core",
           "shell": {
             "executable": "cmd",
             "args": [

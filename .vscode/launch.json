@@ -2,15 +2,34 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Build and debug gui",
+      "name": "Build and debug GUI",
       "type": "lldb",
       "request": "launch",
       "program": "${workspaceFolder}/build/esotereel_gui",
-      "args": [ "${workspaceFolder}/target/debug/esotereel_core" ],
       "cwd": "${workspaceFolder}/build",
-
-      "preLaunchTask": "build debug",
-
+      "preLaunchTask": "build gui debug",
+      "env": {
+        "RUST_BACKTRACE": "1",
+      },
+      "windows": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+        }
+      },
+      "linux": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+          // "QT_QPA_PLATFORM": "xcb"
+        }
+      }
+    },
+    {
+      "name": "Build and debug CORE",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/target/debug/esotereel_core",
+      "cwd": "${workspaceFolder}/target/debug",
+      "preLaunchTask": "build core debug",
       "env": {
         "RUST_BACKTRACE": "1",
       },
