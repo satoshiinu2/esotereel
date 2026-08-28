@@ -59,9 +59,6 @@ endif()
 
 # Qt6 components - Wayland is platform-specific
 set(QT_COMPONENTS Widgets Network Gui Core LinguistTools)
-if(UNIX AND NOT APPLE)
-    list(APPEND QT_COMPONENTS WaylandClient)
-endif()
 
 find_package(Qt6 REQUIRED COMPONENTS ${QT_COMPONENTS})
 
@@ -180,13 +177,6 @@ target_link_libraries(esotereel_gui PRIVATE
     qtadvanceddocking-qt6 
     ${GUI_HLP_LIB}
 )
-
-if(TARGET Qt6::WaylandClient)
- # Qt6.10以降のために、Privateモジュールを明示的に探索させる
-    find_package(Qt6WaylandClientPrivate REQUIRED)
-    
-    target_link_libraries(esotereel_gui PRIVATE Qt6::WaylandClient Qt6::WaylandClientPrivate)
-endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     target_compile_options(esotereel_gui PRIVATE -fsanitize=address -fno-omit-frame-pointer)
