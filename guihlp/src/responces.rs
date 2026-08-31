@@ -74,7 +74,7 @@ pub(super) fn on_responce_recveve(
 
             {
                 let mut app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project = Some(project_arc.clone());
+                app_state.project = Some(project_arc);
             }
 
             for i in 0..timeline_len {
@@ -99,6 +99,8 @@ pub(super) fn on_responce_recveve(
                         timeline.upsert_clip_from_network(*layer_id, clip);
                     }
                 }
+                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+                drop(project_arc);
                 mark_dirty_timeline(*timeline_id);
             }
         }
@@ -122,6 +124,8 @@ pub(super) fn on_responce_recveve(
                         timeline.remove_clip_by_id_in(*layer_id, *clip_id);
                     }
                 }
+                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+                drop(project_arc);
                 mark_dirty_timeline(*timeline_id);
             }
         }
@@ -164,6 +168,8 @@ pub(super) fn on_responce_recveve(
                         timeline.set_root_layers(root_ids);
                     }
                 }
+                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+                drop(project_arc);
                 mark_dirty_timeline(*timeline_id);
             }
         }
@@ -190,6 +196,8 @@ pub(super) fn on_responce_recveve(
                         // (親も別途upsertで送られてくるので)
                     }
                 }
+                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+                drop(project_arc);
                 mark_dirty_timeline(*timeline_id);
             }
         }
@@ -277,8 +285,15 @@ pub(super) fn on_responce_recveve(
                 let client_str = format!("{:#?}", project);
 
                 info!("Client: {}", client_str.green());
+            } else {
+                info!("Client project is None");
             }
-            info!("Server: {}", server_str.red());
+
+            if let Some(server_str) = server_str.as_deref() {
+                info!("Server: {}", server_str.red());
+            } else {
+                info!("Server project is None");
+            }
         }
     }
     Ok(())

@@ -36,7 +36,12 @@ impl ServerNetworkHandler {
     }
 
     pub fn new(app_state: Arc<Mutex<ServerState>>) -> Self {
-        let dirty_signal = app_state.lock().unwrap().dirty_signal.clone();
+        let dirty_signal = app_state
+            .lock()
+            .expect("mutex poisoned")
+            .dirty_signal
+            .clone();
+
         Self {
             app_state,
             dirty_signal,

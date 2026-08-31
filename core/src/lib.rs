@@ -7,7 +7,7 @@ use esotereel_lib::{
         layer::LayerMeta,
     },
     responces::Response,
-    util::result::{EsotereelError, LockExt},
+    util::result::EsotereelError,
 };
 use std::sync::{Arc, Mutex};
 
@@ -19,12 +19,11 @@ pub type OnServerReadyFn = extern "C" fn(bool); // 起動成功したか
 
 pub async fn server_network_start(addr: &str, on_server_ready: Option<OnServerReadyFn>) {
     let state = ServerState::new();
-    let dirty_signal = state.dirty_signal.clone();
-
     let network = Arc::new(ServerNetworkHandler::new(Arc::new(Mutex::new(state))));
 
     // async タスク用に Clone
     let network_clone = network.clone();
+    let dirty_signal = network.dirty_signal.clone();
 
     tokio::spawn(async move {
         loop {
@@ -43,20 +42,28 @@ async fn on_project_event(network: &Arc<ServerNetworkHandler>) -> anyhow::Result
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
     let app_state = network.app_state.lock().expect("mutex poisoned");
-    let mut lock = app_state.project.write_or_err()?;
-    let project = lock.as_mut().ok_or(EsotereelError::InvalidTimeline)?;
 
-    let mut changes = project.drain_changes();
-    if changes.is_empty() {
-        return Ok(());
-    }
+    let project_arc = app_state.project.as_ref().cloned();
+    let Some(project_arc) = project_arc else {
+        anyhow::bail!(EsotereelError::ProjectNotFound)
+    };
 
-    // Composite/Area/Script経由でネストしているclipへの波及も回収
-    project.propagate_nested_dirty(&changes);
-    changes.extend(project.drain_changes());
+    let changes = {
+        let mut project = project_arc.write().unwrap();
+
+        let mut changes = project.drain_changes();
+        if changes.is_empty() {
+            return Ok(());
+        }
+
+        // Composite/Area/Script経由でネストしているclipへの波及も回収
+        project.propagate_nested_dirty(&changes);
+        changes.extend(project.drain_changes());
+
+        changes
+    };
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(lock);
     drop(app_state);
 
     for (timeline_id, changeset) in changes {
@@ -73,13 +80,20 @@ fn dispatch_changeset(
 ) -> anyhow::Result<()> {
     // ロックを再度取得してタイムラインデータを取得
     let app_state = network.app_state.lock().expect("mutex poisoned");
-    let lock = app_state.project.read_or_err()?;
-    let project = lock.as_ref().ok_or(EsotereelError::InvalidTimeline)?;
+
+    let project_arc = app_state.project.as_ref().cloned();
+    let Some(project_arc) = project_arc else {
+        anyhow::bail!(EsotereelError::ProjectNotFound)
+    };
+
+    let project = project_arc.write().unwrap();
+
     let timeline = project
         .timeline(timeline_id)
         .ok_or(EsotereelError::InvalidTimeline)?;
 
-    if !changeset.clips_upserted.is_empty() {
+    // clips_upsertedの処理
+    let (range, clips) = if !changeset.clips_upserted.is_empty() {
         let (range, clips) = changeset.clips_upserted.iter().fold(
             (i64::MAX..i64::MIN, Vec::new()),
             |(mut range, mut clips), id| {
@@ -91,16 +105,13 @@ fn dispatch_changeset(
                 (range, clips)
             },
         );
+        (range, clips)
+    } else {
+        (i64::MAX..i64::MIN, Vec::new())
+    };
 
-        if !clips.is_empty() {
-            let targets = network.clients_watching_in(timeline_id, &range);
-            if !targets.is_empty() {
-                network.send_to_many(&targets, &Response::UpdateClip { timeline_id, clips });
-            }
-        }
-    }
-
-    if !changeset.clips_removed.is_empty() {
+    // clips_removedの処理
+    let removed_range = if !changeset.clips_removed.is_empty() {
         let range = changeset
             .clips_removed
             .values()
@@ -109,8 +120,45 @@ fn dispatch_changeset(
                 r.end = r.end.max(info.position + info.duration);
                 r
             });
+        range
+    } else {
+        i64::MAX..i64::MIN
+    };
 
+    // layersの処理
+    let layers: Vec<LayerMeta> = if !changeset.is_layer_empty() {
+        changeset
+            .layers_upserted
+            .iter()
+            .filter_map(|id| timeline.get_layer(*id).map(LayerMeta::from))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let root_layers = changeset
+        .root_layers_changed
+        .then(|| timeline.root_layers().to_vec());
+
+    let layer_ids: Vec<LayerId> = if !changeset.layers_removed.is_empty() {
+        changeset.layers_removed.iter().copied().collect()
+    } else {
+        Vec::new()
+    };
+
+    // ロックを解放してからネットワーク送信を行う（デッドロック回避）
+    drop(app_state);
+
+    // ネットワーク送信
+    if !clips.is_empty() {
         let targets = network.clients_watching_in(timeline_id, &range);
+        if !targets.is_empty() {
+            network.send_to_many(&targets, &Response::UpdateClip { timeline_id, clips });
+        }
+    }
+
+    if !changeset.clips_removed.is_empty() {
+        let targets = network.clients_watching_in(timeline_id, &removed_range);
         if !targets.is_empty() {
             let clip_ids: Vec<(LayerId, ClipId)> = changeset
                 .clips_removed
@@ -128,16 +176,6 @@ fn dispatch_changeset(
     }
 
     if !changeset.is_layer_empty() {
-        let layers: Vec<LayerMeta> = changeset
-            .layers_upserted
-            .iter()
-            .filter_map(|id| timeline.get_layer(*id).map(LayerMeta::from))
-            .collect();
-
-        let root_layers = changeset
-            .root_layers_changed
-            .then(|| timeline.root_layers().to_vec());
-
         if !layers.is_empty() || root_layers.is_some() {
             let targets = network.clients_watching_timeline(timeline_id); // range不要、timeline全体購読者
             network.send_to_many(
@@ -151,7 +189,6 @@ fn dispatch_changeset(
         }
 
         if !changeset.layers_removed.is_empty() {
-            let layer_ids: Vec<LayerId> = changeset.layers_removed.iter().copied().collect();
             let targets = network.clients_watching_timeline(timeline_id);
             network.send_to_many(
                 &targets,

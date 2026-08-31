@@ -56,5 +56,5 @@ pub enum Response {
         fetched_ranges: Vec<Range<f64>>,
         generation: u64,
     },
-    DebugProjectStruct(String),
+    DebugProjectStruct(Option<String>),
 }

@@ -1,4 +1,7 @@
-use std::{ops::Range, sync::Arc};
+use std::{
+    ops::Range,
+    sync::{Arc, RwLock},
+};
 
 use esotereel_lib::{
     StreamState,
@@ -6,7 +9,7 @@ use esotereel_lib::{
     project::Project,
     requests::ArchivedRequest,
     responces::Response,
-    util::result::{EsotereelError, EsotereelResult, LockExt},
+    util::result::{EsotereelError, EsotereelResult},
 };
 use rkyv::Deserialize;
 
@@ -17,8 +20,6 @@ pub fn on_request_receive(
     client_id: u32,
     network: &Arc<ServerNetworkHandler>,
 ) -> EsotereelResult<()> {
-    let mut app_state = network.app_state.lock().expect("mutex poisoned");
-
     match request {
         ArchivedRequest::Test => {}
         ArchivedRequest::NewProject => {
@@ -26,7 +27,7 @@ pub fn on_request_receive(
                 "Server: Handling NewProject request from client {}",
                 client_id
             );
-            let mut lock = app_state.project.write_or_err()?;
+
             let mut new_project = Project::new();
             let placeholder_fps = 60.0;
             let timeline_key = new_project.insert_timeline(placeholder_fps);
@@ -45,12 +46,22 @@ pub fn on_request_receive(
 
             let cmd = Response::ProjectMeta { timelines };
 
-            *lock = Some(new_project);
+            {
+                let mut app_state = network.app_state.lock().expect("mutex poisoned");
+                app_state.project = Some(Arc::new(RwLock::new(new_project)));
+            }
+
             network.send(client_id, &cmd);
         }
         ArchivedRequest::ProjectAll => {
-            let mut lock = app_state.project.write_or_err()?;
-            let project = lock.as_mut().unwrap();
+            let app_state = network.app_state.lock().expect("mutex poisoned");
+
+            let project_arc = app_state.project.as_ref().cloned();
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
+
+            let project = project_arc.write().unwrap();
 
             let timelines = project.timelines_meta();
 
@@ -67,14 +78,17 @@ pub fn on_request_receive(
             command,
             timeline_id,
         } => {
-            let timeline_id = *timeline_id;
+            let app_state = network.app_state.lock().expect("mutex poisoned");
 
-            {
-                let mut lock = app_state.project.write_or_err()?;
-                let mut project = lock.as_mut().unwrap();
+            let project_arc = app_state.project.as_ref().cloned();
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
 
-                handle_command_action(command, &mut project, timeline_id)?;
-            }
+            let mut project = project_arc.write().unwrap();
+
+            handle_command_action(command, &mut project, *timeline_id)?;
+
             drop(app_state);
 
             network.notify_dirty();
@@ -85,6 +99,8 @@ pub fn on_request_receive(
             let streamer = VideoStreamer::new(path).map_err(|e| {
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
+
+            let mut app_state = network.app_state.lock().expect("mutex poisoned");
 
             let resource_id = app_state.get_or_create_resource_id(path);
 
@@ -115,6 +131,8 @@ pub fn on_request_receive(
 
             let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
+            let app_state = network.app_state.lock().expect("mutex poisoned");
+
             let mut streamer = app_state
                 .streams
                 .get_mut(resource_id)
@@ -136,18 +154,21 @@ pub fn on_request_receive(
                 timeline_key,
                 range
             );
+            let app_state = network.app_state.lock().expect("mutex poisoned");
 
             let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
 
             // クライアントの表示範囲をサーバーに記憶させる
             network.update_client_view(client_id, *timeline_key, range.clone());
 
-            let project_arc = app_state.project.clone();
-            drop(app_state);
+            // 範囲内のクリップ送信
+            let project_arc = app_state.project.as_ref().cloned();
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
 
-            // 範囲内のクリップ送信（読み取りのみなので read ロック）
-            let lock = project_arc.read_or_err()?;
-            let project = lock.as_ref().ok_or(EsotereelError::InvalidTimeline)?;
+            let project = project_arc.write().unwrap();
+
             let timeline = project
                 .timeline(*timeline_key)
                 .ok_or(EsotereelError::InvalidTimeline)?;
@@ -167,12 +188,18 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::DebugFetchProjectStruct => {
-            let mut lock = app_state.project.write_or_err()?;
-            let project = lock.as_mut().unwrap();
+            let app_state = network.app_state.lock().expect("mutex poisoned");
+            let project_arc = app_state.project.as_ref().cloned();
+            let Some(project_arc) = project_arc else {
+                network.send(client_id, &&Response::DebugProjectStruct(None));
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
+
+            let project = project_arc.write().unwrap();
 
             let str = format!("{:#?}", project);
 
-            network.send(client_id, &&Response::DebugProjectStruct(str));
+            network.send(client_id, &&Response::DebugProjectStruct(Some(str)));
         }
     }
     Ok(())

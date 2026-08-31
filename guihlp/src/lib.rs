@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ffi::{CString, c_char};
 use std::sync::OnceLock;
@@ -23,6 +24,14 @@ static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();
 
 thread_local! {
     static LAST_ERR_MSG:RefCell<CString>=RefCell::new(CString::new("").unwrap());
+}
+
+pub enum IntoWrapperError<'a> {
+    Ok,
+    NullPtr,
+    NotFound(Option<Cow<'a, str>>),
+    Error(Option<Cow<'a, str>>),
+    Panic(Option<Cow<'a, str>>),
 }
 
 #[repr(C)]
@@ -99,6 +108,30 @@ impl WrapperErrorCode {
             Self::panic(Some(&error_msg))
         } else {
             Self::error(Some(&error_msg))
+        }
+    }
+}
+
+impl<'a> IntoWrapperError<'a> {
+    pub fn set_last_err_msg(&self) {
+        match self {
+            IntoWrapperError::Ok => WrapperErrorCode::set_last_err_msg(None),
+            IntoWrapperError::NullPtr => WrapperErrorCode::set_last_err_msg(None),
+            IntoWrapperError::NotFound(e) => WrapperErrorCode::set_last_err_msg(e.as_deref()),
+            IntoWrapperError::Error(e) => WrapperErrorCode::set_last_err_msg(e.as_deref()),
+            IntoWrapperError::Panic(e) => WrapperErrorCode::set_last_err_msg(e.as_deref()),
+        }
+    }
+}
+
+impl<'a> From<IntoWrapperError<'a>> for WrapperErrorCode {
+    fn from(e: IntoWrapperError) -> Self {
+        match e {
+            IntoWrapperError::Ok => WrapperErrorCode::Ok,
+            IntoWrapperError::NullPtr => WrapperErrorCode::NullPtr,
+            IntoWrapperError::NotFound(_) => WrapperErrorCode::NotFound,
+            IntoWrapperError::Error(_) => WrapperErrorCode::Error,
+            IntoWrapperError::Panic(_) => WrapperErrorCode::Panic,
         }
     }
 }
