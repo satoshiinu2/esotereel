@@ -149,18 +149,6 @@ impl SchemaRegistry {
         &self.fields
     }
 
-    pub fn build(sources: &[SchemaLoadContext]) -> anyhow::Result<SchemaRegistry> {
-        let mut reg = SchemaRegistry::default();
-        for SchemaLoadContext { text, name } in sources {
-            let fields = FieldSchema::parse_toml(text, name)
-                .with_context(|| format!("loading built-in schema `{name}` failed"))?;
-            for f in fields {
-                reg.register(f);
-            }
-        }
-        Ok(reg)
-    }
-
     /// プラグイン由来のスキーマ(namespace済み)を合流させる。
     /// 組み込み/プラグイン間・プラグイン同士でキー衝突があればエラーにする。
     pub fn merge_plugin_fields(&mut self, plugin_fields: Vec<FieldSchema>) -> anyhow::Result<()> {
@@ -234,25 +222,4 @@ pub async fn load_settings_values(path: &Path) -> anyhow::Result<HashMap<String,
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
     Ok(map)
-}
-
-#[cfg(test)]
-mod test {
-    use crate::setting::{SchemaLoadContext, SchemaRegistry, SettingsStore};
-
-    #[test]
-    fn test_load_toml() -> anyhow::Result<()> {
-        let sources = vec![SchemaLoadContext {
-            text: include_str!("test.toml"),
-            name: "test",
-        }];
-
-        let schema = SchemaRegistry::build(&sources)?;
-        println!("schema: {:?}", schema);
-
-        let store = SettingsStore::from_schema(&schema);
-        println!("store: {:?}", store);
-
-        Ok(())
-    }
 }
