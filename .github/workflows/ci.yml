@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            qt_arch: ""
+          - os: windows-latest
+            qt_arch: "win64_msvc2022_64"
+          - os: macos-latest
+            qt_arch: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # target/ と ~/.cargo を自動でキャッシュしてくれる
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      # jurplel action が Qt6_DIR を自動で環境変数にセットする
+      # -> CMakeLists.txt の ENV{Qt6_DIR} 分岐がそのまま効く
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.7.*"
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Install Ninja
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ninja-build
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install ninja
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            choco install ninja
+          fi
+        shell: bash
+
+      # Qt6 Widgets + ADS(Wayland対応) のビルド/実行に必要な XCB/Wayland 系
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xkb1 libwayland-dev \
+            libgl1-mesa-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev
+
+      # macOS: ffmpeg-sys-next のビルド時依存
+      - name: Install FFmpeg dev libs (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg pkg-config
+
+      # Windows: ffmpeg-sys-next のビルド時依存(dev用シェアードビルド)
+      # 実行時同梱するBtbNバイナリとは別に、ビルド時のヘッダ/import libが要る
+      - name: Install FFmpeg dev libs (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg-shared -y
+          echo "FFMPEG_DIR=C:\ProgramData\chocolatey\lib\ffmpeg-shared\tools\ffmpeg-shared" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      # ADS(Qt-Advanced-Docking-System) の FetchContent clone をキャッシュ
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: ${{ runner.os }}-ads-5.0.0
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run Rust tests
+        run: cargo test --workspace --release
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-${{ matrix.os }}
+          path: |
+            build/esotereel_gui*
+            target/release/esotereel_core*
+          if-no-files-found: warn
