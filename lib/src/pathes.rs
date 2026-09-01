@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use std::path::PathBuf;
 
 fn root() -> anyhow::Result<ProjectDirs> {
-    let proj_dirs = ProjectDirs::from("com", "esotereel", "esotereel") // qualifier, org, app
+    let proj_dirs = ProjectDirs::from("com", "satoshiinu", "esotereel") // qualifier, org, app
         .context("could not determine user config directory")?;
     Ok(proj_dirs)
 }
