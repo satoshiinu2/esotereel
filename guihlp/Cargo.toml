@@ -16,3 +16,4 @@ log = "0.4"
 colored = "3.0"
 tokio = { version = "1", features = ["full"] }
 glam = { version = "0.32", features = ["bytemuck"] }
+toml = "1.1.4"
