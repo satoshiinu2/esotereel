@@ -31,9 +31,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      
       - name: Install cbindgen
         run: cargo install cbindgen --locked
 
@@ -109,6 +106,220 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --release
 
+      # ========== Windows NSIS インストーラー ==========
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        run: choco install nsis -y
+
+      - name: Create NSIS installer script (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $nsiContent = @"
+          !include "MUI2.nsh"
+          !include "LogicLib.nsh"
+          
+          Name "Esotereel"
+          OutFile "esotereel-installer.exe"
+          InstallDir "`$PROGRAMFILES\Esotereel"
+          InstallDirRegKey HKCU "Software\Esotereel" ""
+          
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_UNPAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+          
+          Section "Install"
+            SetOutPath "`$INSTDIR"
+            
+            ; Copy application files
+            File "build\esotereel_gui.exe"
+            `$`{If`} `$`{FileExists`} "target\release\esotereel_core.dll"
+              File "target\release\esotereel_core.dll"
+            `$`{EndIf`}
+            
+            ; Store install folder
+            WriteRegStr HKCU "Software\Esotereel" "" "`$INSTDIR"
+            
+            ; Create uninstaller
+            WriteUninstaller "`$INSTDIR\Uninstall.exe"
+            
+            ; Create Start Menu shortcuts
+            CreateDirectory "`$SMPROGRAMS\Esotereel"
+            CreateShortCut "`$SMPROGRAMS\Esotereel\Esotereel.lnk" "`$INSTDIR\esotereel_gui.exe"
+            CreateShortCut "`$SMPROGRAMS\Esotereel\Uninstall.lnk" "`$INSTDIR\Uninstall.exe"
+            
+            ; Create Desktop shortcut
+            CreateShortCut "`$DESKTOP\Esotereel.lnk" "`$INSTDIR\esotereel_gui.exe"
+          SectionEnd
+          
+          Section "Uninstall"
+            Delete "`$INSTDIR\esotereel_gui.exe"
+            Delete "`$INSTDIR\esotereel_core.dll"
+            Delete "`$INSTDIR\Uninstall.exe"
+            RMDir "`$INSTDIR"
+            
+            Delete "`$SMPROGRAMS\Esotereel\Esotereel.lnk"
+            Delete "`$SMPROGRAMS\Esotereel\Uninstall.lnk"
+            RMDir "`$SMPROGRAMS\Esotereel"
+            
+            Delete "`$DESKTOP\Esotereel.lnk"
+            
+            DeleteRegKey HKCU "Software\Esotereel"
+          SectionEnd
+          "@
+          
+          $nsiContent | Out-File -Encoding ASCII installer.nsi
+          makensis.exe installer.nsi
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "NSIS compiler failed"
+            exit 1
+          }
+
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-windows-installer
+          path: esotereel-installer.exe
+          if-no-files-found: warn
+
+      # ========== macOS DMG パッケージ ==========
+      - name: Create macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          
+          # AppBundleディレクトリ構造を作成
+          mkdir -p esotereel.app/Contents/MacOS
+          mkdir -p esotereel.app/Contents/Resources
+          
+          # 実行ファイルをコピー
+          cp build/esotereel_gui esotereel.app/Contents/MacOS/esotereel_gui
+          chmod +x esotereel.app/Contents/MacOS/esotereel_gui
+          
+          # 動的ライブラリをコピー（存在する場合）
+          if [ -f target/release/libesotereel_core.dylib ]; then
+            cp target/release/libesotereel_core.dylib esotereel.app/Contents/MacOS/
+          fi
+          
+          # Info.plistを作成
+          cat > esotereel.app/Contents/Info.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>en</string>
+              <key>CFBundleExecutable</key>
+              <string>esotereel_gui</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.esotereel.app</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>Esotereel</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSMinimumSystemVersion</key>
+              <string>10.12</string>
+          </dict>
+          </plist>
+          PLIST
+          
+          # DMGを作成
+          hdiutil create -volname "Esotereel" -srcfolder . -ov -format UDZO esotereel.dmg
+          
+          # 作成確認
+          if [ -f esotereel.dmg ]; then
+            echo "DMG created successfully"
+            ls -lh esotereel.dmg
+          else
+            echo "Failed to create DMG"
+            exit 1
+          fi
+
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-macos-dmg
+          path: esotereel.dmg
+          if-no-files-found: warn
+
+      # ========== Linux AppImage ==========
+      - name: Create Linux AppImage
+        if: runner.os == 'Linux'
+        run: |
+          set -e
+          
+          # appimagetoolのダウンロード
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          
+          # AppImageディレクトリ構造を作成
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/lib
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          # 実行ファイルをコピー
+          cp build/esotereel_gui AppDir/usr/bin/esotereel
+          chmod +x AppDir/usr/bin/esotereel
+          
+          # 共有ライブラリをコピー（存在する場合）
+          if [ -f target/release/libesotereel_core.so ]; then
+            cp target/release/libesotereel_core.so AppDir/usr/lib/
+          fi
+          
+          # .desktop ファイルを作成（AppImageメタデータ）
+          cat > AppDir/usr/share/applications/esotereel.desktop << 'DESKTOP'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=Esotereel
+          Exec=esotereel
+          Icon=esotereel
+          Categories=Utility;
+          DESKTOP
+          
+          # AppImageのAppRun スクリプト
+          cat > AppDir/AppRun << 'APPRUN'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE="${SELF%/*}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          exec "${HERE}/usr/bin/esotereel" "$@"
+          APPRUN
+          chmod +x AppDir/AppRun
+          
+          # AppImageを作成
+          ./appimagetool -n AppDir esotereel.AppImage
+          
+          # 作成確認
+          if [ -f esotereel.AppImage ]; then
+            echo "AppImage created successfully"
+            ls -lh esotereel.AppImage
+            chmod +x esotereel.AppImage
+          else
+            echo "Failed to create AppImage"
+            exit 1
+          fi
+
+      - name: Upload Linux AppImage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-linux-appimage
+          path: esotereel.AppImage
+          if-no-files-found: warn
+
+      # ========== ビルド成果物アップロード ==========
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
