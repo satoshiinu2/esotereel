@@ -5,24 +5,44 @@
       "name": "Build and debug GUI",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/cmake/esotereel_gui",
-      "cwd": "${workspaceFolder}/build/cmake",
+      "program": "${workspaceFolder}/build/esotereel_gui",
+      "cwd": "${workspaceFolder}/build",
       "preLaunchTask": "build gui debug",
       "env": {
         "RUST_BACKTRACE": "1",
-        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target"
+      },
+      "windows": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+        }
+      },
+      "linux": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+          // "QT_QPA_PLATFORM": "xcb"
+        }
       }
     },
     {
       "name": "Build and debug CORE",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/build/target/debug/esotereel_core",
-      "cwd": "${workspaceFolder}/build/target/debug",
+      "program": "${workspaceFolder}/target/debug/esotereel_core",
+      "cwd": "${workspaceFolder}/target/debug",
       "preLaunchTask": "build core debug",
       "env": {
         "RUST_BACKTRACE": "1",
-        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target"
+      },
+      "windows": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+        }
+      },
+      "linux": {
+        "env": {
+          "RUST_BACKTRACE": "1",
+          // "QT_QPA_PLATFORM": "xcb"
+        }
       }
     }
   ]
