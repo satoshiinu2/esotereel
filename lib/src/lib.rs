@@ -10,6 +10,7 @@ use crate::project::Project;
 use dashmap::DashMap;
 
 pub mod decode;
+pub mod pathes;
 pub mod project;
 pub mod render;
 pub mod requests;

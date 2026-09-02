@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(EsotereelGui)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
 # clangdがプロジェクト全体を解析できるようにビルドフラグを出力
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -98,7 +99,7 @@ if(TARGET Qt6::Core)
 endif()
 
 # ライブラリとコア
-set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
+set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/build/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
 set(CORE_BIN "${RUST_TARGET_DIR}/esotereel_core")
 file(GLOB_RECURSE RUST_SRC_FILES
@@ -109,7 +110,7 @@ file(GLOB_RECURSE RUST_SRC_FILES
 )
 
 # rustビルドするやつ
-set(RUST_BUILD_ENV)
+set(RUST_BUILD_ENV "CARGO_TARGET_DIR=${CMAKE_SOURCE_DIR}/build/target")
 
 # GUI Helper (ライブラリ) のビルドコマンド
 add_custom_command(
@@ -196,7 +197,7 @@ set(CLANGD_CONTENT
 "If:
   OS: ${CLANGD_OS}
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: build/cmake
   Compiler: ${CLANGD_COMPILER}
 ${CLANGD_REMOVE_FLAG}
   Add: [

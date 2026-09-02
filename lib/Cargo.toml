@@ -24,3 +24,6 @@ getset = "0.1"
 glam = { version = "0.32", features = ["bytemuck"] }
 ordered-float = "5"
 tokio = "1.53.1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
