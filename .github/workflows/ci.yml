@@ -8,9 +8,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: build/target
 
 jobs:
-  build:
+  build-and-test:
     strategy:
       fail-fast: false
       matrix:
@@ -31,20 +32,14 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      
       - name: Install cbindgen
         run: cargo install cbindgen --locked
 
-      # target/ と ~/.cargo を自動でキャッシュしてくれる
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
 
-      # jurplel action が Qt6_DIR を自動で環境変数にセットする
-      # -> CMakeLists.txt の ENV{Qt6_DIR} 分岐がそのまま効く
       - name: Install Qt6
         uses: jurplel/install-qt-action@v4
         with:
@@ -63,7 +58,6 @@ jobs:
           fi
         shell: bash
 
-      # Qt6 Widgets + ADS(Wayland対応) のビルド/実行に必要な XCB/Wayland 系
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -75,45 +69,57 @@ jobs:
             libgl1-mesa-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev
 
-      # macOS: ffmpeg-sys-next のビルド時依存
       - name: Install FFmpeg dev libs (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg pkg-config
 
-      # Windows: ffmpeg-sys-next のビルド時依存(dev用シェアードビルド)
-      # 実行時同梱するBtbNバイナリとは別に、ビルド時のヘッダ/import libが要る
       - name: Install FFmpeg dev libs (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ver = "n7.1-latest"  # BtbN の固定タグ(rolling "latest" ではなく特定タグ)
           $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl-shared.zip"
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
           Expand-Archive -Path ffmpeg.zip -DestinationPath C:\ffmpeg
           $dir = Get-ChildItem C:\ffmpeg | Select-Object -First 1
           echo "FFMPEG_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
 
-      # ADS(Qt-Advanced-Docking-System) の FetchContent clone をキャッシュ
       - name: Cache FetchContent deps
         uses: actions/cache@v4
         with:
-          path: build/_deps
+          path: build/cmake/_deps
           key: ${{ runner.os }}-ads-5.0.0
 
+      # 修正: -B build -> -B build/cmake
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build/cmake -G Ninja -DCMAKE_BUILD_TYPE=Release
 
+      # 修正: --build build -> --build build/cmake
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build/cmake --config Release --parallel
 
       - name: Run Rust tests
         run: cargo test --workspace --release
 
-      - name: Upload build artifacts
+      # ========== パッケージ化ステップ ==========
+      - name: Package Windows Installer
+        if: runner.os == 'Windows'
+        run: |
+          choco install nsis -y
+          mkdir -Force dist
+          makensis.exe installer/windows/installer.nsi
+
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        run: bash installer/linux/build_appimage.sh
+
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        run: bash installer/macos/build_dmg.sh
+
+      # ========== Artifact Upload ==========
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: esotereel-${{ matrix.os }}
-          path: |
-            build/esotereel_gui*
-            target/release/esotereel_core*
-          if-no-files-found: warn
+          name: esotereel-${{ matrix.os }}-dist
+          path: dist/*
+          if-no-files-found: error
