@@ -3,6 +3,7 @@
 #include "ads_globals.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineWidget.h"
+#include "wrapper/Requests.h"
 #include <DockManager.h>
 #include <QLabel>
 #include <QMenuBar>
@@ -69,7 +70,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     viewMenu->addAction(debugStreamsDock->toggleViewAction());
 }
 
-void MainWindow::markDirtyTimeline(size_t timelineId) {
+void MainWindow::markDirtyTimeline(TimelineId timelineId) {
     QTimer::singleShot(0, this, [this]() {
         timelineWidget->markRowsDirty();
         timelineWidget->update();
