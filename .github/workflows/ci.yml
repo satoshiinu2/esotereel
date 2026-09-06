@@ -102,6 +102,11 @@ jobs:
           echo "FFMPEG_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
           echo "$($dir.FullName)\bin" >> $env:GITHUB_PATH
 
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install nsis --yes
+
       - name: Cache FetchContent deps
         uses: actions/cache@v4
         with:
