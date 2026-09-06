@@ -112,6 +112,14 @@ jobs:
           echo "$nsis" >> $env:GITHUB_PATH
           & "$nsis\makensis.exe" /VERSION
     
+      - name: Debug DLL paths
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          where.exe qmake
+          where.exe Qt6Core.dll
+          where.exe ffmpeg
+          $env:PATH -split ';' | Select-String 'Qt|FFmpeg|ffmpeg's
 
       - name: Cache FetchContent deps
         uses: actions/cache@v4
