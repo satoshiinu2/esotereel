@@ -1,6 +1,6 @@
 #include "DebugStreamsWidget.h"
-#include "../../../wrapper/ClientNetworkHandler.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/ClientNetworkHandler.h"
 #include <QPainter>
 #include <QResizeEvent>
 #include <QTimer>

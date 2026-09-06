@@ -1,6 +1,6 @@
 #include "TimelineWidget.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/Requests.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/Requests.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>

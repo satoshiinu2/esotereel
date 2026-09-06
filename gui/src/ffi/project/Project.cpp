@@ -1,9 +1,9 @@
 #include "Project.h"
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/Result.h"
-#include "wrapper/WrapperResult.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/Result.h"
+#include "ffi/WrapperResult.h"
 
 namespace esotereel {
 Project::Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr(p) {}

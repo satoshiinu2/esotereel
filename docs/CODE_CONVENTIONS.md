@@ -490,7 +490,7 @@ QString qStr = QString::fromStdString(stdStr);
 #### String Views
 ```cpp
 // Use StringView for FFI string parameters
-#include "wrapper/stringview.h"
+#include "ffi/stringview.h"
 
 // Avoid unnecessary string copies
 void processString(StringView view);
@@ -537,7 +537,7 @@ try {
 #### FFI Exception Safety
 ```cpp
 // Exception handling at FFI boundaries
-#include "wrapper/Result.h"
+#include "ffi/Result.h"
 
 try {
     // Call Rust FFI

@@ -1,6 +1,6 @@
 #pragma once
 #include "esotereel_gui_helper.h"
-#include "wrapper/Result.h"
+#include "ffi/Result.h"
 #include <optional>
 #include <stdexcept>
 #include <string>

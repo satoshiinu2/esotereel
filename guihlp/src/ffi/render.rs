@@ -5,7 +5,7 @@ use esotereel_lib::{
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
 };
 
-use crate::{WrapperErrorCode, network::ClientNetworkHandler, wrapper::log_if_panicked};
+use crate::{WrapperErrorCode, network::ClientNetworkHandler, ffi::log_if_panicked};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(

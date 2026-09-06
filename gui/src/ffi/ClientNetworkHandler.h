@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Result.h"
-#include "wrapper/project/Project.h"
+#include "ffi/project/Project.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
 #include <qguiapplication_platform.h>

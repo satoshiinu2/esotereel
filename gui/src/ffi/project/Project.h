@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wrapper/Result.h"
+#include "ffi/Result.h"
 #include <cmath>
 #include <cstddef>
 #include <utility>

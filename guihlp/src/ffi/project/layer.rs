@@ -1,6 +1,6 @@
 use esotereel_lib::project::{Clip, Layer, Timeline};
 
-use crate::{WrapperErrorCode, wrapper::stringview::StringView};
+use crate::{WrapperErrorCode, ffi::stringview::StringView};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn layer_find_clip_at_frame(

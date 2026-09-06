@@ -1,5 +1,5 @@
 #pragma once
-#include "wrapper/Requests.h"
+#include "ffi/Requests.h"
 #include <DockManager.h>
 #include <QMainWindow>
 #include <cstddef>

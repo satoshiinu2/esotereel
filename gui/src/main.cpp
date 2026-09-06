@@ -1,10 +1,10 @@
 #include "Logger.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/InternalServer.h"
+#include "ffi/Requests.h"
 #include "network/boot.h"
 #include "window/MainWindow.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/InternalServer.h"
-#include "wrapper/Requests.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>

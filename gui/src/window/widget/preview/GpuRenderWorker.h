@@ -1,10 +1,10 @@
 #pragma once
 
 #include "esotereel_gui_helper.h"
+#include "ffi/project/Timeline.h"
+#include "ffi/project/camera.h"
 #include "window/MainWindow.h"
 #include "window/widget/timeline/TimelineWidget.h"
-#include "wrapper/project/Timeline.h"
-#include "wrapper/project/camera.h"
 #include <QObject>
 #include <QThread>
 

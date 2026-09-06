@@ -2,7 +2,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::render::wgpuutil::{OffscreenTarget, WGpuUtil};
 
-use crate::{WrapperErrorCode, wrapper::log_if_panicked};
+use crate::{WrapperErrorCode, ffi::log_if_panicked};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn wgpuutil_new(

@@ -2,7 +2,7 @@
 #include "Result.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
-#include "wrapper/WrapperResult.h"
+#include "ffi/WrapperResult.h"
 
 namespace esotereel {
 bool InternalServer::start(QString addr, void (*OnConnectedFn)(bool)) {

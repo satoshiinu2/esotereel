@@ -1,12 +1,12 @@
 #include "GpuPreviewWidget.h"
 #include "GpuRenderWorker.h"
 #include "Utils.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/Result.h"
+#include "ffi/project/Project.h"
+#include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
 #include "window/widget/timeline/TimelineWidget.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/Result.h"
-#include "wrapper/project/Project.h"
-#include "wrapper/project/Timeline.h"
 #include <QDebug>
 #include <QEvent>
 #include <QPlatformSurfaceEvent>

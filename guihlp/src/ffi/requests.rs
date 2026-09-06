@@ -8,8 +8,8 @@ use esotereel_lib::{
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
+    ffi::{log_if_panicked, stringview::StringView},
     network::ClientNetworkHandler,
-    wrapper::{log_if_panicked, stringview::StringView},
 };
 
 #[unsafe(no_mangle)]

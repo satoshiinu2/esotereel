@@ -1,9 +1,9 @@
 #include "TimelineWidget.h"
 #include "Utils.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/Requests.h"
-#include "wrapper/project/Clip.h"
-#include "wrapper/project/Timeline.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/Requests.h"
+#include "ffi/project/Clip.h"
+#include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
 

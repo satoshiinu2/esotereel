@@ -1,9 +1,9 @@
 #include "MainWindow.h"
-#include "../wrapper/project/camera.h"
 #include "ads_globals.h"
+#include "ffi/Requests.h"
+#include "ffi/project/camera.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineWidget.h"
-#include "wrapper/Requests.h"
 #include <DockManager.h>
 #include <QLabel>
 #include <QMenuBar>
