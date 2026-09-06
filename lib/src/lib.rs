@@ -1,4 +1,3 @@
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::sync::{OnceLock, atomic::AtomicU32};
 use tokio::sync::Notify;
@@ -6,19 +5,15 @@ use tokio::sync::Notify;
 use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
-use crate::plugin::PluginLoader;
 use crate::project::Project;
-use crate::setting::{SchemaRegistry, SettingsStore, load_settings_values};
 use dashmap::DashMap;
 
 pub mod decode;
 pub mod pathes;
-pub mod plugin;
 pub mod project;
 pub mod render;
 pub mod requests;
 pub mod responces;
-pub mod setting;
 pub mod util;
 
 pub type OnSendFn = extern "C" fn(u32, *const u8, usize);
@@ -62,54 +57,15 @@ pub struct ClientState {
 
     pub path_to_stream: DashMap<String, StreamState>,
     pub streams: DashMap<u32, StreamPlayer>,
-
-    pub schema: SchemaRegistry,
-    pub settings: SettingsStore,
-    pub plugins: PluginLoader,
 }
 
 impl ClientState {
     pub fn new() -> Self {
-        let schema = SchemaRegistry::default();
-        let settings = SettingsStore::from_schema(&schema);
-
         Self {
             project: None,
             path_to_stream: DashMap::new(),
             streams: DashMap::new(),
-            schema,
-            settings,
-            plugins: PluginLoader::new(),
         }
-    }
-    pub async fn bootstrap(
-        &mut self,
-        settings_path: &Path,
-    ) -> anyhow::Result<Vec<(PathBuf, anyhow::Error)>> {
-        let mut loader = PluginLoader::new();
-        let (plugin_results, loaded_values) = tokio::join!(
-            loader.load_from_disk(HostRole::Client),
-            load_settings_values(settings_path),
-        );
-        let plugin_results = plugin_results?;
-
-        let plugin_errors = plugin_results
-            .iter()
-            .filter_map(|r| {
-                r.result
-                    .as_ref()
-                    .err()
-                    .map(|e| (r.dir.clone(), anyhow::anyhow!("{e:#}")))
-            })
-            .collect();
-
-        self.schema
-            .merge_plugin_fields(loader.collect_all_schemas())?;
-        self.settings.fill_missing_defaults(&self.schema);
-        self.settings.apply_loaded(loaded_values?);
-        self.plugins = loader;
-
-        Ok(plugin_errors)
     }
 }
 

@@ -3,8 +3,8 @@
 #include "Result.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/WrapperResult.h"
 #include "project/Project.h"
-#include "wrapper/WrapperResult.h"
 
 namespace esotereel {
 ClientNetworkHandler::ClientNetworkHandler() {

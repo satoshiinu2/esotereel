@@ -1,6 +1,7 @@
 #include "MainWindow.h"
-#include "../wrapper/project/camera.h"
 #include "ads_globals.h"
+#include "ffi/Requests.h"
+#include "ffi/project/camera.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineWidget.h"
 #include <DockManager.h>
@@ -69,7 +70,7 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     viewMenu->addAction(debugStreamsDock->toggleViewAction());
 }
 
-void MainWindow::markDirtyTimeline(size_t timelineId) {
+void MainWindow::markDirtyTimeline(TimelineId timelineId) {
     QTimer::singleShot(0, this, [this]() {
         timelineWidget->markRowsDirty();
         timelineWidget->update();

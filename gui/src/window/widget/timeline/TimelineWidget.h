@@ -21,12 +21,12 @@
 #include <QVariant>
 #include <QWidget>
 
+#include "ffi/project/Clip.h"
+#include "ffi/project/Layer.h"
+#include "ffi/project/Project.h"
+#include "ffi/project/RenderRows.h"
+#include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
-#include "wrapper/project/Clip.h"
-#include "wrapper/project/Layer.h"
-#include "wrapper/project/Project.h"
-#include "wrapper/project/RenderRows.h"
-#include "wrapper/project/Timeline.h"
 
 #include "esotereel_gui_helper.h"
 

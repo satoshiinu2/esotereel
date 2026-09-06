@@ -1,5 +1,5 @@
 use crate::WrapperErrorCode;
-use crate::wrapper::stringview::StringView;
+use crate::ffi::stringview::StringView;
 use esotereel_core::{OnServerReadyFn, server_network_start};
 
 #[unsafe(no_mangle)]

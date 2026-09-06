@@ -2,7 +2,7 @@
 #include "ClientNetworkHandler.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
-#include "wrapper/project/RenderRows.h"
+#include "ffi/project/RenderRows.h"
 #include <cstdint>
 
 namespace esotereel {

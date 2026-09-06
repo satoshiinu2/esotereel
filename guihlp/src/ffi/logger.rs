@@ -4,7 +4,7 @@ use std::{
     sync::{LazyLock, OnceLock, RwLock},
 };
 
-use crate::wrapper::stringview::StringView;
+use crate::ffi::stringview::StringView;
 
 pub type LogOutCStrFn = extern "C" fn(level: usize, target: StringView, msg: StringView);
 

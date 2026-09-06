@@ -1,5 +1,5 @@
 #include "esotereel_gui_helper.h"
-#include "wrapper/StringView.h"
+#include "ffi/StringView.h"
 #include <QDebug>
 #include <QString>
 

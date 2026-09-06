@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: build/target
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            qt_arch: ""
+            rust_target: ""
+            arch: "x86_64"
+          - os: windows-latest
+            qt_arch: "win64_msvc2022_64"
+            rust_target: "x86_64-pc-windows-msvc"
+            arch: "x86_64"
+          - os: macos-14
+            qt_arch: "clang_64"
+            rust_target: ""
+            arch: "arm64"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC dev environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install cbindgen
+        run: cargo install cbindgen --locked
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+
+      - name: Install Qt6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+
+      - name: Install Ninja
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ninja-build
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install ninja
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            choco install ninja
+          fi
+        shell: bash
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xkb1 libwayland-dev \
+            libgl1-mesa-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev
+
+      - name: Install appimagetool (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
+          sudo chmod +x /usr/local/bin/appimagetool
+
+      - name: Install FFmpeg dev libs (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg pkg-config
+
+      - name: Install FFmpeg dev libs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath C:\ffmpeg
+          $dir = Get-ChildItem C:\ffmpeg | Select-Object -First 1
+          echo "FFMPEG_DIR=$($dir.FullName)" >> $env:GITHUB_ENV
+          echo "$($dir.FullName)\bin" >> $env:GITHUB_PATH
+
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --yes
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          echo $nsis
+          echo "$nsis" >> $env:GITHUB_PATH
+          & "$nsis\makensis.exe" /VERSION
+    
+      - name: Debug DLL paths
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          where.exe qmake
+          where.exe Qt6Core.dll
+          where.exe ffmpeg
+          $env:PATH -split ';' | Select-String 'Qt|FFmpeg|ffmpeg's
+
+      - name: Cache FetchContent deps
+        uses: actions/cache@v4
+        with:
+          path: build/cmake/_deps
+          key: ${{ runner.os }}-ads-5.0.0
+
+      - name: Configure
+        run: cmake -S . -B build/cmake -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/cmake --config Release --parallel
+
+      - name: Run Rust tests
+        run: cargo test --workspace --release
+
+      # ========== パッケージ化ステップ ==========
+      - name: Package Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist
+          makensis.exe installer/windows/installer.nsi
+
+      - name: Package Linux AppImage
+        if: runner.os == 'Linux'
+        run: bash installer/linux/build_appimage.sh
+
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        run: bash installer/macos/build_dmg.sh
+
+      # ========== Artifact Upload ==========
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-${{ matrix.os }}-dist
+          path: dist/*
+          if-no-files-found: error

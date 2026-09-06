@@ -1,10 +1,10 @@
 #include "Logger.h"
+#include "esotereel_gui_helper.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/InternalServer.h"
+#include "ffi/Requests.h"
 #include "network/boot.h"
 #include "window/MainWindow.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/InternalServer.h"
-#include "wrapper/Requests.h"
-#include "wrapper/StringView.h"
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
@@ -15,6 +15,8 @@
 #include <qcontainerfwd.h>
 #include <qdebug.h>
 #include <qglobal.h>
+
+using TimelineId = esotereel_gui_helper::TimelineId;
 
 Q_LOGGING_CATEGORY(logRust, "lib")
 
@@ -56,7 +58,7 @@ void setCallBacks() {
     esotereel_gui_helper::GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {};
-    callbacks.mark_dirty_timeline = +[](size_t id) { window->markDirtyTimeline(id); };
+    callbacks.mark_dirty_timeline = +[](TimelineId id) { window->markDirtyTimeline(id); };
 
     esotereel_gui_helper::init();
     esotereel_gui_helper::init_rust_logger(esotereel::qtLogCallback);

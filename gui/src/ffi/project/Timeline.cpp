@@ -3,8 +3,8 @@
 #include "Layer.h"
 #include "LayersIterator.h"
 #include "esotereel_gui_helper.h"
-#include "wrapper/Result.h"
-#include "wrapper/WrapperResult.h"
+#include "ffi/Result.h"
+#include "ffi/WrapperResult.h"
 #include <cmath>
 #include <cstdint>
 #include <vector>

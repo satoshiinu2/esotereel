@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(EsotereelGui)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
 # clangdがプロジェクト全体を解析できるようにビルドフラグを出力
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -98,8 +99,14 @@ if(TARGET Qt6::Core)
 endif()
 
 # ライブラリとコア
-set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/target/${RUST_PROFILE}")
+set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/build/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
+# MSVCはDLL本体を直接リンクできないため、リンク時は対応するインポートライブラリ(.dll.lib)を使う
+if(WIN32)
+    set(GUI_HLP_LINK_LIB "${GUI_HLP_LIB}.lib")
+else()
+    set(GUI_HLP_LINK_LIB "${GUI_HLP_LIB}")
+endif()
 set(CORE_BIN "${RUST_TARGET_DIR}/esotereel_core")
 file(GLOB_RECURSE RUST_SRC_FILES
     "${CMAKE_SOURCE_DIR}/core/src/*"
@@ -109,11 +116,16 @@ file(GLOB_RECURSE RUST_SRC_FILES
 )
 
 # rustビルドするやつ
-set(RUST_BUILD_ENV)
+set(RUST_BUILD_ENV "CARGO_TARGET_DIR=${CMAKE_SOURCE_DIR}/build/target")
 
 # GUI Helper (ライブラリ) のビルドコマンド
+set(GUI_HLP_OUTPUTS ${GUI_HLP_LIB})
+if(WIN32)
+    list(APPEND GUI_HLP_OUTPUTS ${GUI_HLP_LINK_LIB})
+endif()
+
 add_custom_command(
-    OUTPUT ${GUI_HLP_LIB}
+    OUTPUT ${GUI_HLP_OUTPUTS}
     COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_gui_helper
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
@@ -132,7 +144,7 @@ add_custom_command(
 )
 
 # GUI実行に必要なヘルパーライブラリのみを自動ビルド対象にする
-add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_LIB})
+add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_OUTPUTS})
 
 # サーバー側は必要なときだけ単体でビルドできるように分離 (ALL を外す)
 add_custom_target(rust_core DEPENDS ${CORE_BIN})
@@ -145,37 +157,13 @@ string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
 add_executable(esotereel_gui ${SRC_FILES})
 
-# dll deploy
-if(WIN32)
-    if(IS_DEBUG)
-        set(DLL_DEPLOY_CMD "powershell -ExecutionPolicy Bypass -File ./deploydebug.ps1")
-    else()
-        set(DLL_DEPLOY_CMD "powershell -ExecutionPolicy Bypass -File ./deploydist.ps1")
-    endif()
-
-    add_custom_command(TARGET esotereel_gui POST_BUILD
-        COMMAND ${DLL_DEPLOY_CMD}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    )
-endif()
-
-# # ポート使ってるやつ消す
-# if(UNIX AND NOT APPLE)
-#     add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
-# else()
-#     add_custom_target(cleanup_port)
-# endif()
-
-# # 依存関係
-# add_dependencies(esotereel_gui rust_workspace cleanup_port)
-
 # ライブラリリンク
 target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include" "${CMAKE_SOURCE_DIR}/gui/src")
 target_link_libraries(esotereel_gui PRIVATE 
     Qt6::Widgets 
     Qt6::Network
     qtadvanceddocking-qt6 
-    ${GUI_HLP_LIB}
+    ${GUI_HLP_LINK_LIB}
 )
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -196,7 +184,7 @@ set(CLANGD_CONTENT
 "If:
   OS: ${CLANGD_OS}
 CompileFlags:
-  CompilationDatabase: build
+  CompilationDatabase: build/cmake
   Compiler: ${CLANGD_COMPILER}
 ${CLANGD_REMOVE_FLAG}
   Add: [

@@ -1,6 +1,6 @@
-#include "../../../Utils.h"
-#include "../../../wrapper/ClientNetworkHandler.h"
 #include "TimelineWidget.h"
+#include "Utils.h"
+#include "ffi/ClientNetworkHandler.h"
 
 namespace esotereel::window {
 QRect TimelineWidget::getInnerRect() const noexcept {

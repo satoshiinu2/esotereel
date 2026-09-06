@@ -10,7 +10,7 @@ use esotereel_lib::{
 
 use crate::{
     WrapperErrorCode, network::ClientNetworkHandler, slice_from_ptr_or_empty,
-    wrapper::stringview::StringView,
+    ffi::stringview::StringView,
 };
 
 #[unsafe(no_mangle)]

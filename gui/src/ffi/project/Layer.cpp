@@ -2,8 +2,8 @@
 #include "ClipsIterator.h"
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
-#include "wrapper/StringView.h"
-#include "wrapper/WrapperResult.h"
+#include "ffi/StringView.h"
+#include "ffi/WrapperResult.h"
 #include <QString>
 
 namespace esotereel {

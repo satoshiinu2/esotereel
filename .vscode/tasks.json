@@ -4,12 +4,12 @@
     {
       "label": "build gui debug",
       "type": "shell",
-      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
+      "command": "cmake -G Ninja -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake",
       "group": "build",
       "dependsOrder": "sequence",
       "windows": {
         "options": {
-          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake",
           "shell": {
             "executable": "cmd",
             "args": [
@@ -17,17 +17,17 @@
             ]
           }
         }
-      },
+      }
     },
     {
       "label": "build gui release",
       "type": "shell",
-      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build",
+      "command": "cmake -G Ninja -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake",
       "group": "build",
       "dependsOrder": "sequence",
       "windows": {
         "options": {
-          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build",
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake",
           "shell": {
             "executable": "cmd",
             "args": [
@@ -35,17 +35,17 @@
             ]
           }
         }
-      },
+      }
     },
     {
       "label": "build core debug",
       "type": "shell",
-      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --target rust_core",
+      "command": "cmake -G Ninja -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake --target rust_core",
       "group": "build",
       "dependsOrder": "sequence",
       "windows": {
         "options": {
-          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build --target rust_core",
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake --target rust_core",
           "shell": {
             "executable": "cmd",
             "args": [
@@ -53,17 +53,17 @@
             ]
           }
         }
-      },
+      }
     },
     {
       "label": "build core release",
       "type": "shell",
-      "command": "cmake -G Ninja -S '${workspaceFolder}' -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target rust_core",
+      "command": "cmake -G Ninja -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake --target rust_core",
       "group": "build",
       "dependsOrder": "sequence",
       "windows": {
         "options": {
-          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target rust_core",
+          "command": "cmake -G \"MinGW Makefiles\" -S \"${workspaceFolder}\" -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake --target rust_core",
           "shell": {
             "executable": "cmd",
             "args": [
@@ -71,7 +71,7 @@
             ]
           }
         }
-      },
+      }
     }
   ]
 }

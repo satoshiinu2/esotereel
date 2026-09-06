@@ -1,7 +1,7 @@
 #include "GpuRenderWorker.h"
-#include "wrapper/ClientNetworkHandler.h"
-#include "wrapper/WrapperResult.h"
-#include "wrapper/project/Timeline.h"
+#include "ffi/ClientNetworkHandler.h"
+#include "ffi/WrapperResult.h"
+#include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
 void GpuRenderWorker::initialize(int w, int h) {

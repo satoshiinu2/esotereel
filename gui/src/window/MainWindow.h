@@ -1,4 +1,5 @@
 #pragma once
+#include "ffi/Requests.h"
 #include <DockManager.h>
 #include <QMainWindow>
 #include <cstddef>
@@ -31,7 +32,7 @@ class MainWindow : public QMainWindow {
   public:
     explicit MainWindow(ClientNetworkHandler &network, QWidget *parent = nullptr);
 
-    void markDirtyTimeline(size_t timelineId);
+    void markDirtyTimeline(TimelineId timelineId);
 
   protected:
     WindowGState windowState;

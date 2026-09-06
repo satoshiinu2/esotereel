@@ -2,8 +2,8 @@ use esotereel_lib::{ClientState, project::Project};
 
 use crate::{
     WrapperErrorCode,
+    ffi::{log_if_panicked, stringview::StringView},
     network::ClientNetworkHandler,
-    wrapper::{log_if_panicked, stringview::StringView},
 };
 use std::{
     ffi::c_void,
