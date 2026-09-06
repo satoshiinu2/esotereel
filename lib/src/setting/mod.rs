@@ -130,11 +130,6 @@ struct SchemaFile {
     fields: Vec<FieldSchemaRaw>,
 }
 
-pub struct SchemaLoadContext<'a> {
-    text: &'a str,
-    name: &'a str,
-}
-
 #[derive(Debug, Default)]
 pub struct SchemaRegistry {
     fields: Vec<FieldSchema>,

@@ -25,7 +25,7 @@ class ClientNetworkHandler {
     bool isWayland;
 
   public:
-    ClientNetworkHandler();
+    ClientNetworkHandler(QString stdPluginDir, QString workingDir);
     ~ClientNetworkHandler();
     ClientNetworkHandler(const ClientNetworkHandler &) = delete;
     ClientNetworkHandler &operator=(const ClientNetworkHandler &) = delete;
@@ -43,6 +43,8 @@ class ClientNetworkHandler {
 
     bool run(QString addr);
     Result<Project> getProject() const;
+    Result<void> bootstrap() const;
+    Result<void> logDirectoriesInfo() const;
 
     Requests requests() const;
 };

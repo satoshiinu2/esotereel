@@ -21,11 +21,12 @@ using TimelineId = esotereel_gui_helper::TimelineId;
 Q_LOGGING_CATEGORY(logRust, "lib")
 
 void bootcore(QString corePath);
+void startInternalServer();
 void onServerStart(bool ok);
 void setCallBacks();
 
 esotereel::window::MainWindow *window;
-esotereel::ClientNetworkHandler network;
+esotereel::ClientNetworkHandler *network;
 QString addr;
 
 int main(int argc, char **argv) {
@@ -33,25 +34,43 @@ int main(int argc, char **argv) {
 
     setCallBacks();
 
-    esotereel::window::MainWindow w(network);
+    QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
+    QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
+
+    esotereel::ClientNetworkHandler n(stdPluginDir, workingDir);
+    network = &n;
+
+    n.logDirectoriesInfo();
+
+    esotereel::window::MainWindow w(n);
     window = &w;
     w.show();
 
-    addr = "0.0.0.0:12345";
-    esotereel::InternalServer::start(addr, onServerStart);
+    n.bootstrap();
+
+    startInternalServer();
 
     return app.exec();
 }
 
+void startInternalServer() {
+    addr = "0.0.0.0:12345";
+    QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
+    QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
+
+    esotereel::InternalServer::start(addr, onServerStart, stdPluginDir, workingDir);
+}
+
 void onServerStart(bool ok) {
     if (ok) {
-        network.run(addr);
+
+        network->run(addr);
     }
 }
 
 void onConnectedCallBack() {
     // placeholder
-    network.requests().newProject();
+    network->requests().newProject();
 }
 
 void setCallBacks() {

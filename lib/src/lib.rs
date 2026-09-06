@@ -5,12 +5,13 @@ use tokio::sync::Notify;
 use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
+use crate::dirs::Directories;
 use crate::plugin::PluginLoader;
 use crate::project::Project;
 use dashmap::DashMap;
 
 pub mod decode;
-pub mod pathes;
+pub mod dirs;
 pub mod plugin;
 pub mod project;
 pub mod render;
@@ -56,66 +57,101 @@ pub enum HostRole {
     Server,
 }
 
-pub struct ClientState {
+pub struct CommonState {
     pub project: Option<Arc<RwLock<Project>>>,
 
+    pub dir: Directories,
+
     pub path_to_stream: DashMap<String, StreamState>,
-    pub streams: DashMap<u32, StreamPlayer>,
-    
+
     pub plugin_loader: PluginLoader,
 }
 
-impl ClientState {
-    pub fn new() -> Self {
+impl CommonState {
+    pub fn new(dirs_def: Directories) -> Self {
         Self {
             project: None,
+            dir: dirs_def,
             path_to_stream: DashMap::new(),
-            streams: DashMap::new(),
             plugin_loader: PluginLoader::new(),
         }
     }
-    
-    /// プラグインを並列で読み込む
-    /// このメソッドはasyncなので、tokio runtime内で呼び出す必要がある
-    pub async fn load_plugins(&mut self) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
-        self.plugin_loader.load_from_disk(HostRole::Client).await
+
+    pub async fn load_plugins(
+        &mut self,
+        role: HostRole,
+    ) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
+        self.plugin_loader.load_from_disk(&self.dir, role).await
+    }
+}
+
+pub struct ClientState {
+    pub common: CommonState,
+
+    pub streams: DashMap<u32, StreamPlayer>,
+}
+
+impl ClientState {
+    pub fn new(dirs_def: Directories) -> Self {
+        Self {
+            common: CommonState::new(dirs_def),
+            streams: DashMap::new(),
+        }
+    }
+}
+
+/// Provides transparent access to the shared host state.
+impl std::ops::Deref for ClientState {
+    type Target = CommonState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+impl std::ops::DerefMut for ClientState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
     }
 }
 
 pub struct ServerState {
-    pub project: Option<Arc<RwLock<Project>>>,
+    pub common: CommonState,
 
-    pub path_to_stream: DashMap<String, StreamState>,
     pub streams: DashMap<u32, VideoStreamer>,
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
-    
-    pub plugin_loader: PluginLoader,
 }
 
 impl ServerState {
-    pub fn new() -> Self {
+    pub fn new(dirs_def: Directories) -> Self {
         Self {
-            project: None,
-            path_to_stream: DashMap::new(),
+            common: CommonState::new(dirs_def),
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal: Arc::new(Notify::new()),
-            plugin_loader: PluginLoader::new(),
         }
     }
-    
-    /// プラグインを並列で読み込む
-    /// このメソッドはasyncなので、tokio runtime内で呼び出す必要がある
-    pub async fn load_plugins(&mut self) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
-        self.plugin_loader.load_from_disk(HostRole::Server).await
-    }
+
     pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {
         self.path_to_stream
             .get(path)
             .and_then(|s| s.as_option())
             .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+/// Provides transparent access to the shared host state.
+impl std::ops::Deref for ServerState {
+    type Target = CommonState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.common
+    }
+}
+impl std::ops::DerefMut for ServerState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.common
     }
 }
 // スレッド間で移動させること自体は問題ない

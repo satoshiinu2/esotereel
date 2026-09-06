@@ -7,8 +7,15 @@
 #include "project/Project.h"
 
 namespace esotereel {
-ClientNetworkHandler::ClientNetworkHandler() {
-    auto result = esotereel_gui_helper::client_network_handler_new(&network_ptr);
+ClientNetworkHandler::ClientNetworkHandler(QString stdPluginDir, QString workingDir) {
+
+    QByteArray stdPluginDirUtf8 = stdPluginDir.toUtf8();
+    auto stdPluginDirView = StringView::fromQUtf8String(stdPluginDirUtf8);
+
+    QByteArray workingDirUtf8 = workingDir.toUtf8();
+    auto workingDirView = StringView::fromQUtf8String(workingDirUtf8);
+
+    auto result = esotereel_gui_helper::client_network_handler_new(&network_ptr, stdPluginDirView, workingDirView);
     checkWrapperResult(result);
 }
 
@@ -57,6 +64,34 @@ Result<Project> ClientNetworkHandler::getProject() const {
     }
 
     return Project::byGuard(guard_ptr);
+}
+
+Result<void> ClientNetworkHandler::bootstrap() const {
+    if (!isValid()) {
+        return Result<void>::error("Invalid network handler");
+    }
+
+    auto result = esotereel_gui_helper::client_network_handler_bootstrap(network_ptr);
+
+    if (result != WrapperErrorCode::Ok) {
+        return wrapperResultToResultVoid(result);
+    }
+
+    return {};
+}
+
+Result<void> ClientNetworkHandler::logDirectoriesInfo() const {
+    if (!isValid()) {
+        return Result<void>::error("Invalid network handler");
+    }
+
+    auto result = esotereel_gui_helper::client_network_handler_log_directories_info(network_ptr);
+
+    if (result != WrapperErrorCode::Ok) {
+        return wrapperResultToResultVoid(result);
+    }
+
+    return {};
 }
 
 Requests ClientNetworkHandler::requests() const {

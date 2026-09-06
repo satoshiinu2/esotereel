@@ -1,4 +1,4 @@
-use esotereel_lib::{ClientState, project::Project};
+use esotereel_lib::{ClientState, HostRole, dirs::Directories, project::Project};
 
 use crate::{
     WrapperErrorCode,
@@ -7,6 +7,7 @@ use crate::{
 };
 use std::{
     ffi::c_void,
+    path::PathBuf,
     sync::{Arc, Mutex, RwLockReadGuard},
 };
 
@@ -35,17 +36,7 @@ pub extern "C" fn client_network_handler_run(
             let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             runtime.block_on(async {
                 log::info!("Client worker thread started for: {}", addr);
-                
-                // プラグインを並列で読み込む
-                {
-                    let mut app_state = network.app_state.lock().expect("mutex poisoned");
-                    if let Err(e) = app_state.load_plugins().await {
-                        log::error!("Failed to load plugins: {}", e);
-                    } else {
-                        log::info!("Plugins loaded successfully");
-                    }
-                }
-                
+
                 if let Err(e) = network.run(&addr).await {
                     log::error!("Client worker error: {}", e);
                 }
@@ -62,17 +53,60 @@ pub extern "C" fn client_network_handler_run(
 #[unsafe(no_mangle)]
 pub extern "C" fn client_network_handler_new(
     out: *mut *const ClientNetworkHandler,
+    std_plugin_dir: StringView,
+    working_dir: StringView,
 ) -> WrapperErrorCode {
     if out.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = ClientNetworkHandler::new(Arc::new(Mutex::new(ClientState::new())));
+    let std_plugin_dir = std_plugin_dir
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| PathBuf::from(s));
+
+    let working_dir = working_dir
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| PathBuf::from(s));
+
+    let dirs_def = Directories::new(std_plugin_dir, working_dir);
+
+    let network = ClientNetworkHandler::new(Arc::new(Mutex::new(ClientState::new(dirs_def))));
 
     unsafe {
         *out = Arc::into_raw(Arc::new(network));
     }
 
+    WrapperErrorCode::ok()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn client_network_handler_bootstrap(
+    ptr: *const ClientNetworkHandler,
+) -> WrapperErrorCode {
+    if ptr.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
+
+    let network_arc = unsafe { Arc::from_raw(ptr) };
+    let network = Arc::clone(&network_arc);
+    // 重要: instance_arc の所有権を解放せずに生ポインタに戻す
+    let _ = Arc::into_raw(network_arc);
+
+    // プラグインを読み込む。MutexGuard は Send ではないため、async closure を
+    // 直接 thread::spawn に渡さず、スレッド内でランタイムを実行する。
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        runtime.block_on(async move {
+            let mut app_state = network.app_state.lock().expect("mutex poisoned");
+            if let Err(e) = app_state.load_plugins(HostRole::Client).await {
+                log::error!("Failed to load plugins: {}", e);
+            } else {
+                log::info!("Plugins loaded successfully");
+            }
+        });
+    });
     WrapperErrorCode::ok()
 }
 
@@ -186,6 +220,23 @@ pub unsafe extern "C" fn project_guard_get_project_from_guard(
         let inner = &*(guard_ptr as *const ProjectReadGuardInner);
         *out_project = inner.project_ptr;
     }
+
+    WrapperErrorCode::ok()
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn client_network_handler_log_directories_info(
+    ptr: *const ClientNetworkHandler,
+) -> WrapperErrorCode {
+    if ptr.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
+
+    let network = unsafe { &*ptr };
+
+    let app_state = network.app_state.lock().expect("mutex poisoned");
+
+    app_state.dir.log_info();
 
     WrapperErrorCode::ok()
 }

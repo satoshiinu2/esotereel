@@ -147,6 +147,7 @@ pub struct GuiCallbacks {
     pub mark_dirty_timeline: extern "C" fn(timeline_type: TimelineId),
 }
 
+// is it needed??
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init() {}
 

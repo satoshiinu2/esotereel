@@ -171,7 +171,10 @@ bool debug_streams_write_loaded_streams_sec_arr(const ClientNetworkHandler *ptr_
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
 
-WrapperErrorCode internal_server_start(StringView addr, OnServerReadyFn on_server_ready);
+WrapperErrorCode internal_server_start(StringView addr,
+                                       OnServerReadyFn on_server_ready,
+                                       StringView std_plugin_dir,
+                                       StringView working_dir);
 
 void init_rust_logger(LogOutCStrFn callback);
 
@@ -179,7 +182,11 @@ void set_log_level(StringView target, CLogLevel level);
 
 WrapperErrorCode client_network_handler_run(const ClientNetworkHandler *ptr, StringView addr);
 
-WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out);
+WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out,
+                                            StringView std_plugin_dir,
+                                            StringView working_dir);
+
+WrapperErrorCode client_network_handler_bootstrap(const ClientNetworkHandler *ptr);
 
 WrapperErrorCode client_network_handler_drop(const ClientNetworkHandler *ptr);
 
@@ -192,6 +199,8 @@ WrapperErrorCode client_network_handler_app_state_project_unlock_read(const void
 /// ガードからprojectポインタを取得する関数
 WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
                                                       const Project **out_project);
+
+WrapperErrorCode client_network_handler_log_directories_info(const ClientNetworkHandler *ptr);
 
 const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
