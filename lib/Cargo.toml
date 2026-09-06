@@ -21,9 +21,9 @@ ffmpeg-next = "9.0"
 image = "0.25"
 dashmap = "6.1"
 getset = "0.1"
-glam = { version = "0.32", features = ["bytemuck"] }
+glam = { version = "0.33", features = ["bytemuck"] }
 ordered-float = "5"
-tokio = "1.53.1"
+tokio = { version = "1", features = ["full"] }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.56"

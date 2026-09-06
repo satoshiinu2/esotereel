@@ -1,7 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
-    project::{Timeline, camera::CameraInfo, ids::TimelineId},
+    project::{camera::CameraInfo, ids::TimelineId},
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
 };
 
