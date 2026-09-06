@@ -101,6 +101,12 @@ endif()
 # ライブラリとコア
 set(RUST_TARGET_DIR "${CMAKE_SOURCE_DIR}/build/target/${RUST_PROFILE}")
 set(GUI_HLP_LIB "${RUST_TARGET_DIR}/${RLIB_PREFIX}esotereel_gui_helper.${DLIB_EXT}")
+# MSVCはDLL本体を直接リンクできないため、リンク時は対応するインポートライブラリ(.dll.lib)を使う
+if(WIN32)
+    set(GUI_HLP_LINK_LIB "${GUI_HLP_LIB}.lib")
+else()
+    set(GUI_HLP_LINK_LIB "${GUI_HLP_LIB}")
+endif()
 set(CORE_BIN "${RUST_TARGET_DIR}/esotereel_core")
 file(GLOB_RECURSE RUST_SRC_FILES
     "${CMAKE_SOURCE_DIR}/core/src/*"
@@ -113,8 +119,13 @@ file(GLOB_RECURSE RUST_SRC_FILES
 set(RUST_BUILD_ENV "CARGO_TARGET_DIR=${CMAKE_SOURCE_DIR}/build/target")
 
 # GUI Helper (ライブラリ) のビルドコマンド
+set(GUI_HLP_OUTPUTS ${GUI_HLP_LIB})
+if(WIN32)
+    list(APPEND GUI_HLP_OUTPUTS ${GUI_HLP_LINK_LIB})
+endif()
+
 add_custom_command(
-    OUTPUT ${GUI_HLP_LIB}
+    OUTPUT ${GUI_HLP_OUTPUTS}
     COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_gui_helper
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
@@ -133,7 +144,7 @@ add_custom_command(
 )
 
 # GUI実行に必要なヘルパーライブラリのみを自動ビルド対象にする
-add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_LIB})
+add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_OUTPUTS})
 
 # サーバー側は必要なときだけ単体でビルドできるように分離 (ALL を外す)
 add_custom_target(rust_core DEPENDS ${CORE_BIN})
@@ -176,7 +187,7 @@ target_link_libraries(esotereel_gui PRIVATE
     Qt6::Widgets 
     Qt6::Network
     qtadvanceddocking-qt6 
-    ${GUI_HLP_LIB}
+    ${GUI_HLP_LINK_LIB}
 )
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
