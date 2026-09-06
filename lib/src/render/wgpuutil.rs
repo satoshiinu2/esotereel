@@ -2,17 +2,7 @@ use std::collections::HashMap;
 
 use wgpu::ExperimentalFeatures;
 
-use crate::render::{pipeline::WgpuRenderResources, surfacetarget::SurfaceTarget};
-
-pub enum RenderTarget<'a> {
-    Surface(&'a wgpu::Surface<'static>),
-    Offscreen(&'a OffscreenTarget),
-}
-
-pub enum RenderSourceTarget {
-    Surface(SurfaceTarget),
-    Offscreen,
-}
+use crate::render::pipeline::WgpuRenderResources;
 
 pub struct WGpuUtil {
     pub instance: wgpu::Instance,

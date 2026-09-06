@@ -1,4 +1,4 @@
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec3, camera::lh::proj::directx};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -41,13 +41,14 @@ impl CameraInfo {
 
         if self.is_orthographic {
             // 2D用の平行投影行列（ズームレベルを考慮）
-            let ortho_mat = Mat4::orthographic_lh(-half_w, half_w, half_h, -half_h, -1000.0, 1000.0);
+            let ortho_mat =
+                directx::orthographic(-half_w, half_w, half_h, -half_h, -1000.0, 1000.0);
             let scale_mat = Mat4::from_scale(Vec3::new(self.scale_factor, self.scale_factor, 1.0));
 
             scale_mat * ortho_mat
         } else {
             // 3D用の透視投影行列
-            Mat4::perspective_lh(fov, aspect, 0.1, 1000.0)
+            directx::perspective(fov, aspect, 0.1, 1000.0)
         }
     }
 }

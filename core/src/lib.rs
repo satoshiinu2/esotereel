@@ -2,7 +2,7 @@ use crate::network::ServerNetworkHandler;
 use esotereel_lib::{
     HostRole, ServerState,
     dirs::Directories,
-    plugin::{self, PluginLoader},
+    plugin::PluginLoader,
     project::{
         change::ChangeSet,
         ids::{ClipId, LayerId, TimelineId},

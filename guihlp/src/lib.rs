@@ -9,7 +9,6 @@ pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
 pub use esotereel_lib::project::ids::{ClipId, LayerId, ScriptId, TimelineId};
-pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
 use log::error;
 
 use crate::network::OnConnectedFn;

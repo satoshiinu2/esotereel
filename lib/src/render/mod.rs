@@ -10,7 +10,6 @@ use crate::{
 };
 
 pub mod pipeline;
-pub mod surfacetarget;
 pub mod uniform;
 pub mod vertex;
 pub mod video;

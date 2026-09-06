@@ -17,7 +17,6 @@ include = ["esotereel_lib"]
 
 [export]
 include = [
-    "NativeWindowHandle",
     "TimelineId",
     "ClipId",
     "LayerId",

@@ -39,14 +39,6 @@ enum class Direction {
   Right,
 };
 
-enum class PlatformKind : uint32_t {
-  Unknown = 0,
-  Xcb = 1,
-  Wayland = 2,
-  Win32 = 3,
-  AppKit = 4,
-};
-
 struct ClientNetworkHandler;
 
 struct Clip;
@@ -114,12 +106,6 @@ struct CameraInfo {
 };
 
 using TimelineTick = int64_t;
-
-struct NativeWindowHandle {
-  PlatformKind kind;
-  void *window_ptr;
-  void *display_ptr;
-};
 
 using ClipId = uint64_t;
 
