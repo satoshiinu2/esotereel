@@ -48,4 +48,4 @@ if [ -f installer/icon.png ]; then
 fi
 
 # 6. AppImage のビルドを実行
-appimagetool -n "$APP_DIR" "$DIST_DIR/esotereel.AppImage"
+ARCH=x86_64 appimagetool --appimage-extract-and-run -n "$APP_DIR" "$DIST_DIR/esotereel.AppImage"
