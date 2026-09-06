@@ -16,7 +16,7 @@ inline std::string toStdString(const RawStringView &raw) {
     return std::string(reinterpret_cast<const char *>(raw.ptr), raw.len);
 }
 
-inline QString toQstring(const RawStringView &raw) {
+inline QString toQString(const RawStringView &raw) {
     if (!raw.ptr || raw.len == 0) {
         return QString();
     }

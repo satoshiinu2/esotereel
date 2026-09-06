@@ -18,7 +18,7 @@ async fn main() {
 
     let dirs_def = Directories::new(std_plugin_dir, working_dir);
 
-    server_network_start("0.0.0.0:12345", None, dirs_def).await;
+    server_network_start("0.0.0.0:12345", None::<fn(bool, &str)>, dirs_def, None).await;
 }
 
 fn log_out_callback(level: usize, msg: String) {

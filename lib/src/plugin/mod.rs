@@ -12,6 +12,7 @@ pub struct PluginManifest {
     pub version: String,
 }
 
+#[derive(Clone)]
 pub struct Plugin {
     pub manifest: PluginManifest,
     pub schema: Vec<FieldSchema>,
@@ -74,12 +75,14 @@ pub struct PluginLoadResult {
 
 pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
+    is_loaded: bool,
 }
 
 impl PluginLoader {
     pub fn new() -> Self {
         Self {
             plugins: Vec::new(),
+            is_loaded: false,
         }
     }
 
@@ -128,6 +131,20 @@ impl PluginLoader {
         dirs_def: &Directories,
         role: HostRole,
     ) -> anyhow::Result<Vec<PluginLoadResult>> {
+        // 既に読み込み済みならキャッシュを返す
+        if self.is_loaded {
+            log::info!("Using cached plugins for {:?}", role);
+            let results = self
+                .plugins
+                .iter()
+                .map(|plugin| PluginLoadResult {
+                    dir: plugin.dir.clone(),
+                    result: Ok(plugin.clone()),
+                })
+                .collect();
+            return Ok(results);
+        }
+
         log::info!("Starting plugin loading for {:?}", role);
         let plugin_dirs = Self::discover_all_plugin_dirs(dirs_def)?;
         log::info!("Discovered {} plugin directories", plugin_dirs.len());
@@ -167,16 +184,16 @@ impl PluginLoader {
             .filter_map(|r| r.result.ok())
             .collect::<Vec<_>>();
 
+        self.is_loaded = true;
+
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
-        // (現状は上のself.pluginsへの格納で十分ならこの戻り値は無くしてもいい)
-        let dirs_again = Self::discover_all_plugin_dirs(dirs_def)?; // 簡略化のための重複呼び出し、下記コメント参照
-        Ok(dirs_again
-            .into_iter()
-            .map(|dir| PluginLoadResult {
-                result: Plugin::load(&dir),
-                dir,
-            })
-            .collect())
+        // キャッシュ済みのプラグインからPluginLoadResultを再構築
+        Ok(self.plugins.iter().map(|plugin| {
+            PluginLoadResult {
+                dir: plugin.dir.clone(),
+                result: Ok(plugin.clone()),
+            }
+        }).collect())
     }
 
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {

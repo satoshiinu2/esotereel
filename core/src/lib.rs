@@ -2,6 +2,7 @@ use crate::network::ServerNetworkHandler;
 use esotereel_lib::{
     HostRole, ServerState,
     dirs::Directories,
+    plugin::{self, PluginLoader},
     project::{
         change::ChangeSet,
         ids::{ClipId, LayerId, TimelineId},
@@ -16,20 +17,25 @@ pub mod network;
 pub mod project;
 pub mod requests;
 
-pub type OnServerReadyFn = extern "C" fn(bool); // 起動成功したか
-
-pub async fn server_network_start(
+pub async fn server_network_start<F>(
     addr: &str,
-    on_server_ready: Option<OnServerReadyFn>,
-    dirs_def: Directories,
-) {
-    let mut state = ServerState::new(dirs_def);
+    on_server_ready: Option<F>, // 起動成功したか, アドレス
 
-    // プラグインを並列で読み込む
-    if let Err(e) = state.load_plugins(HostRole::Server).await {
-        log::error!("Failed to load plugins: {}", e);
-    } else {
-        log::info!("Server plugins loaded successfully");
+    dirs_def: Directories,
+    plugin_loader: Option<Arc<Mutex<PluginLoader>>>, // クライアント側から提供
+) where
+    F: FnOnce(bool, &str),
+{
+    let was_plugin_producted = plugin_loader.is_some();
+    let mut state = ServerState::new(dirs_def, plugin_loader);
+
+    // プラグインが提供されたものではなかったらプラグインを並列で読み込む(すでに読み込まれているので)
+    if !was_plugin_producted {
+        if let Err(e) = state.load_plugins(HostRole::Server).await {
+            log::error!("Failed to load plugins: {}", e);
+        } else {
+            log::info!("Server plugins loaded successfully");
+        }
     }
 
     let network = Arc::new(ServerNetworkHandler::new(Arc::new(Mutex::new(state))));

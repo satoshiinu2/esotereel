@@ -11,7 +11,6 @@ use tokio::sync::{Notify, mpsc};
 
 use esotereel_lib::ServerState;
 
-use crate::OnServerReadyFn;
 use crate::requests::on_request_receive;
 
 type ClientSender = mpsc::UnboundedSender<AlignedVec>;
@@ -50,24 +49,27 @@ impl ServerNetworkHandler {
         }
     }
 
-    pub async fn run(
+    pub async fn run<F>(
         self: Arc<Self>,
         addr: &str,
-        on_server_ready: Option<OnServerReadyFn>,
-    ) -> Result<(), std::io::Error> {
+        on_server_ready: Option<F>,
+    ) -> Result<(), std::io::Error>
+    where
+        F: FnOnce(bool, &str),
+    {
         // グローバルインスタンスを登録 (Cコールバック用)
         *INSTANCE.write().unwrap() = Some(self.clone());
 
         let listener = match TcpListener::bind(&addr).await {
             Ok(l) => {
                 if let Some(f) = on_server_ready {
-                    f(true);
+                    f(true, addr);
                 }
                 Ok(l)
             }
             Err(e) => {
                 if let Some(f) = on_server_ready {
-                    f(false);
+                    f(false, addr);
                 }
                 Err(e)
             }

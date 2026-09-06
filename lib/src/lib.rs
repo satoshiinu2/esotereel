@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::sync::{OnceLock, atomic::AtomicU32};
 use tokio::sync::Notify;
 
@@ -64,16 +64,16 @@ pub struct CommonState {
 
     pub path_to_stream: DashMap<String, StreamState>,
 
-    pub plugin_loader: PluginLoader,
+    pub plugin_loader: Arc<Mutex<PluginLoader>>,
 }
 
 impl CommonState {
-    pub fn new(dirs_def: Directories) -> Self {
+    pub fn new(dirs_def: Directories, plugin_loader: Option<Arc<Mutex<PluginLoader>>>) -> Self {
         Self {
             project: None,
             dir: dirs_def,
             path_to_stream: DashMap::new(),
-            plugin_loader: PluginLoader::new(),
+            plugin_loader: plugin_loader.unwrap_or(Arc::new(Mutex::new(PluginLoader::new()))),
         }
     }
 
@@ -81,7 +81,11 @@ impl CommonState {
         &mut self,
         role: HostRole,
     ) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
-        self.plugin_loader.load_from_disk(&self.dir, role).await
+        self.plugin_loader
+            .lock()
+            .expect("mutex poisoned")
+            .load_from_disk(&self.dir, role)
+            .await
     }
 }
 
@@ -94,7 +98,7 @@ pub struct ClientState {
 impl ClientState {
     pub fn new(dirs_def: Directories) -> Self {
         Self {
-            common: CommonState::new(dirs_def),
+            common: CommonState::new(dirs_def, None),
             streams: DashMap::new(),
         }
     }
@@ -124,9 +128,9 @@ pub struct ServerState {
 }
 
 impl ServerState {
-    pub fn new(dirs_def: Directories) -> Self {
+    pub fn new(dirs_def: Directories, plugin_loader: Option<Arc<Mutex<PluginLoader>>>) -> Self {
         Self {
-            common: CommonState::new(dirs_def),
+            common: CommonState::new(dirs_def, plugin_loader),
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal: Arc::new(Notify::new()),

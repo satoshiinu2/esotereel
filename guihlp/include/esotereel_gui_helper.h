@@ -82,7 +82,7 @@ struct StringView {
   uintptr_t len;
 };
 
-using OnServerReadyFn = void(*)(bool);
+using OnServerReadyCFn = void(*)(bool, StringView);
 
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
 
@@ -171,8 +171,9 @@ bool debug_streams_write_loaded_streams_sec_arr(const ClientNetworkHandler *ptr_
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
 
-WrapperErrorCode internal_server_start(StringView addr,
-                                       OnServerReadyFn on_server_ready,
+WrapperErrorCode internal_server_start(const ClientNetworkHandler *network_ptr,
+                                       StringView addr,
+                                       OnServerReadyCFn on_server_ready,
                                        StringView std_plugin_dir,
                                        StringView working_dir);
 
