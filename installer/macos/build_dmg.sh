@@ -17,10 +17,6 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp build/cmake/esotereel_gui "$APP_DIR/Contents/MacOS/esotereel_gui"
 chmod +x "$APP_DIR/Contents/MacOS/esotereel_gui"
 
-if [ -f build/target/release/libesotereel_core.dylib ]; then
-  cp build/target/release/libesotereel_core.dylib "$APP_DIR/Contents/MacOS/"
-fi
-
 # 3. Info.plistを作成
 cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

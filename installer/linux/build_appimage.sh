@@ -15,12 +15,8 @@ mkdir -p "$APP_DIR/usr/share/applications"
 mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
 
 # 2. 実行ファイル・共有ライブラリのコピー
-cp build/esotereel_gui "$APP_DIR/usr/bin/esotereel"
+cp build/cmake/esotereel_gui "$APP_DIR/usr/bin/esotereel"
 chmod +x "$APP_DIR/usr/bin/esotereel"
-
-if [ -f target/release/libesotereel_core.so ]; then
-  cp target/release/libesotereel_core.so "$APP_DIR/usr/lib/"
-fi
 
 # 3. Desktop ファイルの作成
 cat > "$APP_DIR/usr/share/applications/esotereel.desktop" << 'DESKTOP'
