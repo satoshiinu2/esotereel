@@ -22,7 +22,7 @@ jobs:
           - os: windows-latest
             qt_arch: "win64_msvc2022_64"
             rust_target: "x86_64-pc-windows-msvc"
-          - os: macos-latest
+          - os: macos-14
             qt_arch: "clang_64"
             rust_target: ""
 
