@@ -5,15 +5,18 @@ use tokio::sync::Notify;
 use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
+use crate::plugin::PluginLoader;
 use crate::project::Project;
 use dashmap::DashMap;
 
 pub mod decode;
 pub mod pathes;
+pub mod plugin;
 pub mod project;
 pub mod render;
 pub mod requests;
 pub mod responces;
+pub mod setting;
 pub mod util;
 
 pub type OnSendFn = extern "C" fn(u32, *const u8, usize);
@@ -47,6 +50,7 @@ impl StreamState {
     }
 }
 
+#[derive(Debug)]
 pub enum HostRole {
     Client,
     Server,
@@ -57,6 +61,8 @@ pub struct ClientState {
 
     pub path_to_stream: DashMap<String, StreamState>,
     pub streams: DashMap<u32, StreamPlayer>,
+    
+    pub plugin_loader: PluginLoader,
 }
 
 impl ClientState {
@@ -65,7 +71,14 @@ impl ClientState {
             project: None,
             path_to_stream: DashMap::new(),
             streams: DashMap::new(),
+            plugin_loader: PluginLoader::new(),
         }
+    }
+    
+    /// プラグインを並列で読み込む
+    /// このメソッドはasyncなので、tokio runtime内で呼び出す必要がある
+    pub async fn load_plugins(&mut self) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
+        self.plugin_loader.load_from_disk(HostRole::Client).await
     }
 }
 
@@ -77,6 +90,8 @@ pub struct ServerState {
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
+    
+    pub plugin_loader: PluginLoader,
 }
 
 impl ServerState {
@@ -87,7 +102,14 @@ impl ServerState {
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal: Arc::new(Notify::new()),
+            plugin_loader: PluginLoader::new(),
         }
+    }
+    
+    /// プラグインを並列で読み込む
+    /// このメソッドはasyncなので、tokio runtime内で呼び出す必要がある
+    pub async fn load_plugins(&mut self) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
+        self.plugin_loader.load_from_disk(HostRole::Server).await
     }
     pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {
         self.path_to_stream

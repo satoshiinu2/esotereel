@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use log::warn;
+use log;
 
 use crate::{HostRole, pathes, setting::FieldSchema};
 
@@ -26,6 +26,13 @@ impl Plugin {
             .with_context(|| format!("failed to read manifest at {}", manifest_path.display()))?;
         let manifest: PluginManifest = toml::from_str(&manifest_text)
             .with_context(|| format!("failed to parse manifest at {}", manifest_path.display()))?;
+
+        log::info!(
+            "Loading plugin '{}' v{} (ID: {})",
+            manifest.name,
+            manifest.version,
+            manifest.id
+        );
 
         let settings_path = dir.join("settings.toml");
         let schema = if settings_path.exists() {
@@ -120,7 +127,9 @@ impl PluginLoader {
         &mut self,
         role: HostRole,
     ) -> anyhow::Result<Vec<PluginLoadResult>> {
+        log::info!("Starting plugin loading for {:?}", role);
         let dirs = Self::discover_all_plugin_dirs()?;
+        log::info!("Discovered {} plugin directories", dirs.len());
 
         let mut tasks = vec![];
         for dir in dirs {
@@ -137,6 +146,13 @@ impl PluginLoader {
                 results.push(res);
             }
         }
+
+        let successful_count = results.iter().filter(|r| r.result.is_ok()).count();
+        log::info!(
+            "Loaded {}/{} plugins successfully",
+            successful_count,
+            results.len()
+        );
 
         self.plugins = results
             .into_iter()
@@ -156,6 +172,8 @@ impl PluginLoader {
     }
 
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        log::info!("Reloading plugin: {}", plugin_id);
+
         // 対象プラグインのディレクトリを取得
         let dir = self
             .plugins
@@ -171,6 +189,7 @@ impl PluginLoader {
         // 成功したら配列内の古いインスタンスを差し替え
         if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
             self.plugins[index] = reloaded_plugin;
+            log::info!("Successfully reloaded plugin: {}", plugin_id);
         }
 
         Ok(())

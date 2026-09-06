@@ -18,7 +18,15 @@ pub mod requests;
 pub type OnServerReadyFn = extern "C" fn(bool); // 起動成功したか
 
 pub async fn server_network_start(addr: &str, on_server_ready: Option<OnServerReadyFn>) {
-    let state = ServerState::new();
+    let mut state = ServerState::new();
+    
+    // プラグインを並列で読み込む
+    if let Err(e) = state.load_plugins().await {
+        log::error!("Failed to load plugins: {}", e);
+    } else {
+        log::info!("Server plugins loaded successfully");
+    }
+    
     let network = Arc::new(ServerNetworkHandler::new(Arc::new(Mutex::new(state))));
 
     // async タスク用に Clone

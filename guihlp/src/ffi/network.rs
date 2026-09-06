@@ -35,6 +35,17 @@ pub extern "C" fn client_network_handler_run(
             let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
             runtime.block_on(async {
                 log::info!("Client worker thread started for: {}", addr);
+                
+                // プラグインを並列で読み込む
+                {
+                    let mut app_state = network.app_state.lock().expect("mutex poisoned");
+                    if let Err(e) = app_state.load_plugins().await {
+                        log::error!("Failed to load plugins: {}", e);
+                    } else {
+                        log::info!("Plugins loaded successfully");
+                    }
+                }
+                
                 if let Err(e) = network.run(&addr).await {
                     log::error!("Client worker error: {}", e);
                 }
