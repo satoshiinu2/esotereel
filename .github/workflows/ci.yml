@@ -105,7 +105,13 @@ jobs:
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install nsis --yes
+        run: |
+          choco install nsis --yes
+          $nsis = "${env:ProgramFiles(x86)}\NSIS"
+          echo $nsis
+          echo "$nsis" >> $env:GITHUB_PATH
+          & "$nsis\makensis.exe" /VERSION
+    
 
       - name: Cache FetchContent deps
         uses: actions/cache@v4
@@ -125,9 +131,9 @@ jobs:
       # ========== パッケージ化ステップ ==========
       - name: Package Windows Installer
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install nsis -y
-          mkdir -Force dist
+          New-Item -ItemType Directory -Force dist
           makensis.exe installer/windows/installer.nsi
 
       - name: Package Linux AppImage
