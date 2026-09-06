@@ -22,10 +22,7 @@ Section "Esotereel" SecMain
 	; 実行ファイルおよびライブラリをコピー
 	File "..\..\build\cmake\esotereel_gui.exe"
 
-	; Rust側などのDLLが存在する場合にコピー
-	${If} ${FileExists} "..\..\build\target\release\esotereel_core.dll"
-		File "..\..\build\target\release\esotereel_core.dll"
-	${EndIf}
+	File "..\..\build\target\release\esotereel_gui_helper.dll"
 
 	; アンインストーラーを生成
 	WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -50,7 +47,7 @@ SectionEnd
 
 Section "Uninstall"
 	Delete "$INSTDIR\esotereel_gui.exe"
-	Delete "$INSTDIR\esotereel_core.dll"
+	Delete "$INSTDIR\esotereel_gui_helper.dll"
 	Delete "$INSTDIR\uninstall.exe"
 	RMDir /r "$INSTDIR"
 

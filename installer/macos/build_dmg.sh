@@ -17,6 +17,9 @@ mkdir -p "$APP_DIR/Contents/Resources"
 cp build/cmake/esotereel_gui "$APP_DIR/Contents/MacOS/esotereel_gui"
 chmod +x "$APP_DIR/Contents/MacOS/esotereel_gui"
 
+# GUI Helper 共有ライブラリ (esotereel_guiの実行に必須)
+cp build/target/release/libesotereel_gui_helper.dylib "$APP_DIR/Contents/MacOS/"
+
 # 3. Info.plistを作成
 cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

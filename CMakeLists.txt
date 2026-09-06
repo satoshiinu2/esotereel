@@ -157,30 +157,6 @@ string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
 add_executable(esotereel_gui ${SRC_FILES})
 
-# dll deploy
-if(WIN32)
-    if(IS_DEBUG)
-        set(DLL_DEPLOY_CMD "powershell -ExecutionPolicy Bypass -File ./deploydebug.ps1")
-    else()
-        set(DLL_DEPLOY_CMD "powershell -ExecutionPolicy Bypass -File ./deploydist.ps1")
-    endif()
-
-    add_custom_command(TARGET esotereel_gui POST_BUILD
-        COMMAND ${DLL_DEPLOY_CMD}
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    )
-endif()
-
-# # ポート使ってるやつ消す
-# if(UNIX AND NOT APPLE)
-#     add_custom_target(cleanup_port COMMAND fuser -k 12345/tcp || true)
-# else()
-#     add_custom_target(cleanup_port)
-# endif()
-
-# # 依存関係
-# add_dependencies(esotereel_gui rust_workspace cleanup_port)
-
 # ライブラリリンク
 target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include" "${CMAKE_SOURCE_DIR}/gui/src")
 target_link_libraries(esotereel_gui PRIVATE 

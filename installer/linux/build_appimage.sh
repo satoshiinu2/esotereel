@@ -18,6 +18,9 @@ mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
 cp build/cmake/esotereel_gui "$APP_DIR/usr/bin/esotereel"
 chmod +x "$APP_DIR/usr/bin/esotereel"
 
+# GUI Helper 共有ライブラリ (esotereel_guiの実行に必須。AppRunのLD_LIBRARY_PATHがusr/libを見る)
+cp build/target/release/libesotereel_gui_helper.so "$APP_DIR/usr/lib/"
+
 # 3. Desktop ファイルの作成
 cat > "$APP_DIR/usr/share/applications/esotereel.desktop" << 'DESKTOP'
 [Desktop Entry]
