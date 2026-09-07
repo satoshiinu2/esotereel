@@ -10,20 +10,17 @@ pub type OnServerReadyCFn = extern "C" fn(bool, StringView); // 起動成功し�
 
 #[unsafe(no_mangle)]
 pub extern "C" fn internal_server_start(
-    network_ptr: *const ClientNetworkHandler,
+    ptr_network: *const ClientNetworkHandler,
     addr: StringView,
     on_server_ready: OnServerReadyCFn,
     std_plugin_dir: StringView,
     working_dir: StringView,
 ) -> WrapperErrorCode {
-    if network_ptr.is_null() {
+    if ptr_network.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network_arc = unsafe { Arc::from_raw(network_ptr) };
-    let network = Arc::clone(&network_arc);
-    // 重要: instance_arc の所有権を解放せずに生ポインタに戻す
-    let _ = Arc::into_raw(network_arc);
+    let network = unsafe { &*ptr_network };
 
     let plugin_loader_clone = network
         .app_state

@@ -12,6 +12,7 @@ pub mod network;
 pub mod project;
 pub mod render;
 pub mod requests;
+pub mod settings;
 pub mod stringview;
 pub mod wgpuutil;
 

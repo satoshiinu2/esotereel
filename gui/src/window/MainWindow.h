@@ -1,6 +1,7 @@
 #pragma once
 #include "ffi/Requests.h"
 #include <DockManager.h>
+#include <QAction>
 #include <QMainWindow>
 #include <cstddef>
 
@@ -21,8 +22,12 @@ class TimelineWidget;
 
 class DebugStreamsWidget;
 
+namespace dialog {
+class SettingsDialog;
+} // namespace dialog
+
 struct WindowGState {
-    ClientNetworkHandler *network;
+    ClientNetworkHandler *const network;
     TimelineWidget *focusedTimeline = nullptr;
     CameraInfo *camera{};
 };
@@ -36,6 +41,9 @@ class MainWindow : public QMainWindow {
 
   protected:
     WindowGState windowState;
+
+  private slots:
+    void openSettingsDialog();
 
   private:
     ads::CDockManager *dockManager;

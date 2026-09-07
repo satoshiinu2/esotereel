@@ -105,6 +105,13 @@ pub extern "C" fn client_network_handler_bootstrap(
             } else {
                 log::info!("Plugins loaded successfully");
             }
+
+            // Apply plugin schemas to settings
+            if let Err(e) = app_state.apply_settings() {
+                log::error!("Failed to apply settings: {}", e);
+            } else {
+                log::info!("Settings applied successfully");
+            }
         });
     });
     WrapperErrorCode::ok()

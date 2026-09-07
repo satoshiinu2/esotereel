@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{Arc, OnceLock, RwLock},
+};
 
 use anyhow::Context;
 use colored::Color;
@@ -158,21 +162,25 @@ impl SchemaRegistry {
 
 #[derive(Debug)]
 pub struct SettingsStore {
+    pub schema: SchemaRegistry,
     values: HashMap<String, toml::Value>,
     has_disk_loaded: bool,
 }
 
 impl SettingsStore {
-    /// スキーマだけで初期化。ディスクはまだ読んでない。
-    pub fn from_schema(schema: &SchemaRegistry) -> Self {
-        let values = schema
-            .fields()
-            .into_iter()
-            .map(|f| (f.key.clone(), f.default.clone()))
-            .collect();
+    pub fn new() -> Self {
         Self {
-            values,
+            values: HashMap::default(),
+            schema: SchemaRegistry::default(),
             has_disk_loaded: false,
+        }
+    }
+
+    pub fn add_missing_from_schema(&mut self) {
+        for f in self.schema.fields() {
+            self.values
+                .entry(f.key.clone())
+                .or_insert_with(|| f.default.clone());
         }
     }
 
@@ -184,12 +192,42 @@ impl SettingsStore {
         self.has_disk_loaded = true;
     }
 
-    pub fn get(&self, key: &str) -> Option<&toml::Value> {
+    pub fn get_all_fields(&self) -> Vec<FieldSchema> {
+        self.schema.fields().to_vec()
+    }
+
+    pub fn get_value(&self, key: &str) -> Option<&toml::Value> {
         self.values.get(key)
     }
 
-    pub fn set(&mut self, key: String, value: toml::Value) {
+    pub fn set_value(&mut self, key: String, value: toml::Value) -> anyhow::Result<()> {
+        // スキーマに存在するキーかチェック
+        if !self.schema.fields().iter().any(|f| f.key == key) {
+            anyhow::bail!("unknown settings key: {}", key);
+        }
         self.values.insert(key, value);
+        Ok(())
+    }
+
+    pub fn get_categories(&self) -> Vec<String> {
+        let mut categories = std::collections::HashSet::new();
+        for field in self.schema.fields() {
+            for cat in &field.category {
+                categories.insert(cat.clone());
+            }
+        }
+        let mut cats: Vec<_> = categories.into_iter().collect();
+        cats.sort();
+        cats
+    }
+
+    pub fn get_fields_by_category(&self, category: &str) -> Vec<FieldSchema> {
+        self.schema
+            .fields()
+            .iter()
+            .filter(|f| f.category.contains(&category.to_string()))
+            .cloned()
+            .collect()
     }
 
     pub fn fill_missing_defaults(&mut self, schema: &SchemaRegistry) {

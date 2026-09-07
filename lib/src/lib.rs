@@ -1,3 +1,4 @@
+use anyhow::{Context, Ok};
 use std::sync::{Arc, Mutex, RwLock};
 use std::sync::{OnceLock, atomic::AtomicU32};
 use tokio::sync::Notify;
@@ -6,8 +7,9 @@ use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
-use crate::plugin::PluginLoader;
+use crate::plugin::{PluginLoadResult, PluginLoader};
 use crate::project::Project;
+use crate::setting::{SchemaRegistry, SettingsStore};
 use dashmap::DashMap;
 
 pub mod decode;
@@ -77,15 +79,9 @@ impl CommonState {
         }
     }
 
-    pub async fn load_plugins(
-        &mut self,
-        role: HostRole,
-    ) -> anyhow::Result<Vec<crate::plugin::PluginLoadResult>> {
-        self.plugin_loader
-            .lock()
-            .expect("mutex poisoned")
-            .load_from_disk(&self.dir, role)
-            .await
+    pub async fn load_plugins(&mut self, role: HostRole) -> anyhow::Result<Vec<PluginLoadResult>> {
+        let mut loader = self.plugin_loader.lock().expect("mutex poisoned");
+        loader.load_from_disk(&self.dir, role).await
     }
 }
 
@@ -93,6 +89,8 @@ pub struct ClientState {
     pub common: CommonState,
 
     pub streams: DashMap<u32, StreamPlayer>,
+
+    pub settings: SettingsStore,
 }
 
 impl ClientState {
@@ -100,7 +98,24 @@ impl ClientState {
         Self {
             common: CommonState::new(dirs_def, None),
             streams: DashMap::new(),
+            settings: SettingsStore::new(),
         }
+    }
+
+    pub fn apply_settings(&mut self) -> anyhow::Result<()> {
+        let plugin_schemas = {
+            let loader = self.plugin_loader.lock().expect("mutex poisoned");
+            loader.collect_all_schemas()
+        };
+
+        self.settings
+            .schema
+            .merge_plugin_fields(plugin_schemas)
+            .context("plugin schema conflict during load_plugins")?;
+
+        self.settings.add_missing_from_schema();
+
+        Ok(())
     }
 }
 
@@ -125,6 +140,8 @@ pub struct ServerState {
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
+
+    pub settings: SettingsStore,
 }
 
 impl ServerState {
@@ -134,6 +151,7 @@ impl ServerState {
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal: Arc::new(Notify::new()),
+            settings: SettingsStore::new(),
         }
     }
 

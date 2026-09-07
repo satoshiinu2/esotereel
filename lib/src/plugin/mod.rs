@@ -3,7 +3,11 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use log;
 
-use crate::{HostRole, dirs::Directories, setting::FieldSchema};
+use crate::{
+    HostRole,
+    dirs::Directories,
+    setting::{FieldSchema, SchemaRegistry},
+};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
@@ -155,6 +159,7 @@ impl PluginLoader {
                 result: Plugin::load(&dir),
                 dir,
             });
+
             tasks.push(task);
         }
 
@@ -188,12 +193,14 @@ impl PluginLoader {
 
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
         // キャッシュ済みのプラグインからPluginLoadResultを再構築
-        Ok(self.plugins.iter().map(|plugin| {
-            PluginLoadResult {
+        Ok(self
+            .plugins
+            .iter()
+            .map(|plugin| PluginLoadResult {
                 dir: plugin.dir.clone(),
                 result: Ok(plugin.clone()),
-            }
-        }).collect())
+            })
+            .collect())
     }
 
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
