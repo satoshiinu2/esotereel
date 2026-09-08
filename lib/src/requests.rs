@@ -2,7 +2,11 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::{MediaSec, TimelineTick, command::CommandRequest, ids::TimelineId};
+use crate::project::{
+    MediaSec, TimelineTick,
+    command::CommandRequest,
+    ids::{ResourceId, TimelineId},
+};
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -18,11 +22,11 @@ pub enum Request {
         path: String,
     },
     FetchStreamData {
-        resource_id: u32,
+        resource_id: ResourceId,
         ranges: Vec<Range<MediaSec>>,
     },
     FetchClipsInRange {
-        timeline_key: u64,
+        timeline_id: TimelineId,
         range: Range<TimelineTick>,
     },
     DebugFetchProjectStruct,

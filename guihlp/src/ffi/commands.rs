@@ -1,7 +1,7 @@
 use esotereel_lib::project::{
     clip::ClipData,
     command::{ClipMoveCtx, CommandRequest},
-    ids::{LayerId, TimelineId},
+    ids::{LayerFolderId, LayerId, TimelineId},
     transform::{ClipTranslate, ClipTranslates},
 };
 
@@ -26,7 +26,6 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
 
     let network = unsafe { &*ptr_network };
 
-    // Single lock acquisition to get all needed data
     let clip_data = {
         let app_state = network.app_state.lock().expect("mutex poisoned");
         let project_arc = match app_state.project.as_ref() {
@@ -34,12 +33,14 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
             None => return WrapperErrorCode::not_found(Some("project not found")),
         };
 
-        // Get timeline data with minimal lock time
         let lock = project_arc.read().unwrap();
         let timeline = match lock.timeline(timeline_id) {
             Some(tl) => tl,
             None => return WrapperErrorCode::not_found(Some("timeline not found")),
         };
+
+        // 合成順を1回だけ確定させ、位置解決に使う
+        let execution_order: Vec<u64> = timeline.outline.iter_execution_order().collect();
 
         let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
 
@@ -48,12 +49,9 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
             .filter_map(|clip_id| {
                 let (clip, layer_id) = timeline.get_clip_and_layer(*clip_id)?;
 
-                // order(数値)は無くなったので、root_layers内のindexで移動量を解決する。
-                // 注意: Composite展開行など別Timeline由来のレイヤーはroot_index_ofが
-                // Noneを返す(=このtimeline上には存在しない)ため、その場合は移動対象外になる。
-                let current_index = timeline.root_index_of(layer_id)?;
+                let current_index = execution_order.iter().position(|&id| id == layer_id)?;
                 let new_index = current_index.checked_add_signed(layer_moved)?;
-                let new_layer_id = timeline.layer_id_at_root_index(new_index)?;
+                let new_layer_id = *execution_order.get(new_index)?;
 
                 Some(ClipMoveCtx {
                     clip_id: *clip_id,
@@ -114,38 +112,47 @@ pub unsafe extern "C" fn req_cmd_add_layer(
     ptr_network: *const ClientNetworkHandler,
     timeline_id: TimelineId,
     has_parent: bool,
-    parent_layer_id: LayerId,
+    parent_folder_id: LayerFolderId,
     has_insert_index: bool,
     insert_index: usize,
     name: StringView,
-    is_folder: bool,
 ) -> WrapperErrorCode {
     if ptr_network.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-
     let network = unsafe { &*ptr_network };
 
-    let parent_layer_id = if has_parent {
-        Some(parent_layer_id)
-    } else {
-        None
-    };
-
-    let insert_index = if has_insert_index {
-        Some(insert_index)
-    } else {
-        None
-    };
-
     let command = CommandRequest::AddLayer {
-        parent_layer_id,
-        insert_index,
+        parent_folder_id: has_parent.then_some(parent_folder_id),
+        insert_index: has_insert_index.then_some(insert_index),
         name: name.as_string_lossy().into_owned(),
-        is_folder,
     };
 
     network.req_command(timeline_id, command);
+    WrapperErrorCode::ok()
+}
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_cmd_add_folder(
+    ptr_network: *const ClientNetworkHandler,
+    timeline_id: TimelineId,
+    has_parent: bool,
+    parent_folder_id: LayerFolderId,
+    has_insert_index: bool,
+    insert_index: usize,
+    name: StringView,
+) -> WrapperErrorCode {
+    if ptr_network.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
+    let network = unsafe { &*ptr_network };
+
+    let command = CommandRequest::AddFolder {
+        parent_folder_id: has_parent.then_some(parent_folder_id),
+        insert_index: has_insert_index.then_some(insert_index),
+        name: name.as_string_lossy().into_owned(),
+    };
+
+    network.req_command(timeline_id, command);
     WrapperErrorCode::ok()
 }

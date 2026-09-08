@@ -1,6 +1,7 @@
 #include "TimelineWidget.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/Requests.h"
+#include "ffi/project/RenderRows.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>
@@ -9,6 +10,7 @@
 #include <QMenu>
 #include <optional>
 #include <span>
+#include <stdexcept>
 
 namespace esotereel::window {
 // rowIdx の行の「親レイヤー」を RenderRows の depth だけから逆算する。
@@ -25,7 +27,7 @@ static std::optional<uint64_t> findParentLayerId(std::span<const FfiLayerRow> ro
     }
     for (int i = rowIdx - 1; i >= 0; --i) {
         if (rows[i].depth == depth - 1) {
-            return rows[i].layer_id;
+            return rows[i].node_id;
         }
     }
     return std::nullopt;
@@ -120,14 +122,16 @@ void TimelineWidget::buildLayerContextMenu(const Project &project, QMenu &menu, 
             return;
         }
 
-        if (row.is_folder) {
+        if (row.node_kind == FfiLayerRowKind::Folder) {
             // フォルダー行 → その子として追加(末尾に追加。挿入位置は指定しない)
-            parentLayerId = row.layer_id;
+            parentLayerId = row.node_id;
             insertIndex = std::nullopt;
-        } else {
+        } else if (row.node_kind == FfiLayerRowKind::Layer) {
             // 通常レイヤー行 → 同じ親(=兄弟)として、その行の直後に追加
             parentLayerId = findParentLayerId(rows, rowIdx);
             insertIndex = siblingIndexOf(rows, rowIdx) + 1;
+        } else {
+            throw std::runtime_error("invalid fiLayerRowKind");
         }
     }
     // rowIdx が範囲外(ラベル領域の空白部分)なら parentLayerId/insertIndex は
@@ -135,37 +139,47 @@ void TimelineWidget::buildLayerContextMenu(const Project &project, QMenu &menu, 
 
     QAction *addLayerAction = menu.addAction("Add Layer");
     QObject::connect(addLayerAction, &QAction::triggered, this,
-                     [this, parentLayerId, insertIndex]() { this->addLayer(parentLayerId, insertIndex, false); });
+                     [this, parentLayerId, insertIndex]() { this->addLayer(parentLayerId, insertIndex); });
 
     QAction *addFolderAction = menu.addAction("Add Folder");
     QObject::connect(addFolderAction, &QAction::triggered, this,
-                     [this, parentLayerId, insertIndex]() { this->addLayer(parentLayerId, insertIndex, true); });
+                     [this, parentLayerId, insertIndex]() { this->addFolder(parentLayerId, insertIndex); });
 }
 
-// 名前を聞いてからサーバーへレイヤー追加リクエストを送る。
-// TODO: wrapper/requests.h に
-//   addLayer(timelineId, hasParent, parentLayerId, hasIndex, index, name, isFolder)
-// を追加してください(addClipAt / moveClips と同じパターンで、Rust側は
-// Project::insert_layer_in_timeline(timeline_id, parent, index, name, is_folder) を
-// 呼ぶハンドラを想定しています。index は Option<usize> なので hasIndex/index の
-// ペアでFFI境界を越す必要があります)。
-void TimelineWidget::addLayer(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
-                              bool isFolder) {
+void TimelineWidget::addLayer(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
     bool ok = false;
-    const QString title = isFolder ? "Add Folder" : "Add Layer";
-    const QString defaultName = isFolder ? "Folder" : "Layer";
+    const QString defaultName = "Layer";
 
-    QString name = QInputDialog::getText(this, title, "Name:", QLineEdit::Normal, defaultName, &ok);
+    QString name = QInputDialog::getText(this, "Add Layer", "Name:", QLineEdit::Normal, defaultName, &ok);
     if (!ok || name.trimmed().isEmpty()) {
         return;
     }
 
-    this->windowState.network->requests().addLayer(this->timelineId, parentLayerId, insertIndex, name.toStdString(),
-                                                   isFolder);
+    this->windowState.network->requests().addLayer(this->timelineId, parentFolderId, insertIndex, name.toStdString());
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
-    if (parentLayerId.has_value()) {
-        this->openFolder(parentLayerId.value());
+    if (parentFolderId.has_value()) {
+        this->openFolder(parentFolderId.value());
+    }
+
+    this->markRowsDirty();
+    update();
+}
+
+void TimelineWidget::addFolder(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
+    bool ok = false;
+    const QString defaultName = "Folder";
+
+    QString name = QInputDialog::getText(this, "Add Layer", "Name:", QLineEdit::Normal, defaultName, &ok);
+    if (!ok || name.trimmed().isEmpty()) {
+        return;
+    }
+
+    this->windowState.network->requests().addFolder(this->timelineId, parentFolderId, insertIndex, name.toStdString());
+
+    // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
+    if (parentFolderId.has_value()) {
+        this->openFolder(parentFolderId.value());
     }
 
     this->markRowsDirty();
@@ -197,7 +211,7 @@ void TimelineWidget::addClipAt(const QPoint &local) {
         if (rowIdx >= 0 && static_cast<size_t>(rowIdx) < rows.size()) {
             const auto &row = rows[rowIdx];
             if (row.timeline_id == this->timelineId) {
-                layerId = row.layer_id;
+                layerId = row.node_id;
                 canAdd = true;
             }
         }

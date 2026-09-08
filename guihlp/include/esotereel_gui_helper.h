@@ -30,6 +30,11 @@ enum class CLogLevel : uint8_t {
   Trace,
 };
 
+enum class FfiLayerRowKind {
+  Layer,
+  Folder,
+};
+
 enum class Direction {
   Front,
   Back,
@@ -59,6 +64,9 @@ struct Clip;
 /// executor 側の責務で、データ構造上は葉レイヤーと区別しない。
 struct Layer;
 
+/// Folderの中身(名前・開閉状態・並び順)。
+struct LayerFolder;
+
 struct OffscreenTarget;
 
 struct Project;
@@ -80,6 +88,8 @@ using OnConnectedFn = void(*)();
 
 using LayerId = uint64_t;
 
+using LayerFolderId = uint64_t;
+
 struct StringView {
   const uint8_t *ptr;
   uintptr_t len;
@@ -90,10 +100,10 @@ using OnServerReadyCFn = void(*)(bool, StringView);
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
 
 struct FfiLayerRow {
-  LayerId layer_id;
+  FfiLayerRowKind node_kind;
+  LayerId node_id;
   TimelineId timeline_id;
   uint32_t depth;
-  bool is_folder;
   bool is_folder_open;
   uint32_t clip_start;
   uint32_t clip_count;
@@ -106,6 +116,8 @@ struct ClipRenderInfo {
   bool is_composite;
   bool is_open;
 };
+
+using ClipId = uint64_t;
 
 struct CameraInfo {
   QVector3D position;
@@ -130,8 +142,6 @@ struct SettingsField {
   SettingsFieldType kind_type;
   OwnedString default_value;
 };
-
-using ClipId = uint64_t;
 
 using ScriptId = uint64_t;
 
@@ -161,11 +171,18 @@ WrapperErrorCode req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
 WrapperErrorCode req_cmd_add_layer(const ClientNetworkHandler *ptr_network,
                                    TimelineId timeline_id,
                                    bool has_parent,
-                                   LayerId parent_layer_id,
+                                   LayerFolderId parent_folder_id,
                                    bool has_insert_index,
                                    uintptr_t insert_index,
-                                   StringView name,
-                                   bool is_folder);
+                                   StringView name);
+
+WrapperErrorCode req_cmd_add_folder(const ClientNetworkHandler *ptr_network,
+                                    TimelineId timeline_id,
+                                    bool has_parent,
+                                    LayerFolderId parent_folder_id,
+                                    bool has_insert_index,
+                                    uintptr_t insert_index,
+                                    StringView name);
 
 uintptr_t debug_streams_get_resources_arr_size(const ClientNetworkHandler *ptr_network);
 
@@ -252,6 +269,8 @@ uintptr_t layer_get_clips_count(const Layer *ptr);
 
 StringView layer_get_name(const Layer *ptr);
 
+StringView layer_folder_get_name(const LayerFolder *ptr);
+
 WrapperErrorCode layer_get_clip_at_index(const Layer *layer_ptr,
                                          const Timeline *timeline_ptr,
                                          uintptr_t index,
@@ -262,16 +281,10 @@ WrapperErrorCode layer_get_clip_at_position(const Layer *layer_ptr,
                                             int64_t position,
                                             const Clip **out);
 
-const Layer *timeline_get_layer_by_order(const Timeline *ptr, uint32_t order);
-
-const Layer *timeline_get_layer_by_sorted_idx(const Timeline *ptr, uint32_t index);
-
-uintptr_t timeline_get_layers_count(const Timeline *ptr);
-
 WrapperErrorCode timeline_find_clip_by_id(const Timeline *ptr,
-                                          uint64_t clip_id,
+                                          ClipId clip_id,
                                           const Clip **out_clip,
-                                          uint64_t *out_layer_id);
+                                          LayerId *out_layer_id);
 
 bool timeline_can_place_clip_at(const Timeline *ptr,
                                 uint64_t layer_id,
@@ -282,9 +295,15 @@ bool timeline_can_place_clip_at(const Timeline *ptr,
 
 double timeline_get_fps(const Timeline *ptr);
 
-const Layer *timeline_get_layer_by_id(const Timeline *ptr, uint64_t layer_id);
+const Layer *timeline_get_layer_by_id(const Timeline *ptr, LayerId layer_id);
 
-uint64_t timeline_get_layer_id_at_root_index(const Timeline *ptr, uintptr_t index);
+const LayerFolder *timeline_get_folder_by_id(const Timeline *ptr, LayerFolderId folder_id);
+
+const Layer *timeline_get_layer_by_execution_index(const Timeline *ptr, uintptr_t index);
+
+uintptr_t timeline_get_layers_count(const Timeline *ptr);
+
+uint64_t timeline_get_layer_id_at_execution_index(const Timeline *ptr, uintptr_t index);
 
 WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
                                                  OffscreenTarget *ptr_offscreen,

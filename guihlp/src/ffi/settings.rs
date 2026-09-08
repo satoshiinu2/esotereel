@@ -1,6 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::setting::{FieldSchema, FieldTypeKind, SettingsStore};
+use esotereel_lib::setting::{FieldSchema, FieldTypeKind};
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn settings_get_all_fields(
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
         let fields = app_state.settings.schema.fields().to_vec();
 
-        let output_slice = std::slice::from_raw_parts_mut(output, output_len);
+        let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_len) };
 
         for (i, field) in fields.iter().enumerate() {
             if i >= output_len {
@@ -200,10 +200,10 @@ pub unsafe extern "C" fn settings_get_value(
         match value {
             Some(v) => {
                 let value_str = v.to_string();
-                *output = OwnedString::from_string(value_str);
+                unsafe { *output = OwnedString::from_string(value_str) };
             }
             None => {
-                *output = OwnedString::zero();
+                unsafe { *output = OwnedString::zero() };
             }
         }
 

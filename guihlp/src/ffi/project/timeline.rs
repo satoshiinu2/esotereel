@@ -1,60 +1,17 @@
-use esotereel_lib::project::{Clip, Layer, Timeline};
+use esotereel_lib::project::{
+    Clip, Layer, Timeline,
+    ids::{ClipId, LayerFolderId, LayerId},
+    layer_outline::LayerFolder,
+};
 
 use crate::{WrapperErrorCode, slice_from_ptr_or_empty};
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_layer_by_order(
-    ptr: *const Timeline,
-    order: u32,
-) -> *const Layer {
-    if ptr.is_null() {
-        return std::ptr::null();
-    }
-
-    let timeline = unsafe { &(*ptr) };
-
-    // 1. order (index) から LayerId を取得
-    // 2. LayerId から Layer の参照 (&Layer) を取得
-    if let Some(layer_id) = timeline.layer_id_at_root_index(order as usize) {
-        if let Some(layer) = timeline.get_layer(layer_id) {
-            return layer as *const Layer;
-        }
-    }
-
-    std::ptr::null()
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_layer_by_sorted_idx(
-    ptr: *const Timeline,
-    index: u32,
-) -> *const Layer {
-    let Some(timeline) = (unsafe { ptr.as_ref() }) else {
-        return std::ptr::null();
-    };
-
-    timeline
-        .layer_id_at_root_index(index as usize)
-        .and_then(|id| timeline.get_layer(id))
-        .map(|layer| layer as *const Layer)
-        .unwrap_or(std::ptr::null())
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_layers_count(ptr: *const Timeline) -> usize {
-    if ptr.is_null() {
-        return 0;
-    }
-
-    unsafe { (*ptr).root_layers().len() }
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_find_clip_by_id(
     ptr: *const Timeline,
-    clip_id: u64,
+    clip_id: ClipId,
     out_clip: *mut *const Clip,
-    out_layer_id: *mut u64,
+    out_layer_id: *mut LayerId,
 ) -> WrapperErrorCode {
     if ptr.is_null() || out_clip.is_null() {
         return WrapperErrorCode::null_ptr();
@@ -107,7 +64,7 @@ pub unsafe extern "C" fn timeline_get_fps(ptr: *const Timeline) -> f64 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_get_layer_by_id(
     ptr: *const Timeline,
-    layer_id: u64,
+    layer_id: LayerId,
 ) -> *const Layer {
     if ptr.is_null() {
         return std::ptr::null();
@@ -122,15 +79,60 @@ pub unsafe extern "C" fn timeline_get_layer_by_id(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn timeline_get_layer_id_at_root_index(
+pub unsafe extern "C" fn timeline_get_folder_by_id(
+    ptr: *const Timeline,
+    folder_id: LayerFolderId,
+) -> *const LayerFolder {
+    if ptr.is_null() {
+        return std::ptr::null();
+    }
+
+    let timeline = unsafe { &(*ptr) };
+
+    timeline
+        .get_folder(folder_id)
+        .map(|layer| layer as *const LayerFolder)
+        .unwrap_or(std::ptr::null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timeline_get_layer_by_execution_index(
+    ptr: *const Timeline,
+    index: usize,
+) -> *const Layer {
+    let Some(timeline) = (unsafe { ptr.as_ref() }) else {
+        return std::ptr::null();
+    };
+
+    timeline
+        .outline
+        .iter_execution_order()
+        .nth(index)
+        .and_then(|id| timeline.get_layer(id))
+        .map(|layer| layer as *const Layer)
+        .unwrap_or(std::ptr::null())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timeline_get_layers_count(ptr: *const Timeline) -> usize {
+    if ptr.is_null() {
+        return 0;
+    }
+    unsafe { (*ptr).outline.iter_execution_order().count() }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn timeline_get_layer_id_at_execution_index(
     ptr: *const Timeline,
     index: usize,
 ) -> u64 {
     if ptr.is_null() {
         return 0;
     }
-
     let timeline = unsafe { &(*ptr) };
-
-    timeline.layer_id_at_root_index(index).unwrap_or(0)
+    timeline
+        .outline
+        .iter_execution_order()
+        .nth(index)
+        .unwrap_or(0)
 }

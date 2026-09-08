@@ -1,19 +1,25 @@
 #pragma once
 
+#include "ffi/Requests.h"
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <set>
 #include <tuple>
 
-namespace esotereel_gui_helper {
-struct Timeline;
-}
+#include "esotereel_gui_helper.h"
+
 namespace esotereel {
 using RawTimeline = esotereel_gui_helper::Timeline;
+using LayerId = esotereel_gui_helper::LayerId;
+using LayerFolderId = esotereel_gui_helper::LayerFolderId;
+using ClipId = esotereel_gui_helper::ClipId;
+using TimelineTick = esotereel_gui_helper::TimelineTick;
 
+// fwd
 class Clip;
 class Layer;
+class LayerFolder;
 class LayersIterable;
 
 class Timeline {
@@ -30,14 +36,12 @@ class Timeline {
     size_t layersCount() const noexcept;
     LayersIterable layers() const noexcept;
 
-    Layer layerByLayerHandle(size_t layer_handle) const noexcept;
-    Layer layerSortedAt(uint32_t index) const noexcept;
-    Layer layerById(uint64_t layer_id) const noexcept;
-    uint64_t layerIdAtRootIndex(size_t index) const noexcept;
+    Layer layerById(LayerId layer_id) const noexcept;
+    LayerFolder folderById(LayerFolderId folder_id) const noexcept;
 
-    std::tuple<Clip, uint64_t> findClipById(uint64_t id) const noexcept;
-    bool canPlaceClipAt(uint64_t layer_id, int64_t position, int64_t duration,
-                        const std::set<uint64_t> &exclude_set) const;
+    std::tuple<Clip, LayerId> findClipById(ClipId id) const noexcept;
+    bool canPlaceClipAt(LayerId layer_id, TimelineTick position, TimelineTick duration,
+                        const std::set<ClipId> &exclude_set) const;
 
     double_t fps() const noexcept;
 };

@@ -7,8 +7,9 @@ use std::sync::RwLock;
 use crate::project::change::{ChangeSet, RemovedClipInfo};
 use crate::project::chunk_index::ChunkIndex;
 use crate::project::clip::{Clip, ClipData};
-use crate::project::ids::{ClipId, IdGenerator, LayerId};
+use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
+use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::transform::ClipTranslates;
 use crate::util::result::{EsotereelError, EsotereelResult};
 
@@ -20,11 +21,12 @@ pub const MAX_NESTED_DEPTH: u32 = 32;
 pub struct Timeline {
     pub id: u64,
     pub tps: f64,
-    root_layers: Vec<LayerId>,
     layers: HashMap<LayerId, Layer>,
 
     /// Clip実体はここだけに存在する。Layer.clipsはidを参照するのみ。
     clips: HashMap<ClipId, Clip>,
+
+    pub outline: LayerOutline,
 
     /// position検索用の遅延構築キャッシュ。保存対象外、壊れても再構築可能。
     #[with(rkyv::with::Skip)]
@@ -42,8 +44,8 @@ impl Clone for Timeline {
         Self {
             id: self.id,
             tps: self.tps,
-            root_layers: self.root_layers.clone(),
             layers: self.layers.clone(),
+            outline: self.outline.clone(),
             clips: self.clips.clone(),
             // キャッシュは持ち越さない。次回query_range時に再構築される。
             chunk_index: RwLock::new(None),
@@ -57,17 +59,15 @@ impl Timeline {
         let mut tl = Self {
             id,
             tps: fps,
-            root_layers: Vec::new(),
             layers: HashMap::new(),
             clips: HashMap::new(),
             chunk_index: RwLock::new(None),
             changes: ChangeSet::default(),
+            outline: LayerOutline::default(),
         };
-        for i in 0..4u64 {
-            let layer_id = ids.next_layer_id();
-            let layer = Layer::new(layer_id, format!("Layer {}", i + 1));
-            tl.root_layers.push(layer_id);
-            tl.layers.insert(layer_id, layer);
+
+        for i in 0..4 {
+            tl.insert_layer(ids, format!("Layer {}", i + 1), None, None);
         }
         tl
     }
@@ -76,8 +76,8 @@ impl Timeline {
         Self {
             id,
             tps,
-            root_layers: Vec::new(),
             layers: HashMap::new(),
+            outline: LayerOutline::default(),
             clips: HashMap::new(),
             chunk_index: RwLock::new(None),
             changes: ChangeSet::default(),
@@ -94,115 +94,71 @@ impl Timeline {
 
     pub fn insert_layer(
         &mut self,
-        layer: Layer,
-        parent: Option<LayerId>,
+        ids: &mut IdGenerator,
+        name: String,
+        parent: Option<LayerFolderId>,
         index: Option<usize>,
-    ) -> EsotereelResult<()> {
-        if self.layers.contains_key(&layer.id) {
-            anyhow::bail!(EsotereelError::DuplicateLayerId(layer.id));
-        }
-        let id = layer.id;
-        let mut layer = layer;
-        layer.parent = parent;
-
-        let siblings = match parent {
-            Some(p) => {
-                &mut self
-                    .layers
-                    .get_mut(&p)
-                    .ok_or(EsotereelError::LayerNotFound)?
-                    .children
-            }
-            None => &mut self.root_layers,
-        };
-        let idx = index.unwrap_or(siblings.len()).min(siblings.len());
-        siblings.insert(idx, id);
-
-        self.layers.insert(id, layer);
-
+    ) -> LayerId {
+        let id = ids.next_layer_id();
+        self.layers.insert(id, Layer::new(id, name));
         self.changes.mark_layer_upserted(id);
 
-        match parent {
-            Some(p) => self.changes.mark_layer_upserted(p),
-            None => self.changes.mark_root_layers_changed(),
-        }
-        Ok(())
+        self.outline.insert_layer(id, parent, index);
+        self.changes.mark_outline_children_changed(parent);
+
+        id
     }
 
-    pub fn remove_layer(
+    pub fn insert_folder(
         &mut self,
-        id: LayerId,
-        strategy: LayerRemoveStrategy,
-    ) -> EsotereelResult<Layer> {
-        let layer = self
-            .layers
-            .remove(&id)
-            .ok_or(EsotereelError::LayerNotFound)?;
-        let grandparent = layer.parent;
+        ids: &mut IdGenerator,
+        name: String,
+        parent: Option<LayerFolderId>,
+        index: Option<usize>,
+    ) -> LayerFolderId {
+        let id = ids.next_folder_id();
+        self.outline.insert_folder(id, name, parent, index);
+        self.changes.mark_outline_folder_upserted(id);
+        self.changes.mark_outline_children_changed(parent);
+        id
+    }
 
-        let removed_index = match grandparent {
-            Some(p) => self
-                .layers
-                .get(&p)
-                .and_then(|parent| parent.children.iter().position(|&c| c == id)),
-            None => self.root_layers.iter().position(|&c| c == id),
-        };
-
-        // 親のchildrenから除去
-        match grandparent {
-            Some(p) => {
-                if let Some(parent) = self.layers.get_mut(&p) {
-                    parent.children.retain(|&c| c != id);
-                }
-                self.changes.mark_layer_upserted(p);
-            }
-            None => {
-                self.root_layers.retain(|&c| c != id);
-                self.changes.mark_root_layers_changed();
-            }
+    pub fn remove_layer(&mut self, id: LayerId) -> Option<Layer> {
+        let layer = self.layers.remove(&id)?;
+        if let Some(parent) = self.outline.parent_of(&OutlineNode::Layer(id)) {
+            self.outline.remove_layer(id);
+            self.changes
+                .mark_outline_children_changed(parent.to_option());
         }
-
-        // 子レイヤーも再帰削除(方針次第で変更)
-        match strategy {
-            LayerRemoveStrategy::Recursive => {
-                for &child_id in layer.children.iter() {
-                    // 戻り値は使わないが、再帰的にmark_layer_removedされる
-                    let _ = self.remove_layer(child_id, LayerRemoveStrategy::Recursive)?;
-                }
-            }
-            LayerRemoveStrategy::PromoteChildren => {
-                let siblings = match grandparent {
-                    Some(gp) => {
-                        &mut self
-                            .layers
-                            .get_mut(&gp)
-                            .ok_or(EsotereelError::LayerNotFound)?
-                            .children
-                    }
-                    None => &mut self.root_layers,
-                };
-
-                let base = removed_index.unwrap_or(siblings.len()).min(siblings.len());
-                for (offset, &child_id) in layer.children.iter().enumerate() {
-                    siblings.insert(base + offset, child_id);
-                }
-
-                match grandparent {
-                    Some(gp) => self.changes.mark_layer_upserted(gp),
-                    None => self.changes.mark_root_layers_changed(),
-                }
-
-                for &child_id in layer.children.iter() {
-                    if let Some(child) = self.layers.get_mut(&child_id) {
-                        child.parent = grandparent;
-                    }
-                    self.changes.mark_layer_upserted(child_id);
-                }
-            }
-        }
-
         self.changes.mark_layer_removed(id);
-        Ok(layer)
+        Some(layer)
+    }
+
+    pub fn remove_folder(
+        &mut self,
+        id: LayerFolderId,
+        strategy: LayerRemoveStrategy,
+    ) -> EsotereelResult<()> {
+        let parent = self.outline.parent_of(&OutlineNode::Folder(id));
+        let leftover = self.outline.remove_folder(id, strategy);
+        self.changes.mark_outline_folder_removed(id);
+        if let Some(parent) = parent {
+            self.changes
+                .mark_outline_children_changed(parent.to_option());
+        }
+
+        // Recursiveのときだけ、中身をTimelineから再帰的に本当に削除する
+        for node in leftover {
+            match node {
+                OutlineNode::Layer(lid) => {
+                    self.remove_layer(lid);
+                }
+                OutlineNode::Folder(fid) => {
+                    self.remove_folder(fid, LayerRemoveStrategy::Recursive)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// クライアント側のローカル反映用。親のchildren書き換えはしない
@@ -211,75 +167,28 @@ impl Timeline {
         self.layers.remove(&id)
     }
 
-    pub fn move_layer(
+    pub fn move_node(
         &mut self,
-        id: LayerId,
-        new_parent: Option<LayerId>,
+        node: OutlineNode,
+        new_parent: Option<LayerFolderId>,
         index: Option<usize>,
     ) -> EsotereelResult<()> {
-        // 自分自身、または自分の子孫を新しい親にはできない(循環防止)
-        if let Some(np) = new_parent {
-            if np == id || self.is_descendant(np, id) {
-                anyhow::bail!(EsotereelError::InvalidLayerMove);
-            }
-        }
+        let old_parent = self.outline.parent_of(&node).ok_or_else(|| {
+            EsotereelError::LayerNotFound(match node {
+                OutlineNode::Layer(id) => id,
+                OutlineNode::Folder(id) => id as LayerId,
+            })
+        })?;
+        self.outline.move_node(node, new_parent, index)?;
 
-        let old_parent = self
-            .layers
-            .get(&id)
-            .ok_or(EsotereelError::LayerNotFound)?
-            .parent;
-
-        // 旧siblingsから除去
-        match old_parent {
-            Some(p) => {
-                self.layers
-                    .get_mut(&p)
-                    .ok_or(EsotereelError::LayerNotFound)?
-                    .children
-                    .retain(|&c| c != id);
-            }
-            None => self.root_layers.retain(|&c| c != id),
-        }
-
-        // 新siblingsに挿入
-        let siblings = match new_parent {
-            Some(p) => {
-                &mut self
-                    .layers
-                    .get_mut(&p)
-                    .ok_or(EsotereelError::LayerNotFound)?
-                    .children
-            }
-            None => &mut self.root_layers,
-        };
-        let idx = index.unwrap_or(siblings.len()).min(siblings.len());
-        siblings.insert(idx, id);
-
-        self.layers.get_mut(&id).unwrap().parent = new_parent;
-
-        // 変更マーク：対象、旧親、新親のすべて
-        self.changes.mark_layer_upserted(id);
-        match old_parent {
-            Some(p) => self.changes.mark_layer_upserted(p),
-            None => self.changes.mark_root_layers_changed(),
-        }
-        match new_parent {
-            Some(p) => self.changes.mark_layer_upserted(p),
-            None => self.changes.mark_root_layers_changed(),
-        }
-
+        self.changes
+            .mark_outline_children_changed(old_parent.to_option());
+        self.changes.mark_outline_children_changed(new_parent);
         Ok(())
     }
 
-    fn is_descendant(&self, candidate: LayerId, ancestor: LayerId) -> bool {
-        let Some(layer) = self.layers.get(&ancestor) else {
-            return false;
-        };
-        layer
-            .children
-            .iter()
-            .any(|&c| c == candidate || self.is_descendant(candidate, c))
+    pub fn layers_len(&self) -> usize {
+        self.layers.len()
     }
 
     pub fn get_layer(&self, id: LayerId) -> Option<&Layer> {
@@ -290,22 +199,11 @@ impl Timeline {
         self.layers.get_mut(&id)
     }
 
-    pub fn root_layers(&self) -> &[LayerId] {
-        &self.root_layers
+    pub fn get_folder(&self, id: LayerFolderId) -> Option<&LayerFolder> {
+        self.outline.get_folder(id)
     }
-
-    /// root_layers内でのindexを返す(旧orderの代替)。移動量の解決に使う。
-    pub fn root_index_of(&self, layer_id: LayerId) -> Option<usize> {
-        self.root_layers.iter().position(|&id| id == layer_id)
-    }
-
-    /// root_layers内のindexからLayerIdを返す。
-    pub fn layer_id_at_root_index(&self, index: usize) -> Option<LayerId> {
-        self.root_layers.get(index).copied()
-    }
-
-    pub fn set_root_layers(&mut self, root_layers: Vec<LayerId>) {
-        self.root_layers = root_layers;
+    pub fn get_folder_mut(&mut self, id: LayerFolderId) -> Option<&mut LayerFolder> {
+        self.outline.get_folder_mut(id)
     }
 
     pub fn apply_layer_meta(&mut self, meta: LayerMeta) {
@@ -314,10 +212,6 @@ impl Timeline {
             Some(existing) => {
                 existing.name = meta.name;
                 existing.enabled = meta.enabled;
-                existing.parent = meta.parent;
-                existing.children = meta.children;
-                existing.folder = meta.folder;
-                // clipsフィールドはLayerMetaに含まれないので保持する
             }
             None => {
                 self.layers.insert(
@@ -326,9 +220,6 @@ impl Timeline {
                         id,
                         name: meta.name,
                         enabled: meta.enabled,
-                        parent: meta.parent,
-                        children: meta.children,
-                        folder: meta.folder,
                         clips: BTreeMap::new(), // 新規なら空、clip自体は別Response経由で来る
                     },
                 );
@@ -336,49 +227,12 @@ impl Timeline {
         }
     }
 
-    /// 並び替え。orderという数値の真実を持たないので重複チェック不要。
-    pub fn reorder_child(
-        &mut self,
-        parent: Option<LayerId>,
-        id: LayerId,
-        new_index: usize,
-    ) -> EsotereelResult<()> {
-        let siblings = match parent {
-            Some(p) => {
-                &mut self
-                    .layers
-                    .get_mut(&p)
-                    .ok_or(EsotereelError::LayerNotFound)?
-                    .children
-            }
-            None => &mut self.root_layers,
-        };
-        let pos = siblings
-            .iter()
-            .position(|&x| x == id)
-            .ok_or(EsotereelError::LayerNotFound)?;
-        let id = siblings.remove(pos);
-        siblings.insert(new_index.min(siblings.len()), id);
-        Ok(())
-    }
-
-    /// root_layersをそのままの順で辿る。Folder(children持ち)は再帰的にフラット化する。
-    pub fn iter_execution_order(&self) -> Vec<&Layer> {
-        let mut out = Vec::new();
-        self.flatten_into(&self.root_layers, &mut out);
-        out
-    }
-
-    fn flatten_into<'a>(&'a self, ids: &[LayerId], out: &mut Vec<&'a Layer>) {
-        for &id in ids {
-            if let Some(layer) = self.layers.get(&id) {
-                if layer.is_folder() {
-                    self.flatten_into(&layer.children, out);
-                } else {
-                    out.push(layer);
-                }
-            }
-        }
+    /// Composite実行やレンダリングが使う「実際の重ね合わせ順」。
+    /// iter_layers()(HashMap由来で順不同)と違い、こちらは常に決まった順を返す。
+    pub fn iter_execution_order(&self) -> impl Iterator<Item = &Layer> + '_ {
+        self.outline
+            .iter_execution_order()
+            .filter_map(move |id| self.layers.get(&id))
     }
 
     // ---- Clip ----
@@ -397,7 +251,7 @@ impl Timeline {
             let layer = self
                 .layers
                 .get(&layer_id)
-                .ok_or(EsotereelError::LayerNotFound)?;
+                .ok_or(EsotereelError::LayerNotFound(layer_id))?;
             let new_end = position + duration;
             for (&pos, &cid) in &layer.clips {
                 let Some(existing) = self.clips.get(&cid) else {
@@ -416,7 +270,7 @@ impl Timeline {
         let layer = self
             .layers
             .get_mut(&layer_id)
-            .ok_or(EsotereelError::LayerNotFound)?;
+            .ok_or(EsotereelError::LayerNotFound(layer_id))?;
 
         layer.clips.insert(position, clip_id);
         self.clips.insert(clip_id, clip);
@@ -459,7 +313,7 @@ impl Timeline {
         let layer = self
             .layers
             .get_mut(&layer_id)
-            .ok_or(EsotereelError::LayerNotFound)?;
+            .ok_or(EsotereelError::LayerNotFound(layer_id))?;
 
         layer.clips.insert(clip.position, clip_id);
         self.clips.insert(clip_id, clip);
@@ -551,12 +405,12 @@ impl Timeline {
             .values()
             .find(|l| l.clips.values().any(|&id| id == clip_id))
             .map(|l| l.id)
-            .ok_or(EsotereelError::LayerNotFound)?;
+            .ok_or_else(|| anyhow::anyhow!("Clip not found in any layer"))?;
 
         let layer = self.layers.get_mut(&layer_id).unwrap();
         layer
             .remove_clip(clip_id)
-            .ok_or(EsotereelError::LayerNotFound)?;
+            .ok_or(EsotereelError::LayerNotFound(layer_id))?;
         layer.clips.insert(new_position, clip_id);
 
         if let Some(clip) = self.clips.get_mut(&clip_id) {
@@ -659,9 +513,6 @@ impl Timeline {
                         id: lm.id,
                         name: lm.name.clone(),
                         enabled: lm.enabled,
-                        parent: lm.parent,
-                        children: lm.children.clone(),
-                        folder: lm.folder,
                         clips: std::collections::BTreeMap::new(),
                     },
                 )
@@ -671,8 +522,8 @@ impl Timeline {
         Self {
             id: meta.id,
             tps: meta.fps,
-            root_layers: meta.root_layers.clone(),
             layers,
+            outline: meta.outline.clone(),
             clips: HashMap::new(),
             chunk_index: RwLock::new(None),
             changes: ChangeSet::default(),
@@ -693,19 +544,35 @@ impl Timeline {
 
     /// ClipUpdates(差分同期)用: サーバー確定済みClipをupsertする。
     pub fn upsert_clip_from_network(&mut self, layer_id: LayerId, clip: Clip) {
-        // 1. レイヤー跨ぎ移動に対応するため、全レイヤーからこのClipIdの古い参照を消去する
+        // レイヤー跨ぎ移動に対応するため、全レイヤーからこのClipIdの古い参照を消去する
         for layer in self.layers.values_mut() {
             layer.clips.retain(|_, &mut cid| cid != clip.id);
         }
 
-        // 2. 移動先のレイヤーへ配置する
+        //  移動先のレイヤーへ配置する
         if let Some(layer) = self.layers.get_mut(&layer_id) {
             layer.clips.insert(clip.position, clip.id);
         }
 
-        // 3. Clip実体を更新・保持する
+        // Clip実体を更新・保持する
         self.clips.insert(clip.id, clip);
         self.invalidate_index();
+    }
+
+    pub fn apply_outline_folder_meta(&mut self, id: LayerFolderId, meta: Meta) {
+        self.outline.upsert_folder_meta(id, meta.name);
+    }
+
+    pub fn apply_outline_children(
+        &mut self,
+        parent: Option<LayerFolderId>,
+        children: Vec<OutlineNode>,
+    ) {
+        self.outline.set_children(parent, children);
+    }
+
+    pub fn remove_outline_folder_local(&mut self, id: LayerFolderId) {
+        self.outline.remove_folder_entry_only(id);
     }
 }
 
@@ -715,8 +582,8 @@ impl Timeline {
 pub struct TimelineMeta {
     pub id: u64,
     pub fps: f64,
-    pub root_layers: Vec<LayerId>,
     pub layers: Vec<LayerMeta>,
+    pub outline: LayerOutline,
 }
 
 impl From<&Timeline> for TimelineMeta {
@@ -724,8 +591,8 @@ impl From<&Timeline> for TimelineMeta {
         Self {
             id: tl.id,
             fps: tl.tps,
-            root_layers: tl.root_layers.clone(),
             layers: tl.layers_meta(),
+            outline: tl.outline.clone(),
         }
     }
 }

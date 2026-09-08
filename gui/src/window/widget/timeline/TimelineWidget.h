@@ -184,7 +184,8 @@ class TimelineWidget : public QWidget {
     void openFolder(uint64_t layerId);
     bool handleFolderLabelClick(const Project &project, const QPoint &local);
     void buildLayerContextMenu(const Project &project, QMenu &menu, const QPoint &local);
-    void addLayer(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex, bool isFolder);
+    void addLayer(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex);
+    void addFolder(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex);
 
     void requestFrameFetch();
     void processPendingFetch();

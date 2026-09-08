@@ -9,6 +9,7 @@
 
 namespace esotereel {
 using FfiLayerRow = esotereel_gui_helper::FfiLayerRow;
+using FfiLayerRowKind = esotereel_gui_helper::FfiLayerRowKind;
 using ClipRenderInfo = esotereel_gui_helper::ClipRenderInfo;
 using RenderRowsResult = esotereel_gui_helper::RenderRowsResult;
 using RawProject = esotereel_gui_helper::Project;

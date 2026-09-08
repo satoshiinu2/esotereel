@@ -6,22 +6,13 @@
 #include "esotereel_gui_helper.h"
 
 namespace esotereel {
-class Clip;
+using RawFolder = esotereel_gui_helper::LayerFolder;
 
-using RawLayer = esotereel_gui_helper::Layer;
-using RawClip = esotereel_gui_helper::Clip;
-
-class Timeline; // Forward declaration
-
-class Layer {
+class LayerFolder {
   public:
-    const RawLayer *raw_ptr;
+    const RawFolder *raw_ptr;
 
-    Layer(const RawLayer *p) noexcept : raw_ptr(p) {}
-
-    size_t clipsCount() const noexcept;
-
-    ClipsIterable clips(const Timeline &timeline) const noexcept;
+    LayerFolder(const RawFolder *p) noexcept : raw_ptr(p) {}
 
     bool isValid() const noexcept {
         return raw_ptr != nullptr;

@@ -3,7 +3,7 @@ use esotereel_lib::{
     project::{
         Clip, Project, TimelineTick,
         clip::{ClipData, CompositionRef},
-        command::{ArchivedClipMoveCtx, ClipMoveCtx, ClipMoveHistoryCtx},
+        command::ClipMoveHistoryCtx,
         ids::{LayerId, TimelineId},
         transform::ClipTranslates,
     },
@@ -20,7 +20,7 @@ pub(crate) fn clip_move_mul_core(
 ) -> anyhow::Result<()> {
     let timeline = project
         .timeline_mut(timeline_id)
-        .ok_or(EsotereelError::InvalidTimeline)?;
+        .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
     // (src_layer_id, dest_layer_id, orig_pos, orig_dur, new_pos, clip)
     let mut extracted: Vec<(LayerId, LayerId, i64, i64, i64, Clip)> = Vec::new();

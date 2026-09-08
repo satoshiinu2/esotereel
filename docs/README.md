@@ -105,14 +105,15 @@ This directory contains comprehensive documentation for the Esotereel video edit
 **Adding a new feature:**
 - Start with data structures in `lib/src/project/`
 - Implement logic in `core/src/`
-- Create FFI wrappers in `guihlp/src/`
-- Build UI in `gui/src/`
+- Create Rust FFI wrappers in `guihlp/src/ffi/`
+- Create C++ FFI wrappers in `gui/src/ffi/`
+- Build UI in `gui/src/window/`
 - Follow naming conventions in CODE_CONVENTIONS.md
 
 **Debugging an issue:**
 - Check network communication (core/src/network.rs, guihlp/src/network.rs)
 - Verify serialization (lib/src/requests.rs, lib/src/responces.rs)
-- Test FFI boundaries (guihlp/src/lib.rs)
+- Test FFI boundaries (guihlp/src/lib.rs, guihlp/src/ffi/)
 - Review state management (lib/src/lib.rs)
 - Be aware of project quirks in PROJECT_QUIRKS.md
 
@@ -244,9 +245,12 @@ cmake --build build
 
 When referencing specific files in code or discussions, use the full path from the project root:
 - `lib/src/project/clip.rs` - Clip data structures
+- `lib/src/project/command.rs` - Command definitions (CommandRequest, CommandHistory)
 - `core/src/network.rs` - Server network implementation
 - `gui/src/main.cpp` - GUI entry point
 - `guihlp/src/lib.rs` - FFI exports
+- `guihlp/src/ffi/` - Rust FFI implementations
+- `gui/src/ffi/` - C++ FFI implementations
 
 ## Contributing
 

@@ -20,10 +20,13 @@ include = [
     "TimelineId",
     "ClipId",
     "LayerId",
+    "LayerFolderId",
     "ScriptId",
     "Clip",
     "Project",
     "Timeline",
+    "Layer",
+    "",
     "StringView",
     "OwnedString",
 ]

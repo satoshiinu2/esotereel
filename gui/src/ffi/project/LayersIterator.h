@@ -3,9 +3,7 @@
 #include "Layer.h"
 #include <iterator>
 
-namespace esotereel_gui_helper {
-struct Timeline;
-}
+#include "esotereel_gui_helper.h"
 
 namespace esotereel {
 using RawTimeline = esotereel_gui_helper::Timeline;

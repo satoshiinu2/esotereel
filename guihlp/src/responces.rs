@@ -9,8 +9,9 @@ use esotereel_lib::{
     decode::streamplayer::{FetchState, StreamPlayer},
     project::{
         Project,
-        ids::{LayerId, TimelineId},
+        ids::{LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
+        layer_outline::{Meta, OutlineNode},
         timeline::TimelineMeta,
     },
     responces::ArchivedResponse,
@@ -28,44 +29,29 @@ pub(super) fn on_responce_recveve(
     match responce {
         ArchivedResponse::Test => {}
         ArchivedResponse::ProjectMeta { timelines } => {
-            // Since TimelineMeta is simple and Copy, we can manually deserialize it
-            // by accessing the archived fields directly
-            let archived_timelines = timelines.as_slice();
-            let timeline_metas: Vec<TimelineMeta> = archived_timelines
+            let timeline_metas: Vec<TimelineMeta> = timelines
                 .iter()
                 .map(|archived| {
-                    // Deserialize the inner Vec<LayerMeta>
-                    let archived_layers = archived.layers.as_slice();
-                    let layer_metas: Vec<esotereel_lib::project::layer::LayerMeta> =
-                        archived_layers
-                            .iter()
-                            .map(|archived_layer| {
-                                // Deserialize ArchivedOption properly
-                                let parent: Option<u64> = archived_layer
-                                    .parent
-                                    .deserialize(&mut rkyv::Infallible)
-                                    .unwrap();
+                    let layer_metas: Vec<LayerMeta> = archived
+                        .layers
+                        .iter()
+                        .map(|al| LayerMeta {
+                            id: al.id,
+                            name: al.name.as_str().to_string(),
+                            enabled: al.enabled,
+                        })
+                        .collect();
 
-                                esotereel_lib::project::layer::LayerMeta {
-                                    id: archived_layer.id,
-                                    name: archived_layer.name.as_str().to_string(),
-                                    enabled: archived_layer.enabled,
-                                    parent,
-                                    children: archived_layer.children.as_slice().to_vec(),
-                                    folder: archived_layer.folder,
-                                }
-                            })
-                            .collect();
+                    let outline = archived.outline.deserialize(&mut rkyv::Infallible).unwrap();
 
                     TimelineMeta {
                         id: archived.id,
                         fps: archived.fps,
-                        root_layers: archived.root_layers.as_slice().to_vec(),
                         layers: layer_metas,
+                        outline,
                     }
                 })
                 .collect();
-
             info!("timeline_metas: {:?}", &timeline_metas);
 
             let real_project = Project::from_meta(timeline_metas);
@@ -92,7 +78,7 @@ pub(super) fn on_responce_recveve(
                     let mut project = project_arc.write().unwrap();
                     let timeline = project
                         .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::InvalidTimeline)?;
+                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                     for (layer_id, archived_clip) in clips.iter() {
                         let clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
@@ -113,65 +99,56 @@ pub(super) fn on_responce_recveve(
                 app_state.project.as_ref().cloned()
             };
 
-            if let Some(project_arc) = project_arc {
-                {
-                    let mut project = project_arc.write().unwrap();
-                    let timeline = project
-                        .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::InvalidTimeline)?;
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
 
-                    for (layer_id, clip_id) in clip_ids.iter() {
-                        timeline.remove_clip_by_id_in(*layer_id, *clip_id);
-                    }
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+                for (layer_id, clip_id) in clip_ids.iter() {
+                    timeline.remove_clip_by_id_in(*layer_id, *clip_id);
                 }
-                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-                drop(project_arc);
-                mark_dirty_timeline(*timeline_id);
             }
+            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
         }
+
         ArchivedResponse::UpdateLayer {
             timeline_id,
             layers,
-            root_layers,
         } => {
             let project_arc = {
                 let app_state = network.app_state.lock().expect("mutex poisoned");
                 app_state.project.as_ref().cloned()
             };
 
-            if let Some(project_arc) = project_arc {
-                {
-                    let mut project = project_arc.write().unwrap();
-                    let timeline = project
-                        .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::InvalidTimeline)?;
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
 
-                    for archived_layer in layers.iter() {
-                        let parent = archived_layer
-                            .parent
-                            .deserialize(&mut rkyv::Infallible)
-                            .unwrap();
-                        let meta = LayerMeta {
-                            id: archived_layer.id,
-                            name: archived_layer.name.as_str().to_string(),
-                            enabled: archived_layer.enabled,
-                            parent,
-                            children: archived_layer.children.as_slice().to_vec(),
-                            folder: archived_layer.folder,
-                        };
-                        timeline.apply_layer_meta(meta); // upsert専用の新メソッド
-                    }
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
-                    if let Some(root) = root_layers.as_ref() {
-                        let root_ids: Vec<LayerId> =
-                            root.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.set_root_layers(root_ids);
-                    }
+                for archived_layer in layers.iter() {
+                    let meta = LayerMeta {
+                        id: archived_layer.id,
+                        name: archived_layer.name.as_str().to_string(),
+                        enabled: archived_layer.enabled,
+                    };
+                    timeline.apply_layer_meta(meta);
                 }
-                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-                drop(project_arc);
-                mark_dirty_timeline(*timeline_id);
             }
+            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
         }
         ArchivedResponse::RemoveLayer {
             timeline_id,
@@ -182,21 +159,81 @@ pub(super) fn on_responce_recveve(
                 app_state.project.as_ref().cloned()
             };
 
+            let Some(project_arc) = project_arc else {
+                anyhow::bail!(EsotereelError::ProjectNotFound)
+            };
+
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+                for archived_id in layer_ids.iter() {
+                    let id: LayerId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    timeline.remove_layer_local(id); // サーバー側のremove_layerと違い、
+                    // parentのchildren書き換えは不要
+                    // (親も別途upsertで送られてくるので)
+                }
+            }
+            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
+        }
+
+        ArchivedResponse::UpdateOutline {
+            timeline_id,
+            folders,
+            children,
+        } => {
+            let project_arc = {
+                let s = network.app_state.lock().expect("mutex poisoned");
+                s.project.as_ref().cloned()
+            };
             if let Some(project_arc) = project_arc {
                 {
                     let mut project = project_arc.write().unwrap();
                     let timeline = project
                         .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::InvalidTimeline)?;
+                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
-                    for archived_id in layer_ids.iter() {
-                        let id: LayerId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.remove_layer_local(id); // サーバー側のremove_layerと違い、
-                        // parentのchildren書き換えは不要
-                        // (親も別途upsertで送られてくるので)
+                    for (id, meta) in folders.iter() {
+                        let meta: Meta = meta.deserialize(&mut rkyv::Infallible).unwrap();
+                        timeline.apply_outline_folder_meta(*id, meta);
+                    }
+                    for (parent, kids) in children.iter() {
+                        let parent: Option<LayerFolderId> =
+                            parent.deserialize(&mut rkyv::Infallible).unwrap();
+                        let kids: Vec<OutlineNode> =
+                            kids.deserialize(&mut rkyv::Infallible).unwrap();
+                        timeline.apply_outline_children(parent, kids);
                     }
                 }
-                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+                drop(project_arc);
+                mark_dirty_timeline(*timeline_id);
+            }
+        }
+
+        ArchivedResponse::Removes {
+            timeline_id,
+            folder_ids,
+        } => {
+            let project_arc = {
+                let s = network.app_state.lock().expect("mutex poisoned");
+                s.project.as_ref().cloned()
+            };
+            if let Some(project_arc) = project_arc {
+                {
+                    let mut project = project_arc.write().unwrap();
+                    let timeline = project
+                        .timeline_mut(*timeline_id)
+                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+                    for archived_id in folder_ids.iter() {
+                        let id: LayerFolderId =
+                            archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                        timeline.remove_outline_folder_local(id);
+                    }
+                }
                 drop(project_arc);
                 mark_dirty_timeline(*timeline_id);
             }

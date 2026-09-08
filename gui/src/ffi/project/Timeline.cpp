@@ -1,8 +1,10 @@
 #include "Timeline.h"
 #include "Clip.h"
 #include "Layer.h"
+#include "LayerFolder.h"
 #include "LayersIterator.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/Requests.h"
 #include "ffi/Result.h"
 #include "ffi/WrapperResult.h"
 #include <cmath>
@@ -24,23 +26,15 @@ LayersIterable Timeline::layers() const noexcept {
     return LayersIterable(raw_ptr);
 }
 
-Layer Timeline::layerByLayerHandle(size_t layer_handle) const noexcept {
-    return Layer(esotereel_gui_helper::timeline_get_layer_by_order(raw_ptr, layer_handle));
-}
-
-Layer Timeline::layerSortedAt(uint32_t index) const noexcept {
-    return Layer(esotereel_gui_helper::timeline_get_layer_by_sorted_idx(raw_ptr, index));
-}
-
-Layer Timeline::layerById(uint64_t layer_id) const noexcept {
+Layer Timeline::layerById(LayerId layer_id) const noexcept {
     return Layer(esotereel_gui_helper::timeline_get_layer_by_id(raw_ptr, layer_id));
 }
 
-uint64_t Timeline::layerIdAtRootIndex(size_t index) const noexcept {
-    return esotereel_gui_helper::timeline_get_layer_id_at_root_index(raw_ptr, index);
+LayerFolder Timeline::folderById(LayerFolderId folder_id) const noexcept {
+    return LayerFolder(esotereel_gui_helper::timeline_get_folder_by_id(raw_ptr, folder_id));
 }
 
-std::tuple<Clip, uint64_t> Timeline::findClipById(uint64_t id) const noexcept {
+std::tuple<Clip, LayerId> Timeline::findClipById(ClipId id) const noexcept {
     const esotereel_gui_helper::Clip *raw_clip = nullptr;
     uint64_t layerId = 0;
 

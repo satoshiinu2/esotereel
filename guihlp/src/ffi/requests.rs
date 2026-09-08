@@ -70,7 +70,7 @@ pub unsafe extern "C" fn req_fetch_frame(
         }
 
         network.send(&Request::FetchClipsInRange {
-            timeline_key: timeline_id,
+            timeline_id,
             range: visible_range_start..visible_range_end,
         });
 

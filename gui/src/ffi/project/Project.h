@@ -5,12 +5,7 @@
 #include <cstddef>
 #include <utility>
 
-// C-FFI (esotereel_gui_helper) 側の型のプロトタイプ宣言
-namespace esotereel_gui_helper {
-struct Project;
-struct ClientNetworkHandler;
-struct WrapperResult;
-} // namespace esotereel_gui_helper
+#include "esotereel_gui_helper.h"
 
 namespace esotereel {
 using RawProject = esotereel_gui_helper::Project;

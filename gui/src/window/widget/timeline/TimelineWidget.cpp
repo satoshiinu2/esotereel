@@ -185,11 +185,11 @@ bool TimelineWidget::handleFolderLabelClick(const Project &project, const QPoint
     }
 
     const FfiLayerRow &row = rows[rowIdx];
-    if (!row.is_folder) {
+    if (row.node_kind != FfiLayerRowKind::Folder) {
         return false;
     }
 
-    this->toggleFolder(row.layer_id);
+    this->toggleFolder(row.node_id);
     return true;
 }
 

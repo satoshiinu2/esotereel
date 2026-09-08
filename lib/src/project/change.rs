@@ -1,5 +1,5 @@
 // project/change.rs (新規)
-use crate::project::ids::{ClipId, LayerId};
+use crate::project::ids::{ClipId, LayerFolderId, LayerId};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]
@@ -18,11 +18,15 @@ pub struct ChangeSet {
     pub layers_upserted: HashSet<LayerId>,
     pub layers_removed: HashSet<LayerId>,
     pub root_layers_changed: bool,
+
+    pub outline_folders_upserted: HashSet<LayerFolderId>,
+    pub outline_children_changed: HashSet<Option<LayerFolderId>>,
+    pub outline_folders_removed: HashSet<LayerFolderId>,
 }
 
 impl ChangeSet {
     pub fn is_empty(&self) -> bool {
-        self.is_clip_empty() && self.is_layer_empty()
+        self.is_clip_empty() && self.is_layer_empty() && self.is_outline_empty()
     }
 
     pub fn is_clip_empty(&self) -> bool {
@@ -57,6 +61,25 @@ impl ChangeSet {
     pub(crate) fn mark_layer_removed(&mut self, id: LayerId) {
         self.layers_upserted.remove(&id);
         self.layers_removed.insert(id);
+    }
+
+    pub fn is_outline_empty(&self) -> bool {
+        self.outline_folders_upserted.is_empty()
+            && self.outline_children_changed.is_empty()
+            && self.outline_folders_removed.is_empty()
+    }
+
+    pub fn mark_outline_folder_upserted(&mut self, id: LayerFolderId) {
+        self.outline_folders_upserted.insert(id);
+    }
+
+    pub fn mark_outline_children_changed(&mut self, parent: Option<LayerFolderId>) {
+        self.outline_children_changed.insert(parent);
+    }
+
+    pub fn mark_outline_folder_removed(&mut self, id: LayerFolderId) {
+        self.outline_folders_removed.insert(id);
+        self.outline_folders_upserted.remove(&id); // 消えるものをupsertする意味はない
     }
 
     pub fn merge(&mut self, other: ChangeSet) {

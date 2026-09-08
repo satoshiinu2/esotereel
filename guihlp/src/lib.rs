@@ -5,10 +5,11 @@ use std::sync::OnceLock;
 
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
 pub use esotereel_lib::project::Layer;
+pub use esotereel_lib::project::LayerFolder;
 pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
-pub use esotereel_lib::project::ids::{ClipId, LayerId, ScriptId, TimelineId};
+pub use esotereel_lib::project::ids::{ClipId, LayerFolderId, LayerId, ScriptId, TimelineId};
 use log::error;
 
 use crate::network::OnConnectedFn;

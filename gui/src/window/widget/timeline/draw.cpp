@@ -1,6 +1,8 @@
 #include "TimelineWidget.h"
 #include "Utils.h"
 #include "ffi/ClientNetworkHandler.h"
+#include "ffi/project/LayerFolder.h"
+#include "ffi/project/RenderRows.h"
 
 namespace esotereel::window {
 QRect TimelineWidget::getInnerRect() const noexcept {
@@ -66,11 +68,14 @@ void TimelineWidget::drawRowLabel(const Project &project, const FfiLayerRow &row
     // インデント + フォルダー▶▼
     int textX = r.left() + 4 + row.depth * INDENT_WIDTH;
     QString label;
-    if (row.is_folder) {
-        label = (row.is_folder_open ? QStringLiteral("\u25BC ") : QStringLiteral("\u25B6 "));
-    }
-    label += project.timelineOf(this->timelineId).layerById(row.layer_id).name();
+    auto timeline = project.timelineOf(this->timelineId);
 
+    if (row.node_kind == FfiLayerRowKind::Folder) {
+        label = (row.is_folder_open ? QStringLiteral("\u25BC ") : QStringLiteral("\u25B6 "));
+        label += timeline.folderById(row.node_id).name();
+    } else {
+        label += timeline.layerById(row.node_id).name();
+    }
     QRect textRect(textX, y, LABEL_WIDTH - textX, LAYER_HEIGHT);
     p.setPen(palette().text().color());
     p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, label);

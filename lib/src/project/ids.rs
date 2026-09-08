@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub type TimelineId = u64;
 pub type LayerId = u64;
+pub type LayerFolderId = u64;
 pub type ClipId = u64;
 pub type ScriptId = u64;
 pub type ResourceId = u32;
@@ -17,6 +18,7 @@ pub struct IdGenerator {
     next_timeline: TimelineId,
     next_layer: LayerId,
     next_clip: ClipId,
+    next_folder: LayerFolderId,
 }
 
 impl IdGenerator {
@@ -35,6 +37,11 @@ impl IdGenerator {
         self.next_clip += 1;
         id
     }
+    pub fn next_folder_id(&mut self) -> LayerFolderId {
+        let id = self.next_folder;
+        self.next_folder += 1;
+        id
+    }
 
     /// ロード時、既存idと衝突しないようカウンタを引き上げる
     pub fn observe_timeline(&mut self, id: TimelineId) {
@@ -45,5 +52,8 @@ impl IdGenerator {
     }
     pub fn observe_clip(&mut self, id: ClipId) {
         self.next_clip = self.next_clip.max(id + 1);
+    }
+    pub fn observe_folder(&mut self, id: LayerFolderId) {
+        self.next_folder = self.next_folder.max(id + 1);
     }
 }

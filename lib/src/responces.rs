@@ -4,8 +4,9 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::project::{
     Clip,
-    ids::{ClipId, LayerId, ResourceId, TimelineId},
+    ids::{ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     layer::LayerMeta,
+    layer_outline::{Meta, OutlineNode},
     timeline::TimelineMeta,
 };
 
@@ -27,11 +28,19 @@ pub enum Response {
     UpdateLayer {
         timeline_id: TimelineId,
         layers: Vec<LayerMeta>,
-        root_layers: Option<Vec<LayerId>>, // 変更があった時だけ
     },
     RemoveLayer {
         timeline_id: TimelineId,
         layer_ids: Vec<LayerId>,
+    },
+    UpdateOutline {
+        timeline_id: TimelineId,
+        folders: Vec<(LayerFolderId, Meta)>,
+        children: Vec<(Option<LayerFolderId>, Vec<OutlineNode>)>, // コンテナごとの並びまるごと
+    },
+    Removes {
+        timeline_id: TimelineId,
+        folder_ids: Vec<LayerFolderId>,
     },
     StreamMetadata {
         path: String,

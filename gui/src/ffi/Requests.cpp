@@ -23,10 +23,16 @@ void Requests::addClipAt(TimelineId timelineId, TimelineTick position, LayerId l
 }
 
 void Requests::addLayer(TimelineId timelineId, std::optional<uint64_t> parentLayerId,
-                        std::optional<uint32_t> insertIndex, const std::string &name, bool isFolder) noexcept {
+                        std::optional<uint32_t> insertIndex, const std::string &name) noexcept {
     esotereel_gui_helper::req_cmd_add_layer(ptr_network, timelineId, parentLayerId.has_value(),
                                             parentLayerId.value_or(0), insertIndex.has_value(), insertIndex.value_or(0),
-                                            StringView::fromStdString(name), isFolder);
+                                            StringView::fromStdString(name));
+}
+void Requests::addFolder(TimelineId timelineId, std::optional<uint64_t> parentLayerId,
+                         std::optional<uint32_t> insertIndex, const std::string &name) noexcept {
+    esotereel_gui_helper::req_cmd_add_folder(ptr_network, timelineId, parentLayerId.has_value(),
+                                             parentLayerId.value_or(0), insertIndex.has_value(),
+                                             insertIndex.value_or(0), StringView::fromStdString(name));
 }
 
 void Requests::loadStream(QString path) noexcept {

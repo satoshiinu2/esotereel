@@ -2,9 +2,7 @@
 
 #include <cstdint>
 
-namespace esotereel_gui_helper {
-struct Clip;
-}
+#include "esotereel_gui_helper.h"
 
 namespace esotereel {
 using RawClip = esotereel_gui_helper::Clip;

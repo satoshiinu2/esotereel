@@ -4,7 +4,6 @@ use crate::network::ClientNetworkHandler;
 use esotereel_core::server_network_start;
 use esotereel_lib::dirs::Directories;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 pub type OnServerReadyCFn = extern "C" fn(bool, StringView); // 起動成功したか
 

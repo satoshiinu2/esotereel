@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipData;
-use crate::project::ids::{ClipId, IdGenerator, LayerId, TimelineId};
-use crate::project::layer::Layer;
+use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::project::transform::ClipTranslates;
 use crate::util::result::EsotereelError;
@@ -45,29 +44,32 @@ impl Project {
     /// 指定Timelineにレイヤー(またはフォルダー)を新規挿入する。
     /// parent が Some の場合はそのレイヤーの子として、None の場合はroot_layers直下に追加する。
     /// index を省略すると末尾に追加される。
-    /// 注意: IdGenerator に next_layer_id が無ければ追加が必要。
     pub fn insert_layer_in_timeline(
         &mut self,
         timeline_id: TimelineId,
-        parent: Option<LayerId>,
+        parent: Option<LayerFolderId>,
         index: Option<usize>,
         name: String,
-        is_folder: bool,
     ) -> anyhow::Result<LayerId> {
         let timeline = self
             .timelines
             .get_mut(&timeline_id)
-            .ok_or(EsotereelError::InvalidTimeline)?;
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+        Ok(timeline.insert_layer(&mut self.ids, name, parent, index))
+    }
 
-        let id = self.ids.next_layer_id();
-        let layer = if is_folder {
-            Layer::new_folder(id, name)
-        } else {
-            Layer::new(id, name)
-        };
-
-        timeline.insert_layer(layer, parent, index)?;
-        Ok(id)
+    pub fn insert_folder_in_timeline(
+        &mut self,
+        timeline_id: TimelineId,
+        parent: Option<LayerFolderId>,
+        index: Option<usize>,
+        name: String,
+    ) -> anyhow::Result<LayerFolderId> {
+        let timeline = self
+            .timelines
+            .get_mut(&timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+        Ok(timeline.insert_folder(&mut self.ids, name, parent, index))
     }
 
     pub fn new_clip_in_timeline(
@@ -82,7 +84,7 @@ impl Project {
         let timeline = self
             .timelines
             .get_mut(&timeline_id)
-            .ok_or(EsotereelError::InvalidTimeline)?;
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
         timeline.new_clip_in(
             layer_id,
@@ -101,7 +103,7 @@ impl Project {
         let cloned = self
             .timelines
             .get(&source)
-            .ok_or(EsotereelError::InvalidTimeline)?
+            .ok_or(EsotereelError::TimelineNotFound(source))?
             .deep_clone(&mut self.ids, new_id);
         self.timelines.insert(new_id, cloned);
         Ok(new_id)

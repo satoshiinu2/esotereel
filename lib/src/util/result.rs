@@ -7,6 +7,8 @@ use std::{
 use anyhow::Result;
 use rkyv::{Archive, Deserialize, Serialize};
 
+use crate::project::ids::{ClipId, LayerId, ResourceId, TimelineId};
+
 #[derive(Archive, Serialize, Deserialize, Debug)]
 pub enum EsotereelError {
     LockError(String),
@@ -14,12 +16,11 @@ pub enum EsotereelError {
     AccessError(String),
     DecodeError(String),
     ProjectNotFound,
-    TimelineNotFound(usize),
-    ClipNotFound(u64),
-    LayerNotFound,
-    DuplicateLayerId(u64),
-    StreamNotFound(u32),
-    InvalidTimeline,
+    TimelineNotFound(TimelineId),
+    ClipNotFound(ClipId),
+    LayerNotFound(LayerId),
+    DuplicateLayerId(LayerId),
+    StreamNotFound(ResourceId),
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
@@ -33,12 +34,11 @@ impl fmt::Display for EsotereelError {
             EsotereelError::AccessError(msg) => write!(f, "Access error: {}", msg),
             EsotereelError::DecodeError(msg) => write!(f, "Decode error: {}", msg),
             EsotereelError::ProjectNotFound => write!(f, "Project not found"),
-            EsotereelError::TimelineNotFound(idx) => write!(f, "Timeline {} not found", idx),
-            EsotereelError::LayerNotFound => write!(f, "Layer not found"),
+            EsotereelError::TimelineNotFound(id) => write!(f, "Timeline {} not found", id),
+            EsotereelError::LayerNotFound(id) => write!(f, "Layer {} not found", id),
             EsotereelError::DuplicateLayerId(id) => write!(f, "Duplicate layer ID {}", id),
             EsotereelError::ClipNotFound(id) => write!(f, "Clip {} not found", id),
             EsotereelError::StreamNotFound(id) => write!(f, "Stream {} not found", id),
-            EsotereelError::InvalidTimeline => write!(f, "Invalid timeline"),
             EsotereelError::InvalidCommand => write!(f, "Invalid command"),
             EsotereelError::ClipOverlap => write!(f, "Clip overlap"),
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),

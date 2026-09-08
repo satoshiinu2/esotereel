@@ -18,7 +18,7 @@ pub fn command_to_history(
         CommandRequest::ClipsMove { clips } => {
             let timeline = project
                 .timeline_mut(timeline_id)
-                .ok_or(EsotereelError::InvalidTimeline)?;
+                .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
             let entries: anyhow::Result<Vec<_>> = clips
                 .into_iter()
@@ -54,15 +54,22 @@ pub fn command_to_history(
             translates,
         },
         CommandRequest::AddLayer {
-            parent_layer_id,
+            parent_folder_id: parent_layer_id,
             insert_index,
             name,
-            is_folder,
         } => CommandHistory::AddLayer {
             parent_layer_id,
             insert_index,
             name,
-            is_folder,
+        },
+        CommandRequest::AddFolder {
+            parent_folder_id: parent_layer_id,
+            insert_index,
+            name,
+        } => CommandHistory::AddFolder {
+            parent_layer_id,
+            insert_index,
+            name,
         },
     };
 
@@ -97,7 +104,6 @@ pub fn handle_command_action(
             parent_layer_id,
             insert_index,
             name,
-            is_folder,
         } => {
             let parent_layer_id = parent_layer_id.as_ref().copied();
             let insert_index = insert_index.as_ref().map(|x| *x as usize);
@@ -107,7 +113,21 @@ pub fn handle_command_action(
                 parent_layer_id,
                 insert_index,
                 name.to_string(),
-                *is_folder,
+            )?;
+        }
+        CommandHistory::AddFolder {
+            parent_layer_id,
+            insert_index,
+            name,
+        } => {
+            let parent_layer_id = parent_layer_id.as_ref().copied();
+            let insert_index = insert_index.as_ref().map(|x| *x as usize);
+
+            project.insert_folder_in_timeline(
+                timeline_id,
+                parent_layer_id,
+                insert_index,
+                name.to_string(),
             )?;
         }
     };

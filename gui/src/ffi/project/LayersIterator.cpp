@@ -6,8 +6,7 @@ using RawTimeline = esotereel_gui_helper::Timeline;
 namespace esotereel {
 // 間接参照 (*it) -> ここで LayerRef を生成して返す
 Layer LayersIterator::operator*() const noexcept {
-    // 新しいデータモデルでは、インデックスからLayerIdを取得してからLayerを取得する
-    uint64_t layer_id = esotereel_gui_helper::timeline_get_layer_id_at_root_index(raw_ptr, index);
+    uint64_t layer_id = esotereel_gui_helper::timeline_get_layer_id_at_execution_index(raw_ptr, index);
     return Layer(esotereel_gui_helper::timeline_get_layer_by_id(raw_ptr, layer_id));
 }
 

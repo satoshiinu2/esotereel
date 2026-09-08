@@ -16,10 +16,7 @@ use rkyv::Deserialize;
 
 use crate::{
     network::ServerNetworkHandler,
-    project::{
-        commands::{command_to_history, handle_command_action},
-        history,
-    },
+    project::commands::{command_to_history, handle_command_action},
 };
 
 pub fn on_request_receive(
@@ -160,7 +157,7 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::FetchClipsInRange {
-            timeline_key,
+            timeline_id: timeline_key,
             range,
         } => {
             log::info!(
@@ -185,7 +182,7 @@ pub fn on_request_receive(
 
             let timeline = project
                 .timeline(*timeline_key)
-                .ok_or(EsotereelError::InvalidTimeline)?;
+                .ok_or(EsotereelError::TimelineNotFound(*timeline_key))?;
 
             let clips = timeline
                 .query_range(range)

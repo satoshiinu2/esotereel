@@ -9,7 +9,7 @@ use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
 use crate::plugin::{PluginLoadResult, PluginLoader};
 use crate::project::Project;
-use crate::setting::{SchemaRegistry, SettingsStore};
+use crate::setting::SettingsStore;
 use dashmap::DashMap;
 
 pub mod decode;

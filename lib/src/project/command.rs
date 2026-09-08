@@ -42,10 +42,14 @@ pub enum CommandRequest {
         translates: ClipTranslates,
     },
     AddLayer {
-        parent_layer_id: Option<LayerId>,
+        parent_folder_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
-        is_folder: bool,
+    },
+    AddFolder {
+        parent_folder_id: Option<LayerId>,
+        insert_index: Option<usize>,
+        name: String,
     },
 }
 
@@ -66,6 +70,10 @@ pub enum CommandHistory {
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
-        is_folder: bool,
+    },
+    AddFolder {
+        parent_layer_id: Option<LayerId>,
+        insert_index: Option<usize>,
+        name: String,
     },
 }

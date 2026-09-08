@@ -1,7 +1,4 @@
-use rkyv::{
-    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
-};
-use serde::{Deserialize, Serialize};
+use rkyv::{Archive, CheckBytes, bytecheck};
 use std::collections::BTreeMap;
 
 use crate::project::{
@@ -10,7 +7,9 @@ use crate::project::{
     transform::ClipTranslates,
 };
 
-#[derive(Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone)]
+#[derive(
+    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Clip {
     pub id: ClipId,
@@ -50,10 +49,10 @@ impl Clip {
 /// Independentはこのclip専用のprivate Timelineを指す。
 #[derive(
     Archive,
-    RkyvDeserialize,
-    RkyvSerialize,
-    Serialize,
-    Deserialize,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
     Debug,
     Clone,
     Copy,
@@ -77,12 +76,21 @@ impl CompositionRef {
 /// Scriptに渡すパラメータ。今はプレースホルダー。
 /// rhai等のスクリプトエンジンと繋ぐ際に型を差し替える想定。
 #[derive(
-    Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone, Default,
+    Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    Default,
 )]
 #[archive_attr(derive(CheckBytes))]
 pub struct ScriptParams(pub BTreeMap<String, String>);
 
-#[derive(Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone)]
+#[derive(
+    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde:: Deserialize, Debug, Clone,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub enum ClipData {
     Dummy,

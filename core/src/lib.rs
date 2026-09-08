@@ -5,8 +5,9 @@ use esotereel_lib::{
     plugin::PluginLoader,
     project::{
         change::ChangeSet,
-        ids::{ClipId, LayerId, TimelineId},
+        ids::{ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
+        layer_outline::{Meta, OutlineNode},
     },
     responces::Response,
     util::result::EsotereelError,
@@ -109,7 +110,7 @@ fn dispatch_changeset(
 
     let timeline = project
         .timeline(timeline_id)
-        .ok_or(EsotereelError::InvalidTimeline)?;
+        .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
     // clips_upsertedの処理
     let (range, clips) = if !changeset.clips_upserted.is_empty() {
@@ -155,15 +156,35 @@ fn dispatch_changeset(
         Vec::new()
     };
 
-    let root_layers = changeset
-        .root_layers_changed
-        .then(|| timeline.root_layers().to_vec());
-
-    let layer_ids: Vec<LayerId> = if !changeset.layers_removed.is_empty() {
+    let removed_layer_ids: Vec<LayerId> = if !changeset.layers_removed.is_empty() {
         changeset.layers_removed.iter().copied().collect()
     } else {
         Vec::new()
     };
+
+    let outline_folders: Vec<(LayerFolderId, Meta)> = changeset
+        .outline_folders_upserted
+        .iter()
+        .filter_map(|id| {
+            timeline.get_folder(*id).map(|f| {
+                (
+                    *id,
+                    Meta {
+                        name: f.name.clone(),
+                    },
+                )
+            })
+        })
+        .collect();
+
+    let outline_children: Vec<(Option<LayerFolderId>, Vec<OutlineNode>)> = changeset
+        .outline_children_changed
+        .iter()
+        .map(|parent| (*parent, timeline.outline.children_of(*parent).to_vec()))
+        .collect();
+
+    let outline_folders_removed: Vec<LayerFolderId> =
+        changeset.outline_folders_removed.iter().copied().collect();
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
     drop(app_state);
@@ -195,14 +216,13 @@ fn dispatch_changeset(
     }
 
     if !changeset.is_layer_empty() {
-        if !layers.is_empty() || root_layers.is_some() {
+        if !layers.is_empty() {
             let targets = network.clients_watching_timeline(timeline_id); // range不要、timeline全体購読者
             network.send_to_many(
                 &targets,
                 &Response::UpdateLayer {
                     timeline_id,
                     layers,
-                    root_layers,
                 },
             );
         }
@@ -213,10 +233,33 @@ fn dispatch_changeset(
                 &targets,
                 &Response::RemoveLayer {
                     timeline_id,
-                    layer_ids,
+                    layer_ids: removed_layer_ids,
                 },
             );
         }
+    }
+
+    if !outline_folders.is_empty() || !outline_children.is_empty() {
+        let targets = network.clients_watching_timeline(timeline_id); // layersと同じくrange不要
+        network.send_to_many(
+            &targets,
+            &Response::UpdateOutline {
+                timeline_id,
+                folders: outline_folders,
+                children: outline_children,
+            },
+        );
+    }
+
+    if !outline_folders_removed.is_empty() {
+        let targets = network.clients_watching_timeline(timeline_id);
+        network.send_to_many(
+            &targets,
+            &Response::Removes {
+                timeline_id,
+                folder_ids: outline_folders_removed,
+            },
+        );
     }
 
     Ok(())

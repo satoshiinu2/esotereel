@@ -1,4 +1,4 @@
-use esotereel_lib::project::{Clip, Layer, Timeline};
+use esotereel_lib::project::{Clip, Layer, Timeline, layer_outline::LayerFolder};
 
 use crate::{WrapperErrorCode, ffi::stringview::StringView};
 
@@ -15,7 +15,7 @@ pub extern "C" fn layer_find_clip_at_frame(
 
     let layer = unsafe { &(*layer_ptr) };
     let timeline = unsafe { &(*timeline_ptr) };
-    
+
     let clip_id = layer.get_clip_id_at(frame);
 
     let Some(clip_id) = clip_id else {
@@ -41,8 +41,18 @@ pub extern "C" fn layer_get_clips_count(ptr: *const Layer) -> usize {
     unsafe { (*ptr).clips.len() }
 }
 
+// Layerのライフタイム内ならStringViewは有効
 #[unsafe(no_mangle)]
 pub extern "C" fn layer_get_name(ptr: *const Layer) -> StringView {
+    if ptr.is_null() {
+        return StringView::zero();
+    }
+    unsafe { StringView::from_str(&(*ptr).name) }
+}
+
+// のライフタイム内ならStringViewは有効
+#[unsafe(no_mangle)]
+pub extern "C" fn layer_folder_get_name(ptr: *const LayerFolder) -> StringView {
     if ptr.is_null() {
         return StringView::zero();
     }
