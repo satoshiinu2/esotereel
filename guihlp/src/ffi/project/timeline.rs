@@ -62,7 +62,7 @@ pub unsafe extern "C" fn timeline_find_clip_by_id(
 
     let timeline = unsafe { &(*ptr) };
 
-    let Some((clip, layer_id)) = timeline.find_clip_by_id(clip_id) else {
+    let Some((clip, layer_id)) = timeline.get_clip_and_layer(clip_id) else {
         return WrapperErrorCode::not_found(Some("clip not found"));
     };
 

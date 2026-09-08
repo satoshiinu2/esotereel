@@ -1,7 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
-    project::{TimelineTick, commands::Command, ids::TimelineId},
+    project::{TimelineTick, command::CommandRequest, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
 };
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn req_project_log(ptr_network: *const ClientNetworkHandle
 }
 
 impl ClientNetworkHandler {
-    pub(super) fn req_command(&self, timeline_id: u64, command: Command) {
+    pub(super) fn req_command(&self, timeline_id: u64, command: CommandRequest) {
         let req = Request::Command {
             command,
             timeline_id,

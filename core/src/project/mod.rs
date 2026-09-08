@@ -3,10 +3,11 @@ use esotereel_lib::{
     project::{
         Clip, Project, TimelineTick,
         clip::{ClipData, CompositionRef},
+        command::{ArchivedClipMoveCtx, ClipMoveCtx, ClipMoveHistoryCtx},
         ids::{LayerId, TimelineId},
         transform::ClipTranslates,
     },
-    util::{result::EsotereelError, types::ArchivedClipMoveCtx},
+    util::result::EsotereelError,
 };
 
 pub(crate) mod commands;
@@ -15,7 +16,7 @@ pub(crate) mod history;
 pub(crate) fn clip_move_mul_core(
     project: &mut Project,
     timeline_id: TimelineId,
-    moved_clips: &[ArchivedClipMoveCtx],
+    moved_clips: &[ClipMoveHistoryCtx],
 ) -> anyhow::Result<()> {
     let timeline = project
         .timeline_mut(timeline_id)

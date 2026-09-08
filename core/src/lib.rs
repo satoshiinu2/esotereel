@@ -116,7 +116,7 @@ fn dispatch_changeset(
         let (range, clips) = changeset.clips_upserted.iter().fold(
             (i64::MAX..i64::MIN, Vec::new()),
             |(mut range, mut clips), id| {
-                if let Some((clip, layer_id)) = timeline.find_clip_by_id(*id) {
+                if let Some((clip, layer_id)) = timeline.get_clip_and_layer(*id) {
                     range.start = range.start.min(clip.position);
                     range.end = range.end.max(clip.position + clip.duration);
                     clips.push((layer_id, clip.clone()));

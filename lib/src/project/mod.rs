@@ -2,7 +2,7 @@ pub mod camera;
 pub mod change;
 pub mod chunk_index;
 pub mod clip;
-pub mod commands;
+pub mod command;
 pub mod ids;
 pub mod layer;
 pub mod project;

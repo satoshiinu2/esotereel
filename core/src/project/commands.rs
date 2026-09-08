@@ -1,41 +1,99 @@
-use esotereel_lib::project::{
-    Project, clip::ClipData, commands::ArchivedCommand, ids::TimelineId, transform::ClipTranslates,
+use esotereel_lib::{
+    project::{
+        Project,
+        command::{ClipMoveHistoryCtx, CommandHistory, CommandRequest},
+        ids::TimelineId,
+    },
+    util::result::EsotereelError,
 };
-
-use rkyv::Deserialize as _;
 
 use crate::project::{clip_add_core, clip_move_mul_core};
 
-pub fn handle_command_action(
-    request: &ArchivedCommand,
+pub fn command_to_history(
     project: &mut Project,
     timeline_id: TimelineId,
-) -> anyhow::Result<()> {
-    match request {
-        ArchivedCommand::ClipsMove { clips } => {
-            clip_move_mul_core(project, timeline_id, clips.as_slice())?
+    request: CommandRequest,
+) -> anyhow::Result<CommandHistory> {
+    let history = match request {
+        CommandRequest::ClipsMove { clips } => {
+            let timeline = project
+                .timeline_mut(timeline_id)
+                .ok_or(EsotereelError::InvalidTimeline)?;
+
+            let entries: anyhow::Result<Vec<_>> = clips
+                .into_iter()
+                .map(|ctx| -> anyhow::Result<ClipMoveHistoryCtx> {
+                    let (clip, layer) = timeline
+                        .get_clip_and_layer(ctx.clip_id)
+                        .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
+
+                    Ok(ClipMoveHistoryCtx {
+                        clip_id: ctx.clip_id,
+                        old_position: clip.position,
+                        old_duration: clip.duration,
+                        old_layer_id: layer,
+                        new_position: ctx.new_position,
+                        new_duration: ctx.new_duration,
+                        new_layer_id: ctx.new_layer_id,
+                    })
+                })
+                .collect();
+            CommandHistory::ClipsMove { clips: entries? }
         }
-        ArchivedCommand::AddClip {
+        CommandRequest::AddClip {
             layer_id,
             position,
             duration,
             clip_data,
             translates,
-        } => {
-            let clip_data: ClipData = clip_data.deserialize(&mut rkyv::Infallible).unwrap();
-            let translates: ClipTranslates = translates.deserialize(&mut rkyv::Infallible).unwrap();
+        } => CommandHistory::AddClip {
+            layer_id,
+            position,
+            duration,
+            clip_data,
+            translates,
+        },
+        CommandRequest::AddLayer {
+            parent_layer_id,
+            insert_index,
+            name,
+            is_folder,
+        } => CommandHistory::AddLayer {
+            parent_layer_id,
+            insert_index,
+            name,
+            is_folder,
+        },
+    };
 
-            clip_add_core(
-                project,
-                timeline_id,
-                *layer_id,
-                *position,
-                *duration,
-                clip_data,
-                translates,
-            )?
+    Ok(history)
+}
+
+pub fn handle_command_action(
+    project: &mut Project,
+    timeline_id: TimelineId,
+    command: &CommandHistory,
+) -> anyhow::Result<()> {
+    match command {
+        CommandHistory::ClipsMove { clips } => {
+            clip_move_mul_core(project, timeline_id, clips.as_slice())?
         }
-        ArchivedCommand::AddLayer {
+        CommandHistory::AddClip {
+            layer_id,
+            position,
+            duration,
+            clip_data,
+            translates,
+        } => clip_add_core(
+            project,
+            timeline_id,
+            *layer_id,
+            *position,
+            *duration,
+            clip_data.clone(),
+            translates.clone(),
+        )?,
+        CommandHistory::AddLayer {
             parent_layer_id,
             insert_index,
             name,

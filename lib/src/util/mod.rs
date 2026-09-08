@@ -2,7 +2,6 @@ pub mod logger;
 pub mod order_map;
 pub mod result;
 pub mod slot_map;
-pub mod types;
 
 #[repr(C)]
 #[derive(Copy, Clone)]

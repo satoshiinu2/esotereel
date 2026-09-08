@@ -473,18 +473,21 @@ impl Timeline {
         self.clips.get(&id)
     }
 
-    pub fn iter_clips(&self) -> impl Iterator<Item = (&ClipId, &Clip)> {
-        self.clips.iter()
-    }
+    /// Clipとその所属LayerIdを検索
+    pub fn get_clip_and_layer(&self, clip_id: ClipId) -> Option<(&Clip, LayerId)> {
+        let clip = self.clips.get(&clip_id)?;
 
-    /// Clipとその所属LayerIdを検索(非破壊)。C++側のfindClipById相当。
-    pub fn find_clip_by_id(&self, clip_id: ClipId) -> Option<(&Clip, LayerId)> {
         let layer_id = self
             .layers
             .values()
-            .find(|l| l.clips.values().any(|&id| id == clip_id))
-            .map(|l| l.id)?;
-        self.clips.get(&clip_id).map(|c| (c, layer_id))
+            .find(|layer| layer.clips.get(&clip.position) == Some(&clip_id))
+            .map(|layer| layer.id)?;
+
+        Some((clip, layer_id))
+    }
+
+    pub fn iter_clips(&self) -> impl Iterator<Item = (&ClipId, &Clip)> {
+        self.clips.iter()
     }
 
     /// 指定レイヤーの指定範囲にclipを置けるか(exclude_idsは自分自身などの除外用)。

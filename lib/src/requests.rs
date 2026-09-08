@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::{MediaSec, TimelineTick, commands::Command, ids::TimelineId};
+use crate::project::{MediaSec, TimelineTick, command::CommandRequest, ids::TimelineId};
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -11,7 +11,7 @@ pub enum Request {
     NewProject,
     ProjectAll,
     Command {
-        command: Command,
+        command: CommandRequest,
         timeline_id: TimelineId,
     },
     InitStream {

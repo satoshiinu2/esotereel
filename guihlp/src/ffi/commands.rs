@@ -1,16 +1,13 @@
-use esotereel_lib::{
-    project::{
-        clip::ClipData,
-        commands::Command,
-        ids::{LayerId, TimelineId},
-        transform::{ClipTranslate, ClipTranslates},
-    },
-    util::types::ClipMoveCtx,
+use esotereel_lib::project::{
+    clip::ClipData,
+    command::{ClipMoveCtx, CommandRequest},
+    ids::{LayerId, TimelineId},
+    transform::{ClipTranslate, ClipTranslates},
 };
 
 use crate::{
-    WrapperErrorCode, network::ClientNetworkHandler, slice_from_ptr_or_empty,
-    ffi::stringview::StringView,
+    WrapperErrorCode, ffi::stringview::StringView, network::ClientNetworkHandler,
+    slice_from_ptr_or_empty,
 };
 
 #[unsafe(no_mangle)]
@@ -49,7 +46,7 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
         clip_ids
             .iter()
             .filter_map(|clip_id| {
-                let (clip, layer_id) = timeline.find_clip_by_id(*clip_id)?;
+                let (clip, layer_id) = timeline.get_clip_and_layer(*clip_id)?;
 
                 // order(数値)は無くなったので、root_layers内のindexで移動量を解決する。
                 // 注意: Composite展開行など別Timeline由来のレイヤーはroot_index_ofが
@@ -68,7 +65,7 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
             .collect()
     };
 
-    let command = Command::ClipsMove { clips: clip_data };
+    let command = CommandRequest::ClipsMove { clips: clip_data };
 
     network.req_command(timeline_id, command);
 
@@ -99,7 +96,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         scale: [400.0, 300.0, 1.0],
     });
 
-    let command = Command::AddClip {
+    let command = CommandRequest::AddClip {
         layer_id,
         position,
         duration: 10000,
@@ -141,7 +138,7 @@ pub unsafe extern "C" fn req_cmd_add_layer(
         None
     };
 
-    let command = Command::AddLayer {
+    let command = CommandRequest::AddLayer {
         parent_layer_id,
         insert_index,
         name: name.as_string_lossy().into_owned(),

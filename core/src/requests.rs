@@ -6,14 +6,21 @@ use std::{
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
-    project::Project,
+    project::{Project, command::CommandRequest},
     requests::ArchivedRequest,
     responces::Response,
     util::result::{EsotereelError, EsotereelResult},
 };
+use log::info;
 use rkyv::Deserialize;
 
-use crate::{network::ServerNetworkHandler, project::commands::handle_command_action};
+use crate::{
+    network::ServerNetworkHandler,
+    project::{
+        commands::{command_to_history, handle_command_action},
+        history,
+    },
+};
 
 pub fn on_request_receive(
     request: &ArchivedRequest,
@@ -87,7 +94,14 @@ pub fn on_request_receive(
 
             let mut project = project_arc.write().unwrap();
 
-            handle_command_action(command, &mut project, *timeline_id)?;
+            let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
+
+            info!("request: {:?}", command);
+
+            let history = command_to_history(&mut project, *timeline_id, command)?;
+            handle_command_action(&mut project, *timeline_id, &history)?;
+
+            info!("history: {:?}", history);
 
             drop(app_state);
 
