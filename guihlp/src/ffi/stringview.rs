@@ -7,6 +7,12 @@ pub struct StringView {
     pub len: usize,
 }
 
+#[repr(C)]
+pub struct OwnedString {
+    pub ptr: *mut u8,
+    pub len: usize,
+}
+
 impl StringView {
     pub fn from_str(s: &str) -> Self {
         Self {
@@ -51,6 +57,34 @@ impl StringView {
             ptr: std::ptr::null(),
             len: 0,
         }
+    }
+}
+
+impl OwnedString {
+    pub fn from_string(s: String) -> Self {
+        let ptr = s.as_ptr() as *mut u8;
+        let len = s.len();
+        std::mem::forget(s); // Transfer ownership to C++
+        Self { ptr, len }
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+}
+
+/// Frees a string that was allocated by Rust and returned via OwnedString
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn owned_string_free(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        let _ = unsafe { String::from_raw_parts(ptr, len, len) };
     }
 }
 

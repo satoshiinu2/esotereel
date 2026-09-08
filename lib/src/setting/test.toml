@@ -1,0 +1,31 @@
+[[fields]]
+key = "logging.default_level"
+category = ["Logging"]
+label = "Default Log Level"
+default = "Info"
+kind = { type = "enum", options = [
+    "Off",
+    "Error",
+    "Warn",
+    "Info",
+    "Debug",
+    "Trace",
+] }
+
+[[fields]]
+key = "logging.module_levels"
+category = ["Logging"]
+label = "Per-Module Log Levels"
+default = {}
+kind = { type = "map", known_keys = [
+    "renderer",
+    "network",
+    "ffi",
+], value_kind = { type = "enum", options = [
+    "Off",
+    "Error",
+    "Warn",
+    "Info",
+    "Debug",
+    "Trace",
+] } }

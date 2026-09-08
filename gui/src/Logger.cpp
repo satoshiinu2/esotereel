@@ -6,8 +6,8 @@
 namespace esotereel {
 void qtLogCallback(size_t level, esotereel_gui_helper::StringView target_view,
                    esotereel_gui_helper::StringView msg_view) {
-    QString target = StringView::toQstring(target_view);
-    QString message = StringView::toQstring(msg_view);
+    QString target = StringView::toQString(target_view);
+    QString message = StringView::toQString(msg_view);
 
     // esotereel系以外のログ（wgpu, naga等）は、Warn(2)以下の深刻なもの以外無視する
     if (!target.startsWith("esotereel") && level > 2) {

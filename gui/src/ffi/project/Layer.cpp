@@ -31,6 +31,6 @@ Clip Layer::findClipAtFrame(int64_t frame, const Timeline &timeline) const noexc
 }
 
 QString Layer::name() const noexcept {
-    return StringView::toQstring(esotereel_gui_helper::layer_get_name(raw_ptr));
+    return StringView::toQString(esotereel_gui_helper::layer_get_name(raw_ptr));
 }
 } // namespace esotereel

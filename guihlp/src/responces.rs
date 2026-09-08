@@ -262,7 +262,7 @@ pub(super) fn on_responce_recveve(
         ArchivedResponse::StreamDataEnd {
             resource_id,
             fetched_ranges,
-            generation,
+            generation: _,
         } => {
             let fetched_ranges: Vec<Range<f64>> =
                 fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();

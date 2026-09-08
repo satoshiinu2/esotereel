@@ -3,6 +3,7 @@
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/InternalServer.h"
 #include "ffi/Requests.h"
+#include "ffi/StringView.h"
 #include "network/boot.h"
 #include "window/MainWindow.h"
 #include <QApplication>
@@ -21,11 +22,12 @@ using TimelineId = esotereel_gui_helper::TimelineId;
 Q_LOGGING_CATEGORY(logRust, "lib")
 
 void bootcore(QString corePath);
-void onServerStart(bool ok);
+void startInternalServer();
+void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi);
 void setCallBacks();
 
 esotereel::window::MainWindow *window;
-esotereel::ClientNetworkHandler network;
+esotereel::ClientNetworkHandler *network;
 QString addr;
 
 int main(int argc, char **argv) {
@@ -33,25 +35,42 @@ int main(int argc, char **argv) {
 
     setCallBacks();
 
-    esotereel::window::MainWindow w(network);
+    QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
+    QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
+
+    esotereel::ClientNetworkHandler n(stdPluginDir, workingDir);
+    network = &n;
+
+    n.logDirectoriesInfo();
+
+    esotereel::window::MainWindow w(n);
     window = &w;
     w.show();
 
-    addr = "0.0.0.0:12345";
-    esotereel::InternalServer::start(addr, onServerStart);
+    n.bootstrap();
+
+    startInternalServer();
 
     return app.exec();
 }
 
-void onServerStart(bool ok) {
+void startInternalServer() {
+    addr = "0.0.0.0:12345";
+    QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
+    QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
+
+    esotereel::InternalServer::start(*network, addr, onServerStart, stdPluginDir, workingDir);
+}
+
+void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi) {
     if (ok) {
-        network.run(addr);
+        network->run(esotereel::StringView::toQString(addr_ffi));
     }
 }
 
 void onConnectedCallBack() {
     // placeholder
-    network.requests().newProject();
+    network->requests().newProject();
 }
 
 void setCallBacks() {

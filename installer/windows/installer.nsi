@@ -24,6 +24,10 @@ Section "Esotereel" SecMain
 
 	File "..\..\build\target\release\esotereel_gui_helper.dll"
 
+	; plugins フォルダーをインストール先の std_plugins フォルダーへコピー
+	SetOutPath "$INSTDIR\std_plugins"
+	File /r "..\..\plugins\*"
+
 	; アンインストーラーを生成
 	WriteUninstaller "$INSTDIR\uninstall.exe"
 

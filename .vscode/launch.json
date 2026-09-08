@@ -10,7 +10,9 @@
       "preLaunchTask": "build gui debug",
       "env": {
         "RUST_BACKTRACE": "1",
-        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target"
+        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target",
+        "ESOTEREEL_PLUGIN_DIR": "${workspaceFolder}/plugins",
+        "ESOTEREEL_WORKING_DIR": "${workspaceFolder}/build/working"
       }
     },
     {
@@ -22,7 +24,9 @@
       "preLaunchTask": "build core debug",
       "env": {
         "RUST_BACKTRACE": "1",
-        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target"
+        "CARGO_TARGET_DIR": "${workspaceFolder}/build/target",
+        "ESOTEREEL_PLUGIN_DIR": "${workspaceFolder}/plugins",
+        "ESOTEREEL_WORKING_DIR": "${workspaceFolder}/build/working"
       }
     }
   ]

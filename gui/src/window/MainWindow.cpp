@@ -1,10 +1,12 @@
 #include "MainWindow.h"
 #include "ads_globals.h"
+#include "dialog/settings/SettingsDialog.h"
 #include "ffi/Requests.h"
 #include "ffi/project/camera.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineWidget.h"
 #include <DockManager.h>
+#include <QAction>
 #include <QLabel>
 #include <QMenuBar>
 #include <QTimer>
@@ -19,9 +21,8 @@
 
 namespace esotereel::window {
 
-MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent) {
-    this->windowState.network = &network;
-
+MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
+    // init windowState
     this->windowState.camera = new CameraInfo{};
     this->windowState.camera->position = QVector3D(0, 0, 0);
     this->windowState.camera->rotation = QVector3D(0, 0, 0);
@@ -68,6 +69,10 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
     viewMenu->addAction(previewDock->toggleViewAction());
     viewMenu->addAction(timelineDock->toggleViewAction());
     viewMenu->addAction(debugStreamsDock->toggleViewAction());
+
+    QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
+    QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
+    connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettingsDialog);
 }
 
 void MainWindow::markDirtyTimeline(TimelineId timelineId) {
@@ -75,5 +80,10 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
         timelineWidget->markRowsDirty();
         timelineWidget->update();
     });
+}
+
+void MainWindow::openSettingsDialog() {
+    dialog::SettingsDialog settingsDialog(windowState, this);
+    settingsDialog.exec();
 }
 } // namespace esotereel::window

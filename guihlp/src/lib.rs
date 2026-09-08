@@ -9,7 +9,6 @@ pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
 pub use esotereel_lib::project::ids::{ClipId, LayerId, ScriptId, TimelineId};
-pub use esotereel_lib::render::surfacetarget::NativeWindowHandle;
 use log::error;
 
 use crate::network::OnConnectedFn;
@@ -147,6 +146,7 @@ pub struct GuiCallbacks {
     pub mark_dirty_timeline: extern "C" fn(timeline_type: TimelineId),
 }
 
+// is it needed??
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn init() {}
 

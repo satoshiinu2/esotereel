@@ -39,12 +39,15 @@ enum class Direction {
   Right,
 };
 
-enum class PlatformKind : uint32_t {
-  Unknown = 0,
-  Xcb = 1,
-  Wayland = 2,
-  Win32 = 3,
-  AppKit = 4,
+enum class SettingsFieldType {
+  Bool = 0,
+  Int = 1,
+  Float = 2,
+  Enum = 3,
+  String = 4,
+  Color = 5,
+  Array = 6,
+  Map = 7,
 };
 
 struct ClientNetworkHandler;
@@ -82,7 +85,7 @@ struct StringView {
   uintptr_t len;
 };
 
-using OnServerReadyFn = void(*)(bool);
+using OnServerReadyCFn = void(*)(bool, StringView);
 
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
 
@@ -115,10 +118,17 @@ struct CameraInfo {
 
 using TimelineTick = int64_t;
 
-struct NativeWindowHandle {
-  PlatformKind kind;
-  void *window_ptr;
-  void *display_ptr;
+struct OwnedString {
+  uint8_t *ptr;
+  uintptr_t len;
+};
+
+struct SettingsField {
+  OwnedString key;
+  OwnedString category;
+  OwnedString label;
+  SettingsFieldType kind_type;
+  OwnedString default_value;
 };
 
 using ClipId = uint64_t;
@@ -171,7 +181,11 @@ bool debug_streams_write_loaded_streams_sec_arr(const ClientNetworkHandler *ptr_
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
 
-WrapperErrorCode internal_server_start(StringView addr, OnServerReadyFn on_server_ready);
+WrapperErrorCode internal_server_start(const ClientNetworkHandler *ptr_network,
+                                       StringView addr,
+                                       OnServerReadyCFn on_server_ready,
+                                       StringView std_plugin_dir,
+                                       StringView working_dir);
 
 void init_rust_logger(LogOutCStrFn callback);
 
@@ -179,7 +193,11 @@ void set_log_level(StringView target, CLogLevel level);
 
 WrapperErrorCode client_network_handler_run(const ClientNetworkHandler *ptr, StringView addr);
 
-WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out);
+WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out,
+                                            StringView std_plugin_dir,
+                                            StringView working_dir);
+
+WrapperErrorCode client_network_handler_bootstrap(const ClientNetworkHandler *ptr);
 
 WrapperErrorCode client_network_handler_drop(const ClientNetworkHandler *ptr);
 
@@ -192,6 +210,8 @@ WrapperErrorCode client_network_handler_app_state_project_unlock_read(const void
 /// ガードからprojectポインタを取得する関数
 WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
                                                       const Project **out_project);
+
+WrapperErrorCode client_network_handler_log_directories_info(const ClientNetworkHandler *ptr);
 
 const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
@@ -290,6 +310,31 @@ WrapperErrorCode req_fetch_frame(const ClientNetworkHandler *ptr_network,
 void req_project_log(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode req_load_stream(const ClientNetworkHandler *ptr_network, StringView path);
+
+WrapperErrorCode settings_initialize(const ClientNetworkHandler *ptr_network, StringView schema);
+
+int32_t settings_get_all_fields_count(const ClientNetworkHandler *ptr_network);
+
+WrapperErrorCode settings_get_all_fields(const ClientNetworkHandler *ptr_network,
+                                         SettingsField *output,
+                                         uintptr_t output_len);
+
+WrapperErrorCode settings_get_value(const ClientNetworkHandler *ptr_network,
+                                    StringView key,
+                                    OwnedString *output);
+
+WrapperErrorCode settings_set_value(const ClientNetworkHandler *ptr_network,
+                                    StringView key,
+                                    StringView value);
+
+int32_t settings_get_categories_count(const ClientNetworkHandler *ptr_network);
+
+WrapperErrorCode settings_get_categories(const ClientNetworkHandler *ptr_network,
+                                         OwnedString *output,
+                                         uintptr_t output_len);
+
+/// Frees a string that was allocated by Rust and returned via OwnedString
+void owned_string_free(uint8_t *ptr, uintptr_t len);
 
 WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
 

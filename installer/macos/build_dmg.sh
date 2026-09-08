@@ -5,22 +5,26 @@ APP_NAME="Esotereel"
 APP_DIR="build/macOS/${APP_NAME}.app"
 DIST_DIR="dist"
 
-# 0. クリーンアップ & 出力ディレクトリ作成
+# クリーンアップ & 出力ディレクトリ作成
 rm -rf "build/macOS"
 mkdir -p "$DIST_DIR"
 
-# 1. AppBundleディレクトリ構造を作成
+# AppBundleディレクトリ構造を作成
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
-# 2. 実行ファイル・ライブラリのコピー
+# 実行ファイル・ライブラリのコピー
 cp build/cmake/esotereel_gui "$APP_DIR/Contents/MacOS/esotereel_gui"
 chmod +x "$APP_DIR/Contents/MacOS/esotereel_gui"
+
+# plugins フォルダーをインストール先の std_plugins フォルダーへコピー
+mkdir -p "$APP_DIR/Contents/Resources"
+cp -r plugins "$APP_DIR/Contents/Resources/std_plugins"
 
 # GUI Helper 共有ライブラリ (esotereel_guiの実行に必須)
 cp build/target/release/libesotereel_gui_helper.dylib "$APP_DIR/Contents/MacOS/"
 
-# 3. Info.plistを作成
+# Info.plistを作成
 cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.plist">
@@ -48,10 +52,10 @@ cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
-# 4. DMGを作成 (対象を .app に限定し、dist/ 以下に出力)
+# DMGを作成 (対象を .app に限定し、dist/ 以下に出力)
 hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$DIST_DIR/esotereel.dmg"
 
-# 5. 作成確認
+# 作成確認
 if [ -f "$DIST_DIR/esotereel.dmg" ]; then
   echo "DMG created successfully: $DIST_DIR/esotereel.dmg"
   ls -lh "$DIST_DIR/esotereel.dmg"

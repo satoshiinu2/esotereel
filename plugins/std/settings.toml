@@ -1,0 +1,6 @@
+[[fields]]
+key = "test_int"
+category = []
+label = "Test Int"
+default = 0
+kind = { type = "int", min = 0, max = 100 }
