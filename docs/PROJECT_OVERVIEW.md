@@ -36,7 +36,7 @@ esotereel/
 │       ├── main.cpp     # Application entry point
 │       ├── window/      # UI components (timeline, preview, etc.)
 │       ├── network/     # Network communication with core
-│       └── wrapper/     # C++ wrappers for Rust FFI
+│       └── ffi/         # C++ wrappers for Rust FFI
 ├── guihlp/              # Rust FFI library (cdylib)
 │   ├── include/         # C header files for FFI
 │   └── src/             # Rust implementation

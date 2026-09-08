@@ -34,7 +34,7 @@ The bridge layer provides C-compatible interfaces between Qt and Rust:
 **Key Components**:
 - `lib.rs` - FFI exports and error handling
 - `network.rs` - Client network implementation
-- `wrapper/` - C++ wrapper implementations
+- `ffi/` - C++ wrapper implementations
 - `project.rs` - Project data structure wrappers
 
 ### 3. Business Logic Layer (Rust)
@@ -81,7 +81,7 @@ The system uses a custom binary protocol over TCP:
 - `Test` - Connection testing
 - `NewProject` - Create new project
 - `ProjectAll` - Request full project state
-- `Command` - Execute project command
+- `Command` - Execute project command (CommandRequest)
 - `InitStream` - Initialize video stream
 - `FetchStreamData` - Fetch video data for a time range
 
@@ -181,7 +181,7 @@ The system uses a custom binary protocol over TCP:
 
 **Adding a Clip**:
 1. GUI creates clip data
-2. Sends `Command::AddClip` request
+2. Sends `Command::AddClip` request (CommandRequest::AddClip)
 3. Core executes command on project
 4. Timeline tracks change in ChangeSet
 5. Core sends `ClipUpdates` response
@@ -294,16 +294,17 @@ The system uses a custom binary protocol over TCP:
 ## Extension Points
 
 ### Adding New Commands
-1. Define command in `lib/src/project/commands.rs`
-2. Implement command handler in `core/src/project/commands.rs`
-3. Add FFI wrapper in `guihlp/src/wrapper/commands.rs`
-4. Create C++ wrapper in `gui/src/wrapper/`
-5. Ensure change tracking in Timeline (touch_upsert/touch_removed)
+1. Define command in `lib/src/project/command.rs` (CommandRequest enum)
+2. Add corresponding variant to CommandHistory enum for undo/redo support
+3. Implement command handler in `core/src/project/commands.rs`
+4. Add FFI wrapper in `guihlp/src/ffi/commands.rs`
+5. Create C++ wrapper in `gui/src/ffi/`
+6. Ensure change tracking in Timeline (touch_upsert/touch_removed)
 
 ### Adding New Clip Types
 1. Extend `ClipData` enum in `lib/src/project/clip.rs`
 2. Implement rendering logic in `lib/src/render/`
-3. Add UI components in `gui/src/`
+3. Add UI components in `gui/src/window/`
 4. Update serialization if needed
 
 ### Adding New Effects

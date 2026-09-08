@@ -518,8 +518,8 @@ class DebugStreamsWidget;
 struct WindowGState;
 
 // Forward declaration headers
-#include "../wrapper/network.fwd.h"
-#include "../wrapper/project/camera.fwd.h"
+#include "../ffi/Network.fwd.h"
+#include "../ffi/project/Camera.fwd.h"
 ```
 
 ### Exception Handling
@@ -636,7 +636,7 @@ esotereel_gui_helper::set_gui_callbacks(callbacks);
 // mod.rs exports module contents
 pub mod clip;
 pub mod camera;
-pub mod commands;
+pub mod command;
 
 // Use re-exports for public API
 pub use {

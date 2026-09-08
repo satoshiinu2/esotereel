@@ -46,7 +46,7 @@ The build process compiles:
 **Adding a New UI Feature:**
 1. Design data structures in `lib/src/project/`
 2. Implement business logic in `core/src/project/`
-3. Create FFI wrappers in `guihlp/src/wrapper/`
+3. Create FFI wrappers in `guihlp/src/ffi/`
 4. Build Qt UI components in `gui/src/`
 5. Test integration between layers
 
@@ -186,10 +186,16 @@ pub struct ServerState {
 ### Command Pattern
 ```rust
 // Command execution
-pub enum Command {
+pub enum CommandRequest {
     AddClip { /* parameters */ },
     RemoveClip { /* parameters */ },
     // ... other commands
+}
+
+pub enum CommandHistory {
+    AddClip { /* parameters for undo/redo */ },
+    RemoveClip { /* parameters for undo/redo */ },
+    // ... other history entries
 }
 ```
 

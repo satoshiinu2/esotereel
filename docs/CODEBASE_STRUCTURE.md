@@ -40,20 +40,22 @@ gui/
 │   │   │   ├── render_worker.cpp/h  # Background rendering
 │   │   │   └── wgpu_canvas.cpp/h     # WebGPU canvas
 │   │   └── debug_streams.cpp/h   # Debug streams window
-│   └── wrapper/
-│       ├── exception.cpp/h      # Exception handling
-│       ├── internalserver.cpp/h # Internal server management
-│       ├── network.cpp/h         # Network wrapper
-│       ├── requests.cpp/h        # Request handling
-│       ├── stringview.h         # String view utilities
+│   └── ffi/
+│       ├── ClientNetworkHandler.cpp/h # Network client FFI
+│       ├── InternalServer.cpp/h      # Internal server management
+│       ├── Requests.cpp/h            # Request handling
+│       ├── StringView.h              # String view utilities
+│       ├── Settings.cpp/h            # Settings management
+│       ├── Result.h                  # Result types
+│       ├── WrapperResult.h          # Wrapper result types
 │       └── project/
-│           ├── camera.cpp/h     # Camera controls
-│           ├── clip.cpp/h       # Clip wrappers
+│           ├── camera.cpp/h          # Camera controls
+│           ├── clip.cpp/h            # Clip FFI
 │           ├── clip_render_info.cpp/h # Clip rendering info
-│           ├── layer.cpp/h      # Layer wrappers
-│           ├── layer_clips.cpp/h    # Layer-clip management
-│           ├── project.cpp/h    # Project wrappers
-│           └── timeline.cpp/h  # Timeline wrappers
+│           ├── layer.cpp/h           # Layer FFI
+│           ├── layer_clips.cpp/h     # Layer-clip management
+│           ├── project.cpp/h         # Project FFI
+│           └── timeline.cpp/h        # Timeline FFI
 ```
 
 ### Key Files
@@ -82,7 +84,7 @@ gui/
 - Provides frame display functionality
 - Integrates with render worker
 
-#### `wrapper/network.h/cpp`
+#### `ffi/ClientNetworkHandler.h/cpp`
 - C++ wrapper for Rust network client
 - Provides type-safe interface to Rust FFI
 - Handles request/response serialization
@@ -100,25 +102,26 @@ guihlp/
 ├── src/
 │   ├── lib.rs            # FFI exports and core functionality
 │   ├── network.rs        # Client network implementation
-│   ├── project.rs        # Project data structure wrappers
 │   ├── responces.rs      # Response handling
-│   └── wrapper/
-│       ├── mod.rs        # Wrapper module exports
-│       ├── commands.rs   # Command wrappers
+│   └── ffi/
+│       ├── mod.rs        # FFI module exports
+│       ├── commands.rs   # Command FFI functions
 │       ├── debug_streams.rs # Debug stream utilities
 │       ├── internalserver.rs # Internal server management
 │       ├── logger.rs     # Logging integration
-│       ├── network.rs    # Network wrappers
-│       ├── render.rs     # Render frame FFI wrapper
+│       ├── network.rs    # Network FFI functions
+│       ├── render.rs     # Render frame FFI function
+│       ├── requests.rs   # Request FFI functions
+│       ├── settings.rs   # Settings FFI functions
 │       ├── stringview.rs # String view utilities
 │       ├── wgpuutil.rs   # WebGPU utilities
 │       └── project/
-│           ├── mod.rs    # Project wrapper exports
-│           ├── clip.rs   # Clip wrappers
+│           ├── mod.rs    # Project FFI exports
+│           ├── clip.rs   # Clip FFI functions
 │           ├── clip_render_info.rs # Clip rendering info
 │           ├── debug.rs  # Debug utilities
-│           ├── layer.rs  # Layer wrappers
-│           └── timeline.rs # Timeline wrappers
+│           ├── layer.rs  # Layer FFI functions
+│           └── timeline.rs # Timeline FFI functions
 ```
 
 ### Key Files
@@ -136,21 +139,27 @@ guihlp/
 - Request/response serialization using rkyv
 - Manages client state and callbacks
 
-#### `project.rs`
-- Project data structure wrappers
-- Provides safe Rust interfaces for C++ code
-- Manages project state synchronization
+#### `responces.rs`
+- Response handling and parsing
+- Callback invocation for Qt GUI
+- Response type deserialization
 
-#### `wrapper/commands.rs`
+#### `ffi/commands.rs`
 - Command pattern implementation for FFI
 - Type-safe command execution
 - Error handling and validation
+- CommandRequest/CommandHistory handling
 
-#### `wrapper/render.rs`
+#### `ffi/render.rs`
 - FFI wrapper for render_frame_offscreen
 - Safe interface to GPU rendering
 - Error handling with panic recovery
 - Output buffer management
+
+#### `ffi/settings.rs`
+- Settings management
+- Configuration persistence
+- FFI functions for settings operations
 
 ## Core Component (`core/`)
 
@@ -215,7 +224,7 @@ lib/
     │   ├── change.rs         # Change tracking for synchronization
     │   ├── chunk_index.rs    # Spatial index for clip queries
     │   ├── clip.rs           # Clip data structures
-    │   ├── commands.rs       # Command definitions
+    │   ├── command.rs        # Command definitions (CommandRequest, CommandHistory)
     │   ├── ids.rs            # ID generation and management
     │   ├── layer.rs          # Layer data structures
     │   ├── project.rs        # Project runtime implementation
@@ -243,8 +252,7 @@ lib/
         ├── logger.rs         # Logging utilities
         ├── order_map.rs      # Ordered map implementation
         ├── result.rs         # Result types
-        ├── slot_map.rs       # Slot map implementation
-        └── types.rs          # Common types
+        └── slot_map.rs       # Slot map implementation
 ```
 
 ### Key Files
@@ -276,6 +284,13 @@ lib/
 - ClipData enum (Dummy, Video, Audio, Composite, Area2D, Area3D)
 - Transform data
 - Time calculation utilities
+
+#### `project/command.rs`
+- Command definitions for project operations
+- CommandRequest enum (ClipsMove, AddClip, AddLayer)
+- CommandHistory enum for undo/redo support
+- Supporting types (ClipMoveCtx, ClipMoveHistoryCtx)
+- rkyv serialization for network transmission
 
 #### `project/project.rs`
 - Project runtime implementation
@@ -384,9 +399,10 @@ Core Logic → Server Network → TCP → Client Network → Rust FFI → C++ Wr
 ### Adding New Features
 1. Define data structures in `lib/`
 2. Implement business logic in `core/`
-3. Create FFI wrappers in `guihlp/`
-4. Build UI components in `gui/`
-5. Test integration between layers
+3. Create Rust FFI wrappers in `guihlp/src/ffi/`
+4. Create C++ FFI wrappers in `gui/src/ffi/`
+5. Build UI components in `gui/src/window/`
+6. Test integration between layers
 
 ### Debugging
 - Rust: Use `println!` and `log::` macros

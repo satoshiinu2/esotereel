@@ -134,8 +134,8 @@ pub enum Request {
     NewProject,
     ProjectAll,
     Command {
-        command: Command,
-        timeline_map_key: LayerMapKey,
+        command: CommandRequest,
+        timeline_id: TimelineId,
     },
     InitStream {
         path: String,
@@ -368,7 +368,7 @@ pub struct GuiCallbacks {
 }
 ```
 
-### Project Wrapper API (guihlp/src/wrapper/project/)
+### Project FFI API (guihlp/src/ffi/project/)
 
 #### Project Operations
 - Project creation and management
@@ -432,20 +432,81 @@ pub struct ChunkIndex {
 
 ## Command Pattern API
 
-### Command Types (lib/src/project/commands.rs)
+### Command Types (lib/src/project/command.rs)
 
 Commands represent atomic operations on the project state.
 
-**Common Commands:**
-- Add/remove clips
-- Modify clip properties
-- Layer operations
-- Timeline operations
+**CommandRequest Enum:**
+```rust
+pub enum CommandRequest {
+    ClipsMove {
+        clips: Vec<ClipMoveCtx>,
+    },
+    AddClip {
+        layer_id: LayerId,
+        position: i64,
+        duration: i64,
+        clip_data: ClipData,
+        translates: ClipTranslates,
+    },
+    AddLayer {
+        parent_layer_id: Option<LayerId>,
+        insert_index: Option<usize>,
+        name: String,
+        is_folder: bool,
+    },
+}
+```
+
+**CommandHistory Enum:**
+```rust
+pub enum CommandHistory {
+    ClipsMove {
+        clips: Vec<ClipMoveHistoryCtx>,
+    },
+    AddClip {
+        added_clip_id: ClipId,
+        layer_id: LayerId,
+        position: i64,
+        duration: i64,
+        clip_data: ClipData,
+        translates: ClipTranslates,
+    },
+    AddLayer {
+        added_layer_id: LayerId,
+        parent_layer_id: Option<LayerId>,
+        insert_index: Option<usize>,
+        name: String,
+        is_folder: bool,
+    },
+}
+```
+
+**Supporting Types:**
+```rust
+pub struct ClipMoveCtx {
+    pub clip_id: ClipId,
+    pub new_position: TimelineTick,
+    pub new_duration: TimelineTick,
+    pub new_layer_id: LayerId,
+}
+
+pub struct ClipMoveHistoryCtx {
+    pub clip_id: ClipId,
+    pub old_position: TimelineTick,
+    pub old_duration: TimelineTick,
+    pub old_layer_id: LayerId,
+    pub new_position: TimelineTick,
+    pub new_duration: TimelineTick,
+    pub new_layer_id: LayerId,
+}
+```
 
 **Command Execution:**
 - Commands are executed on the server
 - Generate incremental updates for clients
 - Support undo/redo through history system
+- Commands use rkyv serialization for network transmission
 
 ## Utility API
 
@@ -629,8 +690,8 @@ pub fn init_logger(callback: fn(usize, String))
 ### Adding New Request Types
 1. Add variant to `Request` enum in `lib/src/requests.rs`
 2. Add handler in `core/src/requests.rs`
-3. Add FFI wrapper in `guihlp/src/wrapper/requests.rs`
-4. Add C++ wrapper in `gui/src/wrapper/requests.h/cpp`
+3. Add FFI wrapper in `guihlp/src/ffi/requests.rs`
+4. Add C++ wrapper in `gui/src/ffi/Requests.h/cpp`
 
 ### Adding New Response Types
 1. Add variant to `Response` enum in `lib/src/responces.rs`
@@ -640,7 +701,15 @@ pub fn init_logger(callback: fn(usize, String))
 ### Adding New Clip Data Types
 1. Add variant to `ClipData` enum in `lib/src/project/clip.rs`
 2. Implement rendering logic in `lib/src/render/`
-3. Add UI components in `gui/src/`
+3. Add UI components in `gui/src/window/`
 4. Update serialization if needed
+
+### Adding New Commands
+1. Add variant to `CommandRequest` enum in `lib/src/project/command.rs`
+2. Add corresponding variant to `CommandHistory` enum for undo/redo support
+3. Implement command handler in `core/src/project/commands.rs`
+4. Add FFI wrapper in `guihlp/src/ffi/commands.rs`
+5. Create C++ wrapper in `gui/src/ffi/`
+6. Ensure change tracking in Timeline (touch_upsert/touch_removed)
 
 This API reference provides the essential interfaces needed to understand and work with the Esotereel codebase. For specific implementation details, refer to the individual source files.

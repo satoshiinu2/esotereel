@@ -48,7 +48,7 @@ This document analyzes the future potential, maintainability aspects, and improv
 - Add export module in `lib/src/`
 - Implement FFmpeg encoding pipeline
 - Create export UI in Qt
-- Add export commands to command pattern
+- Add export commands to CommandRequest enum
 
 #### 3. Undo/Redo System
 **Current State**: Basic history structure exists in core
