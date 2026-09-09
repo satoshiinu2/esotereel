@@ -26,6 +26,8 @@ class TimelineWidget : public QWidget {
 
         vbox->addWidget(toolbar);
         vbox->addWidget(canvas, 1);
+
+        toolbar->loadButtons(windowState, "timeline", *canvas);
     }
 };
 } // namespace esotereel::window

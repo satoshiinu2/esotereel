@@ -1,6 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::plugin::setting::{FieldSchema, FieldTypeKind};
+use esotereel_lib::plugin::setting::{FieldTypeKind, SettingFieldSchema};
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
@@ -33,7 +33,7 @@ pub struct SettingsField {
 }
 
 impl SettingsField {
-    fn from_field(field: &FieldSchema) -> Self {
+    fn from_field(field: &SettingFieldSchema) -> Self {
         let kind_type = match &field.kind {
             FieldTypeKind::Bool => SettingsFieldType::Bool,
             FieldTypeKind::Int { .. } => SettingsFieldType::Int,
@@ -54,52 +54,6 @@ impl SettingsField {
             label: OwnedString::from_string(field.label.clone()),
             kind_type,
             default_value: OwnedString::from_string(default_str),
-        }
-    }
-}
-
-// slop
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn settings_initialize(
-    ptr_network: *const ClientNetworkHandler,
-    schema: StringView,
-) -> WrapperErrorCode {
-    if ptr_network.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
-
-    let network = unsafe { &*ptr_network };
-    let schema_str = match schema.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
-    };
-
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let mut app_state = network.app_state.lock().expect("mutex poisoned");
-
-        // Parse schema and register fields
-        let fields = FieldSchema::parse_toml(schema_str, "builtin")
-            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
-
-        for field in fields {
-            app_state.settings.schema.register(field);
-        }
-
-        // Add missing defaults
-        app_state.settings.add_missing_from_schema();
-
-        Ok(())
-    }));
-
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "settings_initialize");
-            WrapperErrorCode::error_from_option(msg.as_deref())
         }
     }
 }

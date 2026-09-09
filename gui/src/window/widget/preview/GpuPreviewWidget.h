@@ -1,7 +1,6 @@
 #pragma once
 
 #include "GpuRenderWorker.h"
-#include "Utils.h"
 #include "window/MainWindow.h"
 #include <QPlatformSurfaceEvent>
 #include <QResizeEvent>

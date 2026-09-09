@@ -94,26 +94,21 @@ pub extern "C" fn client_network_handler_bootstrap(
     // 重要: instance_arc の所有権を解放せずに生ポインタに戻す
     let _ = Arc::into_raw(network_arc);
 
-    // プラグインを読み込む。MutexGuard は Send ではないため、async closure を
-    // 直接 thread::spawn に渡さず、スレッド内でランタイムを実行する。
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
-        runtime.block_on(async move {
-            let mut app_state = network.app_state.lock().expect("mutex poisoned");
-            if let Err(e) = app_state.load_plugins(HostRole::Client).await {
-                log::error!("Failed to load plugins: {}", e);
-            } else {
-                log::info!("Plugins loaded successfully");
-            }
-
-            // Apply plugin schemas to settings
-            if let Err(e) = app_state.apply_settings() {
-                log::error!("Failed to apply settings: {}", e);
-            } else {
-                log::info!("Settings applied successfully");
-            }
-        });
+    let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    let mut app_state = network.app_state.lock().expect("mutex poisoned");
+    runtime.block_on(async {
+        if let Err(e) = app_state.load_plugins(HostRole::Client).await {
+            log::error!("Failed to load plugins: {}", e);
+        } else {
+            log::info!("Plugins loaded successfully");
+        }
     });
+
+    if let Err(e) = app_state.apply_settings() {
+        log::error!("Failed to apply settings: {}", e);
+    } else {
+        log::info!("Settings applied successfully");
+    }
     WrapperErrorCode::ok()
 }
 

@@ -110,6 +110,12 @@ class TimelineCanvasWidget : public QWidget {
     Timeline getTimeline(Project &project);
     void markRowsDirty();
 
+    // ツールバー(Builtinボタン)から呼ぶための薄いラッパー。
+    void addLayerAtRoot() { this->addLayer(std::nullopt, std::nullopt); }
+    void addFolderAtRoot() { this->addFolder(std::nullopt, std::nullopt); }
+    void zoomBy(float_t factor) { this->zoom = std::clamp(this->zoom * factor, 0.1f, 10.0f); update(); }
+    void togglePlaybackPublic() { this->togglePlayback(); }
+
   protected:
     void paintEvent(QPaintEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;

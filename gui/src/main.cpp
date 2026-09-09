@@ -42,12 +42,11 @@ int main(int argc, char **argv) {
     network = &n;
 
     n.logDirectoriesInfo();
+    n.bootstrap();
 
     esotereel::window::MainWindow w(n);
     window = &w;
     w.show();
-
-    n.bootstrap();
 
     startInternalServer();
 

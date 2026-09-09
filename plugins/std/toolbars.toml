@@ -1,0 +1,11 @@
+[[buttons]]
+id = "undo"
+label = "Undo"
+tooltip = "Undo"
+action = { entry = "undo" }
+
+[[buttons]]
+id = "redo"
+label = "Redo"
+tooltip = "Redo"
+action = { entry = "redo" }

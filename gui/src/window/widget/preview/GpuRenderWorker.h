@@ -1,8 +1,6 @@
 #pragma once
 
 #include "esotereel_gui_helper.h"
-#include "ffi/project/Timeline.h"
-#include "ffi/project/camera.h"
 #include "window/MainWindow.h"
 #include <QObject>
 #include <QThread>

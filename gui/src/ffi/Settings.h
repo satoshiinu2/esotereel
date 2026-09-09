@@ -35,7 +35,6 @@ class SettingsField {
 
 class Settings {
   public:
-    static Result<void> initialize(ClientNetworkHandler *network, const QString &schemaText);
     static Result<QVector<SettingsField>> getAllFields(ClientNetworkHandler *network);
     static Result<QString> getValue(ClientNetworkHandler *network, const QString &key);
     static Result<void> setValue(ClientNetworkHandler *network, const QString &key, const QString &value);

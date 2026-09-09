@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
+use crate::plugin::toolbar::{ToolbarRegistry, ToolbarStore};
 use crate::plugin::{PluginLoadResult, PluginLoader, setting::SettingsStore};
 use crate::project::Project;
 use dashmap::DashMap;
@@ -89,6 +90,8 @@ pub struct ClientState {
     pub streams: DashMap<u32, StreamPlayer>,
 
     pub settings: SettingsStore,
+
+    pub toolbar: ToolbarStore,
 }
 
 impl ClientState {
@@ -97,13 +100,21 @@ impl ClientState {
             common: CommonState::new(dirs_def, None),
             streams: DashMap::new(),
             settings: SettingsStore::new(),
+            toolbar: ToolbarStore::default(),
         }
     }
 
     pub fn apply_settings(&mut self) -> anyhow::Result<()> {
-        let plugin_schemas = {
+        let (plugin_schemas, plugin_toolbar_buttons) = {
             let loader = self.plugin_loader.lock().expect("mutex poisoned");
-            loader.collect_all_schemas()
+            (
+                loader.collect_all_schemas(),
+                loader
+                    .plugins
+                    .iter()
+                    .flat_map(|plugin| plugin.toolbar_buttons.clone())
+                    .collect::<Vec<_>>(),
+            )
         };
 
         self.settings
@@ -112,6 +123,11 @@ impl ClientState {
             .context("plugin schema conflict during load_plugins")?;
 
         self.settings.add_missing_from_schema();
+
+        self.toolbar
+            .merge_plugin_buttons(plugin_toolbar_buttons)
+            .context("plugin toolbar conflict during load_plugins")?;
+        self.toolbar.fill_missing_from_registry();
 
         Ok(())
     }

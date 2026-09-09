@@ -46,7 +46,7 @@ pub enum FieldKind {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct FieldSchema {
+pub struct SettingFieldSchema {
     pub key: String,
     pub category: Vec<String>,
     pub label: String,
@@ -54,8 +54,8 @@ pub struct FieldSchema {
     pub default: toml::Value,
 }
 
-impl FieldSchema {
-    pub fn parse_toml(text: &str, source_name: &str) -> anyhow::Result<Vec<FieldSchema>> {
+impl SettingFieldSchema {
+    pub fn parse_toml(text: &str, source_name: &str) -> anyhow::Result<Vec<SettingFieldSchema>> {
         let parsed: SchemaFile = toml::from_str(text).map_err(|e| {
             anyhow::anyhow!(
                 "failed to parse settings schema TOML in {}: {}",
@@ -76,7 +76,7 @@ impl FieldSchema {
         Ok(fields)
     }
 
-    fn parse_fields(raw: FieldSchemaRaw, source_name: &str) -> anyhow::Result<FieldSchema> {
+    fn parse_fields(raw: FieldSchemaRaw, source_name: &str) -> anyhow::Result<SettingFieldSchema> {
         let kind = FieldTypeKind::from_toml_value(&raw.kind)
             .with_context(|| format!("invalid `kind` for key `{}` in `{source_name}`", raw.key))?;
 
@@ -91,7 +91,7 @@ impl FieldSchema {
             })?,
         };
 
-        Ok(FieldSchema {
+        Ok(SettingFieldSchema {
             key: raw.key,
             category: raw.category,
             label: raw.label,
@@ -100,7 +100,7 @@ impl FieldSchema {
         })
     }
 
-    fn validate_fields(fields: &[FieldSchema]) -> anyhow::Result<()> {
+    fn validate_fields(fields: &[SettingFieldSchema]) -> anyhow::Result<()> {
         let mut seen = std::collections::HashSet::new();
         for field in fields {
             if !seen.insert(field.key.as_str()) {
@@ -132,24 +132,27 @@ struct SchemaFile {
 
 #[derive(Debug, Default)]
 pub struct SchemaRegistry {
-    fields: Vec<FieldSchema>,
+    fields: Vec<SettingFieldSchema>,
 }
 
 impl SchemaRegistry {
-    pub fn register(&mut self, field: FieldSchema) {
+    pub fn register(&mut self, field: SettingFieldSchema) {
         self.fields.push(field);
     }
 
-    pub fn fields(&self) -> &[FieldSchema] {
+    pub fn fields(&self) -> &[SettingFieldSchema] {
         &self.fields
     }
 
     /// プラグイン由来のスキーマ(namespace済み)を合流させる。
     /// 組み込み/プラグイン間・プラグイン同士でキー衝突があればエラーにする。
-    pub fn merge_plugin_fields(&mut self, plugin_fields: Vec<FieldSchema>) -> anyhow::Result<()> {
+    pub fn merge_plugin_fields(
+        &mut self,
+        plugin_fields: Vec<SettingFieldSchema>,
+    ) -> anyhow::Result<()> {
         let mut merged = self.fields.clone();
         merged.extend(plugin_fields);
-        FieldSchema::validate_fields(&merged)
+        SettingFieldSchema::validate_fields(&merged)
             .context("plugin schema conflicts with existing settings")?;
         self.fields = merged;
         Ok(())
@@ -188,7 +191,7 @@ impl SettingsStore {
         self.has_disk_loaded = true;
     }
 
-    pub fn get_all_fields(&self) -> Vec<FieldSchema> {
+    pub fn get_all_fields(&self) -> Vec<SettingFieldSchema> {
         self.schema.fields().to_vec()
     }
 
@@ -217,7 +220,7 @@ impl SettingsStore {
         cats
     }
 
-    pub fn get_fields_by_category(&self, category: &str) -> Vec<FieldSchema> {
+    pub fn get_fields_by_category(&self, category: &str) -> Vec<SettingFieldSchema> {
         self.schema
             .fields()
             .iter()

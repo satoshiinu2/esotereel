@@ -8,18 +8,6 @@
 
 namespace esotereel {
 
-Result<void> Settings::initialize(ClientNetworkHandler *network, const QString &schemaText) {
-    if (!network) {
-        return Result<void>::error("Network handler is null");
-    }
-
-    QByteArray schemaUtf8 = schemaText.toUtf8();
-    RawStringView schema = StringView::fromQUtf8String(schemaUtf8);
-
-    WrapperErrorCode result = esotereel_gui_helper::settings_initialize(*network, schema);
-    return wrapperResultToResultVoid(result);
-}
-
 Result<QVector<SettingsField>> Settings::getAllFields(ClientNetworkHandler *network) {
     if (!network) {
         return Result<QVector<SettingsField>>::error("Network handler is null");

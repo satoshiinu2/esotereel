@@ -3,9 +3,14 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use log;
 
-use crate::{HostRole, dirs::Directories, plugin::setting::FieldSchema};
+use crate::{
+    HostRole,
+    dirs::Directories,
+    plugin::{setting::SettingFieldSchema, toolbar::ToolbarButtonSpec},
+};
 
 pub mod setting;
+pub mod toolbar;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
@@ -17,18 +22,15 @@ pub struct PluginManifest {
 #[derive(Clone)]
 pub struct Plugin {
     pub manifest: PluginManifest,
-    pub schema: Vec<FieldSchema>,
+    pub setting_schema: Vec<SettingFieldSchema>,
+    pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub dir: PathBuf,
 }
 
 impl Plugin {
     /// このプラグイン単体のディレクトリからmanifest+settings.tomlを読み込む
     fn load(dir: &Path) -> anyhow::Result<Self> {
-        let manifest_path = dir.join("manifest.toml");
-        let manifest_text = std::fs::read_to_string(&manifest_path)
-            .with_context(|| format!("failed to read manifest at {}", manifest_path.display()))?;
-        let manifest: PluginManifest = toml::from_str(&manifest_text)
-            .with_context(|| format!("failed to parse manifest at {}", manifest_path.display()))?;
+        let manifest = Self::load_manifest(&dir.join("manifest.toml"))?;
 
         log::info!(
             "Loading plugin '{}' v{} (ID: {})",
@@ -37,7 +39,30 @@ impl Plugin {
             manifest.id
         );
 
-        let settings_path = dir.join("settings.toml");
+        let setting_schema = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
+        let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
+
+        Ok(Self {
+            manifest,
+            setting_schema,
+            toolbar_buttons,
+            dir: dir.to_owned(),
+        })
+    }
+
+    fn load_manifest(manifest_path: &Path) -> anyhow::Result<PluginManifest> {
+        let manifest_text = std::fs::read_to_string(&manifest_path)
+            .with_context(|| format!("failed to read manifest at {}", manifest_path.display()))?;
+        let manifest: PluginManifest = toml::from_str(&manifest_text)
+            .with_context(|| format!("failed to parse manifest at {}", manifest_path.display()))?;
+
+        Ok(manifest)
+    }
+
+    fn load_settings(
+        manifest: &PluginManifest,
+        settings_path: &Path,
+    ) -> anyhow::Result<Vec<SettingFieldSchema>> {
         let schema = if settings_path.exists() {
             let text = std::fs::read_to_string(&settings_path).with_context(|| {
                 format!(
@@ -45,7 +70,7 @@ impl Plugin {
                     settings_path.display()
                 )
             })?;
-            FieldSchema::parse_toml(&text, &format!("{}/settings.toml", manifest.id))
+            SettingFieldSchema::parse_toml(&text, &format!("{}/settings.toml", manifest.id))
                 .with_context(|| format!("invalid settings schema for plugin `{}`", manifest.id))?
         } else {
             Vec::new()
@@ -54,19 +79,52 @@ impl Plugin {
         // key衝突防止のためプラグインIDでnamespace化
         let schema = Self::namespaced_schema(&manifest.id, schema);
 
-        Ok(Self {
-            manifest,
-            schema,
-            dir: dir.to_owned(),
-        })
+        Ok(schema)
     }
 
-    fn namespaced_schema(plugin_id: &str, mut fields: Vec<FieldSchema>) -> Vec<FieldSchema> {
+    fn load_toolbar(
+        manifest: &PluginManifest,
+        toolbars_path: &Path,
+    ) -> anyhow::Result<Vec<ToolbarButtonSpec>> {
+        let toolbar_buttons = if toolbars_path.exists() {
+            let text = std::fs::read_to_string(&toolbars_path).with_context(|| {
+                format!(
+                    "failed to read toolbars schema at {}",
+                    toolbars_path.display()
+                )
+            })?;
+            crate::plugin::toolbar::ToolbarButtonSpec::parse_toml(
+                &text,
+                &format!("{}/toolbars.toml", manifest.id),
+            )
+            .with_context(|| format!("invalid toolbars schema for plugin `{}`", manifest.id))?
+        } else {
+            Vec::new()
+        };
+        let toolbar_buttons = Self::namespaced_toolbar_buttons(&manifest.id, toolbar_buttons);
+
+        Ok(toolbar_buttons)
+    }
+
+    fn namespaced_schema(
+        plugin_id: &str,
+        mut fields: Vec<SettingFieldSchema>,
+    ) -> Vec<SettingFieldSchema> {
         for f in &mut fields {
             f.key = format!("{plugin_id}.{}", f.key);
             f.category.insert(0, plugin_id.to_string());
         }
         fields
+    }
+
+    fn namespaced_toolbar_buttons(
+        plugin_id: &str,
+        mut buttons: Vec<crate::plugin::toolbar::ToolbarButtonSpec>,
+    ) -> Vec<crate::plugin::toolbar::ToolbarButtonSpec> {
+        for b in &mut buttons {
+            b.id = format!("{plugin_id}.{}", b.id);
+        }
+        buttons
     }
 }
 
@@ -223,7 +281,10 @@ impl PluginLoader {
         Ok(())
     }
 
-    pub fn collect_all_schemas(&self) -> Vec<FieldSchema> {
-        self.plugins.iter().flat_map(|p| p.schema.clone()).collect()
+    pub fn collect_all_schemas(&self) -> Vec<SettingFieldSchema> {
+        self.plugins
+            .iter()
+            .flat_map(|p| p.setting_schema.clone())
+            .collect()
     }
 }

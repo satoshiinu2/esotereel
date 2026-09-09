@@ -1,36 +1,41 @@
 #pragma once
 
 #include <QHBoxLayout>
+#include <QToolButton>
 #include <QWidget>
+#include <functional>
+#include <unordered_map>
+#include <vector>
+
+#include "ffi/Toolbar.h"
 
 namespace esotereel::window {
 
-// タイムラインの外側・上部に置くツールバーの「置き場所」。
-// 今はボタンの中身を持たない空のバー。後から
-//   toolbar->buttonLayout()->insertWidget(toolbar->buttonInsertIndex(), new QToolButton(...));
-// のように足していく想定。
+class TimelineCanvasWidget;
+struct WindowGState;
+
+// タイムラインの外側・上部に置くツールバー。
+// ボタンの種類・並び順・アクション定義はRust側(plugin::toolbar)から
+// FFI経由で取得し、Qt側は「もらったものを並べて、押されたら振り分ける」だけ。
 class TimelineToolbarWidget : public QWidget {
     Q_OBJECT
 
   public:
-    explicit TimelineToolbarWidget(QWidget *parent = nullptr) : QWidget(parent) {
-        layout = new QHBoxLayout(this);
-        layout->setContentsMargins(4, 2, 4, 2);
-        layout->setSpacing(2);
-        layout->addStretch(1); // ボタンは左詰め、右側は余白
-    }
+    explicit TimelineToolbarWidget(QWidget *parent = nullptr);
 
-    // ボタンはこのレイアウトに addWidget/insertWidget していく。
-    QHBoxLayout *buttonLayout() const {
-        return layout;
-    }
-    // stretch(右側の余白)より前に挿入したい場合はこのindexを使う。
-    int buttonInsertIndex() const {
-        return layout->count() - 1;
-    }
+    // FFI経由でボタン一覧(レイアウト順)を取得し、実際にQToolButtonを並べる。
+    // targetは"timeline"等、Rust側のToolbarButtonSpec::targetに対応する識別子。
+    void loadButtons(WindowGState &windowState, const QString &target, TimelineCanvasWidget &canvasTarget);
 
   private:
     QHBoxLayout *layout;
+    std::vector<QToolButton *> currentButtons;
+
+    // Builtinコマンド名 -> ネイティブ実行内容。
+    // Rust側はコマンド名を「データ」として持つだけで、実体はこちら側にある。
+    static const std::unordered_map<QString, std::function<void(TimelineCanvasWidget &)>> &builtinCommands();
+
+    void dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget, const class ToolbarButton &button);
 };
 
 } // namespace esotereel::window

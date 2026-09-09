@@ -143,6 +143,16 @@ struct SettingsField {
   OwnedString default_value;
 };
 
+struct FfiToolbarButton {
+  OwnedString id;
+  OwnedString label;
+  OwnedString tooltip;
+  /// アイコン未指定なら空文字列。
+  OwnedString icon;
+  /// Builtin: コマンド名("add_layer"等) / Script: "{plugin_id}::{entry}"
+  OwnedString action_value;
+};
+
 using ScriptId = uint64_t;
 
 extern "C" {
@@ -330,8 +340,6 @@ void req_project_log(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode req_load_stream(const ClientNetworkHandler *ptr_network, StringView path);
 
-WrapperErrorCode settings_initialize(const ClientNetworkHandler *ptr_network, StringView schema);
-
 int32_t settings_get_all_fields_count(const ClientNetworkHandler *ptr_network);
 
 WrapperErrorCode settings_get_all_fields(const ClientNetworkHandler *ptr_network,
@@ -354,6 +362,17 @@ WrapperErrorCode settings_get_categories(const ClientNetworkHandler *ptr_network
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 void owned_string_free(uint8_t *ptr, uintptr_t len);
+
+int32_t toolbar_get_buttons_count(const ClientNetworkHandler *ptr_network, StringView target);
+
+WrapperErrorCode toolbar_get_buttons(const ClientNetworkHandler *ptr_network,
+                                     StringView target,
+                                     FfiToolbarButton *output,
+                                     uintptr_t output_len);
+
+WrapperErrorCode toolbar_set_layout(const ClientNetworkHandler *ptr_network,
+                                    StringView target,
+                                    StringView ids_toml_array);
 
 WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
 

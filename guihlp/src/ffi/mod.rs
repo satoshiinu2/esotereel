@@ -14,6 +14,7 @@ pub mod render;
 pub mod requests;
 pub mod settings;
 pub mod stringview;
+pub mod toolbar;
 pub mod wgpuutil;
 
 pub type OnServerReadyFn = extern "C" fn(bool);
