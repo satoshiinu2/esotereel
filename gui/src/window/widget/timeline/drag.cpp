@@ -1,4 +1,4 @@
-#include "TimelineWidget.h"
+#include "TimelineCanvasWidget.h"
 #include "Utils.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/Requests.h"
@@ -64,7 +64,8 @@ std::optional<ClipDropTarget> computeDropTarget(const Timeline &timeline, const 
 
 // 選択中の全クリップが、指定した移動量の位置に配置可能かどうかを判定する。
 // handleClipDragContinue(ドラッグ中の可否表示)とdrawDragGhost(ゴーストの色分け)で共有。
-bool TimelineWidget::canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, int32_t layerMoved) const {
+bool TimelineCanvasWidget::canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved,
+                                                  int32_t layerMoved) const {
     if (!this->cachedRows) {
         return false;
     }
@@ -81,7 +82,8 @@ bool TimelineWidget::canDropSelectedClipsAt(const Timeline &timeline, int64_t fr
     return true;
 }
 
-std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &project, const QPoint &mousePos, bool ctrl) {
+std::optional<DragClip> TimelineCanvasWidget::handleClipDragGrab(const Project &project, const QPoint &mousePos,
+                                                                 bool ctrl) {
     int64_t frame = this->XToFrame(mousePos.x());
 
     auto clipAndLayer = this->findClipAt(project, mousePos);
@@ -111,7 +113,7 @@ std::optional<DragClip> TimelineWidget::handleClipDragGrab(const Project &projec
     return DragClip{*layerIdx, frame, *layerIdx, frame, mousePos, false};
 }
 
-void TimelineWidget::handleClipDragContinue(const Project &project, const QPoint &mousePos) {
+void TimelineCanvasWidget::handleClipDragContinue(const Project &project, const QPoint &mousePos) {
     auto timeline = project.timelineOf(this->timelineId);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);
@@ -131,7 +133,7 @@ void TimelineWidget::handleClipDragContinue(const Project &project, const QPoint
     update();
 }
 
-void TimelineWidget::handleClipDraggingDrop(const Project &project, const QPoint &mousePos) {
+void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const QPoint &mousePos) {
     auto timeline = project.timelineOf(this->timelineId);
 
     handleClipDragContinue(project, mousePos);
@@ -157,7 +159,7 @@ void TimelineWidget::handleClipDraggingDrop(const Project &project, const QPoint
     update();
 }
 
-void TimelineWidget::drawDragGhost(const Project &project, QPainter &p, const QRect &r) const {
+void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, const QRect &r) const {
     auto timeline = project.timelineOf(this->timelineId);
 
     auto *drag = std::get_if<DragClip>(&this->dragState);

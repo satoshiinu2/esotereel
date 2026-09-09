@@ -7,9 +7,8 @@ use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
-use crate::plugin::{PluginLoadResult, PluginLoader};
+use crate::plugin::{PluginLoadResult, PluginLoader, setting::SettingsStore};
 use crate::project::Project;
-use crate::setting::SettingsStore;
 use dashmap::DashMap;
 
 pub mod decode;
@@ -19,7 +18,6 @@ pub mod project;
 pub mod render;
 pub mod requests;
 pub mod responces;
-pub mod setting;
 pub mod util;
 
 pub type OnSendFn = extern "C" fn(u32, *const u8, usize);

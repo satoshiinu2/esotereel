@@ -1,6 +1,6 @@
 use anyhow::{Context, Result, bail};
 
-use crate::setting::FieldTypeKind;
+use crate::plugin::setting::FieldTypeKind;
 
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct FieldSchemaRaw {

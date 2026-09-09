@@ -6,6 +6,7 @@
 #include "ffi/project/Project.h"
 #include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
+#include "window/widget/timeline/TimelineCanvasWidget.h"
 #include "window/widget/timeline/TimelineWidget.h"
 #include <QDebug>
 #include <QEvent>
@@ -74,8 +75,9 @@ void GpuPreviewWidget::resizeEvent(QResizeEvent *event) {
 
 void GpuPreviewWidget::triggerRenderFrame() {
     ensureInitialized();
-    if (!m_initialized)
+    if (!m_initialized) {
         return;
+    }
 
     auto projectResult = windowState->network->getProject();
     if (projectResult.isError()) {
@@ -83,14 +85,17 @@ void GpuPreviewWidget::triggerRenderFrame() {
     }
     auto project = projectResult.unwrapOrMove();
     auto focusedTimelineWidget = windowState->focusedTimeline;
-    if (!project.isValid() || !focusedTimelineWidget)
+    if (!project.isValid() || !focusedTimelineWidget) {
         return;
+    }
 
-    Timeline timeline = project.timelineOf(focusedTimelineWidget->timelineId);
+    TimelineCanvasWidget *canvas = focusedTimelineWidget->canvas;
+
+    Timeline timeline = project.timelineOf(canvas->timelineId);
     CameraInfo *camera = windowState->camera;
-    int64_t currentFrame = focusedTimelineWidget->playhead;
+    int64_t currentFrame = canvas->playhead;
 
-    emit requestRender(focusedTimelineWidget->timelineId, camera, currentFrame);
+    emit requestRender(canvas->timelineId, camera, currentFrame);
 }
 
 void GpuPreviewWidget::paintEvent(QPaintEvent *event) {

@@ -4,6 +4,7 @@
 #include "ffi/Requests.h"
 #include "ffi/project/camera.h"
 #include "widget/preview/GpuPreviewWidget.h"
+#include "widget/timeline/TimelineCanvasWidget.h"
 #include "widget/timeline/TimelineWidget.h"
 #include <DockManager.h>
 #include <QAction>
@@ -77,8 +78,8 @@ MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWi
 
 void MainWindow::markDirtyTimeline(TimelineId timelineId) {
     QTimer::singleShot(0, this, [this]() {
-        timelineWidget->markRowsDirty();
-        timelineWidget->update();
+        timelineWidget->canvas->markRowsDirty();
+        timelineWidget->canvas->update();
     });
 }
 

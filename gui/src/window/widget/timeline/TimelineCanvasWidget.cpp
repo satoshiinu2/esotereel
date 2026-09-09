@@ -1,12 +1,12 @@
-#include "TimelineWidget.h"
+#include "TimelineCanvasWidget.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/Requests.h"
 #include "ffi/project/Clip.h"
 #include <tuple>
 
 namespace esotereel::window {
-TimelineWidget::TimelineWidget(WindowGState &windowState, size_t timelineIdx)
-    : windowState(windowState), timelineId(timelineIdx) {
+TimelineCanvasWidget::TimelineCanvasWidget(WindowGState &windowState, size_t timelineIdx, QWidget *parent = nullptr)
+    : QWidget(parent), windowState(windowState), timelineId(timelineIdx) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 
@@ -28,7 +28,7 @@ TimelineWidget::TimelineWidget(WindowGState &windowState, size_t timelineIdx)
     });
 }
 
-void TimelineWidget::advancePlaybackFrame() {
+void TimelineCanvasWidget::advancePlaybackFrame() {
     // プロジェクトのFPS（とりあえず60固定と想定）
     const double fps = 60.0;
 
@@ -42,9 +42,9 @@ void TimelineWidget::advancePlaybackFrame() {
     update();
 }
 
-TimelineWidget::~TimelineWidget() = default;
+TimelineCanvasWidget::~TimelineCanvasWidget() = default;
 
-void TimelineWidget::resizeEvent(QResizeEvent *event) {
+void TimelineCanvasWidget::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);
 
     int sw = SCROLLBAR_SIZE;
@@ -52,7 +52,7 @@ void TimelineWidget::resizeEvent(QResizeEvent *event) {
     vScrollBar->setGeometry(width() - sw, 0, sw, height() - sw);
 }
 
-std::tuple<Clip, uint64_t> TimelineWidget::findClipAt(const Project &project, const QPoint &local) const {
+std::tuple<Clip, uint64_t> TimelineCanvasWidget::findClipAt(const Project &project, const QPoint &local) const {
     // 1. ルーラー領域、またはレイヤーラベル領域へのクリックは対象外
     if (local.x() < LABEL_WIDTH || local.y() < RULER_HEIGHT) {
         return std::make_tuple(Clip::Empty(), 0);
@@ -95,11 +95,11 @@ std::tuple<Clip, uint64_t> TimelineWidget::findClipAt(const Project &project, co
     return std::make_tuple(Clip::Empty(), 0);
 }
 
-Timeline TimelineWidget::getTimeline(Project &project) {
+Timeline TimelineCanvasWidget::getTimeline(Project &project) {
     return project.isValid() ? project.timelineOf(this->timelineId) : Timeline(nullptr);
 }
 
-void TimelineWidget::togglePlayback() {
+void TimelineCanvasWidget::togglePlayback() {
     if (isPlaying) {
         playbackTimer->stop();
         isPlaying = false;
@@ -111,7 +111,7 @@ void TimelineWidget::togglePlayback() {
     }
 }
 
-void TimelineWidget::updateSnapshot() const {
+void TimelineCanvasWidget::updateSnapshot() const {
     if (!rowsDirty && cachedRows)
         return;
 
@@ -141,13 +141,13 @@ void toggleId(std::vector<uint64_t> &ids, uint64_t id) {
 }
 } // namespace
 
-void TimelineWidget::toggleComposite(uint64_t clipId) {
+void TimelineCanvasWidget::toggleComposite(uint64_t clipId) {
     toggleId(openCompositeIds, clipId);
     rowsDirty = true;
     update();
 }
 
-void TimelineWidget::toggleFolder(uint64_t layerId) {
+void TimelineCanvasWidget::toggleFolder(uint64_t layerId) {
     toggleId(openFolderIds, layerId);
     rowsDirty = true;
     update();
@@ -155,7 +155,7 @@ void TimelineWidget::toggleFolder(uint64_t layerId) {
 
 // トグルではなく「必ず開く」。フォルダーに新規レイヤーを追加した直後、
 // 追加先が見えるように呼ぶ。
-void TimelineWidget::openFolder(uint64_t layerId) {
+void TimelineCanvasWidget::openFolder(uint64_t layerId) {
     if (std::find(openFolderIds.begin(), openFolderIds.end(), layerId) == openFolderIds.end()) {
         openFolderIds.push_back(layerId);
         rowsDirty = true;
@@ -165,7 +165,7 @@ void TimelineWidget::openFolder(uint64_t layerId) {
 
 // ラベル領域(フォルダーの▶▼部分含む)がクリックされたときの開閉トグル。
 // フォルダー行なら true を返し、呼び出し側はドラッグ開始等を行わない。
-bool TimelineWidget::handleFolderLabelClick(const Project &project, const QPoint &local) {
+bool TimelineCanvasWidget::handleFolderLabelClick(const Project &project, const QPoint &local) {
     if (local.x() >= LABEL_WIDTH || local.y() < RULER_HEIGHT) {
         return false;
     }
@@ -193,18 +193,18 @@ bool TimelineWidget::handleFolderLabelClick(const Project &project, const QPoint
     return true;
 }
 
-void TimelineWidget::markRowsDirty() {
+void TimelineCanvasWidget::markRowsDirty() {
     rowsDirty = true;
     update();
 }
 
-void TimelineWidget::requestFrameFetch() {
+void TimelineCanvasWidget::requestFrameFetch() {
     this->fetchPending = true;
 
-    QMetaObject::invokeMethod(this, &TimelineWidget::processPendingFetch, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, &TimelineCanvasWidget::processPendingFetch, Qt::QueuedConnection);
 }
 
-void TimelineWidget::processPendingFetch() {
+void TimelineCanvasWidget::processPendingFetch() {
     if (!this->fetchPending) {
         return;
     }
@@ -223,7 +223,7 @@ void TimelineWidget::processPendingFetch() {
     this->windowState.network->requests().fetchFrame(this->timelineId, this->playhead, visible);
 }
 
-std::pair<TimelineTick, TimelineTick> TimelineWidget::getVisibleFrameRange() const noexcept {
+std::pair<TimelineTick, TimelineTick> TimelineCanvasWidget::getVisibleFrameRange() const noexcept {
     const QRect r = getInnerRect();
     // ラベル分を除いた実際の描画開始x座標から終了x座標まで
     TimelineTick startFrame = XToFrame(r.left());

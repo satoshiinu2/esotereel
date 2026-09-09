@@ -1,4 +1,4 @@
-#include "TimelineWidget.h"
+#include "TimelineCanvasWidget.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/Requests.h"
 #include "ffi/project/RenderRows.h"
@@ -54,7 +54,7 @@ static uint32_t siblingIndexOf(std::span<const FfiLayerRow> rows, int rowIdx) {
     return count;
 }
 
-void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
+void TimelineCanvasWidget::contextMenuEvent(QContextMenuEvent *e) {
     this->updateSnapshot();
 
     QPoint pos = e->pos();
@@ -97,7 +97,7 @@ void TimelineWidget::contextMenuEvent(QContextMenuEvent *e) {
 
 // ラベル領域用: 右クリックした行に応じて「子として追加」か「兄弟として追加」かを決め、
 // Add Layer / Add Folder のアクションを積む。
-void TimelineWidget::buildLayerContextMenu(const Project &project, QMenu &menu, const QPoint &local) {
+void TimelineCanvasWidget::buildLayerContextMenu(const Project &project, QMenu &menu, const QPoint &local) {
     if (!project.isValid()) {
         return;
     }
@@ -146,7 +146,7 @@ void TimelineWidget::buildLayerContextMenu(const Project &project, QMenu &menu, 
                      [this, parentLayerId, insertIndex]() { this->addFolder(parentLayerId, insertIndex); });
 }
 
-void TimelineWidget::addLayer(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
+void TimelineCanvasWidget::addLayer(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
     bool ok = false;
     const QString defaultName = "Layer";
 
@@ -166,7 +166,7 @@ void TimelineWidget::addLayer(std::optional<LayerFolderId> parentFolderId, std::
     update();
 }
 
-void TimelineWidget::addFolder(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
+void TimelineCanvasWidget::addFolder(std::optional<LayerFolderId> parentFolderId, std::optional<uint32_t> insertIndex) {
     bool ok = false;
     const QString defaultName = "Folder";
 
@@ -186,7 +186,7 @@ void TimelineWidget::addFolder(std::optional<LayerFolderId> parentFolderId, std:
     update();
 }
 
-void TimelineWidget::addClipAt(const QPoint &local) {
+void TimelineCanvasWidget::addClipAt(const QPoint &local) {
     int64_t frame = 0;
     uint64_t layerId = 0;
     bool canAdd = false;
@@ -225,7 +225,7 @@ void TimelineWidget::addClipAt(const QPoint &local) {
     }
 }
 
-void TimelineWidget::debugProjectLog() {
+void TimelineCanvasWidget::debugProjectLog() {
     this->windowState.network->requests().debugProjectLog();
 }
 } // namespace esotereel::window

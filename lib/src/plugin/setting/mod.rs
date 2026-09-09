@@ -1,13 +1,9 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    sync::{Arc, OnceLock, RwLock},
-};
+use std::{collections::HashMap, path::Path};
 
 use anyhow::Context;
 use colored::Color;
 
-use crate::setting::parse::FieldSchemaRaw;
+use crate::plugin::setting::parse::FieldSchemaRaw;
 
 mod parse;
 

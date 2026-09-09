@@ -1,6 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::setting::{FieldSchema, FieldTypeKind};
+use esotereel_lib::plugin::setting::{FieldSchema, FieldTypeKind};
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,

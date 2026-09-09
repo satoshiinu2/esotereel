@@ -154,7 +154,7 @@ add_custom_target(rust_core DEPENDS ${CORE_BIN})
 string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 # 実行ファイル
-file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp)
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp gui/src/*.h)
 add_executable(esotereel_gui ${SRC_FILES})
 
 # ライブラリリンク

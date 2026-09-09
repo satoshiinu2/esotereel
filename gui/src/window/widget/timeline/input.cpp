@@ -1,9 +1,10 @@
+#include "TimelineCanvasWidget.h"
 #include "TimelineWidget.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
-void TimelineWidget::handleCtrlPlayhead(const QPoint &mousePos) {
+void TimelineCanvasWidget::handleCtrlPlayhead(const QPoint &mousePos) {
     double_t mouseX = mousePos.x();
     mouseX = std::max((double_t)LABEL_WIDTH, mouseX);
 
@@ -18,7 +19,7 @@ bool isOnRuler(QPoint &mousePos) {
     return mousePos.y() <= RULER_HEIGHT;
 }
 
-void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
+void TimelineCanvasWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
     const qreal edgeZone = 40.0; // エッジから何px以内でスクロールするか
     const qreal maxSpeed = 8.0;
 
@@ -42,7 +43,7 @@ void TimelineWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &r) {
     }
 }
 
-void TimelineWidget::mousePressEvent(QMouseEvent *e) {
+void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
     QWidget::mousePressEvent(e);
     auto mousePos = e->pos();
 
@@ -50,7 +51,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
         // クリック時にこのウィジェットにフォーカスを移す
         this->setFocus();
         // update focused widget
-        this->windowState.focusedTimeline = this;
+        this->windowState.focusedTimeline = qobject_cast<TimelineWidget *>(this->parentWidget());
 
         if (isOnRuler(mousePos)) {
             this->handleCtrlPlayhead(mousePos);
@@ -70,7 +71,7 @@ void TimelineWidget::mousePressEvent(QMouseEvent *e) {
     }
 }
 
-void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
+void TimelineCanvasWidget::mouseMoveEvent(QMouseEvent *e) {
     QWidget::mouseMoveEvent(e);
 
     if (e->buttons() & Qt::LeftButton && std::holds_alternative<DragNone>(this->dragState) &&
@@ -83,7 +84,7 @@ void TimelineWidget::mouseMoveEvent(QMouseEvent *e) {
     }
 }
 
-void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
+void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
     QWidget::mouseReleaseEvent(e);
 
     auto projectResult = windowState.network->getProject();
@@ -107,7 +108,7 @@ void TimelineWidget::mouseReleaseEvent(QMouseEvent *e) {
     }
 }
 
-DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
+DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
     auto projectResult = windowState.network->getProject();
@@ -136,7 +137,7 @@ DragState TimelineWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     return DragOther{};
 }
 
-void TimelineWidget::onDragContinue(QMouseEvent *e) {
+void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
     auto projectResult = windowState.network->getProject();
     if (projectResult.isError()) {
         return;
@@ -162,7 +163,7 @@ void TimelineWidget::onDragContinue(QMouseEvent *e) {
         this->dragState);
 }
 
-void TimelineWidget::onDragEnd(QMouseEvent *e) {
+void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
     auto projectResult = windowState.network->getProject();
     if (projectResult.isError()) {
         return;
@@ -184,7 +185,7 @@ void TimelineWidget::onDragEnd(QMouseEvent *e) {
         this->dragState);
 }
 
-void TimelineWidget::wheelEvent(QWheelEvent *e) {
+void TimelineCanvasWidget::wheelEvent(QWheelEvent *e) {
     QWidget::wheelEvent(e);
 
     QPoint delta = e->angleDelta(); // 1ノッチ = 120
@@ -207,7 +208,7 @@ void TimelineWidget::wheelEvent(QWheelEvent *e) {
     e->accept();
 }
 
-bool TimelineWidget::event(QEvent *e) {
+bool TimelineCanvasWidget::event(QEvent *e) {
     if (e->type() == QEvent::NativeGesture) {
         auto *ge = static_cast<QNativeGestureEvent *>(e);
         if (ge->gestureType() == Qt::ZoomNativeGesture) {
@@ -230,11 +231,11 @@ bool TimelineWidget::event(QEvent *e) {
     return QWidget::event(e);
 }
 
-void TimelineWidget::mouseDoubleClickEvent(QMouseEvent *e) {
+void TimelineCanvasWidget::mouseDoubleClickEvent(QMouseEvent *e) {
     QWidget::mouseDoubleClickEvent(e);
 }
 
-void TimelineWidget::keyPressEvent(QKeyEvent *e) {
+void TimelineCanvasWidget::keyPressEvent(QKeyEvent *e) {
     if (e->key() == Qt::Key_Space) {
         this->togglePlayback();
         e->accept();

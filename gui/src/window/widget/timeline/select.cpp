@@ -1,9 +1,9 @@
-#include "TimelineWidget.h"
+#include "TimelineCanvasWidget.h"
 #include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
 // return true if selected
-bool TimelineWidget::handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl) {
+bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl) {
     auto [clip, layerId] = this->findClipAt(project, mousePos);
     if (!clip.isValid()) {
         if (!ctrl) {
@@ -29,7 +29,7 @@ bool TimelineWidget::handleSelectClip(const Project &project, const QPoint &mous
     return true;
 }
 
-std::optional<DragAreaSel> TimelineWidget::handleAreaSelStart(const QPoint &mousePos, bool ctrl) {
+std::optional<DragAreaSel> TimelineCanvasWidget::handleAreaSelStart(const QPoint &mousePos, bool ctrl) {
     if (mousePos.x() <= LABEL_WIDTH || mousePos.y() <= RULER_HEIGHT) {
         return std::nullopt;
     }
@@ -45,14 +45,14 @@ std::optional<DragAreaSel> TimelineWidget::handleAreaSelStart(const QPoint &mous
     };
 }
 
-void TimelineWidget::handleAreaSelContinue(const QPoint &mousePos) {
+void TimelineCanvasWidget::handleAreaSelContinue(const QPoint &mousePos) {
     if (auto *sel = std::get_if<DragAreaSel>(&this->dragState)) {
         sel->current = mousePos;
     }
     update();
 }
 
-void TimelineWidget::handleAreaSelEnd(const Project &project) {
+void TimelineCanvasWidget::handleAreaSelEnd(const Project &project) {
     auto *sel = std::get_if<DragAreaSel>(&this->dragState);
     if (!sel) {
         return;
@@ -86,7 +86,7 @@ void TimelineWidget::handleAreaSelEnd(const Project &project) {
     update();
 }
 
-void TimelineWidget::drawSelectionRect(QPainter &p, const QRect &r) const {
+void TimelineCanvasWidget::drawSelectionRect(QPainter &p, const QRect &r) const {
     auto *sel = std::get_if<DragAreaSel>(&this->dragState);
     if (!sel) {
         return;

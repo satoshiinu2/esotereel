@@ -1,18 +1,18 @@
-#include "TimelineWidget.h"
+#include "TimelineCanvasWidget.h"
 #include "Utils.h"
 #include "ffi/ClientNetworkHandler.h"
 #include "ffi/project/LayerFolder.h"
 #include "ffi/project/RenderRows.h"
 
 namespace esotereel::window {
-QRect TimelineWidget::getInnerRect() const noexcept {
+QRect TimelineCanvasWidget::getInnerRect() const noexcept {
     QRect innerRect = rect();
     innerRect.setLeft(LABEL_WIDTH);
     innerRect.setTop(RULER_HEIGHT);
     return innerRect;
 }
 
-void TimelineWidget::drawLayers(const Project &project, QPainter &p, const QRect &r) const {
+void TimelineCanvasWidget::drawLayers(const Project &project, QPainter &p, const QRect &r) const {
     QRect bgRect = getInnerRect();
     bgRect.setLeft(0);
     QRect innerRect = getInnerRect();
@@ -49,7 +49,7 @@ void TimelineWidget::drawLayers(const Project &project, QPainter &p, const QRect
 
 // 行の縞模様の背景色。paletteの基準色を、明暗どちらのテーマでも
 // 視認しやすい方向にlighter/darkerで補正する。
-QColor TimelineWidget::rowContentBackgroundColor(size_t rowIdx) const noexcept {
+QColor TimelineCanvasWidget::rowContentBackgroundColor(size_t rowIdx) const noexcept {
     QColor contentColor = (rowIdx % 2 == 0) ? palette().base().color() : palette().alternateBase().color();
     if (contentColor.lightness() < 128) {
         contentColor = contentColor.lighter(150);
@@ -60,8 +60,8 @@ QColor TimelineWidget::rowContentBackgroundColor(size_t rowIdx) const noexcept {
 }
 
 // レイヤーラベル領域(背景・インデント・フォルダーの開閉矢印・名前)を1行分描画する。
-void TimelineWidget::drawRowLabel(const Project &project, const FfiLayerRow &row, QPainter &p, const QRect &r,
-                                  double_t y) const {
+void TimelineCanvasWidget::drawRowLabel(const Project &project, const FfiLayerRow &row, QPainter &p, const QRect &r,
+                                        double_t y) const {
     QRect labelRect(r.left(), y, LABEL_WIDTH, LAYER_HEIGHT);
     p.fillRect(labelRect, getLabelBgColor());
 
@@ -81,7 +81,7 @@ void TimelineWidget::drawRowLabel(const Project &project, const FfiLayerRow &row
     p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, label);
 }
 
-void TimelineWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const {
+void TimelineCanvasWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const {
     bool isSelected = contains(this->selectedClipIds, info.clip_id);
     bool isDragging = std::holds_alternative<DragClip>(this->dragState);
 
@@ -108,7 +108,7 @@ void TimelineWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRe
     p.drawRoundedRect(clipRect, CLIP_ROUND_RADIUS, CLIP_ROUND_RADIUS);
 }
 
-void TimelineWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRect &r) const {
+void TimelineCanvasWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRect &r) const {
     QRect innerRect = getInnerRect();
     double_t drawPosX = r.left() + this->frameToX(playhead_frame);
 
@@ -122,7 +122,7 @@ void TimelineWidget::drawPlayhead(int64_t playhead_frame, QPainter &p, const QRe
     p.setClipping(false);
 }
 
-void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
+void TimelineCanvasWidget::drawRuler(QPainter &p, const QRect &r) const {
     QRect rulerRect(r.left() + LABEL_WIDTH, r.top(), r.width() - LABEL_WIDTH, RULER_HEIGHT);
 
     QColor rulerBg = this->getLabelBgColor();
@@ -152,7 +152,7 @@ void TimelineWidget::drawRuler(QPainter &p, const QRect &r) const {
     }
 }
 
-void TimelineWidget::paintEvent(QPaintEvent *e) {
+void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
     QWidget::paintEvent(e);
 
     this->updateSnapshot();
@@ -191,7 +191,7 @@ void TimelineWidget::paintEvent(QPaintEvent *e) {
     this->drawPlayhead(this->playhead, p, r);
 }
 
-QColor TimelineWidget::getLabelBgColor() const noexcept {
+QColor TimelineCanvasWidget::getLabelBgColor() const noexcept {
     QColor color = palette().window().color();
     if (color.lightness() < 128) {
         color = color.lighter(115);

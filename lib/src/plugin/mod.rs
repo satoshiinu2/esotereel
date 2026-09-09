@@ -3,11 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use log;
 
-use crate::{
-    HostRole,
-    dirs::Directories,
-    setting::{FieldSchema, SchemaRegistry},
-};
+use crate::{HostRole, dirs::Directories, plugin::setting::FieldSchema};
+
+pub mod setting;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
