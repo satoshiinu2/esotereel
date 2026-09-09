@@ -9,6 +9,7 @@
 #include <QApplication>
 #include <QDebug>
 #include <QLoggingCategory>
+#include <QMessageBox>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTimer>
@@ -16,6 +17,7 @@
 #include <qcontainerfwd.h>
 #include <qdebug.h>
 #include <qglobal.h>
+#include <stdexcept>
 
 using TimelineId = esotereel_gui_helper::TimelineId;
 
@@ -50,7 +52,13 @@ int main(int argc, char **argv) {
 
     startInternalServer();
 
-    return app.exec();
+    try {
+        return app.exec();
+    } catch (const std::runtime_error &e) {
+        qCWarning(logRust) << e.what();
+        QMessageBox::critical(nullptr, "Critical error", e.what());
+        return 1;
+    }
 }
 
 void startInternalServer() {

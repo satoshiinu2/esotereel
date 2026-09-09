@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <qobject.h>
 
 namespace esotereel {
 class ClientNetworkHandler;
@@ -14,24 +15,26 @@ using FfiToolbarButton = esotereel_gui_helper::FfiToolbarButton;
 
 class ToolbarButton {
   public:
+    // {plugin_id}.{button_id}
     QString id;
     QString label;
     QString tooltip;
     QString icon;
-    // Builtin: コマンド名 / Script: "plugin_id::entry"
-    QString actionValue;
+    QString action;
 
     ToolbarButton(FfiToolbarButton ffi)
         : id(OwnedString::toQString(ffi.id)), label(OwnedString::toQString(ffi.label)),
           tooltip(OwnedString::toQString(ffi.tooltip)), icon(OwnedString::toQString(ffi.icon)),
-          actionValue(OwnedString::toQString(ffi.action_value)) {
+          action(OwnedString::toQString(ffi.action)) {
 
         OwnedString::free(ffi.id);
         OwnedString::free(ffi.label);
         OwnedString::free(ffi.tooltip);
         OwnedString::free(ffi.icon);
-        OwnedString::free(ffi.action_value);
+        OwnedString::free(ffi.action);
     }
+
+    Result<void> handleAction(ClientNetworkHandler *network);
 };
 
 class Toolbar {

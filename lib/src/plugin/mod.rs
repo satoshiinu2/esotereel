@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use anyhow::Context;
 use log;
@@ -6,9 +9,10 @@ use log;
 use crate::{
     HostRole,
     dirs::Directories,
-    plugin::{setting::SettingFieldSchema, toolbar::ToolbarButtonSpec},
+    plugin::{script::CompiledScript, setting::SettingFieldSchema, toolbar::ToolbarButtonSpec},
 };
 
+pub mod script;
 pub mod setting;
 pub mod toolbar;
 
@@ -24,6 +28,7 @@ pub struct Plugin {
     pub manifest: PluginManifest,
     pub setting_schema: Vec<SettingFieldSchema>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
+    pub script: Option<CompiledScript>,
     pub dir: PathBuf,
 }
 
@@ -41,11 +46,24 @@ impl Plugin {
 
         let setting_schema = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
+        let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
+        let avaliable_functions = script
+            .as_ref()
+            .map_or_default(|s| s.available_functions.clone());
+
+        log::info!(
+            "Plugin '{}' loaded successfully: Settings schemas: {}, Toolbar buttons: {}, Available scripts: {}",
+            manifest.id,
+            setting_schema.len(),
+            toolbar_buttons.len(),
+            avaliable_functions.len()
+        );
 
         Ok(Self {
             manifest,
             setting_schema,
             toolbar_buttons,
+            script,
             dir: dir.to_owned(),
         })
     }
@@ -70,7 +88,7 @@ impl Plugin {
                     settings_path.display()
                 )
             })?;
-            SettingFieldSchema::parse_toml(&text, &format!("{}/settings.toml", manifest.id))
+            SettingFieldSchema::parse_toml(&text, &manifest.id)
                 .with_context(|| format!("invalid settings schema for plugin `{}`", manifest.id))?
         } else {
             Vec::new()
@@ -93,17 +111,33 @@ impl Plugin {
                     toolbars_path.display()
                 )
             })?;
-            crate::plugin::toolbar::ToolbarButtonSpec::parse_toml(
-                &text,
-                &format!("{}/toolbars.toml", manifest.id),
-            )
-            .with_context(|| format!("invalid toolbars schema for plugin `{}`", manifest.id))?
+            ToolbarButtonSpec::parse_toml(&text, &manifest.id)
+                .with_context(|| format!("invalid toolbars schema for plugin `{}`", manifest.id))?
         } else {
             Vec::new()
         };
         let toolbar_buttons = Self::namespaced_toolbar_buttons(&manifest.id, toolbar_buttons);
 
         Ok(toolbar_buttons)
+    }
+
+    fn load_script(
+        manifest: &PluginManifest,
+        plugin_path: &Path,
+        script_path: &Path,
+    ) -> anyhow::Result<Option<CompiledScript>> {
+        if script_path.exists() {
+            // 並列で動かしているので毎回作成
+            let mut engine = rhai::Engine::new();
+            let compiled = CompiledScript::compile(
+                &mut engine,
+                plugin_path, // モジュールの解決パス (プラグインのルートディレクトリ)
+                &script_path.to_path_buf(),
+            )?;
+            Ok(Some(compiled))
+        } else {
+            Ok(None)
+        }
     }
 
     fn namespaced_schema(
@@ -134,14 +168,14 @@ pub struct PluginLoadResult {
 }
 
 pub struct PluginLoader {
-    pub plugins: Vec<Plugin>,
+    pub p: Vec<Plugin>,
     is_loaded: bool,
 }
 
 impl PluginLoader {
     pub fn new() -> Self {
         Self {
-            plugins: Vec::new(),
+            p: Vec::new(),
             is_loaded: false,
         }
     }
@@ -195,7 +229,7 @@ impl PluginLoader {
         if self.is_loaded {
             log::info!("Using cached plugins for {:?}", role);
             let results = self
-                .plugins
+                .p
                 .iter()
                 .map(|plugin| PluginLoadResult {
                     dir: plugin.dir.clone(),
@@ -240,7 +274,7 @@ impl PluginLoader {
             }
         }
 
-        self.plugins = results
+        self.p = results
             .into_iter()
             .filter_map(|r| r.result.ok())
             .collect::<Vec<_>>();
@@ -250,7 +284,7 @@ impl PluginLoader {
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
         // キャッシュ済みのプラグインからPluginLoadResultを再構築
         Ok(self
-            .plugins
+            .p
             .iter()
             .map(|plugin| PluginLoadResult {
                 dir: plugin.dir.clone(),
@@ -262,7 +296,7 @@ impl PluginLoader {
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // 対象プラグインのディレクトリを取得
         let dir = self
-            .plugins
+            .p
             .iter()
             .find(|p| p.manifest.id == plugin_id)
             .map(|p| p.dir.clone())
@@ -273,8 +307,8 @@ impl PluginLoader {
             .with_context(|| format!("Failed to hot-reload plugin `{}`", plugin_id))?;
 
         // 成功したら配列内の古いインスタンスを差し替え
-        if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
-            self.plugins[index] = reloaded_plugin;
+        if let Some(index) = self.p.iter().position(|p| p.manifest.id == plugin_id) {
+            self.p[index] = reloaded_plugin;
             log::info!("Reloaded plugin '{}'", plugin_id);
         }
 
@@ -282,9 +316,32 @@ impl PluginLoader {
     }
 
     pub fn collect_all_schemas(&self) -> Vec<SettingFieldSchema> {
-        self.plugins
+        self.p
             .iter()
             .flat_map(|p| p.setting_schema.clone())
+            .collect()
+    }
+
+    pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
+        self.p
+            .iter()
+            .flat_map(|p| {
+                p.toolbar_buttons
+                    .iter()
+                    .map(|b| (p.manifest.id.clone(), b.clone()))
+            })
+            .collect()
+    }
+
+    pub fn collect_all_scripts(&self) -> HashMap<String, CompiledScript> {
+        self.p
+            .iter()
+            .filter_map(|plugin| {
+                plugin
+                    .script
+                    .clone()
+                    .map(|script| (plugin.manifest.id.clone(), script))
+            })
             .collect()
     }
 }

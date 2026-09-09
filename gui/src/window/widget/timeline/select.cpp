@@ -1,5 +1,4 @@
 #include "TimelineCanvasWidget.h"
-#include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
 // return true if selected

@@ -11,7 +11,7 @@ mod parse;
 /// Scriptはプラグインのエントリポイント関数名を指す。
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ToolbarAction {
-    pub entry: String,
+    pub func_name: String,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
@@ -27,7 +27,7 @@ pub struct ToolbarButtonSpec {
     pub tooltip: String,
     #[serde(default)]
     pub icon: Option<String>,
-    pub action_entry: ToolbarAction,
+    pub action: ToolbarAction,
 }
 
 fn default_target() -> String {
@@ -35,19 +35,19 @@ fn default_target() -> String {
 }
 
 impl ToolbarButtonSpec {
-    pub fn parse_toml(text: &str, source_name: &str) -> anyhow::Result<Vec<ToolbarButtonSpec>> {
+    pub fn parse_toml(text: &str, plugin_id: &str) -> anyhow::Result<Vec<ToolbarButtonSpec>> {
         let parsed: ToolbarFile = toml::from_str(text).map_err(|e| {
-            anyhow::anyhow!("failed to parse toolbars TOML in {}: {}", source_name, e)
+            anyhow::anyhow!("failed to parse toolbars TOML in {}: {}", plugin_id, e)
         })?;
 
         let buttons = parsed
             .buttons
             .into_iter()
-            .map(|raw| Self::parse_button(raw, source_name))
+            .map(|raw| Self::parse_button(raw, plugin_id))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         Self::validate_buttons(&buttons)
-            .with_context(|| format!("toolbar schema validation failed in `{source_name}`"))?;
+            .with_context(|| format!("toolbar schema validation failed in `{plugin_id}`"))?;
 
         Ok(buttons)
     }
@@ -66,19 +66,22 @@ impl ToolbarButtonSpec {
             label: raw.label,
             tooltip: raw.tooltip.unwrap_or_default(),
             icon: raw.icon,
-            action_entry: action,
+            action,
         })
     }
 
-    fn validate_buttons(buttons: &[ToolbarButtonSpec]) -> anyhow::Result<()> {
+    fn validate_buttons<'a>(
+        buttons: impl IntoIterator<Item = &'a ToolbarButtonSpec>,
+    ) -> anyhow::Result<()> {
         let mut seen = std::collections::HashSet::new();
         for button in buttons {
             if !seen.insert(button.id.as_str()) {
-                anyhow::bail!("duplicate toolbar button id `{}`", button.id);
+                anyhow::bail!("duplicate toolbar button id `{}` ", button.id,);
             }
-            if button.label.trim().is_empty() {
-                anyhow::bail!("toolbar button `{}` has an empty label", button.id);
-            }
+            // maybe not needed with icon button
+            // if button.label.trim().is_empty() {
+            //     anyhow::bail!("toolbar button `{}` has an empty label", button.id);
+            // }
         }
         Ok(())
     }
@@ -93,41 +96,53 @@ struct ToolbarFile {
 /// settings::SchemaRegistry と対になる。
 #[derive(Debug, Default)]
 pub struct ToolbarRegistry {
-    buttons: Vec<ToolbarButtonSpec>,
+    // plugin id -> button spec
+    buttons: Vec<(String, ToolbarButtonSpec)>,
+    buttons_by_id: HashMap<String, usize>,
 }
 
 impl ToolbarRegistry {
-    pub fn register(&mut self, button: ToolbarButtonSpec) {
-        self.buttons.push(button);
+    pub fn buttons(&self) -> impl Iterator<Item = &ToolbarButtonSpec> {
+        self.buttons.iter().map(|(_, b)| b)
     }
 
-    pub fn buttons(&self) -> &[ToolbarButtonSpec] {
-        &self.buttons
+    pub fn buttons_for_target(&self, target: &str) -> impl Iterator<Item = &ToolbarButtonSpec> {
+        self.buttons().filter(move |b| b.target == target)
     }
 
-    pub fn buttons_for_target(&self, target: &str) -> Vec<&ToolbarButtonSpec> {
-        self.buttons.iter().filter(|b| b.target == target).collect()
+    pub fn get_button_by(&self, id: &str) -> Option<&(String, ToolbarButtonSpec)> {
+        let index = self.buttons_by_id.get(id)?;
+        self.buttons.get(*index)
     }
 
     /// プラグイン由来のボタン(namespace済み)を合流させる。
     /// 組み込み/プラグイン間・プラグイン同士でid衝突があればエラーにする。
     pub fn merge_plugin_buttons(
         &mut self,
-        plugin_buttons: Vec<ToolbarButtonSpec>,
+        plugin_buttons: Vec<(String, ToolbarButtonSpec)>,
     ) -> anyhow::Result<()> {
         let mut merged = self.buttons.clone();
         merged.extend(plugin_buttons);
-        ToolbarButtonSpec::validate_buttons(&merged)
+
+        ToolbarButtonSpec::validate_buttons(merged.iter().map(|(_, b)| b))
             .context("plugin toolbar buttons conflict with existing buttons")?;
+
         self.buttons = merged;
+        self.rebuild_index();
+
         Ok(())
+    }
+
+    fn rebuild_index(&mut self) {
+        self.buttons_by_id = self
+            .buttons
+            .iter()
+            .enumerate()
+            .map(|(index, (_, b))| (b.id.clone(), index))
+            .collect();
     }
 }
 
-/// SettingsStore と同じ形: 「スキーマ(registry)」と「値(layouts)」を1つの構造体にまとめる。
-/// こうしておくと、layout操作の内部でregistryを参照する処理が全部
-/// `&mut self` 1つの中で完結するので、呼び出し側(FFI)でのフィールド跨ぎの
-/// 二重借用に悩まされない。
 #[derive(Debug, Default)]
 pub struct ToolbarStore {
     pub registry: ToolbarRegistry,
@@ -147,7 +162,7 @@ impl ToolbarStore {
 
     pub fn merge_plugin_buttons(
         &mut self,
-        plugin_buttons: Vec<ToolbarButtonSpec>,
+        plugin_buttons: Vec<(String, ToolbarButtonSpec)>,
     ) -> anyhow::Result<()> {
         self.registry.merge_plugin_buttons(plugin_buttons)
     }
@@ -155,12 +170,8 @@ impl ToolbarStore {
     /// レイアウト未設定のtargetに、レジストリ登録順のデフォルトを埋める。
     /// SettingsStore::add_missing_from_schema と同じ役割。
     pub fn fill_missing_from_registry(&mut self) {
-        let mut targets: std::collections::HashSet<String> = self
-            .registry
-            .buttons()
-            .iter()
-            .map(|b| b.target.clone())
-            .collect();
+        let mut targets: std::collections::HashSet<String> =
+            self.registry.buttons().map(|b| b.target.clone()).collect();
         targets.extend(self.layouts.keys().cloned());
 
         for target in targets {

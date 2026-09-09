@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::plugin::toolbar::ToolbarAction;
 
@@ -22,7 +22,7 @@ impl ToolbarAction {
             .context("`action` must be a table (e.g. `action = { type = \"builtin\", command = \"zoom_in\" }`)")?;
 
         let action = ToolbarAction {
-            entry: get_string(table, "entry")?,
+            func_name: get_string(table, "entry")?,
         };
 
         Ok(action)

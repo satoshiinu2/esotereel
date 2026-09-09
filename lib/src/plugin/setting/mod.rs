@@ -55,11 +55,11 @@ pub struct SettingFieldSchema {
 }
 
 impl SettingFieldSchema {
-    pub fn parse_toml(text: &str, source_name: &str) -> anyhow::Result<Vec<SettingFieldSchema>> {
+    pub fn parse_toml(text: &str, plugin_id: &str) -> anyhow::Result<Vec<SettingFieldSchema>> {
         let parsed: SchemaFile = toml::from_str(text).map_err(|e| {
             anyhow::anyhow!(
                 "failed to parse settings schema TOML in {}: {}",
-                source_name,
+                plugin_id,
                 e
             )
         })?;
@@ -67,11 +67,11 @@ impl SettingFieldSchema {
         let fields = parsed
             .fields
             .into_iter()
-            .map(|raw| Self::parse_fields(raw, source_name))
+            .map(|raw| Self::parse_fields(raw, plugin_id))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         Self::validate_fields(&fields)
-            .with_context(|| format!("schema validation failed in `{source_name}`"))?;
+            .with_context(|| format!("schema validation failed in `{plugin_id}`"))?;
 
         Ok(fields)
     }
@@ -136,10 +136,6 @@ pub struct SchemaRegistry {
 }
 
 impl SchemaRegistry {
-    pub fn register(&mut self, field: SettingFieldSchema) {
-        self.fields.push(field);
-    }
-
     pub fn fields(&self) -> &[SettingFieldSchema] {
         &self.fields
     }
@@ -159,7 +155,7 @@ impl SchemaRegistry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SettingsStore {
     pub schema: SchemaRegistry,
     values: HashMap<String, toml::Value>,
@@ -167,14 +163,6 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
-    pub fn new() -> Self {
-        Self {
-            values: HashMap::default(),
-            schema: SchemaRegistry::default(),
-            has_disk_loaded: false,
-        }
-    }
-
     pub fn add_missing_from_schema(&mut self) {
         for f in self.schema.fields() {
             self.values
@@ -184,7 +172,7 @@ impl SettingsStore {
     }
 
     /// ディスクから読み込めた値だけ上書き。存在しないキーはdefaultのまま残る。
-    pub fn apply_loaded(&mut self, loaded: HashMap<String, toml::Value>) {
+    pub fn apply_loaded_setting(&mut self, loaded: HashMap<String, toml::Value>) {
         for (k, v) in loaded {
             self.values.insert(k, v);
         }

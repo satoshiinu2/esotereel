@@ -49,10 +49,6 @@ impl ChangeSet {
             && !self.root_layers_changed
     }
 
-    pub(crate) fn mark_root_layers_changed(&mut self) {
-        self.root_layers_changed = true;
-    }
-
     pub(crate) fn mark_layer_upserted(&mut self, id: LayerId) {
         self.layers_removed.remove(&id);
         self.layers_upserted.insert(id);

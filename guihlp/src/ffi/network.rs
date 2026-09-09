@@ -96,19 +96,8 @@ pub extern "C" fn client_network_handler_bootstrap(
 
     let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     let mut app_state = network.app_state.lock().expect("mutex poisoned");
-    runtime.block_on(async {
-        if let Err(e) = app_state.load_plugins(HostRole::Client).await {
-            log::error!("Failed to load plugins: {}", e);
-        } else {
-            log::info!("Plugins loaded successfully");
-        }
-    });
+    app_state.boot_strap();
 
-    if let Err(e) = app_state.apply_settings() {
-        log::error!("Failed to apply settings: {}", e);
-    } else {
-        log::info!("Settings applied successfully");
-    }
     WrapperErrorCode::ok()
 }
 

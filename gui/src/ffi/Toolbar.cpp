@@ -62,4 +62,12 @@ Result<void> Toolbar::setLayout(ClientNetworkHandler *network, const QString &ta
     return wrapperResultToResultVoid(result);
 }
 
+Result<void> ToolbarButton::handleAction(ClientNetworkHandler *network) {
+    QByteArray idUtf8 = this->id.toUtf8();
+    RawStringView idView = StringView::fromQUtf8String(idUtf8);
+
+    WrapperErrorCode result = esotereel_gui_helper::toolbar_handle_action(*network, idView);
+
+    return wrapperResultToResultVoid(result);
+}
 } // namespace esotereel

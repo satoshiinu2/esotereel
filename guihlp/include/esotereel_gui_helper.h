@@ -149,8 +149,7 @@ struct FfiToolbarButton {
   OwnedString tooltip;
   /// アイコン未指定なら空文字列。
   OwnedString icon;
-  /// Builtin: コマンド名("add_layer"等) / Script: "{plugin_id}::{entry}"
-  OwnedString action_value;
+  OwnedString action;
 };
 
 using ScriptId = uint64_t;
@@ -373,6 +372,9 @@ WrapperErrorCode toolbar_get_buttons(const ClientNetworkHandler *ptr_network,
 WrapperErrorCode toolbar_set_layout(const ClientNetworkHandler *ptr_network,
                                     StringView target,
                                     StringView ids_toml_array);
+
+WrapperErrorCode toolbar_handle_action(const ClientNetworkHandler *ptr_network,
+                                       StringView button_id);
 
 WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
 

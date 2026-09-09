@@ -1,7 +1,6 @@
 #include "TimelineCanvasWidget.h"
 #include "TimelineWidget.h"
 #include "ffi/ClientNetworkHandler.h"
-#include "ffi/project/Timeline.h"
 
 namespace esotereel::window {
 void TimelineCanvasWidget::handleCtrlPlayhead(const QPoint &mousePos) {

@@ -2,10 +2,10 @@
 id = "undo"
 label = "Undo"
 tooltip = "Undo"
-action = { entry = "undo" }
+action = { entry = "toolbar_undo" }
 
 [[buttons]]
 id = "redo"
 label = "Redo"
 tooltip = "Redo"
-action = { entry = "redo" }
+action = { entry = "toolbar_redo" }

@@ -7,7 +7,8 @@ use std::sync::atomic::Ordering;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
-use crate::plugin::toolbar::{ToolbarRegistry, ToolbarStore};
+use crate::plugin::script::ScriptStore;
+use crate::plugin::toolbar::ToolbarStore;
 use crate::plugin::{PluginLoadResult, PluginLoader, setting::SettingsStore};
 use crate::project::Project;
 use dashmap::DashMap;
@@ -92,6 +93,8 @@ pub struct ClientState {
     pub settings: SettingsStore,
 
     pub toolbar: ToolbarStore,
+
+    pub scripts: ScriptStore,
 }
 
 impl ClientState {
@@ -99,21 +102,37 @@ impl ClientState {
         Self {
             common: CommonState::new(dirs_def, None),
             streams: DashMap::new(),
-            settings: SettingsStore::new(),
+            settings: SettingsStore::default(),
             toolbar: ToolbarStore::default(),
+            scripts: ScriptStore::new(),
         }
     }
 
-    pub fn apply_settings(&mut self) -> anyhow::Result<()> {
-        let (plugin_schemas, plugin_toolbar_buttons) = {
+    pub fn boot_strap(&mut self) {
+        let runtime = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+
+        runtime.block_on(async {
+            if let Err(e) = self.load_plugins(HostRole::Client).await {
+                log::error!("Failed to load plugins: {}", e);
+            } else {
+                log::info!("Plugins loaded successfully");
+            }
+        });
+
+        if let Err(e) = self.apply_plugin_fields() {
+            log::error!("Failed to apply settings: {}", e);
+        } else {
+            log::info!("Settings applied successfully");
+        }
+    }
+
+    pub fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
+        let (plugin_schemas, plugin_toolbar_buttons, plugin_scripts) = {
             let loader = self.plugin_loader.lock().expect("mutex poisoned");
             (
                 loader.collect_all_schemas(),
-                loader
-                    .plugins
-                    .iter()
-                    .flat_map(|plugin| plugin.toolbar_buttons.clone())
-                    .collect::<Vec<_>>(),
+                loader.collect_all_toolbars(),
+                loader.collect_all_scripts(),
             )
         };
 
@@ -128,6 +147,10 @@ impl ClientState {
             .merge_plugin_buttons(plugin_toolbar_buttons)
             .context("plugin toolbar conflict during load_plugins")?;
         self.toolbar.fill_missing_from_registry();
+
+        self.scripts
+            .merge_plugin_scripts(plugin_scripts)
+            .context("plugin script conflict during load_plugins")?;
 
         Ok(())
     }
@@ -155,7 +178,7 @@ pub struct ServerState {
 
     pub dirty_signal: Arc<Notify>,
 
-    pub settings: SettingsStore,
+    pub scripts: ScriptStore,
 }
 
 impl ServerState {
@@ -165,7 +188,7 @@ impl ServerState {
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal: Arc::new(Notify::new()),
-            settings: SettingsStore::new(),
+            scripts: ScriptStore::new(),
         }
     }
 
@@ -174,6 +197,19 @@ impl ServerState {
             .get(path)
             .and_then(|s| s.as_option())
             .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))
+    }
+
+    pub fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
+        let plugin_scripts = {
+            let loader = self.plugin_loader.lock().expect("mutex poisoned");
+            loader.collect_all_scripts()
+        };
+
+        self.scripts
+            .merge_plugin_scripts(plugin_scripts)
+            .context("plugin script conflict during load_plugins")?;
+
+        Ok(())
     }
 }
 

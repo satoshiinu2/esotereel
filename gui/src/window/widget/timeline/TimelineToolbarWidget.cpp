@@ -29,8 +29,8 @@ TimelineToolbarWidget::builtinCommands() {
 
 void TimelineToolbarWidget::dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget,
                                      const ToolbarButton &button) {
-    qWarning() << "TimelineToolbarWidget: script action not yet wired up:" << button.actionValue << "(id=" << button.id
-               << ")";
+    auto mutableButton = button;
+    mutableButton.handleAction(windowState.network).unwrap();
 }
 
 void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString &target,
@@ -41,7 +41,7 @@ void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString
     }
     currentButtons.clear();
 
-    auto buttonsResult = esotereel::Toolbar::getButtons(windowState.network, target);
+    auto buttonsResult = Toolbar::getButtons(windowState.network, target);
     if (buttonsResult.isError()) {
         qWarning() << "TimelineToolbarWidget: failed to load buttons for target" << target;
         return;

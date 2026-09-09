@@ -1,6 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::plugin::toolbar::{ToolbarAction, ToolbarButtonSpec};
+use esotereel_lib::plugin::toolbar::ToolbarButtonSpec;
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
@@ -18,8 +18,7 @@ pub struct FfiToolbarButton {
     pub tooltip: OwnedString,
     /// アイコン未指定なら空文字列。
     pub icon: OwnedString,
-    /// Builtin: コマンド名("add_layer"等) / Script: "{plugin_id}::{entry}"
-    pub action_value: OwnedString,
+    pub action: OwnedString,
 }
 
 impl FfiToolbarButton {
@@ -29,7 +28,7 @@ impl FfiToolbarButton {
             label: OwnedString::from_string(spec.label.clone()),
             tooltip: OwnedString::from_string(spec.tooltip.clone()),
             icon: OwnedString::from_string(spec.icon.clone().unwrap_or_default()),
-            action_value: OwnedString::from_string(spec.action_entry.entry.clone()),
+            action: OwnedString::from_string(spec.action.func_name.clone()),
         }
     }
 }
@@ -93,14 +92,7 @@ pub unsafe extern "C" fn toolbar_get_buttons(
 
         let specs: Vec<&ToolbarButtonSpec> = ids
             .iter()
-            .filter_map(|id| {
-                app_state
-                    .toolbar
-                    .registry
-                    .buttons()
-                    .iter()
-                    .find(|b| &b.id == id)
-            })
+            .filter_map(|id| app_state.toolbar.registry.buttons().find(|b| &b.id == id))
             .collect();
 
         let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_len) };
@@ -148,7 +140,6 @@ pub unsafe extern "C" fn toolbar_set_layout(
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        // settings_set_value と全く同じやり方: 一度 toml::Value を経由してから変換
         let parsed_value: toml::Value = toml::from_str(ids_str).map_err(|e| {
             IntoWrapperError::Error(Some(format!("Failed to parse ids: {}", e).into()))
         })?;
@@ -160,7 +151,6 @@ pub unsafe extern "C" fn toolbar_set_layout(
 
         let mut app_state = network.app_state.lock().expect("mutex poisoned");
 
-        // app_state.toolbar 1フィールドだけの操作なので二重借用の心配がない
         app_state.toolbar.set_layout(target_str.to_string(), ids);
 
         Ok(())
@@ -174,6 +164,51 @@ pub unsafe extern "C" fn toolbar_set_layout(
         }
         Err(panic) => {
             let msg = log_if_panicked(Err::<(), _>(panic), "toolbar_set_layout");
+            WrapperErrorCode::error_from_option(msg.as_deref())
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn toolbar_handle_action(
+    ptr_network: *const ClientNetworkHandler,
+    button_id: StringView,
+) -> WrapperErrorCode {
+    if ptr_network.is_null() {
+        return WrapperErrorCode::null_ptr();
+    }
+
+    let network = unsafe { &*ptr_network };
+
+    let button_id = match button_id.as_str() {
+        Some(s) => s,
+        None => return WrapperErrorCode::invalid_string_error(),
+    };
+
+    let result =
+        catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
+            let app_state = network.app_state.lock().expect("mutex poisoned");
+
+            let (plugin_id, button) = app_state.toolbar.registry.get_button_by(button_id).ok_or(
+                IntoWrapperError::Error(Some("ToolbarButton not found".into())),
+            )?;
+
+            app_state
+                .scripts
+                .call::<()>(plugin_id, &button.action.func_name, ())
+                .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
+
+            Ok(())
+        }));
+
+    match result {
+        Ok(Ok(())) => WrapperErrorCode::ok(),
+        Ok(Err(e)) => {
+            e.set_last_err_msg();
+            e.into()
+        }
+        Err(panic) => {
+            let msg = log_if_panicked(Err::<(), _>(panic), "toolbar_handle_action");
             WrapperErrorCode::error_from_option(msg.as_deref())
         }
     }
