@@ -54,5 +54,7 @@ if [ -f installer/icon.png ]; then
   cp installer/icon.png "$APP_DIR/usr/share/icons/hicolor/256x256/apps/esotereel.png"
 fi
 
+linuxdeployqt "$APP_DIR/usr/share/applications/esotereel.desktop" -bundle-non-qt-libs -unsupported-allow-new-glibc
+
 # 6. AppImage のビルドを実行
 ARCH=x86_64 appimagetool --appimage-extract-and-run -n "$APP_DIR" "$DIST_DIR/esotereel.AppImage"

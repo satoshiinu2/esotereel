@@ -79,6 +79,12 @@ jobs:
             libgl1-mesa-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev
 
+      - name: Install linuxdeployqt (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O /usr/local/bin/linuxdeployqt
+          sudo chmod +x /usr/local/bin/linuxdeployqt
+
       - name: Install appimagetool (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -138,9 +144,7 @@ jobs:
       - name: Package Windows Installer
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist
-          makensis.exe installer/windows/installer.nsi
+        run: .\installer\windows\build_installer.ps1
 
       - name: Package Linux AppImage
         if: runner.os == 'Linux'

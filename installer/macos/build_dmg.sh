@@ -52,6 +52,8 @@ cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 </plist>
 PLIST
 
+macdeployqt "$APP_DIR" -executable="$APP_DIR/Contents/MacOS/esotereel_gui"
+
 # DMGを作成 (対象を .app に限定し、dist/ 以下に出力)
 hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$DIST_DIR/esotereel.dmg"
 

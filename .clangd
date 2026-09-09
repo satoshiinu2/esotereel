@@ -2,7 +2,7 @@ If:
   OS: linux
 CompileFlags:
   CompilationDatabase: build/cmake
-  Compiler: /usr/bin/c++
+  Compiler: /usr/bin/g++
   Remove: [-mno-direct-extern-access]
 
   Add: [
