@@ -16,21 +16,6 @@ pub mod requests;
 pub mod responces;
 pub mod util;
 
-pub type OnSendFn = extern "C" fn(u32, *const u8, usize);
-pub const CLIENT_ALL: u32 = u32::MAX;
-pub const NO_CLIENT: u32 = u32::MAX;
-
-pub(crate) static SEND_REQUEST_CALLBACK: OnceLock<OnSendFn> = OnceLock::new();
-pub(crate) static SEND_RESPONSE_CALLBACK: OnceLock<OnSendFn> = OnceLock::new();
-
-pub fn set_send_request_callback(callback: OnSendFn) {
-    SEND_REQUEST_CALLBACK.set(callback).ok();
-}
-
-pub fn set_send_response_callback(callback: OnSendFn) {
-    SEND_RESPONSE_CALLBACK.set(callback).ok();
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum StreamState {
     Loading,
