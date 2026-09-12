@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex, RwLock};
 
-use esotereel_lib::ClientState;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
 use rkyv::{AlignedVec, check_archived_root};
@@ -8,41 +7,28 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+use crate::state::ClientState;
 use crate::{ON_CONNECTED_CALLBACKS, on_responce_recveve};
 
 type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
-static INSTANCE: RwLock<Option<Arc<ClientNetworkHandler>>> = RwLock::new(None);
-
 pub type OnConnectedFn = extern "C" fn();
 
 pub struct ClientNetworkHandler {
-    pub app_state: Arc<Mutex<ClientState>>,
     tx: RwLock<Option<ClientSender>>,
 }
 
 impl ClientNetworkHandler {
-    pub fn get_instance() -> Option<Arc<ClientNetworkHandler>> {
-        if let Ok(instance_guard) = INSTANCE.read() {
-            if let Some(instance) = instance_guard.as_ref() {
-                return Some(instance.clone());
-            }
-        }
-        None
-    }
-
-    pub fn new(app_state: Arc<Mutex<ClientState>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            app_state,
             tx: RwLock::new(None),
         }
     }
-    pub async fn run(self: Arc<Self>, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        // グローバルインスタンスを登録 (Cコールバック用)
-        if let Ok(mut guard) = INSTANCE.write() {
-            *guard = Some(self.clone());
-        }
-
+    pub async fn run(
+        self: Arc<Self>,
+        state: Arc<Mutex<ClientState>>,
+        addr: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let stream = TcpStream::connect(addr).await?;
         let (mut reader, mut writer) = split(stream);
 
@@ -56,7 +42,7 @@ impl ClientNetworkHandler {
 
         self.on_connected();
 
-        let instance = self.clone();
+        let instance = Arc::clone(&self);
 
         // A. 送信専用ループ（mpsc -> TCP）
         let send_task = tokio::spawn(async move {
@@ -82,7 +68,7 @@ impl ClientNetworkHandler {
                 break;
             }
 
-            self.parse_and_handle_responce(&buf);
+            self.parse_and_handle_responce(&state, &buf);
         }
 
         // クリーンアップ
@@ -95,10 +81,10 @@ impl ClientNetworkHandler {
         Ok(())
     }
 
-    fn parse_and_handle_responce(self: &Arc<Self>, bytes: &Vec<u8>) {
+    fn parse_and_handle_responce(&self, state: &Arc<Mutex<ClientState>>, bytes: &Vec<u8>) {
         match check_archived_root::<Response>(bytes) {
             Ok(archived_req) => {
-                if let Err(e) = on_responce_recveve(archived_req, self) {
+                if let Err(e) = on_responce_recveve(archived_req, state) {
                     log::error!("Handler Error: {:?}", e);
                 }
             }

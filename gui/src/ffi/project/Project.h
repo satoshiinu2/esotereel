@@ -11,7 +11,7 @@ namespace esotereel {
 using RawProject = esotereel_gui_helper::Project;
 
 class Timeline;
-class ClientNetworkHandler; // C++ ラッパークラスの前方宣言
+class ClientState; // C++ ラッパークラスの前方宣言
 
 class Project {
     const void *guard_ptr = nullptr;
@@ -34,9 +34,10 @@ class Project {
     }
 
     // C++ の ClientNetworkHandler インスタンスから 1 行で Project ロックを取得する静的関数
-    static Result<Project> lockRead(const ClientNetworkHandler *network);
+    static Result<Project> lockRead(const ClientState *network);
 
     static Result<Project> byGuard(const void *guard_ptr);
+
     static Project invalid();
 
     bool isValid() const noexcept;

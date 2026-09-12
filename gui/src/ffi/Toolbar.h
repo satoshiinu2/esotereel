@@ -9,7 +9,7 @@
 #include <qobject.h>
 
 namespace esotereel {
-class ClientNetworkHandler;
+class ClientState;
 
 using FfiToolbarButton = esotereel_gui_helper::FfiToolbarButton;
 
@@ -34,13 +34,13 @@ class ToolbarButton {
         OwnedString::free(ffi.action);
     }
 
-    Result<void> handleAction(ClientNetworkHandler *network);
+    Result<void> handleAction(ClientState *network);
 };
 
 class Toolbar {
   public:
-    static Result<QVector<ToolbarButton>> getButtons(ClientNetworkHandler *network, const QString &target);
-    static Result<void> setLayout(ClientNetworkHandler *network, const QString &target, const QStringList &orderedIds);
+    static Result<QVector<ToolbarButton>> getButtons(ClientState *network, const QString &target);
+    static Result<void> setLayout(ClientState *network, const QString &target, const QStringList &orderedIds);
 };
 
 } // namespace esotereel

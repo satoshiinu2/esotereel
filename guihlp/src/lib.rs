@@ -18,6 +18,7 @@ use crate::responces::on_responce_recveve;
 pub mod ffi;
 mod network;
 pub mod responces;
+pub mod state;
 
 static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
 static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();

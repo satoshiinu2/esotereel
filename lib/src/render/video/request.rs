@@ -1,9 +1,10 @@
 use std::{ops::Range, time};
 
+use dashmap::DashMap;
 use ordered_float::OrderedFloat;
 
 use crate::{
-    ClientState, StreamState,
+    StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
     project::{Timeline, TimelineTick, clip::ClipData, ids::ResourceId},
     requests::Request,
@@ -19,7 +20,8 @@ pub const BUFFER_LOOKAHEAD_THRESHOLD: f64 = 1.0; // バッファの先読み量
 
 pub fn request_stream_packets_for_time(
     timeline: &Timeline,
-    app_state: &ClientState,
+    path_to_stream: &DashMap<String, StreamState>,
+    players: &DashMap<ResourceId, StreamPlayer>,
     frame_range: Range<TimelineTick>,
 ) -> Vec<Request> {
     use std::collections::HashMap;
@@ -35,7 +37,7 @@ pub fn request_stream_packets_for_time(
             continue;
         };
 
-        match app_state.path_to_stream.get(path).map(|r| *r) {
+        match path_to_stream.get(path).map(|r| *r) {
             Some(StreamState::Loaded(resource_id)) => {
                 let start_seconds = ClipData::get_media_seconds(
                     timeline.tps,
@@ -49,9 +51,7 @@ pub fn request_stream_packets_for_time(
                     .push(start_seconds);
             }
             None => {
-                app_state
-                    .path_to_stream
-                    .insert(path.to_owned(), StreamState::Loading);
+                path_to_stream.insert(path.to_owned(), StreamState::Loading);
                 init_requests.push(Request::InitStream {
                     path: path.to_owned(),
                 });
@@ -61,7 +61,7 @@ pub fn request_stream_packets_for_time(
     }
 
     // 今フレーム参照されなかったストリームの active_windows をクリア
-    for mut entry in app_state.streams.iter_mut() {
+    for mut entry in players.iter_mut() {
         let (resource_id, player) = entry.pair_mut();
         if !needs_by_resource.contains_key(resource_id) {
             player.active_windows.clear();
@@ -73,18 +73,18 @@ pub fn request_stream_packets_for_time(
         needs_by_resource
             .into_iter()
             .filter_map(|(resource_id, needed)| {
-                collect_request_for_resource(app_state, resource_id, needed)
+                collect_request_for_resource(players, resource_id, needed)
             }),
     );
     requests
 }
 
 fn collect_request_for_resource(
-    app_state: &ClientState,
+    players: &DashMap<ResourceId, StreamPlayer>,
     resource_id: u32,
     needed_seconds: Vec<f64>,
 ) -> Option<Request> {
-    let mut player = app_state.streams.get_mut(&resource_id)?;
+    let mut player = players.get_mut(&resource_id)?;
 
     // このフレームで必要な窓は、フェッチ中でも消されないよう先に記録
     player.active_windows = needed_seconds

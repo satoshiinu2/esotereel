@@ -1,6 +1,6 @@
 #include "DebugStreamsWidget.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include <QPainter>
 #include <QResizeEvent>
 #include <QTimer>
@@ -97,7 +97,7 @@ void DebugStreamsWidget::paintEvent(QPaintEvent *e) {
 }
 
 void DebugStreamsWidget::updateMap() {
-    const esotereel_gui_helper::ClientNetworkHandler *raw_network = *windowState->network;
+    const esotereel_gui_helper::ClientStateHandle *raw_network = *windowState->network;
 
     size_t resourceCount = esotereel_gui_helper::debug_streams_get_resources_arr_size(raw_network);
 

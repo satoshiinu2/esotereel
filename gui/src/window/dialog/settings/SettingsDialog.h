@@ -13,7 +13,7 @@
 #include "ffi/Settings.h"
 
 namespace esotereel {
-class ClientNetworkHandler;
+class ClientState;
 }
 
 namespace esotereel::window {

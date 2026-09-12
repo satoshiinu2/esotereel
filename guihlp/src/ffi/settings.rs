@@ -1,4 +1,7 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::Arc,
+};
 
 use esotereel_lib::plugin::setting::{FieldTypeKind, SettingFieldSchema};
 
@@ -6,9 +9,9 @@ use crate::{
     IntoWrapperError, WrapperErrorCode,
     ffi::{
         log_if_panicked,
+        state::ClientStateHandle,
         stringview::{OwnedString, StringView},
     },
-    network::ClientNetworkHandler,
 };
 
 #[repr(C)]
@@ -59,18 +62,16 @@ impl SettingsField {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn settings_get_all_fields_count(
-    ptr_network: *const ClientNetworkHandler,
-) -> i32 {
-    if ptr_network.is_null() {
+pub unsafe extern "C" fn settings_get_all_fields_count(ptr_state: *const ClientStateHandle) -> i32 {
+    if ptr_state.is_null() {
         return -1;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<i32, IntoWrapperError> {
-        Ok(app_state.settings.schema.fields().len() as i32)
+        Ok(state.settings.schema.fields().len() as i32)
     }));
 
     match result {
@@ -91,19 +92,19 @@ pub unsafe extern "C" fn settings_get_all_fields_count(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_all_fields(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     output: *mut SettingsField,
     output_len: usize,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() || output.is_null() {
+    if ptr_state.is_null() || output.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let fields = app_state.settings.schema.fields().to_vec();
+        let fields = state.settings.schema.fields().to_vec();
 
         let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_len) };
 
@@ -132,24 +133,24 @@ pub unsafe extern "C" fn settings_get_all_fields(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_value(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     key: StringView,
     output: *mut OwnedString,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() || output.is_null() {
+    if ptr_state.is_null() || output.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    let state = ClientStateHandle::from_ptr(ptr_state);
     let key_str = match key.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let app_state = network.app_state.lock().expect("mutex poisoned");
+        let state = state.lock().expect("mutex poisoned");
 
-        let value = app_state.settings.get_value(key_str);
+        let value = state.settings.get_value(key_str);
 
         match value {
             Some(v) => {
@@ -179,15 +180,17 @@ pub unsafe extern "C" fn settings_get_value(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_set_value(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     key: StringView,
     value: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
     let key_str = match key.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
@@ -203,9 +206,9 @@ pub unsafe extern "C" fn settings_set_value(
             IntoWrapperError::Error(Some(format!("Failed to parse value: {}", e).into()))
         })?;
 
-        let mut app_state = network.app_state.lock().expect("mutex poisoned");
+        let mut state = state.lock().expect("mutex poisoned");
 
-        app_state
+        state
             .settings
             .set_value(key_str.to_string(), parsed_value)
             .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
@@ -227,19 +230,17 @@ pub unsafe extern "C" fn settings_set_value(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn settings_get_categories_count(
-    ptr_network: *const ClientNetworkHandler,
-) -> i32 {
-    if ptr_network.is_null() {
+pub unsafe extern "C" fn settings_get_categories_count(ptr_state: *const ClientStateHandle) -> i32 {
+    if ptr_state.is_null() {
         return -1;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<i32, IntoWrapperError> {
         let mut categories = std::collections::HashSet::new();
-        for field in app_state.settings.schema.fields() {
+        for field in state.settings.schema.fields() {
             for cat in &field.category {
                 categories.insert(cat.clone());
             }
@@ -267,20 +268,23 @@ pub unsafe extern "C" fn settings_get_categories_count(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_categories(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     output: *mut OwnedString,
     output_len: usize,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() || output.is_null() {
+    if ptr_state.is_null() || output.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state_clone = Arc::clone(&state);
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
         let mut categories = std::collections::HashSet::new();
-        for field in app_state.settings.schema.fields() {
+        for field in state.settings.schema.fields() {
             for cat in &field.category {
                 categories.insert(cat.clone());
             }

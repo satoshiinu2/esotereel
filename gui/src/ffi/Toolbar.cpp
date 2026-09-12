@@ -1,14 +1,14 @@
 #include "Toolbar.h"
-#include "ClientNetworkHandler.h"
+#include "ClientState.h"
 #include "StringView.h"
 #include "WrapperResult.h"
 
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 
 namespace esotereel {
 
-Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientNetworkHandler *network, const QString &target) {
+Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *network, const QString &target) {
     if (!network) {
         return Result<QVector<ToolbarButton>>::error("Network handler is null");
     }
@@ -40,7 +40,7 @@ Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientNetworkHandler *network
     return Result<QVector<ToolbarButton>>::ok(buttons);
 }
 
-Result<void> Toolbar::setLayout(ClientNetworkHandler *network, const QString &target, const QStringList &orderedIds) {
+Result<void> Toolbar::setLayout(ClientState *network, const QString &target, const QStringList &orderedIds) {
     if (!network) {
         return Result<void>::error("Network handler is null");
     }
@@ -62,7 +62,7 @@ Result<void> Toolbar::setLayout(ClientNetworkHandler *network, const QString &ta
     return wrapperResultToResultVoid(result);
 }
 
-Result<void> ToolbarButton::handleAction(ClientNetworkHandler *network) {
+Result<void> ToolbarButton::handleAction(ClientState *network) {
     QByteArray idUtf8 = this->id.toUtf8();
     RawStringView idView = StringView::fromQUtf8String(idUtf8);
 

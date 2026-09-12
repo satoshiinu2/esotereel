@@ -8,7 +8,7 @@
 #include <QVector>
 
 namespace esotereel {
-class ClientNetworkHandler;
+class ClientState;
 
 using SettingsFieldType = esotereel_gui_helper::SettingsFieldType;
 
@@ -35,10 +35,10 @@ class SettingsField {
 
 class Settings {
   public:
-    static Result<QVector<SettingsField>> getAllFields(ClientNetworkHandler *network);
-    static Result<QString> getValue(ClientNetworkHandler *network, const QString &key);
-    static Result<void> setValue(ClientNetworkHandler *network, const QString &key, const QString &value);
-    static Result<QStringList> getCategories(ClientNetworkHandler *network);
+    static Result<QVector<SettingsField>> getAllFields(ClientState *network);
+    static Result<QString> getValue(ClientState *network, const QString &key);
+    static Result<void> setValue(ClientState *network, const QString &key, const QString &value);
+    static Result<QStringList> getCategories(ClientState *network);
 };
 
 } // namespace esotereel

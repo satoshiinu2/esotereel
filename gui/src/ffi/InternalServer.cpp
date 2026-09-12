@@ -2,11 +2,11 @@
 #include "Result.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/WrapperResult.h"
 
 namespace esotereel {
-bool InternalServer::start(ClientNetworkHandler &network, QString addr,
+bool InternalServer::start(ClientState &network, QString addr,
                            void (*OnConnectedFn)(bool, esotereel_gui_helper::StringView), QString stdPluginDir,
                            QString workingDir) {
     QByteArray addrUtf8 = addr.toUtf8();

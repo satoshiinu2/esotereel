@@ -1,7 +1,7 @@
 #include "Project.h"
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/Result.h"
 #include "ffi/WrapperResult.h"
 
@@ -11,7 +11,7 @@ Project::Project(const void *g, const RawProject *p) : guard_ptr(g), project_ptr
 Project::~Project() {
     // RAII: Ensure lock is released even if exception occurs
     if (guard_ptr) {
-        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+        esotereel_gui_helper::client_state_project_unlock_read(guard_ptr);
         guard_ptr = nullptr;
         project_ptr = nullptr;
     }
@@ -28,7 +28,7 @@ Project &Project::operator=(Project &&other) noexcept {
     if (this != &other) {
         // 既存のガードを解放（例外安全のため）
         if (guard_ptr) {
-            esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+            esotereel_gui_helper::client_state_project_unlock_read(guard_ptr);
         }
         // リソースの所有権を移動
         guard_ptr = other.guard_ptr;
@@ -40,13 +40,13 @@ Project &Project::operator=(Project &&other) noexcept {
     return *this;
 }
 
-Result<Project> Project::lockRead(const ClientNetworkHandler *network) {
+Result<Project> Project::lockRead(const ClientState *network) {
     if (!network || !network->isValid())
         return Result<Project>::error("Invalid network handler");
 
     const void *guard_ptr = nullptr;
     // C++ クラスが保持する FFI 用ポインタ (raw_ptr) を渡す
-    auto result = esotereel_gui_helper::client_network_handler_app_state_project_lock_read(*network, &guard_ptr);
+    auto result = esotereel_gui_helper::client_state_project_lock_read(*network, &guard_ptr);
 
     if (result != WrapperErrorCode::Ok || !guard_ptr) {
         return wrapperResultToResult<Project>(result, Project::invalid());
@@ -64,13 +64,12 @@ Result<Project> Project::byGuard(const void *guard_ptr) {
 
     if (result != WrapperErrorCode::Ok) {
         // Clean up guard on error
-        esotereel_gui_helper::client_network_handler_app_state_project_unlock_read(guard_ptr);
+        esotereel_gui_helper::client_state_project_unlock_read(guard_ptr);
         return wrapperResultToResult<Project>(result, Project::invalid());
     }
 
     return Result<Project>::ok(Project{guard_ptr, project_ptr});
 }
-
 Project Project::invalid() {
     return Project(nullptr, nullptr);
 }

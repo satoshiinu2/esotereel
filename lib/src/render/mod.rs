@@ -1,19 +1,28 @@
 use crate::{
-    project::{Timeline, camera::CameraInfo},
+    StreamState,
+    decode::streamplayer::StreamPlayer,
+    project::{Timeline, TimelineTick, camera::CameraInfo, ids::ResourceId},
     render::{video::update_timline_clips_texture, wgpuutil::OffscreenTarget},
 };
+use dashmap::DashMap;
 use glam::Mat4;
 
-use crate::{
-    ClientState,
-    render::{vertex::Vertex, video::builder::build_vertices, wgpuutil::WGpuUtil},
-};
+use crate::render::{vertex::Vertex, video::builder::build_vertices, wgpuutil::WGpuUtil};
 
 pub mod pipeline;
 pub mod uniform;
 pub mod vertex;
 pub mod video;
 pub mod wgpuutil;
+
+pub struct RenderContext<'a> {
+    pub path_to_stream: &'a DashMap<String, StreamState>,
+    pub streams: &'a DashMap<ResourceId, StreamPlayer>,
+
+    pub timeline: &'a Timeline,
+    pub camera_info: &'a CameraInfo,
+    pub current_frame: TimelineTick,
+}
 
 pub struct RenderBatch {
     pub vertices: Vec<Vertex>,
@@ -24,10 +33,7 @@ pub struct RenderBatch {
 pub fn render_frame_offscreen(
     util: &mut WGpuUtil,
     offscreen: &OffscreenTarget,
-    timeline: &Timeline,
-    app_state: &ClientState,
-    camera_info: &CameraInfo,
-    current_frame: i64,
+    ctx: &RenderContext,
 ) -> Result<(), String> {
     if offscreen.width == 0 || offscreen.height == 0 {
         return Err("window size is 0".into());
@@ -36,13 +42,13 @@ pub fn render_frame_offscreen(
     let screen_size = [offscreen.width as f32, offscreen.height as f32];
 
     // ビュープロジェクション行列の計算
-    let proj_matrix = camera_info.get_proj_mat(screen_size);
-    let view_matrix = camera_info.get_view_mat();
+    let proj_matrix = ctx.camera_info.get_proj_mat(screen_size);
+    let view_matrix = ctx.camera_info.get_view_mat();
 
     let view_projection_matrix = proj_matrix * view_matrix;
 
     // 頂点作成
-    let vertices = build_vertices(timeline, app_state, current_frame);
+    let vertices = build_vertices(ctx);
 
     let batches: Vec<RenderBatch> = if !vertices.is_empty() {
         vertices
@@ -84,7 +90,7 @@ pub fn render_frame_offscreen(
         });
 
     // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
-    update_timline_clips_texture(util, app_state, timeline, current_frame);
+    update_timline_clips_texture(util, ctx);
 
     {
         // RenderPass の作成

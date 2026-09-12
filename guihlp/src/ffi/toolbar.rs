@@ -6,9 +6,9 @@ use crate::{
     IntoWrapperError, WrapperErrorCode,
     ffi::{
         log_if_panicked,
+        state::ClientStateHandle,
         stringview::{OwnedString, StringView},
     },
-    network::ClientNetworkHandler,
 };
 
 #[repr(C)]
@@ -35,22 +35,25 @@ impl FfiToolbarButton {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_get_buttons_count(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     target: StringView,
 ) -> i32 {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return -1;
     }
 
-    let network = unsafe { &*ptr_network };
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
+
     let target_str = match target.as_str() {
         Some(s) => s,
         None => return -1,
     };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<i32, IntoWrapperError> {
-        Ok(app_state.toolbar.get_layout(target_str).len() as i32)
+        Ok(state.toolbar.get_layout(target_str).len() as i32)
     }));
 
     match result {
@@ -71,28 +74,31 @@ pub unsafe extern "C" fn toolbar_get_buttons_count(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_get_buttons(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     target: StringView,
     output: *mut FfiToolbarButton,
     output_len: usize,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() || output.is_null() {
+    if ptr_state.is_null() || output.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
+
     let target_str = match target.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
     };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let ids = app_state.toolbar.get_layout(target_str);
+        let ids = state.toolbar.get_layout(target_str);
 
         let specs: Vec<&ToolbarButtonSpec> = ids
             .iter()
-            .filter_map(|id| app_state.toolbar.registry.buttons().find(|b| &b.id == id))
+            .filter_map(|id| state.toolbar.registry.buttons().find(|b| &b.id == id))
             .collect();
 
         let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_len) };
@@ -121,15 +127,15 @@ pub unsafe extern "C" fn toolbar_get_buttons(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_set_layout(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     target: StringView,
     ids_toml_array: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    let state = ClientStateHandle::from_ptr(ptr_state);
     let target_str = match target.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
@@ -149,9 +155,9 @@ pub unsafe extern "C" fn toolbar_set_layout(
             ))
         })?;
 
-        let mut app_state = network.app_state.lock().expect("mutex poisoned");
+        let mut state = state.lock().expect("mutex poisoned");
 
-        app_state.toolbar.set_layout(target_str.to_string(), ids);
+        state.toolbar.set_layout(target_str.to_string(), ids);
 
         Ok(())
     }));
@@ -171,35 +177,41 @@ pub unsafe extern "C" fn toolbar_set_layout(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_handle_action(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     button_id: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
 
     let button_id = match button_id.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
     };
 
-    let result =
-        catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-            let app_state = network.app_state.lock().expect("mutex poisoned");
+    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
+        let state = state.lock().expect("mutex poisoned");
 
-            let (plugin_id, button) = app_state.toolbar.registry.get_button_by(button_id).ok_or(
-                IntoWrapperError::Error(Some("ToolbarButton not found".into())),
-            )?;
+        let (plugin_id, button) =
+            state
+                .toolbar
+                .registry
+                .get_button_by(button_id)
+                .ok_or(IntoWrapperError::Error(Some(
+                    "ToolbarButton not found".into(),
+                )))?;
 
-            app_state
-                .scripts
-                .call::<()>(plugin_id, &button.action.func_name, ())
-                .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
+        state
+            .scripts
+            .call::<()>(plugin_id, &button.action.func_name, ())
+            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
 
-            Ok(())
-        }));
+        Ok(())
+    }));
 
     match result {
         Ok(Ok(())) => WrapperErrorCode::ok(),

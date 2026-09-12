@@ -11,7 +11,7 @@ enum class Direction;
 } // namespace esotereel_gui_helper
 
 namespace esotereel {
-class ClientNetworkHandler;
+class ClientState;
 }
 
 namespace esotereel::window {
@@ -27,7 +27,7 @@ class SettingsDialog;
 } // namespace dialog
 
 struct WindowGState {
-    ClientNetworkHandler *const network;
+    ClientState *const network;
     TimelineWidget *focusedTimeline = nullptr;
     CameraInfo *camera{};
 };
@@ -35,7 +35,7 @@ struct WindowGState {
 class MainWindow : public QMainWindow {
     Q_OBJECT
   public:
-    explicit MainWindow(ClientNetworkHandler &network, QWidget *parent = nullptr);
+    explicit MainWindow(ClientState &network, QWidget *parent = nullptr);
 
     void markDirtyTimeline(TimelineId timelineId);
 

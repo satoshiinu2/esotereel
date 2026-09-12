@@ -1,17 +1,27 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::{Arc, Mutex},
+};
 
 use esotereel_lib::{
     project::{camera::CameraInfo, ids::TimelineId},
-    render::wgpuutil::{OffscreenTarget, WGpuUtil},
+    render::{
+        RenderContext, render_frame_offscreen,
+        wgpuutil::{OffscreenTarget, WGpuUtil},
+    },
 };
 
-use crate::{WrapperErrorCode, network::ClientNetworkHandler, ffi::log_if_panicked};
+use crate::{
+    WrapperErrorCode,
+    ffi::{log_if_panicked, state::ClientStateHandle},
+    state::ClientState,
+};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
     ptr_wgpu: *mut WGpuUtil,
     ptr_offscreen: *mut OffscreenTarget,
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     ptr_camera_info: *const CameraInfo,
     timeline_id: TimelineId,
     current_frame: i64,
@@ -22,21 +32,27 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
 ) -> WrapperErrorCode {
     if ptr_wgpu.is_null()
         || ptr_offscreen.is_null()
-        || ptr_network.is_null()
+        || ptr_state.is_null()
         || ptr_camera_info.is_null()
     {
         return WrapperErrorCode::null_ptr();
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), WrapperErrorCode> {
-        let network = unsafe { &*ptr_network };
+        // Arc::into_raw 由来のポインタから、参照カウントを増やして
+        // 独立した Arc クローンを作る（元のポインタは消費しない）
+        let raw = ptr_state as *const Mutex<ClientState>;
+        let state: Arc<Mutex<ClientState>> = unsafe {
+            Arc::increment_strong_count(raw);
+            Arc::from_raw(raw)
+        };
         let wgpuutil = unsafe { &mut *ptr_wgpu };
         let offscreen = unsafe { &*ptr_offscreen };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        let app_state = network.app_state.lock().expect("mutex poisoned");
+        let state = state.lock().expect("mutex poisoned");
 
-        let project_arc = match app_state.project.as_ref() {
+        let project_arc = match state.project.as_ref() {
             Some(arc) => Ok(arc),
             None => Err(WrapperErrorCode::not_found(Some("project not found"))),
         }?;
@@ -48,15 +64,16 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
             None => Err(WrapperErrorCode::not_found(Some("timeline not found"))),
         }?;
 
-        esotereel_lib::render::render_frame_offscreen(
-            wgpuutil,
-            offscreen,
+        let ctx = RenderContext {
+            path_to_stream: &state.path_to_stream,
+            streams: &state.stream_players,
             timeline,
-            &app_state,
             camera_info,
             current_frame,
-        )
-        .map_err(|msg| WrapperErrorCode::error(Some(&msg)))?;
+        };
+
+        render_frame_offscreen(wgpuutil, offscreen, &ctx)
+            .map_err(|msg| WrapperErrorCode::error(Some(&msg)))?;
 
         let bytes = offscreen
             .readback(&wgpuutil.device)

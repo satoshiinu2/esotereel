@@ -1,5 +1,5 @@
 #include "TimelineCanvasWidget.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/Requests.h"
 #include "ffi/project/RenderRows.h"
 

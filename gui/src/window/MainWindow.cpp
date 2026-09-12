@@ -22,7 +22,7 @@
 
 namespace esotereel::window {
 
-MainWindow::MainWindow(ClientNetworkHandler &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
+MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
     // init windowState
     this->windowState.camera = new CameraInfo{};
     this->windowState.camera->position = QVector3D(0, 0, 0);

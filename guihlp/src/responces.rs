@@ -1,6 +1,6 @@
 use std::{
     ops::Range,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use colored::Colorize;
@@ -20,11 +20,11 @@ use esotereel_lib::{
 use log::info;
 use rkyv::Deserialize;
 
-use crate::{mark_dirty_timeline, network::ClientNetworkHandler};
+use crate::{mark_dirty_timeline, state::ClientState};
 
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
-    network: &Arc<ClientNetworkHandler>,
+    state: &Mutex<ClientState>,
 ) -> EsotereelResult<()> {
     match responce {
         ArchivedResponse::Test => {}
@@ -59,8 +59,8 @@ pub(super) fn on_responce_recveve(
             let project_arc = Arc::new(RwLock::new(real_project));
 
             {
-                let mut app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project = Some(project_arc);
+                let mut state = state.lock().expect("mutex poisoned");
+                state.project = Some(project_arc);
             }
 
             for i in 0..timeline_len {
@@ -69,39 +69,38 @@ pub(super) fn on_responce_recveve(
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
             let project_arc = {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
 
-            if let Some(project_arc) = project_arc {
-                {
-                    let mut project = project_arc.write().unwrap();
-                    let timeline = project
-                        .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
 
-                    for (layer_id, archived_clip) in clips.iter() {
-                        let clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.upsert_clip_from_network(*layer_id, clip);
-                    }
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+                for (layer_id, archived_clip) in clips.iter() {
+                    let clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
+                    timeline.upsert_clip_from_network(*layer_id, clip);
                 }
-                // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-                drop(project_arc);
-                mark_dirty_timeline(*timeline_id);
             }
+
+            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
         }
         ArchivedResponse::RemoveClip {
             timeline_id,
             clip_ids,
         } => {
             let project_arc = {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
 
-            let Some(project_arc) = project_arc else {
-                anyhow::bail!(EsotereelError::ProjectNotFound)
-            };
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
 
             {
                 let mut project = project_arc.write().unwrap();
@@ -123,13 +122,11 @@ pub(super) fn on_responce_recveve(
             layers,
         } => {
             let project_arc = {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
 
-            let Some(project_arc) = project_arc else {
-                anyhow::bail!(EsotereelError::ProjectNotFound)
-            };
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
 
             {
                 let mut project = project_arc.write().unwrap();
@@ -155,13 +152,11 @@ pub(super) fn on_responce_recveve(
             layer_ids,
         } => {
             let project_arc = {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
 
-            let Some(project_arc) = project_arc else {
-                anyhow::bail!(EsotereelError::ProjectNotFound)
-            };
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
 
             {
                 let mut project = project_arc.write().unwrap();
@@ -187,31 +182,32 @@ pub(super) fn on_responce_recveve(
             children,
         } => {
             let project_arc = {
-                let s = network.app_state.lock().expect("mutex poisoned");
-                s.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
-            if let Some(project_arc) = project_arc {
-                {
-                    let mut project = project_arc.write().unwrap();
-                    let timeline = project
-                        .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
-                    for (id, meta) in folders.iter() {
-                        let meta: Meta = meta.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.apply_outline_folder_meta(*id, meta);
-                    }
-                    for (parent, kids) in children.iter() {
-                        let parent: Option<LayerFolderId> =
-                            parent.deserialize(&mut rkyv::Infallible).unwrap();
-                        let kids: Vec<OutlineNode> =
-                            kids.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.apply_outline_children(parent, kids);
-                    }
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+                for (id, meta) in folders.iter() {
+                    let meta: Meta = meta.deserialize(&mut rkyv::Infallible).unwrap();
+                    timeline.apply_outline_folder_meta(*id, meta);
                 }
-                drop(project_arc);
-                mark_dirty_timeline(*timeline_id);
+                for (parent, kids) in children.iter() {
+                    let parent: Option<LayerFolderId> =
+                        parent.deserialize(&mut rkyv::Infallible).unwrap();
+                    let kids: Vec<OutlineNode> = kids.deserialize(&mut rkyv::Infallible).unwrap();
+                    timeline.apply_outline_children(parent, kids);
+                }
             }
+
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
         }
 
         ArchivedResponse::Removes {
@@ -219,24 +215,25 @@ pub(super) fn on_responce_recveve(
             folder_ids,
         } => {
             let project_arc = {
-                let s = network.app_state.lock().expect("mutex poisoned");
-                s.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
-            if let Some(project_arc) = project_arc {
-                {
-                    let mut project = project_arc.write().unwrap();
-                    let timeline = project
-                        .timeline_mut(*timeline_id)
-                        .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
-                    for archived_id in folder_ids.iter() {
-                        let id: LayerFolderId =
-                            archived_id.deserialize(&mut rkyv::Infallible).unwrap();
-                        timeline.remove_outline_folder_local(id);
-                    }
+
+            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+
+            {
+                let mut project = project_arc.write().unwrap();
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+                for archived_id in folder_ids.iter() {
+                    let id: LayerFolderId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    timeline.remove_outline_folder_local(id);
                 }
-                drop(project_arc);
-                mark_dirty_timeline(*timeline_id);
             }
+
+            drop(project_arc);
+            mark_dirty_timeline(*timeline_id);
         }
 
         ArchivedResponse::StreamMetadata {
@@ -261,9 +258,9 @@ pub(super) fn on_responce_recveve(
             .map_err(|e| esotereel_lib::util::result::EsotereelError::IoError(e.to_string()))?;
 
             {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.streams.insert(*resource_id, player);
-                app_state
+                let state = state.lock().expect("mutex poisoned");
+                state.stream_players.insert(*resource_id, player);
+                state
                     .path_to_stream
                     .insert(path.as_ref().to_owned(), StreamState::Loaded(*resource_id));
             }
@@ -287,8 +284,8 @@ pub(super) fn on_responce_recveve(
             let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
 
             {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                if let Some(mut player) = app_state.streams.get_mut(resource_id) {
+                let state = state.lock().expect("mutex poisoned");
+                if let Some(mut player) = state.stream_players.get_mut(resource_id) {
                     // パケットをデコードしてフレームを取得
                     player
                         .process_packet(data, pts, dts, *is_key, *discontinuous, *generation)
@@ -304,16 +301,16 @@ pub(super) fn on_responce_recveve(
             let fetched_ranges: Vec<Range<f64>> =
                 fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let app_state = network.app_state.lock().expect("mutex poisoned");
-            if let Some(mut player) = app_state.streams.get_mut(resource_id) {
+            let state = state.lock().expect("mutex poisoned");
+            if let Some(mut player) = state.stream_players.get_mut(resource_id) {
                 player.fetch_state = FetchState::Idle;
                 player.free_no_needed_frames(&fetched_ranges); // Vec対応版
             }
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
             let project_arc = {
-                let app_state = network.app_state.lock().expect("mutex poisoned");
-                app_state.project.as_ref().cloned()
+                let state = state.lock().expect("mutex poisoned");
+                state.project.as_ref().map(Arc::clone)
             };
 
             if let Some(project_arc) = project_arc {

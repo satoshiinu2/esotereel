@@ -1,40 +1,40 @@
-use crate::network::ClientNetworkHandler;
+use crate::ffi::state::ClientStateHandle;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn debug_streams_get_resources_arr_size(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
 ) -> usize {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return 0;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
-    app_state.streams.len()
+    state.stream_players.len()
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn debug_streams_write_resources_arr(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     ptr_out_arr: *mut u32,
     safety_size: usize,
 ) -> bool {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return false;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
     if ptr_out_arr.is_null() && safety_size != 0 {
         return false;
     }
-    if safety_size < app_state.streams.len() {
+    if safety_size < state.stream_players.len() {
         return false;
     }
 
-    for (i, key) in app_state.streams.iter().map(|e| *e.key()).enumerate() {
+    for (i, key) in state.stream_players.iter().map(|e| *e.key()).enumerate() {
         unsafe {
             *ptr_out_arr.add(i) = key;
         }
@@ -45,17 +45,17 @@ pub extern "C" fn debug_streams_write_resources_arr(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn debug_streams_get_loaded_streams_sec_arr_size(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     resource_id: u32,
 ) -> usize {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return 0;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
-    let Some(stream) = app_state.streams.get(&resource_id) else {
+    let Some(stream) = state.stream_players.get(&resource_id) else {
         return 0;
     };
 
@@ -64,19 +64,19 @@ pub extern "C" fn debug_streams_get_loaded_streams_sec_arr_size(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn debug_streams_write_loaded_streams_sec_arr(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     resource_id: u32,
     ptr_out_arr: *mut f64,
     safety_size: usize,
 ) -> bool {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return false;
     }
 
-    let network = unsafe { &*ptr_network };
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
 
-    let Some(stream) = app_state.streams.get(&resource_id) else {
+    let Some(stream) = state.stream_players.get(&resource_id) else {
         return false;
     };
 

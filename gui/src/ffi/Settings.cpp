@@ -1,14 +1,14 @@
 #include "Settings.h"
-#include "ClientNetworkHandler.h"
+#include "ClientState.h"
 #include "StringView.h"
 #include "WrapperResult.h"
 
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 
 namespace esotereel {
 
-Result<QVector<SettingsField>> Settings::getAllFields(ClientNetworkHandler *network) {
+Result<QVector<SettingsField>> Settings::getAllFields(ClientState *network) {
     if (!network) {
         return Result<QVector<SettingsField>>::error("Network handler is null");
     }
@@ -43,7 +43,7 @@ Result<QVector<SettingsField>> Settings::getAllFields(ClientNetworkHandler *netw
     return Result<QVector<SettingsField>>::ok(fields);
 }
 
-Result<QString> Settings::getValue(ClientNetworkHandler *network, const QString &key) {
+Result<QString> Settings::getValue(ClientState *network, const QString &key) {
     if (!network) {
         return Result<QString>::error("Network handler is null");
     }
@@ -62,7 +62,7 @@ Result<QString> Settings::getValue(ClientNetworkHandler *network, const QString 
     return Result<QString>::ok(value);
 }
 
-Result<void> Settings::setValue(ClientNetworkHandler *network, const QString &key, const QString &value) {
+Result<void> Settings::setValue(ClientState *network, const QString &key, const QString &value) {
     if (!network) {
         return Result<void>::error("Network handler is null");
     }
@@ -77,7 +77,7 @@ Result<void> Settings::setValue(ClientNetworkHandler *network, const QString &ke
     return wrapperResultToResultVoid(result);
 }
 
-Result<QStringList> Settings::getCategories(ClientNetworkHandler *network) {
+Result<QStringList> Settings::getCategories(ClientState *network) {
     if (!network) {
         return Result<QStringList>::error("Network handler is null");
     }

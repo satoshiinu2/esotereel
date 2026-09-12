@@ -55,7 +55,7 @@ enum class SettingsFieldType {
   Map = 7,
 };
 
-struct ClientNetworkHandler;
+struct ClientStateHandle;
 
 struct Clip;
 
@@ -164,7 +164,7 @@ void set_gui_callbacks(GuiCallbacks callbacks);
 
 void set_on_connected_callback(OnConnectedFn callback);
 
-WrapperErrorCode req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode req_cmd_clip_move_mul(const ClientStateHandle *ptr_state,
                                        TimelineId timeline_id,
                                        const uint64_t *ptr,
                                        uintptr_t len,
@@ -172,12 +172,12 @@ WrapperErrorCode req_cmd_clip_move_mul(const ClientNetworkHandler *ptr_network,
                                        int64_t duration_added,
                                        intptr_t layer_moved);
 
-WrapperErrorCode req_cmd_add_clip_dummy(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode req_cmd_add_clip_dummy(const ClientStateHandle *ptr_state,
                                         TimelineId timeline_id,
                                         int64_t position,
                                         LayerId layer_id);
 
-WrapperErrorCode req_cmd_add_layer(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode req_cmd_add_layer(const ClientStateHandle *ptr_state,
                                    TimelineId timeline_id,
                                    bool has_parent,
                                    LayerFolderId parent_folder_id,
@@ -185,7 +185,7 @@ WrapperErrorCode req_cmd_add_layer(const ClientNetworkHandler *ptr_network,
                                    uintptr_t insert_index,
                                    StringView name);
 
-WrapperErrorCode req_cmd_add_folder(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode req_cmd_add_folder(const ClientStateHandle *ptr_state,
                                     TimelineId timeline_id,
                                     bool has_parent,
                                     LayerFolderId parent_folder_id,
@@ -193,21 +193,21 @@ WrapperErrorCode req_cmd_add_folder(const ClientNetworkHandler *ptr_network,
                                     uintptr_t insert_index,
                                     StringView name);
 
-uintptr_t debug_streams_get_resources_arr_size(const ClientNetworkHandler *ptr_network);
+uintptr_t debug_streams_get_resources_arr_size(const ClientStateHandle *ptr_state);
 
-bool debug_streams_write_resources_arr(const ClientNetworkHandler *ptr_network,
+bool debug_streams_write_resources_arr(const ClientStateHandle *ptr_state,
                                        uint32_t *ptr_out_arr,
                                        uintptr_t safety_size);
 
-uintptr_t debug_streams_get_loaded_streams_sec_arr_size(const ClientNetworkHandler *ptr_network,
+uintptr_t debug_streams_get_loaded_streams_sec_arr_size(const ClientStateHandle *ptr_state,
                                                         uint32_t resource_id);
 
-bool debug_streams_write_loaded_streams_sec_arr(const ClientNetworkHandler *ptr_network,
+bool debug_streams_write_loaded_streams_sec_arr(const ClientStateHandle *ptr_state,
                                                 uint32_t resource_id,
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
 
-WrapperErrorCode internal_server_start(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode internal_server_start(const ClientStateHandle *ptr_state,
                                        StringView addr,
                                        OnServerReadyCFn on_server_ready,
                                        StringView std_plugin_dir,
@@ -217,27 +217,27 @@ void init_rust_logger(LogOutCStrFn callback);
 
 void set_log_level(StringView target, CLogLevel level);
 
-WrapperErrorCode client_network_handler_run(const ClientNetworkHandler *ptr, StringView addr);
+WrapperErrorCode client_state_new(const ClientStateHandle **out_state,
+                                  StringView std_plugin_dir,
+                                  StringView working_dir);
 
-WrapperErrorCode client_network_handler_new(const ClientNetworkHandler **out,
-                                            StringView std_plugin_dir,
-                                            StringView working_dir);
+WrapperErrorCode client_state_bootstrap(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode client_network_handler_bootstrap(const ClientNetworkHandler *ptr);
+WrapperErrorCode client_state_network_run(const ClientStateHandle *ptr_state, StringView addr);
 
-WrapperErrorCode client_network_handler_drop(const ClientNetworkHandler *ptr);
+WrapperErrorCode client_state_drop(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode client_network_handler_app_state_project_lock_read(const ClientNetworkHandler *ptr,
-                                                                    const void **out_guard);
+WrapperErrorCode client_state_project_lock_read(const ClientStateHandle *ptr_state,
+                                                const void **out_guard);
 
 /// ガードをドロップ（アンロック）する関数
-WrapperErrorCode client_network_handler_app_state_project_unlock_read(const void *guard_ptr);
+WrapperErrorCode client_state_project_unlock_read(const void *guard_ptr);
 
 /// ガードからprojectポインタを取得する関数
 WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
                                                       const Project **out_project);
 
-WrapperErrorCode client_network_handler_log_directories_info(const ClientNetworkHandler *ptr);
+WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_state);
 
 const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
@@ -316,7 +316,7 @@ uint64_t timeline_get_layer_id_at_execution_index(const Timeline *ptr, uintptr_t
 
 WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
                                                  OffscreenTarget *ptr_offscreen,
-                                                 const ClientNetworkHandler *ptr_network,
+                                                 const ClientStateHandle *ptr_state,
                                                  const CameraInfo *ptr_camera_info,
                                                  TimelineId timeline_id,
                                                  int64_t current_frame,
@@ -325,56 +325,55 @@ WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
                                                  uint32_t *out_width,
                                                  uint32_t *out_height);
 
-void req_test(const ClientNetworkHandler *ptr_network);
+void req_test(const ClientStateHandle *ptr_state);
 
-void req_new_project(const ClientNetworkHandler *ptr_network);
+void req_new_project(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode req_fetch_frame(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode req_fetch_frame(const ClientStateHandle *ptr_state,
                                  TimelineId timeline_id,
                                  TimelineTick current_frame,
                                  TimelineTick visible_range_start,
                                  TimelineTick visible_range_end);
 
-void req_project_log(const ClientNetworkHandler *ptr_network);
+void req_project_log(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode req_load_stream(const ClientNetworkHandler *ptr_network, StringView path);
+WrapperErrorCode req_load_stream(const ClientStateHandle *ptr_state, StringView path);
 
-int32_t settings_get_all_fields_count(const ClientNetworkHandler *ptr_network);
+int32_t settings_get_all_fields_count(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode settings_get_all_fields(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode settings_get_all_fields(const ClientStateHandle *ptr_state,
                                          SettingsField *output,
                                          uintptr_t output_len);
 
-WrapperErrorCode settings_get_value(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode settings_get_value(const ClientStateHandle *ptr_state,
                                     StringView key,
                                     OwnedString *output);
 
-WrapperErrorCode settings_set_value(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode settings_set_value(const ClientStateHandle *ptr_state,
                                     StringView key,
                                     StringView value);
 
-int32_t settings_get_categories_count(const ClientNetworkHandler *ptr_network);
+int32_t settings_get_categories_count(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode settings_get_categories(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode settings_get_categories(const ClientStateHandle *ptr_state,
                                          OwnedString *output,
                                          uintptr_t output_len);
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 void owned_string_free(uint8_t *ptr, uintptr_t len);
 
-int32_t toolbar_get_buttons_count(const ClientNetworkHandler *ptr_network, StringView target);
+int32_t toolbar_get_buttons_count(const ClientStateHandle *ptr_state, StringView target);
 
-WrapperErrorCode toolbar_get_buttons(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode toolbar_get_buttons(const ClientStateHandle *ptr_state,
                                      StringView target,
                                      FfiToolbarButton *output,
                                      uintptr_t output_len);
 
-WrapperErrorCode toolbar_set_layout(const ClientNetworkHandler *ptr_network,
+WrapperErrorCode toolbar_set_layout(const ClientStateHandle *ptr_state,
                                     StringView target,
                                     StringView ids_toml_array);
 
-WrapperErrorCode toolbar_handle_action(const ClientNetworkHandler *ptr_network,
-                                       StringView button_id);
+WrapperErrorCode toolbar_handle_action(const ClientStateHandle *ptr_state, StringView button_id);
 
 WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
 

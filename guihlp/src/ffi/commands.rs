@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use esotereel_lib::project::{
     clip::ClipData,
     command::{ClipMoveCtx, CommandRequest},
@@ -6,13 +8,14 @@ use esotereel_lib::project::{
 };
 
 use crate::{
-    WrapperErrorCode, ffi::stringview::StringView, network::ClientNetworkHandler,
+    WrapperErrorCode,
+    ffi::{state::ClientStateHandle, stringview::StringView},
     slice_from_ptr_or_empty,
 };
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_clip_move_mul(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     timeline_id: TimelineId,
     ptr: *const u64,
     len: usize,
@@ -20,15 +23,15 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
     duration_added: i64,
     layer_moved: isize,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    let state = ClientStateHandle::from_ptr(ptr_state);
 
     let clip_data = {
-        let app_state = network.app_state.lock().expect("mutex poisoned");
-        let project_arc = match app_state.project.as_ref() {
+        let state = state.lock().expect("mutex poisoned");
+        let project_arc = match state.project.as_ref() {
             Some(arc) => arc,
             None => return WrapperErrorCode::not_found(Some("project not found")),
         };
@@ -65,23 +68,28 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
 
     let command = CommandRequest::ClipsMove { clips: clip_data };
 
-    network.req_command(timeline_id, command);
+    {
+        let state = state.lock().expect("mutex poisoned");
+        state.network.req_command(timeline_id, command);
+    }
 
     WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_clip_dummy(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     timeline_id: TimelineId,
     position: i64,
     layer_id: LayerId,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
+    let network = Arc::clone(&state.network);
 
     let clip_data = ClipData::Video {
         path: "/home/satoshiinu/Videos/3.mp4".to_string(),
@@ -109,7 +117,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_layer(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     timeline_id: TimelineId,
     has_parent: bool,
     parent_folder_id: LayerFolderId,
@@ -117,10 +125,12 @@ pub unsafe extern "C" fn req_cmd_add_layer(
     insert_index: usize,
     name: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-    let network = unsafe { &*ptr_network };
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
+    let network = Arc::clone(&state.network);
 
     let command = CommandRequest::AddLayer {
         parent_folder_id: has_parent.then_some(parent_folder_id),
@@ -134,7 +144,7 @@ pub unsafe extern "C" fn req_cmd_add_layer(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_folder(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     timeline_id: TimelineId,
     has_parent: bool,
     parent_folder_id: LayerFolderId,
@@ -142,10 +152,13 @@ pub unsafe extern "C" fn req_cmd_add_folder(
     insert_index: usize,
     name: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-    let network = unsafe { &*ptr_network };
+
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state = state.lock().expect("mutex poisoned");
+    let network = Arc::clone(&state.network);
 
     let command = CommandRequest::AddFolder {
         parent_folder_id: has_parent.then_some(parent_folder_id),

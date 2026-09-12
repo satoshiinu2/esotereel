@@ -1,5 +1,5 @@
 #include "GpuRenderWorker.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/WrapperResult.h"
 #include "ffi/project/Timeline.h"
 
@@ -48,7 +48,7 @@ void GpuRenderWorker::renderFrame(TimelineId timelineId, CameraInfo *camera, int
     uint8_t *data = nullptr;
     size_t len = 0;
     uint32_t width = 0, height = 0;
-    const esotereel_gui_helper::ClientNetworkHandler *raw_network = *windowState->network;
+    const esotereel_gui_helper::ClientStateHandle *raw_network = *windowState->network;
 
     auto result = esotereel_gui_helper::wgpuutil_render_frame_offscreen(
         wgpuutil_ptr, offscreen_ptr, raw_network, camera, timelineId, currentFrame, &data, &len, &width, &height);

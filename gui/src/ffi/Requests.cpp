@@ -1,12 +1,12 @@
 #include "Requests.h"
-#include "ClientNetworkHandler.h"
+#include "ClientState.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/project/RenderRows.h"
 #include <cstdint>
 
 namespace esotereel {
-Requests::Requests(const ClientNetworkHandler *network) : ptr_network(*network) {}
+Requests::Requests(const ClientState *network) : ptr_network(*network) {}
 
 void Requests::newProject() {
     esotereel_gui_helper::req_new_project(ptr_network);

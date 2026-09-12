@@ -1,6 +1,6 @@
-use crate::network::ServerNetworkHandler;
+use crate::state::ServerState;
 use esotereel_lib::{
-    HostRole, ServerState,
+    HostRole,
     dirs::Directories,
     plugin::PluginLoader,
     project::{
@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 pub mod network;
 pub mod project;
 pub mod requests;
+pub mod state;
 
 pub async fn server_network_start<F>(
     addr: &str,
@@ -39,34 +40,35 @@ pub async fn server_network_start<F>(
         }
     }
 
-    let network = Arc::new(ServerNetworkHandler::new(Arc::new(Mutex::new(state))));
-
     // async タスク用に Clone
-    let network_clone = network.clone();
-    let dirty_signal = network.dirty_signal.clone();
+    let dirty_signal = Arc::clone(&state.dirty_signal);
+    let network_clone = Arc::clone(&state.network);
+
+    let state_arc = Arc::new(Mutex::new(state));
+    let state_clone = Arc::clone(&state_arc);
 
     tokio::spawn(async move {
         loop {
             dirty_signal.notified().await;
-            if let Err(e) = on_project_event(&network_clone).await {
+            if let Err(e) = on_project_event(&state_clone).await {
                 log::error!("Handler Error: {:?}", e);
             }
         }
     });
 
-    if let Err(e) = network.run(addr, on_server_ready).await {
+    let state_clone = Arc::clone(&state_arc);
+    if let Err(e) = network_clone.run(state_clone, addr, on_server_ready).await {
         log::error!("Server failed to start: {}", e);
     }
 }
-async fn on_project_event(network: &Arc<ServerNetworkHandler>) -> anyhow::Result<()> {
+async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()> {
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state_lock = state.lock().expect("mutex poisoned");
 
-    let project_arc = app_state.project.as_ref().cloned();
-    let Some(project_arc) = project_arc else {
-        anyhow::bail!(EsotereelError::ProjectNotFound)
-    };
+    let project_arc = state_lock.project.as_ref();
+    let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+    let project_arc = Arc::new(project_arc);
 
     let changes = {
         let mut project = project_arc.write().unwrap();
@@ -84,27 +86,27 @@ async fn on_project_event(network: &Arc<ServerNetworkHandler>) -> anyhow::Result
     };
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(app_state);
+    drop(state_lock);
 
     for (timeline_id, changeset) in changes {
-        dispatch_changeset(network, timeline_id, changeset)?;
+        dispatch_changeset(state, timeline_id, changeset)?;
     }
 
     Ok(())
 }
 
 fn dispatch_changeset(
-    network: &Arc<ServerNetworkHandler>,
+    state: &Arc<Mutex<ServerState>>,
     timeline_id: TimelineId,
     changeset: ChangeSet,
 ) -> anyhow::Result<()> {
     // ロックを再度取得してタイムラインデータを取得
-    let app_state = network.app_state.lock().expect("mutex poisoned");
+    let state_lock = state.lock().expect("mutex poisoned");
+    let network = Arc::clone(&state_lock.network);
 
-    let project_arc = app_state.project.as_ref().cloned();
-    let Some(project_arc) = project_arc else {
-        anyhow::bail!(EsotereelError::ProjectNotFound)
-    };
+    let project_arc = state_lock.project.as_ref();
+    let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+    let project_arc = Arc::clone(&project_arc);
 
     let project = project_arc.write().unwrap();
 
@@ -187,7 +189,7 @@ fn dispatch_changeset(
         changeset.outline_folders_removed.iter().copied().collect();
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(app_state);
+    drop(state_lock);
 
     // ネットワーク送信
     if !clips.is_empty() {

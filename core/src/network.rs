@@ -9,40 +9,20 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, mpsc};
 
-use esotereel_lib::ServerState;
-
 use crate::requests::on_request_receive;
+use crate::state::ServerState;
 
 type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
-pub static INSTANCE: RwLock<Option<Arc<ServerNetworkHandler>>> = RwLock::new(None);
-
 pub struct ServerNetworkHandler {
-    pub app_state: Arc<Mutex<ServerState>>,
     pub dirty_signal: Arc<Notify>,
     clients: RwLock<HashMap<u32, ClientSender>>,
     client_views: RwLock<HashMap<u32, HashMap<TimelineId, Range<i64>>>>,
 }
 
 impl ServerNetworkHandler {
-    pub fn get_instance() -> Option<Arc<ServerNetworkHandler>> {
-        if let Ok(instance_guard) = INSTANCE.read() {
-            if let Some(instance) = instance_guard.as_ref() {
-                return Some(instance.clone());
-            }
-        }
-        None
-    }
-
-    pub fn new(app_state: Arc<Mutex<ServerState>>) -> Self {
-        let dirty_signal = app_state
-            .lock()
-            .expect("mutex poisoned")
-            .dirty_signal
-            .clone();
-
+    pub fn new(dirty_signal: Arc<Notify>) -> Self {
         Self {
-            app_state,
             dirty_signal,
             clients: RwLock::new(HashMap::new()),
             client_views: RwLock::new(HashMap::new()),
@@ -51,15 +31,13 @@ impl ServerNetworkHandler {
 
     pub async fn run<F>(
         self: Arc<Self>,
+        state: Arc<Mutex<ServerState>>,
         addr: &str,
         on_server_ready: Option<F>,
     ) -> Result<(), std::io::Error>
     where
         F: FnOnce(bool, &str),
     {
-        // グローバルインスタンスを登録 (Cコールバック用)
-        *INSTANCE.write().unwrap() = Some(self.clone());
-
         let listener = match TcpListener::bind(&addr).await {
             Ok(l) => {
                 if let Some(f) = on_server_ready {
@@ -90,7 +68,8 @@ impl ServerNetworkHandler {
             let mut guard = self.clients.write().unwrap();
             guard.insert(client_id, tx);
 
-            let instance = self.clone();
+            let instance = Arc::clone(&self);
+            let state = Arc::clone(&state);
 
             // クライアントごとのメインタスク
             tokio::spawn(async move {
@@ -123,7 +102,7 @@ impl ServerNetworkHandler {
                             break;
                         }
 
-                        instance.parse_and_handle_request(&buf, client_id);
+                        instance.parse_and_handle_request(&state, &buf, client_id);
                     }
 
                     // クリーンアップ
@@ -138,10 +117,15 @@ impl ServerNetworkHandler {
         }
     }
 
-    fn parse_and_handle_request(self: &Arc<Self>, bytes: &Vec<u8>, client_id: u32) {
+    fn parse_and_handle_request(
+        &self,
+        state: &Arc<Mutex<ServerState>>,
+        bytes: &Vec<u8>,
+        client_id: u32,
+    ) {
         match check_archived_root::<Request>(bytes) {
             Ok(archived_req) => {
-                if let Err(e) = on_request_receive(archived_req, client_id, self) {
+                if let Err(e) = on_request_receive(archived_req, client_id, state) {
                     log::error!("Handler Error: {:?}", e);
                 }
             }

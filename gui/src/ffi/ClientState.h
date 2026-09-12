@@ -16,22 +16,22 @@ struct ClientNetworkHandler;
 namespace esotereel {
 class Requests;
 
-using RawClientNetworkHandler = esotereel_gui_helper::ClientNetworkHandler;
+using RawClientNetworkHandler = esotereel_gui_helper::ClientStateHandle;
 
-class ClientNetworkHandler {
+class ClientState {
 
   private:
     const RawClientNetworkHandler *network_ptr;
     bool isWayland;
 
   public:
-    ClientNetworkHandler(QString stdPluginDir, QString workingDir);
-    ~ClientNetworkHandler();
-    ClientNetworkHandler(const ClientNetworkHandler &) = delete;
-    ClientNetworkHandler &operator=(const ClientNetworkHandler &) = delete;
+    ClientState(QString stdPluginDir, QString workingDir);
+    ~ClientState();
+    ClientState(const ClientState &) = delete;
+    ClientState &operator=(const ClientState &) = delete;
 
-    ClientNetworkHandler(ClientNetworkHandler &&other) noexcept;
-    ClientNetworkHandler &operator=(ClientNetworkHandler &&other) noexcept;
+    ClientState(ClientState &&other) noexcept;
+    ClientState &operator=(ClientState &&other) noexcept;
 
     operator const RawClientNetworkHandler *() const noexcept {
         return network_ptr;

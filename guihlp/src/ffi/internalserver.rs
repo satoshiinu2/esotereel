@@ -1,32 +1,31 @@
 use crate::WrapperErrorCode;
+use crate::ffi::state::ClientStateHandle;
 use crate::ffi::stringview::StringView;
-use crate::network::ClientNetworkHandler;
 use esotereel_core::server_network_start;
 use esotereel_lib::dirs::Directories;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub type OnServerReadyCFn = extern "C" fn(bool, StringView); // 起動成功したか
 
 #[unsafe(no_mangle)]
 pub extern "C" fn internal_server_start(
-    ptr_network: *const ClientNetworkHandler,
+    ptr_state: *const ClientStateHandle,
     addr: StringView,
     on_server_ready: OnServerReadyCFn,
     std_plugin_dir: StringView,
     working_dir: StringView,
 ) -> WrapperErrorCode {
-    if ptr_network.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let network = unsafe { &*ptr_network };
-
-    let plugin_loader_clone = network
-        .app_state
-        .lock()
-        .expect("mutex poisoned")
-        .plugin_loader
-        .clone();
+    // Arc::into_raw 由来のポインタから、参照カウントを増やして
+    // 独立した Arc クローンを作る（元のポインタは消費しない）
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state_clone = Arc::clone(&state);
+    let state = state.lock().expect("mutex poisoned");
+    let plugin_loader_clone = Arc::clone(&state.plugin_loader);
 
     let Some(addr_str) = addr.as_str() else {
         return WrapperErrorCode::invalid_string_error();

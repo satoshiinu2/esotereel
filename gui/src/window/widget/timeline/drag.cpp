@@ -1,6 +1,6 @@
 #include "TimelineCanvasWidget.h"
 #include "Utils.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/Requests.h"
 #include "ffi/project/Clip.h"
 #include "ffi/project/Timeline.h"

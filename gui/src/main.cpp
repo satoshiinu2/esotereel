@@ -1,6 +1,6 @@
 #include "Logger.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/InternalServer.h"
 #include "ffi/Requests.h"
 #include "ffi/StringView.h"
@@ -29,7 +29,7 @@ void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi);
 void setCallBacks();
 
 esotereel::window::MainWindow *window;
-esotereel::ClientNetworkHandler *network;
+esotereel::ClientState *state;
 QString addr;
 
 int main(int argc, char **argv) {
@@ -40,8 +40,8 @@ int main(int argc, char **argv) {
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 
-    esotereel::ClientNetworkHandler n(stdPluginDir, workingDir);
-    network = &n;
+    esotereel::ClientState n(stdPluginDir, workingDir);
+    state = &n;
 
     n.logDirectoriesInfo();
     n.bootstrap();
@@ -66,18 +66,18 @@ void startInternalServer() {
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 
-    esotereel::InternalServer::start(*network, addr, onServerStart, stdPluginDir, workingDir);
+    esotereel::InternalServer::start(*state, addr, onServerStart, stdPluginDir, workingDir);
 }
 
 void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi) {
     if (ok) {
-        network->run(esotereel::StringView::toQString(addr_ffi));
+        state->run(esotereel::StringView::toQString(addr_ffi));
     }
 }
 
 void onConnectedCallBack() {
     // placeholder
-    network->requests().newProject();
+    state->requests().newProject();
 }
 
 void setCallBacks() {

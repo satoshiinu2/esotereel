@@ -1,6 +1,6 @@
 #include "GpuPreviewWidget.h"
 #include "GpuRenderWorker.h"
-#include "ffi/ClientNetworkHandler.h"
+#include "ffi/ClientState.h"
 #include "ffi/Result.h"
 #include "ffi/project/Project.h"
 #include "ffi/project/Timeline.h"

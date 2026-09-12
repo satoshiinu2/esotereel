@@ -8,7 +8,7 @@ pub mod commands;
 pub mod debug_streams;
 pub mod internalserver;
 pub mod logger;
-pub mod network;
+pub mod state;
 pub mod project;
 pub mod render;
 pub mod requests;

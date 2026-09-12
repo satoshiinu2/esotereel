@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "ClientNetworkHandler.h"
+#include "ClientState.h"
 #include "esotereel_gui_helper.h"
 
 namespace esotereel {
@@ -15,10 +15,10 @@ using ClipId = esotereel_gui_helper::ClipId;
 using TimelineTick = esotereel_gui_helper::TimelineTick;
 
 class Requests {
-    const esotereel_gui_helper::ClientNetworkHandler *ptr_network;
+    const esotereel_gui_helper::ClientStateHandle *ptr_network;
 
   public:
-    Requests(const ClientNetworkHandler *network);
+    Requests(const ClientState *network);
     void newProject();
     void moveClips(TimelineId timelineIdx, const std::vector<ClipId> &clipIds, TimelineTick posMoved,
                    TimelineTick durationMoved, int64_t layerMoved) noexcept;

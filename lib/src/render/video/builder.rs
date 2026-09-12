@@ -1,7 +1,6 @@
 use crate::{
-    ClientState,
-    project::{Timeline, clip::ClipData},
-    render::vertex::Vertex,
+    project::clip::ClipData,
+    render::{RenderContext, vertex::Vertex},
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
 
@@ -11,28 +10,23 @@ pub struct VertexBatch {
     pub transform: Mat4,
 }
 
-pub fn build_vertices(
-    timeline: &Timeline,
-    app_state: &ClientState,
-    current_frame: i64,
-) -> Vec<VertexBatch> {
+pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
     let mut batches = vec![];
 
-    for layer in timeline.iter_execution_order() {
+    for layer in ctx.timeline.iter_execution_order() {
         if !layer.enabled {
             continue;
         }
 
-        let Some(clip_id) = layer.get_clip_id_at(current_frame) else {
+        let Some(clip_id) = layer.get_clip_id_at(ctx.current_frame) else {
             continue;
         };
-        let Some(clip) = timeline.get_clip(clip_id) else {
+        let Some(clip) = ctx.timeline.get_clip(clip_id) else {
             continue;
         };
 
         let texture_id = if let ClipData::Video { path, .. } = &clip.data {
-            app_state
-                .path_to_stream
+            ctx.path_to_stream
                 .get(path)
                 .and_then(|s| s.as_option())
                 .unwrap_or(u32::MAX)

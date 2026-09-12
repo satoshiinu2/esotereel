@@ -4,38 +4,33 @@ use ffmpeg::util::frame::video::Video;
 
 use crate::{
     StreamState,
-    project::{Timeline, clip::ClipData},
-    render::wgpuutil::WGpuUtil,
+    project::clip::ClipData,
+    render::{RenderContext, wgpuutil::WGpuUtil},
 };
 
 pub mod builder;
 pub mod request;
 
-pub(crate) fn update_timline_clips_texture(
-    util: &mut WGpuUtil,
-    app_state: &crate::ClientState,
-    timeline: &Timeline,
-    current_frame: i64,
-) {
-    for (_, layer) in timeline.iter_layers() {
+pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderContext) {
+    for (_, layer) in ctx.timeline.iter_layers() {
         if !layer.enabled {
             continue;
         }
-        let Some(clip_id) = layer.get_clip_id_at(current_frame) else {
+        let Some(clip_id) = layer.get_clip_id_at(ctx.current_frame) else {
             continue;
         };
-        let Some(clip) = timeline.get_clip(clip_id) else {
+        let Some(clip) = ctx.timeline.get_clip(clip_id) else {
             continue;
         };
 
         if let ClipData::Video { path, media_offset } = &clip.data {
-            if let Some(resource_id_ref) = app_state.path_to_stream.get(path) {
+            if let Some(resource_id_ref) = ctx.path_to_stream.get(path) {
                 if let StreamState::Loaded(resource_id) = *resource_id_ref {
-                    if let Some(player) = app_state.streams.get(&resource_id) {
+                    if let Some(player) = ctx.streams.get(&resource_id) {
                         let media_seconds = ClipData::get_media_seconds(
-                            timeline.tps,
+                            ctx.timeline.tps,
                             clip.position,
-                            current_frame,
+                            ctx.current_frame,
                             *media_offset,
                         );
 
