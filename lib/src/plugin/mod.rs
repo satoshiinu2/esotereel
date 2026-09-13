@@ -1,20 +1,91 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 
 use anyhow::Context;
 use log;
+use regex::Regex;
 
 use crate::{
     HostRole,
     dirs::Directories,
-    plugin::{script::CompiledScript, setting::SettingFieldSchema, toolbar::ToolbarButtonSpec},
+    plugin::{
+        clip::ClipKind, property::PropertySchema, script::CompiledScript,
+        toolbar::ToolbarButtonSpec,
+    },
 };
 
+pub mod clip;
+pub mod property;
 pub mod script;
-pub mod setting;
+pub mod settings;
 pub mod toolbar;
+
+#[derive(Debug, Clone)]
+pub struct NamespacedID {
+    full: String,
+    plugin_id: String,
+    local_id: String,
+}
+
+static ID_VALIDATION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap());
+
+impl NamespacedID {
+    pub fn new(plugin_id: &str, local_id: &str) -> anyhow::Result<Self> {
+        if !ID_VALIDATION_REGEX.is_match(plugin_id) || !ID_VALIDATION_REGEX.is_match(local_id) {
+            anyhow::bail!(
+                "plugin_id/local_id must contain only ASCII letters, digits, '.', '_' or '-': {plugin_id}:{local_id}"
+            );
+        }
+        Ok(Self {
+            full: format!("{plugin_id}:{local_id}"),
+            plugin_id: plugin_id.to_string(),
+            local_id: local_id.to_string(),
+        })
+    }
+
+    pub fn parse(full: &str) -> anyhow::Result<Self> {
+        let (plugin_id, local_id) = full
+            .split_once(':')
+            .with_context(|| format!("invalid namespaced id (missing ':'): {full}"))?;
+        Ok(Self {
+            full: full.to_string(),
+            plugin_id: plugin_id.to_string(),
+            local_id: local_id.to_string(),
+        })
+    }
+
+    pub fn full(&self) -> &str {
+        &self.full
+    }
+    pub fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+    pub fn local_id(&self) -> &str {
+        &self.local_id
+    }
+}
+
+impl PartialEq for NamespacedID {
+    fn eq(&self, other: &Self) -> bool {
+        self.full == other.full
+    }
+}
+impl Eq for NamespacedID {}
+impl std::hash::Hash for NamespacedID {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.full.hash(state);
+    }
+}
+
+impl std::fmt::Display for NamespacedID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.pad(&self.full)
+    }
+}
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
@@ -23,10 +94,10 @@ pub struct PluginManifest {
     pub version: String,
 }
 
-#[derive(Clone)]
 pub struct Plugin {
     pub manifest: PluginManifest,
-    pub setting_schema: Vec<SettingFieldSchema>,
+    pub setting_schemas: Vec<PropertySchema>,
+    pub clip_kinds: Vec<ClipKind>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub script: Option<CompiledScript>,
     pub dir: PathBuf,
@@ -37,31 +108,42 @@ impl Plugin {
     fn load(dir: &Path) -> anyhow::Result<Self> {
         let manifest = Self::load_manifest(&dir.join("manifest.toml"))?;
 
-        log::info!(
-            "Loading plugin '{}' v{} (ID: {})",
-            manifest.name,
-            manifest.version,
-            manifest.id
-        );
-
-        let setting_schema = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
+        let setting_schemas = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
+        let clip_kinds = Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
+
         let avaliable_functions = script
             .as_ref()
             .map_or_default(|s| s.available_functions.clone());
 
         log::info!(
-            "Plugin '{}' loaded successfully: Settings schemas: {}, Toolbar buttons: {}, Available scripts: {}",
+            "Plugin '{}' v{} (ID: {}) loaded successfully: Settings schemas: {}, Clip kinds: {}, Toolbar buttons: {}, Available scripts: {}",
+            manifest.name,
+            manifest.version,
             manifest.id,
-            setting_schema.len(),
+            setting_schemas.len(),
+            clip_kinds.len(),
             toolbar_buttons.len(),
             avaliable_functions.len()
         );
 
+        log::info!(
+            "Plugin '{}' debug info: \nSettings schemas: {:?}, \nClip kinds: {:?}, \nToolbar buttons: {:?}, \nAvailable scripts: {:?}",
+            manifest.id,
+            setting_schemas
+                .iter()
+                .map(|s| s.key.full())
+                .collect::<Vec<_>>(),
+            clip_kinds.iter().map(|s| s.id.full()).collect::<Vec<_>>(),
+            toolbar_buttons.iter().map(|b| &b.id).collect::<Vec<_>>(),
+            avaliable_functions
+        );
+
         Ok(Self {
             manifest,
-            setting_schema,
+            setting_schemas,
+            clip_kinds,
             toolbar_buttons,
             script,
             dir: dir.to_owned(),
@@ -80,7 +162,7 @@ impl Plugin {
     fn load_settings(
         manifest: &PluginManifest,
         settings_path: &Path,
-    ) -> anyhow::Result<Vec<SettingFieldSchema>> {
+    ) -> anyhow::Result<Vec<PropertySchema>> {
         let schema = if settings_path.exists() {
             let text = std::fs::read_to_string(&settings_path).with_context(|| {
                 format!(
@@ -88,14 +170,11 @@ impl Plugin {
                     settings_path.display()
                 )
             })?;
-            SettingFieldSchema::parse_toml(&text, &manifest.id)
+            PropertySchema::parse_toml(&text, &manifest.id)
                 .with_context(|| format!("invalid settings schema for plugin `{}`", manifest.id))?
         } else {
             Vec::new()
         };
-
-        // key衝突防止のためプラグインIDでnamespace化
-        let schema = Self::namespaced_schema(&manifest.id, schema);
 
         Ok(schema)
     }
@@ -140,15 +219,44 @@ impl Plugin {
         }
     }
 
-    fn namespaced_schema(
-        plugin_id: &str,
-        mut fields: Vec<SettingFieldSchema>,
-    ) -> Vec<SettingFieldSchema> {
-        for f in &mut fields {
-            f.key = format!("{plugin_id}.{}", f.key);
-            f.category.insert(0, plugin_id.to_string());
+    fn load_clip_kinds(
+        manifest: &PluginManifest,
+        clips_dir: &Path,
+    ) -> anyhow::Result<Vec<ClipKind>> {
+        if !clips_dir.exists() {
+            return Ok(Vec::new());
         }
-        fields
+
+        let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(clips_dir)
+            .with_context(|| format!("failed to read clips directory {}", clips_dir.display()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .collect();
+
+        // OS依存の走査順に結果が左右されないよう固定順にしておく
+        toml_paths.sort();
+
+        let mut all_kinds = Vec::new();
+        for path in toml_paths {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
+            let kinds = ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
+                format!(
+                    "invalid clip kinds in `{}` for plugin `{}`",
+                    path.display(),
+                    manifest.id
+                )
+            })?;
+            all_kinds.extend(kinds);
+        }
+
+        // 個別ファイル内の重複はparse_toml側で検証済みなので、
+        // ここではファイルをまたいだプラグイン全体でのid重複だけを見る
+        ClipKind::validate_kinds(&all_kinds)
+            .with_context(|| format!("duplicate clip kind id across files in `{}`", manifest.id))?;
+
+        Ok(all_kinds)
     }
 
     fn namespaced_toolbar_buttons(
@@ -162,20 +270,27 @@ impl Plugin {
     }
 }
 
-pub struct PluginLoadResult {
+// 内部で使う読み込みのための結果
+struct PluginLoadingResult {
     pub dir: PathBuf,
     pub result: anyhow::Result<Plugin>,
 }
 
+// 読み込みの結果を渡すための結果
+pub struct PluginLoadedResult {
+    pub dir: PathBuf,
+    pub result: anyhow::Result<PluginManifest>,
+}
+
 pub struct PluginLoader {
-    pub p: Vec<Plugin>,
+    pub plugins: Vec<Plugin>,
     is_loaded: bool,
 }
 
 impl PluginLoader {
     pub fn new() -> Self {
         Self {
-            p: Vec::new(),
+            plugins: Vec::new(),
             is_loaded: false,
         }
     }
@@ -224,16 +339,16 @@ impl PluginLoader {
         &mut self,
         dirs_def: &Directories,
         role: HostRole,
-    ) -> anyhow::Result<Vec<PluginLoadResult>> {
+    ) -> anyhow::Result<Vec<PluginLoadedResult>> {
         // 既に読み込み済みならキャッシュを返す
         if self.is_loaded {
             log::info!("Using cached plugins for {:?}", role);
             let results = self
-                .p
+                .plugins
                 .iter()
-                .map(|plugin| PluginLoadResult {
+                .map(|plugin| PluginLoadedResult {
                     dir: plugin.dir.clone(),
-                    result: Ok(plugin.clone()),
+                    result: Ok(plugin.manifest.clone()),
                 })
                 .collect();
             return Ok(results);
@@ -245,7 +360,7 @@ impl PluginLoader {
 
         let mut tasks = vec![];
         for dir in plugin_dirs {
-            let task = tokio::task::spawn_blocking(move || PluginLoadResult {
+            let task = tokio::task::spawn_blocking(move || PluginLoadingResult {
                 result: Plugin::load(&dir),
                 dir,
             });
@@ -274,7 +389,7 @@ impl PluginLoader {
             }
         }
 
-        self.p = results
+        self.plugins = results
             .into_iter()
             .filter_map(|r| r.result.ok())
             .collect::<Vec<_>>();
@@ -284,11 +399,11 @@ impl PluginLoader {
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
         // キャッシュ済みのプラグインからPluginLoadResultを再構築
         Ok(self
-            .p
+            .plugins
             .iter()
-            .map(|plugin| PluginLoadResult {
+            .map(|plugin| PluginLoadedResult {
                 dir: plugin.dir.clone(),
-                result: Ok(plugin.clone()),
+                result: Ok(plugin.manifest.clone()),
             })
             .collect())
     }
@@ -296,7 +411,7 @@ impl PluginLoader {
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // 対象プラグインのディレクトリを取得
         let dir = self
-            .p
+            .plugins
             .iter()
             .find(|p| p.manifest.id == plugin_id)
             .map(|p| p.dir.clone())
@@ -307,23 +422,30 @@ impl PluginLoader {
             .with_context(|| format!("Failed to hot-reload plugin `{}`", plugin_id))?;
 
         // 成功したら配列内の古いインスタンスを差し替え
-        if let Some(index) = self.p.iter().position(|p| p.manifest.id == plugin_id) {
-            self.p[index] = reloaded_plugin;
+        if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
+            self.plugins[index] = reloaded_plugin;
             log::info!("Reloaded plugin '{}'", plugin_id);
         }
 
         Ok(())
     }
 
-    pub fn collect_all_schemas(&self) -> Vec<SettingFieldSchema> {
-        self.p
+    pub fn collect_all_schemas(&self) -> Vec<PropertySchema> {
+        self.plugins
             .iter()
-            .flat_map(|p| p.setting_schema.clone())
+            .flat_map(|p| p.setting_schemas.clone())
+            .collect()
+    }
+
+    pub fn collect_all_clip_kinds(&self) -> Vec<ClipKind> {
+        self.plugins
+            .iter()
+            .flat_map(|p| p.clip_kinds.clone())
             .collect()
     }
 
     pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
-        self.p
+        self.plugins
             .iter()
             .flat_map(|p| {
                 p.toolbar_buttons
@@ -334,7 +456,7 @@ impl PluginLoader {
     }
 
     pub fn collect_all_scripts(&self) -> HashMap<String, CompiledScript> {
-        self.p
+        self.plugins
             .iter()
             .filter_map(|plugin| {
                 plugin

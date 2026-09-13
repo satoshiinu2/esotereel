@@ -9,6 +9,27 @@ pub enum LayerRemoveStrategy {
     PromoteChildren,
 }
 
+#[derive(
+    rkyv::Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Copy,
+    PartialEq,
+    Debug,
+    Default,
+)]
+#[archive(check_bytes)]
+pub enum BlendMode {
+    #[default]
+    Normal,
+    Add,
+    Multiply,
+    Screen,
+}
+
 /// レイヤーには特定の役割を持たせない(Video/Audio/Effectで型を分けない)。
 /// children があれば Folder として振る舞う。実行時にフラット化するかは
 /// executor 側の責務で、データ構造上は葉レイヤーと区別しない。

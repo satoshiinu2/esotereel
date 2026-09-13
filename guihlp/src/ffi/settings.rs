@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use esotereel_lib::plugin::setting::{FieldTypeKind, SettingFieldSchema};
+use esotereel_lib::plugin::{
+    NamespacedID,
+    property::{FieldTypeKind, PropertySchema},
+};
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
@@ -16,14 +19,15 @@ use crate::{
 
 #[repr(C)]
 pub enum SettingsFieldType {
-    Bool = 0,
-    Int = 1,
-    Float = 2,
-    Enum = 3,
-    String = 4,
-    Color = 5,
-    Array = 6,
-    Map = 7,
+    Bool,
+    Int,
+    Float,
+    Enum,
+    String,
+    FilePath,
+    Color,
+    Array,
+    Map,
 }
 
 #[repr(C)]
@@ -36,13 +40,14 @@ pub struct SettingsField {
 }
 
 impl SettingsField {
-    fn from_field(field: &SettingFieldSchema) -> Self {
+    fn from_field(field: &PropertySchema) -> Self {
         let kind_type = match &field.kind {
             FieldTypeKind::Bool => SettingsFieldType::Bool,
             FieldTypeKind::Int { .. } => SettingsFieldType::Int,
             FieldTypeKind::Float { .. } => SettingsFieldType::Float,
             FieldTypeKind::Enum { .. } => SettingsFieldType::Enum,
             FieldTypeKind::String => SettingsFieldType::String,
+            FieldTypeKind::FilePath { .. } => SettingsFieldType::FilePath,
             FieldTypeKind::Color => SettingsFieldType::Color,
             FieldTypeKind::Array { .. } => SettingsFieldType::Array,
             FieldTypeKind::Map { .. } => SettingsFieldType::Map,
@@ -52,7 +57,7 @@ impl SettingsField {
         let default_str = field.default.to_string();
 
         Self {
-            key: OwnedString::from_string(field.key.clone()),
+            key: OwnedString::from_string(field.key.full().to_owned()),
             category: OwnedString::from_string(category_str),
             label: OwnedString::from_string(field.label.clone()),
             kind_type,
@@ -150,7 +155,9 @@ pub unsafe extern "C" fn settings_get_value(
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
         let state = state.lock().expect("mutex poisoned");
 
-        let value = state.settings.get_value(key_str);
+        let key = NamespacedID::parse(key_str)
+            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
+        let value = state.settings.get_value(&key);
 
         match value {
             Some(v) => {
@@ -208,9 +215,11 @@ pub unsafe extern "C" fn settings_set_value(
 
         let mut state = state.lock().expect("mutex poisoned");
 
+        let key = NamespacedID::parse(key_str)
+            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
         state
             .settings
-            .set_value(key_str.to_string(), parsed_value)
+            .set_value(key, parsed_value)
             .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
 
         Ok(())
@@ -279,7 +288,6 @@ pub unsafe extern "C" fn settings_get_categories(
     // Arc::into_raw 由来のポインタから、参照カウントを増やして
     // 独立した Arc クローンを作る（元のポインタは消費しない）
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let state_clone = Arc::clone(&state);
     let state = state.lock().expect("mutex poisoned");
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {

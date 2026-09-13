@@ -1,16 +1,16 @@
 use anyhow::{Context, Result, bail};
 
-use crate::plugin::setting::FieldTypeKind;
+use crate::plugin::property::FieldTypeKind;
 
 #[derive(Debug, serde::Deserialize)]
-pub(super) struct FieldSchemaRaw {
-    pub(super) key: String,
+pub struct PropertySchemaRaw {
+    pub key: String,
     #[serde(default)]
-    pub(super) category: Vec<String>,
-    pub(super) label: String,
-    pub(super) kind: toml::Value,
+    pub category: Vec<String>,
+    pub label: String,
+    pub kind: toml::Value,
     #[serde(default)]
-    pub(super) default: Option<toml::Value>,
+    pub default: Option<toml::Value>,
 }
 
 impl FieldTypeKind {
@@ -116,6 +116,8 @@ impl FieldTypeKind {
             }
 
             FieldTypeKind::String => toml::Value::String(String::new()),
+
+            FieldTypeKind::FilePath { .. } => toml::Value::String(String::new()),
 
             // Colorは表現形式次第だけど、ひとまず16進文字列運用の想定
             FieldTypeKind::Color => toml::Value::String("#FFFFFF".into()),

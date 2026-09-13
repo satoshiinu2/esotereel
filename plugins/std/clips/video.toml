@@ -1,0 +1,10 @@
+[[kinds]]
+id = "video"
+func_name = "render_clip_video"
+
+
+[[kinds.fields]]
+key = "source"
+label = "Source"
+category = ["Media"]
+kind = { type = "string" }

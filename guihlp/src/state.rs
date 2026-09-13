@@ -6,7 +6,7 @@ use esotereel_lib::{
     CommonState, HostRole,
     decode::streamplayer::StreamPlayer,
     dirs::Directories,
-    plugin::{script::ScriptStore, setting::SettingsStore, toolbar::ToolbarStore},
+    plugin::{script::ScriptStore, settings::SettingsStore, toolbar::ToolbarStore},
     project::ids::ResourceId,
 };
 

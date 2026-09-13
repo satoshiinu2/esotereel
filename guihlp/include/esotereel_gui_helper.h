@@ -45,14 +45,15 @@ enum class Direction {
 };
 
 enum class SettingsFieldType {
-  Bool = 0,
-  Int = 1,
-  Float = 2,
-  Enum = 3,
-  String = 4,
-  Color = 5,
-  Array = 6,
-  Map = 7,
+  Bool,
+  Int,
+  Float,
+  Enum,
+  String,
+  FilePath,
+  Color,
+  Array,
+  Map,
 };
 
 struct ClientStateHandle;

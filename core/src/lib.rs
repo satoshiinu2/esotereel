@@ -173,6 +173,8 @@ fn dispatch_changeset(
                     *id,
                     Meta {
                         name: f.name.clone(),
+                        opacity: f.opacity.clone(),
+                        blend_mode: f.blend_mode.clone(),
                     },
                 )
             })

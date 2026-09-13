@@ -560,7 +560,8 @@ impl Timeline {
     }
 
     pub fn apply_outline_folder_meta(&mut self, id: LayerFolderId, meta: Meta) {
-        self.outline.upsert_folder_meta(id, meta.name);
+        self.outline
+            .upsert_folder_meta(id, meta.name, meta.opacity, meta.blend_mode);
     }
 
     pub fn apply_outline_children(

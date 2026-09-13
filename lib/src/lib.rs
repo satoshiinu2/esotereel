@@ -4,7 +4,7 @@ use dashmap::DashMap;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
-use crate::plugin::{PluginLoadResult, PluginLoader};
+use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
 
 pub mod decode;
@@ -62,7 +62,10 @@ impl CommonState {
         }
     }
 
-    pub async fn load_plugins(&mut self, role: HostRole) -> anyhow::Result<Vec<PluginLoadResult>> {
+    pub async fn load_plugins(
+        &mut self,
+        role: HostRole,
+    ) -> anyhow::Result<Vec<PluginLoadedResult>> {
         let mut loader = self.plugin_loader.lock().expect("mutex poisoned");
         loader.load_from_disk(&self.dir, role).await
     }

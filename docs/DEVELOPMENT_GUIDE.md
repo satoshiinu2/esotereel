@@ -121,9 +121,6 @@ mod tests {
 // Use logging
 log::info!("Debug message: {}", value);
 log::error!("Error occurred: {:?}", error);
-
-// Use println for quick debugging
-println!("Debug: {:?}", data);
 ```
 
 ### C++ Debugging

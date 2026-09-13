@@ -28,6 +28,7 @@ directories = "6.0.0"
 toml = "1.1.5"
 toml_edit = "0.25.13"
 rhai = { version = "1.26.0", features = ["sync"] }
+regex = "1.13.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"

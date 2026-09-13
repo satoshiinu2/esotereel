@@ -188,7 +188,7 @@ cmake --build build
 - Performance profiling for rendering
 
 ### Debugging
-- Rust: log:: macros and println!
+- Rust: log:: macros
 - C++: Qt logging (qDebug, qWarning)
 - Network: Monitor TCP traffic
 - FFI: Check error codes and callbacks

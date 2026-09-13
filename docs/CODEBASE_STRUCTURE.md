@@ -405,7 +405,7 @@ Core Logic → Server Network → TCP → Client Network → Rust FFI → C++ Wr
 6. Test integration between layers
 
 ### Debugging
-- Rust: Use `println!` and `log::` macros
+- Rust: Use `log::` macros
 - C++: Use Qt logging and qDebug
 - Network: Monitor TCP traffic
 - FFI: Check error codes and messages

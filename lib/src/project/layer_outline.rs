@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use rkyv::CheckBytes;
 use rkyv::bytecheck;
 
+use crate::project::layer::BlendMode;
 use crate::project::layer::LayerRemoveStrategy;
 use crate::{
     project::ids::{LayerFolderId, LayerId},
@@ -42,6 +43,14 @@ pub enum OutlineNode {
 pub struct LayerFolder {
     pub name: String,
     pub children: Vec<OutlineNode>,
+    pub opacity: f32,
+    pub blend_mode: BlendMode,
+}
+
+impl LayerFolder {
+    pub fn is_pass_through(&self) -> bool {
+        self.opacity >= 1.0 && self.blend_mode == BlendMode::Normal
+    }
 }
 
 /// 表示用の並び・階層を持つ構造。
@@ -138,6 +147,8 @@ impl LayerOutline {
             LayerFolder {
                 name,
                 children: Vec::new(),
+                opacity: 1.0,
+                blend_mode: BlendMode::Normal,
             },
         );
         self.insert(OutlineNode::Folder(id), parent, index);
@@ -246,7 +257,13 @@ impl LayerOutline {
         })
     }
 
-    pub fn upsert_folder_meta(&mut self, id: LayerFolderId, name: String) {
+    pub fn upsert_folder_meta(
+        &mut self,
+        id: LayerFolderId,
+        name: String,
+        opacity: f32,
+        blend_mode: BlendMode,
+    ) {
         self.folders
             .entry(id)
             .and_modify(|f| {
@@ -255,6 +272,8 @@ impl LayerOutline {
             .or_insert(LayerFolder {
                 name,
                 children: Vec::new(),
+                opacity,
+                blend_mode,
             });
     }
 
@@ -293,4 +312,6 @@ impl LayerOutline {
 #[archive_attr(derive(CheckBytes))]
 pub struct Meta {
     pub name: String,
+    pub opacity: f32,
+    pub blend_mode: BlendMode,
 }
