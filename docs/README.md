@@ -4,130 +4,89 @@ This directory contains comprehensive documentation for the Esotereel video edit
 
 ## Documentation Structure
 
-### 📋 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
-**Start here for an introduction to the project**
-- Project description and status
-- Key technologies and architecture overview
-- Project structure and build system
-- Communication protocol and key features
-- Development environment setup
+### 📋 Product Documentation
+**Start here for understanding the product**
+- [product/overview.md](product/overview.md) - Product overview and implemented features
+- [product/concepts.md](product/concepts.md) - Domain concepts and their relationships
+- [product/feature-map.md](product/feature-map.md) - Feature map and dependencies
 
-### 🏗️ [ARCHITECTURE.md](ARCHITECTURE.md)
-**Deep dive into system architecture**
-- Architectural layers and component responsibilities
-- Communication protocol and data flow
-- Data architecture (project models, rendering, video processing)
-- Component interactions and startup sequence
-- Technology rationale and design decisions
-- Concurrency model and error handling
-- Performance considerations and security
+### 🎯 Use Case Documentation
+**Detailed user interaction flows**
+- [usecases/new-project.md](usecases/new-project.md) - New project creation
+- [usecases/add-clip.md](usecases/add-clip.md) - Adding clips to timeline
+- [usecases/clips-move.md](usecases/clips-move.md) - Moving clips
+- [usecases/add-layer-folder.md](usecases/add-layer-folder.md) - Adding layers and folders
+- [usecases/init-stream.md](usecases/init-stream.md) - Video stream initialization
+- [usecases/fetch-clips-in-range.md](usecases/fetch-clips-in-range.md) - Fetching clips in range
 
-### 📁 [CODEBASE_STRUCTURE.md](CODEBASE_STRUCTURE.md)
-**Detailed codebase organization**
-- Directory structure for all components
-- Key files and their purposes
-- Data flow between components
-- Build artifacts and configuration files
-- Development workflow and dependencies
+### 🏗️ Architecture Documentation
+**System architecture and boundaries**
+- [architecture/ui-core-boundary.md](architecture/ui-core-boundary.md) - UI and Core boundary details
+- [architecture/data-flow.md](architecture/data-flow.md) - Data flow diagrams
 
-### 🔌 [API_REFERENCE.md](API_REFERENCE.md)
-**Complete API documentation**
-- Core data types (Project, Timeline, Clip)
-- Network API (Request/Response types)
-- Network handler APIs
-- State management APIs
-- Video processing APIs
-- Rendering APIs
-- FFI APIs and callbacks
-- Utility APIs and constants
+### ❓ Open Questions
+**Unknown specifications and implementation decisions**
+- [open-questions.md](open-questions.md) - Open questions and implementation guidance
 
-### 🛠️ [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md)
-**Practical development guidance**
-- Build instructions and prerequisites
-- Development workflow and patterns
-- Testing and debugging strategies
-- Performance optimization tips
-- Common issues and solutions
-- Best practices and collaboration guidelines
-
-### 📝 [CODE_CONVENTIONS.md](CODE_CONVENTIONS.md)
-**Code conventions and idioms**
-- Rust code conventions and patterns
-- C++ code conventions and patterns
-- Cross-language integration patterns
-- File organization and structure
-- Specific code idioms used in the codebase
-- Performance-related patterns
-- Anti-patterns to avoid
-
-### 🎯 [PROJECT_QUIRKS.md](PROJECT_QUIRKS.md)
-**Project-specific quirks and implementation details**
-- Architecture quirks and design decisions
-- Data structure peculiarities
-- Network and FFI implementation details
-- Rendering and FFmpeg integration specifics
-- Build system and dependency quirks
-- Performance characteristics and limitations
-
-### 🚀 [FUTURE_AND_MAINTAINABILITY.md](FUTURE_AND_MAINTAINABILITY.md)
-**Future roadmap and maintainability analysis**
-- Feature roadmap (short, medium, long-term)
-- Technical debt analysis and prioritization
-- Scalability analysis and improvements
-- Maintainability improvements and refactoring opportunities
-- Security considerations and improvements
-- Risk assessment and mitigation strategies
-
-### ⚡ [IMMEDIATE_IMPROVEMENTS.md](IMMEDIATE_IMPROVEMENTS.md)
-**Specific actionable improvements for immediate implementation**
-- Critical safety improvements (unsafe code documentation, FFI validation)
-- Error handling standardization
-- Testing infrastructure setup
-- Documentation improvements
-- Code quality enhancements
-- Performance monitoring setup
-- 12-week implementation timeline
+### 📚 Legacy Technical Documentation
+**Technical implementation details**
+- [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) - Project overview and status
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Deep dive into system architecture
+- [CODEBASE_STRUCTURE.md](CODEBASE_STRUCTURE.md) - Detailed codebase organization
+- [API_REFERENCE.md](API_REFERENCE.md) - Complete API documentation
+- [DEVELOPMENT_GUIDE.md](DEVELOPMENT_GUIDE.md) - Practical development guidance
+- [CODE_CONVENTIONS.md](CODE_CONVENTIONS.md) - Code conventions and idioms
+- [PROJECT_QUIRKS.md](PROJECT_QUIRKS.md) - Project-specific quirks and implementation details
+- [FUTURE_AND_MAINTAINABILITY.md](FUTURE_AND_MAINTAINABILITY.md) - Future roadmap and maintainability analysis
+- [IMMEDIATE_IMPROVEMENTS.md](IMMEDIATE_IMPROVEMENTS.md) - Specific actionable improvements
 
 ## Quick Start for LLMs/Agents
 
-### Understanding the Project
-1. Read **PROJECT_OVERVIEW.md** to understand what this project is
-2. Review **ARCHITECTURE.md** to understand how components interact
-3. Study **CODEBASE_STRUCTURE.md** to know where code is located
+### Understanding the Product
+1. Read **product/overview.md** to understand what features are implemented
+2. Review **product/concepts.md** to understand domain concepts
+3. Study **product/feature-map.md** to understand feature relationships
+
+### Understanding User Interactions
+1. Read relevant **usecases/*.md** files to understand user interaction flows
+2. Review **architecture/ui-core-boundary.md** to understand GUI/Core separation
+3. Study **architecture/data-flow.md** to understand data transformations
 
 ### Working with the Codebase
 1. Use **API_REFERENCE.md** to understand available functions and types
 2. Follow **DEVELOPMENT_GUIDE.md** for coding patterns and conventions
-3. Refer to specific source files for implementation details
+3. Refer to **open-questions.md** for unknown specifications
 
 ### Common Tasks
 
 **Adding a new feature:**
-- Start with data structures in `lib/src/project/`
-- Implement logic in `core/src/`
-- Create Rust FFI wrappers in `guihlp/src/ffi/`
-- Create C++ FFI wrappers in `gui/src/ffi/`
-- Build UI in `gui/src/window/`
-- Follow naming conventions in CODE_CONVENTIONS.md
+1. Check **product/feature-map.md** for dependencies
+2. Review relevant **usecases/*.md** for similar patterns
+3. Implement data structures in `lib/src/project/`
+4. Implement logic in `core/src/`
+5. Create Rust FFI wrappers in `guihlp/src/ffi/`
+6. Create C++ FFI wrappers in `gui/src/ffi/`
+7. Build UI in `gui/src/window/`
+8. Follow naming conventions in CODE_CONVENTIONS.md
 
 **Debugging an issue:**
-- Check network communication (core/src/network.rs, guihlp/src/network.rs)
-- Verify serialization (lib/src/requests.rs, lib/src/responces.rs)
-- Test FFI boundaries (guihlp/src/lib.rs, guihlp/src/ffi/)
-- Review state management (lib/src/lib.rs)
-- Be aware of project quirks in PROJECT_QUIRKS.md
+1. Check network communication (core/src/network.rs, guihlp/src/network.rs)
+2. Verify serialization (lib/src/requests.rs, lib/src/responces.rs)
+3. Test FFI boundaries (guihlp/src/lib.rs, guihlp/src/ffi/)
+4. Review state management (lib/src/lib.rs)
+5. Be aware of project quirks in PROJECT_QUIRKS.md
 
 **Understanding data flow:**
-- Request flow: GUI → C++ → Rust FFI → Network → Core
-- Response flow: Core → Network → Rust FFI → C++ → GUI
-- Data structures use rkyv for zero-copy serialization
-- Note the dual runtime model and internal server pattern
+1. Review **architecture/data-flow.md** for detailed data flows
+2. Check relevant **usecases/*.md** for specific operation flows
+3. Note the dual runtime model and internal server pattern
+4. Understand ChangeSet and incremental updates
 
 **Planning improvements:**
-- Review technical debt analysis in FUTURE_AND_MAINTAINABILITY.md
-- Check immediate improvement recommendations in IMMEDIATE_IMPROVEMENTS.md
-- Prioritize based on impact and effort estimates
-- Follow 12-week implementation timeline for systematic improvements
+1. Review **open-questions.md** for unknown specifications
+2. Check technical debt analysis in FUTURE_AND_MAINTAINABILITY.md
+3. Check immediate improvement recommendations in IMMEDIATE_IMPROVEMENTS.md
+4. Refer to **product/feature-map.md** for feature dependencies
 
 ## Key Technologies
 
@@ -218,6 +177,9 @@ cmake --build build
 - Unusual behavior: Check PROJECT_QUIRKS.md
 - Future planning: Review FUTURE_AND_MAINTAINABILITY.md
 - Immediate improvements: Check IMMEDIATE_IMPROVEMENTS.md
+- **Product understanding**: Check product/ directory
+- **User interactions**: Check usecases/ directory
+- **Unknown specs**: Check open-questions.md
 
 ### Understanding Context
 - This is a hybrid C++/Rust project with Qt GUI
@@ -255,13 +217,15 @@ When referencing specific files in code or discussions, use the full path from t
 ## Contributing
 
 When making changes:
-1. Understand the existing architecture
-2. Follow code conventions
+1. Understand the existing architecture (see product/ and architecture/)
+2. Follow code conventions (CODE_CONVENTIONS.md)
 3. Update relevant documentation
 4. Test across language boundaries
 5. Verify network communication
 6. Check for performance impacts
+7. Document new use cases in usecases/
+8. Update open-questions.md if specifications are clarified
 
 ---
 
-This documentation is designed to help LLMs, Agents, and developers quickly understand and work with the Esotereel codebase. Start with PROJECT_OVERVIEW.md and progress through the other documents as needed for specific tasks.
+This documentation is designed to help LLMs, Agents, and developers quickly understand and work with the Esotereel codebase. Start with product/overview.md and progress through the other documents as needed for specific tasks.
