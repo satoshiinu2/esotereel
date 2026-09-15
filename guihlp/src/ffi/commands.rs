@@ -1,10 +1,13 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
-use esotereel_lib::project::{
-    clip::ClipData,
-    command::{ClipMoveCtx, CommandRequest},
-    ids::{LayerFolderId, LayerId, TimelineId},
-    transform::{ClipTranslate, ClipTranslates},
+use esotereel_lib::{
+    plugin::NamespacedID,
+    project::{
+        clip::ClipData,
+        command::{ClipMoveCtx, CommandRequest},
+        ids::{LayerFolderId, LayerId, TimelineId},
+        transform::{ClipTranslate, ClipTranslates},
+    },
 };
 
 use crate::{
@@ -106,7 +109,8 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         layer_id,
         position,
         duration: 10000,
-        clip_data,
+        kind_id: NamespacedID::parse("std::video").unwrap(),
+        properties: BTreeMap::new(),
         translates,
     };
 

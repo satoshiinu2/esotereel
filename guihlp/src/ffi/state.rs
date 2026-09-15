@@ -1,4 +1,4 @@
-use esotereel_lib::{dirs::Directories, project::Project};
+use esotereel_lib::{dirs::Directories, project::Project, state::HostBootstrap};
 
 use crate::{
     WrapperErrorCode,

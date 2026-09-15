@@ -1,13 +1,21 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Context;
 use dashmap::DashMap;
 use esotereel_lib::{
-    CommonState, HostRole,
+    HostRole,
     decode::streamplayer::StreamPlayer,
     dirs::Directories,
-    plugin::{script::ScriptStore, settings::SettingsStore, toolbar::ToolbarStore},
-    project::ids::ResourceId,
+    plugin::{
+        NamespacedID,
+        property::PropertySchema,
+        script::ScriptStore,
+        settings::SettingsStore,
+        toolbar::{ToolbarButtonSpec, ToolbarStore},
+    },
+    project::{clip::ClipKind, ids::ResourceId},
+    render::video::{MediaFetchCache, builder::VertexBatch},
+    state::{CommonState, HostBootstrap},
 };
 
 use crate::network::ClientNetworkHandler;
@@ -17,11 +25,12 @@ pub struct ClientState {
 
     pub network: Arc<ClientNetworkHandler>,
 
-    pub stream_players: DashMap<ResourceId, StreamPlayer>,
+    pub stream_players: Arc<DashMap<ResourceId, StreamPlayer>>,
+
+    pub media_fetch_cache: Arc<MediaFetchCache>,
 
     pub settings: SettingsStore,
     pub toolbar: ToolbarStore,
-    pub scripts: ScriptStore,
 }
 
 impl ClientState {
@@ -29,52 +38,32 @@ impl ClientState {
         Self {
             common: CommonState::new(dirs_def, None),
             network: Arc::new(ClientNetworkHandler::new()),
-            stream_players: DashMap::new(),
+            stream_players: Arc::new(DashMap::new()),
             settings: SettingsStore::default(),
             toolbar: ToolbarStore::default(),
-            scripts: ScriptStore::new(),
+            media_fetch_cache: Arc::new(MediaFetchCache::default()),
         }
     }
+}
 
-    pub async fn boot_strap(&mut self) {
-        if let Err(e) = self.load_plugins(HostRole::Client).await {
-            log::error!("Failed to load plugins: {}", e);
-        } else {
-            log::info!("Plugins loaded successfully");
-        }
+impl HostBootstrap for ClientState {
+    const ROLE: HostRole = HostRole::Client;
 
-        if let Err(e) = self.apply_plugin_fields() {
-            log::error!("Failed to apply settings: {}", e);
-        } else {
-            log::info!("Settings applied successfully");
-        }
-    }
-
-    pub fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
-        let (plugin_schemas, plugin_toolbar_buttons, plugin_scripts) = {
-            let loader = self.plugin_loader.lock().expect("mutex poisoned");
-            (
-                loader.collect_all_schemas(),
-                loader.collect_all_toolbars(),
-                loader.collect_all_scripts(),
-            )
-        };
-
+    fn apply_extra_plugin_fields(
+        &mut self,
+        plugin_schemas: Vec<PropertySchema>,
+        plugin_toolbar_buttons: Vec<(String, ToolbarButtonSpec)>,
+    ) -> anyhow::Result<()> {
         self.settings
             .schema
             .merge_plugin_fields(plugin_schemas)
             .context("plugin schema conflict during load_plugins")?;
-
         self.settings.add_missing_from_schema();
 
         self.toolbar
             .merge_plugin_buttons(plugin_toolbar_buttons)
             .context("plugin toolbar conflict during load_plugins")?;
         self.toolbar.fill_missing_from_registry();
-
-        self.scripts
-            .merge_plugin_scripts(plugin_scripts)
-            .context("plugin script conflict during load_plugins")?;
 
         Ok(())
     }

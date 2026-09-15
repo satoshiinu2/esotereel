@@ -7,14 +7,13 @@ use std::{
 use anyhow::Context;
 use log;
 use regex::Regex;
+use rkyv::{Archive, CheckBytes, bytecheck};
 
 use crate::{
     HostRole,
     dirs::Directories,
-    plugin::{
-        clip::ClipKind, property::PropertySchema, script::CompiledScript,
-        toolbar::ToolbarButtonSpec,
-    },
+    plugin::{property::PropertySchema, script::CompiledScript, toolbar::ToolbarButtonSpec},
+    project::clip::ClipKind,
 };
 
 pub mod clip;
@@ -23,7 +22,10 @@ pub mod script;
 pub mod settings;
 pub mod toolbar;
 
-#[derive(Debug, Clone)]
+#[derive(
+    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub struct NamespacedID {
     full: String,
     plugin_id: String,
@@ -97,7 +99,7 @@ pub struct PluginManifest {
 pub struct Plugin {
     pub manifest: PluginManifest,
     pub setting_schemas: Vec<PropertySchema>,
-    pub clip_kinds: Vec<ClipKind>,
+    pub clip_kinds: HashMap<NamespacedID, ClipKind>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub script: Option<CompiledScript>,
     pub dir: PathBuf,
@@ -135,7 +137,10 @@ impl Plugin {
                 .iter()
                 .map(|s| s.key.full())
                 .collect::<Vec<_>>(),
-            clip_kinds.iter().map(|s| s.id.full()).collect::<Vec<_>>(),
+            clip_kinds
+                .iter()
+                .map(|(id, _)| id.full())
+                .collect::<Vec<_>>(),
             toolbar_buttons.iter().map(|b| &b.id).collect::<Vec<_>>(),
             avaliable_functions
         );
@@ -222,9 +227,9 @@ impl Plugin {
     fn load_clip_kinds(
         manifest: &PluginManifest,
         clips_dir: &Path,
-    ) -> anyhow::Result<Vec<ClipKind>> {
+    ) -> anyhow::Result<HashMap<NamespacedID, ClipKind>> {
         if !clips_dir.exists() {
-            return Ok(Vec::new());
+            return Ok(HashMap::new());
         }
 
         let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(clips_dir)
@@ -237,7 +242,7 @@ impl Plugin {
         // OS依存の走査順に結果が左右されないよう固定順にしておく
         toml_paths.sort();
 
-        let mut all_kinds = Vec::new();
+        let mut all_kinds = HashMap::new();
         for path in toml_paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
@@ -437,7 +442,7 @@ impl PluginLoader {
             .collect()
     }
 
-    pub fn collect_all_clip_kinds(&self) -> Vec<ClipKind> {
+    pub fn collect_all_clip_kinds(&self) -> HashMap<NamespacedID, ClipKind> {
         self.plugins
             .iter()
             .flat_map(|p| p.clip_kinds.clone())

@@ -67,6 +67,11 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let ctx = RenderContext {
             path_to_stream: &state.path_to_stream,
             streams: &state.stream_players,
+
+            media_fetch_cache: &state.media_fetch_cache,
+            clip_kinds: &state.clip_kinds,
+            scripts: &state.scripts,
+
             timeline,
             camera_info,
             current_frame,

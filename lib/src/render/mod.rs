@@ -1,8 +1,14 @@
+use std::sync::Arc;
+
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
+    plugin::{clip::ClipKindStore, script::ScriptStore},
     project::{Timeline, TimelineTick, camera::CameraInfo, ids::ResourceId},
-    render::{video::update_timline_clips_texture, wgpuutil::OffscreenTarget},
+    render::{
+        video::{MediaFetchCache, update_timline_clips_texture},
+        wgpuutil::OffscreenTarget,
+    },
 };
 use dashmap::DashMap;
 use glam::Mat4;
@@ -16,8 +22,12 @@ pub mod video;
 pub mod wgpuutil;
 
 pub struct RenderContext<'a> {
-    pub path_to_stream: &'a DashMap<String, StreamState>,
-    pub streams: &'a DashMap<ResourceId, StreamPlayer>,
+    pub path_to_stream: &'a Arc<DashMap<String, StreamState>>,
+    pub streams: &'a Arc<DashMap<ResourceId, StreamPlayer>>,
+    pub media_fetch_cache: &'a Arc<MediaFetchCache>,
+
+    pub clip_kinds: &'a ClipKindStore,
+    pub scripts: &'a ScriptStore,
 
     pub timeline: &'a Timeline,
     pub camera_info: &'a CameraInfo,

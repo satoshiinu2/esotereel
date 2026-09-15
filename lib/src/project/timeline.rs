@@ -4,6 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::RwLock;
 
+use crate::plugin::NamespacedID;
+use crate::project::TimelineTick;
 use crate::project::change::{ChangeSet, RemovedClipInfo};
 use crate::project::chunk_index::ChunkIndex;
 use crate::project::clip::{Clip, ClipData};
@@ -11,6 +13,7 @@ use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::transform::ClipTranslates;
+use crate::project::value::PropertyValue;
 use crate::util::result::{EsotereelError, EsotereelResult};
 
 /// Composite/Script/Mirrorの入れ子実行を無限ループさせないための上限。
@@ -241,9 +244,10 @@ impl Timeline {
         &mut self,
         layer_id: LayerId,
         ids: &mut IdGenerator,
-        position: i64,
-        duration: i64,
-        data: ClipData,
+        position: TimelineTick,
+        duration: TimelineTick,
+        kind_id: NamespacedID,
+        properties: BTreeMap<String, PropertyValue>,
         translates: ClipTranslates,
     ) -> EsotereelResult<ClipId> {
         // 重複チェック(既存 try_insert 相当)
@@ -265,7 +269,7 @@ impl Timeline {
         }
 
         let clip_id = ids.next_clip_id();
-        let clip = Clip::new(clip_id, position, duration, data, translates);
+        let clip = Clip::new(clip_id, position, duration, kind_id, properties, translates);
 
         let layer = self
             .layers
@@ -469,15 +473,6 @@ impl Timeline {
 
     pub fn drain_changes(&mut self) -> ChangeSet {
         std::mem::take(&mut self.changes)
-    }
-
-    // ---- Composite/Mirror/Script共通のネスト実行 ----
-
-    /// このClipが参照する下位TimelineIdを返す(Composite/Area2D/Area3D/生成済みScript共通)。
-    pub fn nested_timeline_id_of(&self, clip_id: ClipId) -> Option<u64> {
-        self.clips
-            .get(&clip_id)
-            .and_then(|c| c.data.nested_timeline_id())
     }
 
     // ---- Independent化(deep clone) ----

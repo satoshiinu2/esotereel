@@ -1,10 +1,14 @@
 use rkyv::{Archive, CheckBytes, bytecheck};
 use std::collections::BTreeMap;
 
-use crate::project::{
-    TimelineTick,
-    ids::{ClipId, ScriptId, TimelineId},
-    transform::ClipTranslates,
+use crate::{
+    plugin::{NamespacedID, property::PropertySchema},
+    project::{
+        TimelineTick,
+        ids::{ClipId, ScriptId, TimelineId},
+        transform::ClipTranslates,
+        value::PropertyValue,
+    },
 };
 
 #[derive(
@@ -15,7 +19,9 @@ pub struct Clip {
     pub id: ClipId,
     pub position: TimelineTick,
     pub duration: TimelineTick,
-    pub data: ClipData,
+
+    pub kind_id: NamespacedID,
+    pub properties: BTreeMap<String, PropertyValue>,
     pub translates: ClipTranslates,
 }
 
@@ -24,14 +30,16 @@ impl Clip {
         id: ClipId,
         position: TimelineTick,
         duration: TimelineTick,
-        clip_data: ClipData,
+        kind_id: NamespacedID,
+        properties: BTreeMap<String, PropertyValue>,
         translates: ClipTranslates,
     ) -> Self {
         Self {
             id,
             position,
             duration,
-            data: clip_data,
+            kind_id,
+            properties,
             translates,
         }
     }
@@ -43,6 +51,12 @@ impl Clip {
     pub fn set_position(&mut self, new_pos: i64) {
         self.position = new_pos;
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ClipKind {
+    pub func_name: String,
+    pub property_schema: Vec<PropertySchema>,
 }
 
 /// Compositionへの参照。Mirrorは複数Clipが同じTimelineIdを共有し、

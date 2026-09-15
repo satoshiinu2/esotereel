@@ -1,11 +1,14 @@
+use std::collections::BTreeMap;
+
 use anyhow::Ok;
 use esotereel_lib::{
+    plugin::NamespacedID,
     project::{
         Clip, Project, TimelineTick,
-        clip::{ClipData, CompositionRef},
         command::ClipMoveHistoryCtx,
         ids::{LayerId, TimelineId},
         transform::ClipTranslates,
+        value::PropertyValue,
     },
     util::result::EsotereelError,
 };
@@ -73,27 +76,18 @@ pub(crate) fn clip_add_core(
     layer_id: LayerId,
     position: TimelineTick,
     duration: TimelineTick,
-    clip_data: ClipData,
+    kind_id: NamespacedID,
+    properties: BTreeMap<String, PropertyValue>,
     translates: ClipTranslates,
 ) -> anyhow::Result<()> {
-    let clip_data = if let ClipData::Composite { .. } = &clip_data {
-        // 新しいタイムラインを作成 (Project::new_timeline を使用)
-        let new_timeline_id = project.insert_timeline(60.0);
-
-        ClipData::Composite {
-            source: CompositionRef::Independent(new_timeline_id),
-        }
-    } else {
-        clip_data
-    };
-
     // key (u32) をそのまま渡してクリップを追加
     project.new_clip_in_timeline(
         timeline_id,
         layer_id,
         position,
         duration,
-        clip_data,
+        kind_id,
+        properties,
         translates,
     )?;
 

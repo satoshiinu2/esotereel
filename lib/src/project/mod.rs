@@ -11,6 +11,7 @@ pub mod save;
 pub mod timeline;
 pub mod transform;
 pub mod util;
+pub mod value;
 
 pub use {
     clip::Clip, layer::Layer, layer_outline::LayerFolder, project::Project, timeline::Timeline,

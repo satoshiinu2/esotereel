@@ -1,42 +1,59 @@
 extern crate ffmpeg_next as ffmpeg;
 
+use std::ops::Range;
+
+use dashmap::DashMap;
 use ffmpeg::util::frame::video::Video;
 
 use crate::{
     StreamState,
-    project::clip::ClipData,
+    project::{clip::ClipData, ids::ClipId},
     render::{RenderContext, wgpuutil::WGpuUtil},
 };
 
 pub mod builder;
 pub mod request;
 
-pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderContext) {
-    for (_, layer) in ctx.timeline.iter_layers() {
-        if !layer.enabled {
-            continue;
+// render/plugin.rs
+#[derive(Default)]
+pub struct MediaFetchCache {
+    // clip_id -> (path, needed_seconds群)
+    needs: DashMap<ClipId, Vec<(String, Range<f64>)>>,
+
+    init_requests: DashMap<String, ()>, // Setとして使う(重複自動排除)
+}
+
+impl MediaFetchCache {
+    pub fn record(&self, clip_id: ClipId, path: String, range: Range<f64>) {
+        self.needs.entry(clip_id).or_default().push((path, range));
+    }
+
+    /// 前フレーム分を取り出してクリアする(このフレームのフェッチ計算に使う)
+    pub fn take_all(&self) -> Vec<(String, Range<f64>)> {
+        let mut all = Vec::new();
+        for mut entry in self.needs.iter_mut() {
+            all.append(entry.value_mut());
         }
-        let Some(clip_id) = layer.get_clip_id_at(ctx.current_frame) else {
-            continue;
-        };
-        let Some(clip) = ctx.timeline.get_clip(clip_id) else {
-            continue;
-        };
+        all
+    }
 
-        if let ClipData::Video { path, media_offset } = &clip.data {
-            if let Some(resource_id_ref) = ctx.path_to_stream.get(path) {
-                if let StreamState::Loaded(resource_id) = *resource_id_ref {
-                    if let Some(player) = ctx.streams.get(&resource_id) {
-                        let media_seconds = ClipData::get_media_seconds(
-                            ctx.timeline.tps,
-                            clip.position,
-                            ctx.current_frame,
-                            *media_offset,
-                        );
+    pub fn record_init_request(&self, path: String) {
+        self.init_requests.insert(path, ());
+    }
 
-                        if let Some(video_frame) = player.get_frame_at(media_seconds) {
-                            ensure_and_update_texture(util, resource_id, video_frame);
-                        }
+    pub fn take_init_requests(&self) -> Vec<String> {
+        let keys: Vec<String> = self.init_requests.iter().map(|e| e.key().clone()).collect();
+        self.init_requests.clear();
+        keys
+    }
+}
+pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderContext) {
+    for (path, range) in ctx.media_fetch_cache.take_all() {
+        if let Some(resource_id_ref) = ctx.path_to_stream.get(&path) {
+            if let StreamState::Loaded(resource_id) = *resource_id_ref {
+                if let Some(player) = ctx.streams.get(&resource_id) {
+                    if let Some(video_frame) = player.get_frame_at(range.start) {
+                        ensure_and_update_texture(util, resource_id, video_frame);
                     }
                 }
             }

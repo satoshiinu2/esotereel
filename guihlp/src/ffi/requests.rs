@@ -81,6 +81,7 @@ pub unsafe extern "C" fn req_fetch_frame(
                 &state.path_to_stream,
                 &state.stream_players,
                 frame_range,
+                &state.media_fetch_cache,
             )
         };
 

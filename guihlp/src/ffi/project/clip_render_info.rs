@@ -207,25 +207,13 @@ fn build_layer_row_recursive<'a>(
                     continue;
                 };
                 let abs_frame = parent_abs_frame + pos;
-                let is_composite = matches!(
-                    clip.data,
-                    ClipData::Composite { .. } | ClipData::Area2D { .. } | ClipData::Area3D { .. }
-                );
-                let is_open = is_composite && open_ids.contains(&clip.id);
                 clips.push(ClipRenderInfo {
                     clip_id: clip.id,
                     abs_frame,
                     duration: clip.duration,
-                    is_composite,
-                    is_open,
+                    is_composite: false,
+                    is_open: false,
                 });
-                if is_open {
-                    if let Some(child_id) = clip.data.nested_timeline_id() {
-                        if let Some(child_timeline) = project.timeline(child_id) {
-                            opened.push((abs_frame, child_timeline));
-                        }
-                    }
-                }
             }
 
             result.push(LayerRow {

@@ -5,9 +5,10 @@ use std::{
 
 use rhai::module_resolvers::FileModuleResolver;
 
-use crate::{plugin::script::core_fn::register_fn_for, util::result::EsotereelError};
+use crate::{plugin::script::api::register_fn_for, util::result::EsotereelError};
 
-mod core_fn;
+pub mod api;
+pub mod bridge;
 
 #[derive(Debug, Clone)]
 pub struct CompiledScript {

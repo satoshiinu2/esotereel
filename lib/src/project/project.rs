@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
 
+use crate::plugin::NamespacedID;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipData;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::project::transform::ClipTranslates;
+use crate::project::value::PropertyValue;
 use crate::util::result::EsotereelError;
 
 #[derive(Debug, Default)]
@@ -78,7 +80,8 @@ impl Project {
         layer_id: LayerId,
         position: i64,
         duration: i64,
-        clip_data: ClipData,
+        kind_id: NamespacedID,
+        properties: BTreeMap<String, PropertyValue>,
         translates: ClipTranslates,
     ) -> anyhow::Result<ClipId> {
         let timeline = self
@@ -91,7 +94,8 @@ impl Project {
             &mut self.ids,
             position,
             duration,
-            clip_data,
+            kind_id,
+            properties,
             translates,
         )
     }
@@ -134,12 +138,12 @@ impl Project {
         let mut to_touch: Vec<(TimelineId, ClipId)> = Vec::new();
         for (&tid, tl) in self.timelines.iter() {
             for (&cid, clip) in tl.iter_clips() {
-                // ※iter_clipsは公開メソッドとして追加要
-                if let Some(nested) = clip.data.nested_timeline_id() {
-                    if changed_ids.contains(&nested) {
-                        to_touch.push((tid, cid));
-                    }
-                }
+                // TODO!
+                // if let Some(nested) = clip.data.nested_timeline_id() {
+                //     if changed_ids.contains(&nested) {
+                //         to_touch.push((tid, cid));
+                //     }
+                // }
             }
         }
         for (tid, cid) in to_touch {

@@ -1,3 +1,4 @@
+pub mod color;
 pub mod logger;
 pub mod order_map;
 pub mod result;

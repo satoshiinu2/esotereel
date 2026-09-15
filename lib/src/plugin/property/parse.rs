@@ -28,6 +28,17 @@ impl FieldTypeKind {
             "bool" => FieldTypeKind::Bool,
             "string" => FieldTypeKind::String,
             "color" => FieldTypeKind::Color,
+            "filepath" => {
+                let extensions = match table.get("extensions") {
+                    Some(v) => Some(
+                        v.clone()
+                            .try_into::<Vec<String>>()
+                            .context("FilePath `extensions` must be an array of strings")?,
+                    ),
+                    None => None,
+                };
+                FieldTypeKind::FilePath { extensions }
+            }
 
             "int" => FieldTypeKind::Int {
                 min: get_i64(table, "min")?,

@@ -1,10 +1,16 @@
+use std::collections::BTreeMap;
+
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::project::{
-    TimelineTick,
-    clip::ClipData,
-    ids::{ClipId, LayerId},
-    transform::ClipTranslates,
+use crate::{
+    plugin::NamespacedID,
+    project::{
+        TimelineTick,
+        clip::ClipData,
+        ids::{ClipId, LayerId},
+        transform::ClipTranslates,
+        value::PropertyValue,
+    },
 };
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -36,9 +42,12 @@ pub enum CommandRequest {
     },
     AddClip {
         layer_id: LayerId,
-        position: i64,
-        duration: i64,
-        clip_data: ClipData,
+        position: TimelineTick,
+        duration: TimelineTick,
+
+        kind_id: NamespacedID,
+        properties: BTreeMap<String, PropertyValue>,
+
         translates: ClipTranslates,
     },
     AddLayer {
@@ -61,9 +70,12 @@ pub enum CommandHistory {
     },
     AddClip {
         layer_id: LayerId,
-        position: i64,
-        duration: i64,
-        clip_data: ClipData,
+        position: TimelineTick,
+        duration: TimelineTick,
+
+        kind_id: NamespacedID,
+        properties: BTreeMap<String, PropertyValue>,
+
         translates: ClipTranslates,
     },
     AddLayer {

@@ -4,9 +4,11 @@ use dashmap::DashMap;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
+use crate::plugin::script::ScriptStore;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
 
+pub mod state;
 pub mod decode;
 pub mod dirs;
 pub mod plugin;
@@ -36,39 +38,6 @@ impl StreamState {
 pub enum HostRole {
     Client,
     Server,
-}
-
-pub struct CommonState {
-    pub project: Option<Arc<RwLock<Project>>>,
-
-    pub dir: Directories,
-
-    pub path_to_stream: DashMap<String, StreamState>,
-
-    pub plugin_loader: Arc<Mutex<PluginLoader>>,
-}
-
-impl CommonState {
-    pub fn new(
-        dirs_def: Directories,
-        shared_plugin_loader: Option<Arc<Mutex<PluginLoader>>>,
-    ) -> Self {
-        Self {
-            project: None,
-            dir: dirs_def,
-            path_to_stream: DashMap::new(),
-            plugin_loader: shared_plugin_loader
-                .unwrap_or(Arc::new(Mutex::new(PluginLoader::new()))),
-        }
-    }
-
-    pub async fn load_plugins(
-        &mut self,
-        role: HostRole,
-    ) -> anyhow::Result<Vec<PluginLoadedResult>> {
-        let mut loader = self.plugin_loader.lock().expect("mutex poisoned");
-        loader.load_from_disk(&self.dir, role).await
-    }
 }
 
 // スレッド間で移動させること自体は問題ない

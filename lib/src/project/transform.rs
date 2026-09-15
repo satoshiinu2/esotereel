@@ -17,12 +17,13 @@ pub struct ClipTranslate {
     Archive, RkyvDeserialize, RkyvSerialize, Serialize, Deserialize, Debug, Clone, PartialEq,
 )]
 #[archive_attr(derive(CheckBytes))]
+//
 pub enum ClipTranslates {
     Normal(ClipTranslate),
     Keyframe(Vec<ClipTranslate>),
     None,
 }
-
+#[deprecated]
 impl ClipTranslates {
     pub fn get_translate_at(&self) -> Option<ClipTranslate> {
         match self {

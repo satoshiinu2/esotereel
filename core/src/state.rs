@@ -6,11 +6,11 @@ use std::sync::{
 use anyhow::Context;
 use dashmap::DashMap;
 use esotereel_lib::{
-    CommonState,
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
     plugin::{PluginLoader, script::ScriptStore},
     project::ids::ResourceId,
+    state::CommonState,
 };
 use tokio::sync::Notify;
 

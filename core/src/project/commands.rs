@@ -44,13 +44,15 @@ pub fn command_to_history(
             layer_id,
             position,
             duration,
-            clip_data,
+            kind_id,
+            properties,
             translates,
         } => CommandHistory::AddClip {
             layer_id,
             position,
             duration,
-            clip_data,
+            kind_id,
+            properties,
             translates,
         },
         CommandRequest::AddLayer {
@@ -89,7 +91,8 @@ pub fn handle_command_action(
             layer_id,
             position,
             duration,
-            clip_data,
+            kind_id,
+            properties,
             translates,
         } => clip_add_core(
             project,
@@ -97,7 +100,8 @@ pub fn handle_command_action(
             *layer_id,
             *position,
             *duration,
-            clip_data.clone(),
+            kind_id.clone(),
+            properties.clone(),
             translates.clone(),
         )?,
         CommandHistory::AddLayer {
