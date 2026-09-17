@@ -2,6 +2,7 @@ pub mod color;
 pub mod logger;
 pub mod order_map;
 pub mod result;
+pub mod rkyv_with;
 pub mod slot_map;
 
 #[repr(C)]

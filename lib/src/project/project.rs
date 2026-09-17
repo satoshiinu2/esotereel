@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::plugin::NamespacedID;
 use crate::project::change::ChangeSet;
@@ -81,7 +81,7 @@ impl Project {
         position: i64,
         duration: i64,
         kind_id: NamespacedID,
-        properties: BTreeMap<String, PropertyValue>,
+        properties: HashMap<NamespacedID, PropertyValue>,
         translates: ClipTranslates,
     ) -> anyhow::Result<ClipId> {
         let timeline = self

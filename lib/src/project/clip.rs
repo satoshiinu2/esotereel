@@ -1,5 +1,5 @@
 use rkyv::{Archive, CheckBytes, bytecheck};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     plugin::{NamespacedID, property::PropertySchema},
@@ -21,7 +21,7 @@ pub struct Clip {
     pub duration: TimelineTick,
 
     pub kind_id: NamespacedID,
-    pub properties: BTreeMap<String, PropertyValue>,
+    pub properties: HashMap<NamespacedID, PropertyValue>,
     pub translates: ClipTranslates,
 }
 
@@ -31,7 +31,7 @@ impl Clip {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: BTreeMap<String, PropertyValue>,
+        properties: HashMap<NamespacedID, PropertyValue>,
         translates: ClipTranslates,
     ) -> Self {
         Self {
@@ -106,6 +106,7 @@ pub struct ScriptParams(pub BTreeMap<String, String>);
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde:: Deserialize, Debug, Clone,
 )]
 #[archive_attr(derive(CheckBytes))]
+#[deprecated]
 pub enum ClipData {
     Dummy,
     Video {

@@ -247,7 +247,7 @@ impl Timeline {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: BTreeMap<String, PropertyValue>,
+        properties: HashMap<NamespacedID, PropertyValue>,
         translates: ClipTranslates,
     ) -> EsotereelResult<ClipId> {
         // 重複チェック(既存 try_insert 相当)

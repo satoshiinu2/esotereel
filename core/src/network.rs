@@ -1,6 +1,8 @@
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
+use rkyv::ser::Serializer;
+use rkyv::ser::serializers::AllocSerializer;
 use rkyv::{AlignedVec, check_archived_root};
 use std::collections::HashMap;
 use std::ops::Range;
@@ -185,18 +187,41 @@ impl ServerNetworkHandler {
         self.dirty_signal.notify_one();
     }
 
-    pub fn send(&self, client_id: u32, request: &Response) {
-        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
-        self.send_bytes(client_id, bytes);
+    /// Response をシリアライズして AlignedVec に変換するヘルパー
+    fn serialize_response(response: &Response) -> Result<AlignedVec, String> {
+        // 1024バイトの事前確保バッファを持つシリアライザ
+        let mut serializer = AllocSerializer::<1024>::default();
+
+        serializer
+            .serialize_value(response)
+            .map_err(|e| format!("Serialization error: {:?}", e))?;
+
+        Ok(serializer.into_serializer().into_inner())
     }
 
-    pub fn send_all(&self, request: &Response) {
-        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
-        self.send_bytes_all(bytes);
+    pub fn send(&self, client_id: u32, response: &Response) {
+        match Self::serialize_response(response) {
+            Ok(bytes) => self.send_bytes(client_id, bytes),
+            Err(e) => log::error!("Failed to serialize response: {}", e),
+        }
     }
 
-    pub fn send_to_many(&self, client_ids: &[u32], request: &Response) {
-        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
+    pub fn send_all(&self, response: &Response) {
+        match Self::serialize_response(response) {
+            Ok(bytes) => self.send_bytes_all(bytes),
+            Err(e) => log::error!("Failed to serialize response: {}", e),
+        }
+    }
+
+    pub fn send_to_many(&self, client_ids: &[u32], response: &Response) {
+        let bytes = match Self::serialize_response(response) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to serialize response: {}", e);
+                return;
+            }
+        };
+
         if let Ok(clients) = self.clients.read() {
             for id in client_ids {
                 if let Some(tx) = clients.get(id) {

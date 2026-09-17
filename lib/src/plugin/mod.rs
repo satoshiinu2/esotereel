@@ -25,7 +25,7 @@ pub mod toolbar;
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
 )]
-#[archive_attr(derive(CheckBytes))]
+#[archive_attr(derive(Hash, Eq, PartialEq, CheckBytes))]
 pub struct NamespacedID {
     full: String,
     plugin_id: String,
@@ -206,15 +206,13 @@ impl Plugin {
     }
 
     fn load_script(
-        manifest: &PluginManifest,
+        _manifest: &PluginManifest,
         plugin_path: &Path,
         script_path: &Path,
     ) -> anyhow::Result<Option<CompiledScript>> {
         if script_path.exists() {
             // 並列で動かしているので毎回作成
-            let mut engine = rhai::Engine::new();
             let compiled = CompiledScript::compile(
-                &mut engine,
                 plugin_path, // モジュールの解決パス (プラグインのルートディレクトリ)
                 &script_path.to_path_buf(),
             )?;
@@ -290,6 +288,11 @@ pub struct PluginLoadedResult {
 pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
     is_loaded: bool,
+    // インデックスで検索コストを最小化
+    clip_kinds_index: HashMap<NamespacedID, ClipKind>,
+    scripts_index: HashMap<String, CompiledScript>,
+    schemas_index: Vec<PropertySchema>,
+    toolbars_index: Vec<(String, ToolbarButtonSpec)>,
 }
 
 impl PluginLoader {
@@ -297,6 +300,10 @@ impl PluginLoader {
         Self {
             plugins: Vec::new(),
             is_loaded: false,
+            clip_kinds_index: HashMap::new(),
+            scripts_index: HashMap::new(),
+            schemas_index: Vec::new(),
+            toolbars_index: Vec::new(),
         }
     }
 
@@ -375,12 +382,14 @@ impl PluginLoader {
 
         let mut results = Vec::with_capacity(tasks.len());
         for task in tasks {
-            if let Ok(res) = task.await {
-                results.push(res);
-            }
+            results.push(task.await);
         }
 
-        let successful_count = results.iter().filter(|r| r.result.is_ok()).count();
+        let successful_count = results
+            .iter()
+            .filter_map(|r| r.as_ref().ok())
+            .filter(|r| r.result.is_ok())
+            .count();
         log::info!(
             "Loaded {}/{} plugins successfully",
             successful_count,
@@ -389,16 +398,25 @@ impl PluginLoader {
 
         // 失敗したプラグインのログを出力
         for result in &results {
-            if let Err(e) = &result.result {
-                log::error!("Failed to load plugin from {}: {}", result.dir.display(), e);
+            match result {
+                Ok(result) => {
+                    if let Err(e) = &result.result {
+                        log::error!("Failed to load plugin from {}: {}", result.dir.display(), e);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to join plugin loading task: {}", e);
+                }
             }
         }
 
         self.plugins = results
             .into_iter()
+            .filter_map(|r| r.ok())
             .filter_map(|r| r.result.ok())
             .collect::<Vec<_>>();
 
+        self.rebuild_indices();
         self.is_loaded = true;
 
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
@@ -411,6 +429,37 @@ impl PluginLoader {
                 result: Ok(plugin.manifest.clone()),
             })
             .collect())
+    }
+
+    fn rebuild_indices(&mut self) {
+        self.clip_kinds_index.clear();
+        self.scripts_index.clear();
+        self.schemas_index.clear();
+        self.toolbars_index.clear();
+
+        for plugin in &self.plugins {
+            // clip_kinds index
+            for (id, kind) in plugin.clip_kinds.iter() {
+                self.clip_kinds_index.insert(id.clone(), kind.clone());
+            }
+
+            // scripts index
+            if let Some(script) = plugin.script.as_ref() {
+                self.scripts_index
+                    .insert(plugin.manifest.id.clone(), script.clone());
+            }
+
+            // schemas index
+            for schema in plugin.setting_schemas.iter() {
+                self.schemas_index.push(schema.clone());
+            }
+
+            // toolbars index
+            for button in plugin.toolbar_buttons.iter() {
+                self.toolbars_index
+                    .push((plugin.manifest.id.clone(), button.clone()));
+            }
+        }
     }
 
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
@@ -429,6 +478,7 @@ impl PluginLoader {
         // 成功したら配列内の古いインスタンスを差し替え
         if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
             self.plugins[index] = reloaded_plugin;
+            self.rebuild_indices(); // インデックスを再構築
             log::info!("Reloaded plugin '{}'", plugin_id);
         }
 
@@ -436,39 +486,27 @@ impl PluginLoader {
     }
 
     pub fn collect_all_schemas(&self) -> Vec<PropertySchema> {
-        self.plugins
-            .iter()
-            .flat_map(|p| p.setting_schemas.clone())
-            .collect()
+        self.schemas_index.clone()
     }
 
     pub fn collect_all_clip_kinds(&self) -> HashMap<NamespacedID, ClipKind> {
-        self.plugins
-            .iter()
-            .flat_map(|p| p.clip_kinds.clone())
-            .collect()
+        self.clip_kinds_index.clone()
     }
 
     pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
-        self.plugins
-            .iter()
-            .flat_map(|p| {
-                p.toolbar_buttons
-                    .iter()
-                    .map(|b| (p.manifest.id.clone(), b.clone()))
-            })
-            .collect()
+        self.toolbars_index.clone()
     }
 
     pub fn collect_all_scripts(&self) -> HashMap<String, CompiledScript> {
-        self.plugins
-            .iter()
-            .filter_map(|plugin| {
-                plugin
-                    .script
-                    .clone()
-                    .map(|script| (plugin.manifest.id.clone(), script))
-            })
-            .collect()
+        self.scripts_index.clone()
+    }
+
+    // ホットパス用の直接アクセスメソッド
+    pub fn get_clip_kind(&self, id: &NamespacedID) -> Option<&ClipKind> {
+        self.clip_kinds_index.get(id)
+    }
+
+    pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
+        self.scripts_index.get(plugin_id)
     }
 }

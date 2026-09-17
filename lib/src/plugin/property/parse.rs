@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result, bail};
 
-use crate::plugin::property::FieldTypeKind;
+use crate::plugin::property::{FieldTypeKind, value::FieldValue};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct PropertySchemaRaw {
@@ -100,14 +102,14 @@ impl FieldTypeKind {
         Ok(kind)
     }
 
-    pub fn to_default_value(&self) -> anyhow::Result<toml::Value> {
+    pub fn to_default_value(&self) -> anyhow::Result<FieldValue> {
         let value = match self {
-            FieldTypeKind::Bool => toml::Value::Boolean(false),
+            FieldTypeKind::Bool => FieldValue::Bool(false),
 
             FieldTypeKind::Int { min, max } => {
                 // 0がレンジ内ならそれを、範囲外ならminを使う
                 let v = if *min <= 0 && 0 <= *max { 0 } else { *min };
-                toml::Value::Integer(v)
+                FieldValue::Int(v)
             }
 
             FieldTypeKind::Float { min, max, .. } => {
@@ -116,26 +118,26 @@ impl FieldTypeKind {
                 } else {
                     *min
                 };
-                toml::Value::Float(v)
+                FieldValue::Float(v)
             }
 
             FieldTypeKind::Enum { options } => {
                 let first = options
                     .first()
                     .context("Enum kind has no options to derive a default from")?;
-                toml::Value::String(first.clone())
+                FieldValue::String(first.clone())
             }
 
-            FieldTypeKind::String => toml::Value::String(String::new()),
+            FieldTypeKind::String => FieldValue::String(String::new()),
 
-            FieldTypeKind::FilePath { .. } => toml::Value::String(String::new()),
+            FieldTypeKind::FilePath { .. } => FieldValue::String(String::new()),
 
             // Colorは表現形式次第だけど、ひとまず16進文字列運用の想定
-            FieldTypeKind::Color => toml::Value::String("#FFFFFF".into()),
+            FieldTypeKind::Color => FieldValue::String("#FFFFFF".into()),
 
-            FieldTypeKind::Array { .. } => toml::Value::Array(Vec::new()),
+            FieldTypeKind::Array { .. } => FieldValue::Array(Vec::new()),
 
-            FieldTypeKind::Map { .. } => toml::Value::Table(Default::default()),
+            FieldTypeKind::Map { .. } => FieldValue::Map(BTreeMap::new()),
         };
         Ok(value)
     }

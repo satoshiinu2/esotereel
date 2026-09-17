@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use crate::{
-    plugin::script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
+    plugin::{
+        NamespacedID,
+        script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
+    },
     project::{Clip, clip::ClipData},
     render::{RenderContext, vertex::Vertex},
 };
@@ -29,11 +32,16 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        let Some(kind) = ctx.clip_kinds.get(&clip.kind_id) else {
+        let plugin_id = clip.kind_id.plugin_id();
+
+        let loader = ctx.plugin_loader.lock().expect("mutex poisoned");
+        let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
             continue;
         };
-
-        let plugin_id = clip.kind_id.plugin_id();
+        let Some(script) = loader.get_script(plugin_id) else {
+            continue;
+        };
+        // drop(loader);
 
         let media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
         let base_transform = clip
@@ -58,11 +66,8 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         );
         let props_dynamic = field_values_to_rhai_map(&clip.properties);
 
-        let call_result: Result<(), _> = ctx.scripts.call(
-            plugin_id,
-            &kind.func_name,
-            (render_ctx.clone(), props_dynamic),
-        );
+        let call_result: Result<(), _> =
+            script.call(&kind.func_name, (render_ctx.clone(), props_dynamic));
 
         if let Err(e) = call_result {
             log::warn!(

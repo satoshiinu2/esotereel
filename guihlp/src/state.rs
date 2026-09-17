@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -9,11 +9,10 @@ use esotereel_lib::{
     plugin::{
         NamespacedID,
         property::PropertySchema,
-        script::ScriptStore,
         settings::SettingsStore,
         toolbar::{ToolbarButtonSpec, ToolbarStore},
     },
-    project::{clip::ClipKind, ids::ResourceId},
+    project::ids::ResourceId,
     render::video::{MediaFetchCache, builder::VertexBatch},
     state::{CommonState, HostBootstrap},
 };

@@ -2,7 +2,10 @@ use std::{collections::HashMap, path::Path};
 
 use anyhow::Context;
 
-use crate::plugin::{NamespacedID, property::PropertySchema};
+use crate::plugin::{
+    NamespacedID,
+    property::{PropertySchema, value::FieldValue},
+};
 
 #[derive(Debug, Default)]
 pub struct SettingsSchemaRegistry {
@@ -32,7 +35,7 @@ impl SettingsSchemaRegistry {
 #[derive(Debug, Default)]
 pub struct SettingsStore {
     pub schema: SettingsSchemaRegistry,
-    values: HashMap<NamespacedID, toml::Value>,
+    values: HashMap<NamespacedID, FieldValue>,
     has_disk_loaded: bool,
 }
 
@@ -46,7 +49,7 @@ impl SettingsStore {
     }
 
     /// ディスクから読み込めた値だけ上書き。存在しないキーはdefaultのまま残る。
-    pub fn apply_loaded_setting(&mut self, loaded: HashMap<NamespacedID, toml::Value>) {
+    pub fn apply_loaded_setting(&mut self, loaded: HashMap<NamespacedID, FieldValue>) {
         for (k, v) in loaded {
             self.values.insert(k, v);
         }
@@ -57,11 +60,11 @@ impl SettingsStore {
         self.schema.fields().to_vec()
     }
 
-    pub fn get_value(&self, key: &NamespacedID) -> Option<&toml::Value> {
+    pub fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue> {
         self.values.get(key)
     }
 
-    pub fn set_value(&mut self, key: NamespacedID, value: toml::Value) -> anyhow::Result<()> {
+    pub fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()> {
         // スキーマに存在するキーかチェック
         if !self.schema.fields().iter().any(|f| f.key == key) {
             anyhow::bail!("unknown settings key: {}", key);

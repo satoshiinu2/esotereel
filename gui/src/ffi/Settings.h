@@ -1,6 +1,7 @@
 #pragma once
 
 #include "esotereel_gui_helper.h"
+#include "ffi/FieldValue.h"
 #include "ffi/Result.h"
 #include "ffi/StringView.h"
 #include <QString>
@@ -18,12 +19,14 @@ class SettingsField {
     QString category;
     QString label;
     SettingsFieldType kindType;
-    QString defaultValue;
+    FieldValue defaultValue;
+
+    SettingsField() = default;
 
     SettingsField(esotereel_gui_helper::SettingsField ffi)
         : key(OwnedString::toQString(ffi.key)), category(OwnedString::toQString(ffi.category)),
           label(OwnedString::toQString(ffi.label)), kindType(ffi.kind_type),
-          defaultValue(OwnedString::toQString(ffi.default_value)) {
+          defaultValue(FieldValue::fromString(OwnedString::toQString(ffi.default_value))) {
 
         // Free the owned strings
         OwnedString::free(ffi.key);
@@ -36,9 +39,19 @@ class SettingsField {
 class Settings {
   public:
     static Result<QVector<SettingsField>> getAllFields(ClientState *network);
-    static Result<QString> getValue(ClientState *network, const QString &key);
+
+    // FieldValue-based accessors (via cxx-qt / QVariant)
+    static Result<FieldValue> getValue(ClientState *network, const QString &key);
+    static Result<void> setValue(ClientState *network, const QString &key, const FieldValue &value);
+
+    // String-based convenience overloads
+    static Result<QString> getValueString(ClientState *network, const QString &key);
     static Result<void> setValue(ClientState *network, const QString &key, const QString &value);
+    static Result<void> setValueString(ClientState *network, const QString &key, const QString &value);
+
     static Result<QStringList> getCategories(ClientState *network);
 };
 
 } // namespace esotereel
+
+Q_DECLARE_METATYPE(esotereel::SettingsField)

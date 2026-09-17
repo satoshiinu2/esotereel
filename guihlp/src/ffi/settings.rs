@@ -3,14 +3,16 @@ use std::{
     sync::Arc,
 };
 
+use cxx_qt_lib::QVariant;
 use esotereel_lib::plugin::{
     NamespacedID,
-    property::{FieldTypeKind, PropertySchema},
+    property::{PropertySchema, value::FieldTypeKind},
 };
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
     ffi::{
+        cxxqt_field_value::{field_value_to_qvariant, qvariant_to_field_value},
         log_if_panicked,
         state::ClientStateHandle,
         stringview::{OwnedString, StringView},
@@ -140,101 +142,70 @@ pub unsafe extern "C" fn settings_get_all_fields(
 pub unsafe extern "C" fn settings_get_value(
     ptr_state: *const ClientStateHandle,
     key: StringView,
-    output: *mut OwnedString,
+    out: *mut *mut *mut QVariant,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() || output.is_null() {
+    if ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-
     let state = ClientStateHandle::from_ptr(ptr_state);
     let key_str = match key.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let state = state.lock().expect("mutex poisoned");
+    let Ok(key_id) = NamespacedID::parse(key_str) else {
+        return WrapperErrorCode::null_ptr();
+    };
 
-        let key = NamespacedID::parse(key_str)
-            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
-        let value = state.settings.get_value(&key);
-
-        match value {
-            Some(v) => {
-                let value_str = v.to_string();
-                unsafe { *output = OwnedString::from_string(value_str) };
+    let state = state.lock().expect("mutex poisoned");
+    unsafe {
+        *out = match state.settings.get_value(&key_id) {
+            Some(val) => {
+                let mut variant = field_value_to_qvariant(val);
+                Box::into_raw(Box::new(&mut variant))
             }
-            None => {
-                unsafe { *output = OwnedString::zero() };
-            }
-        }
-
-        Ok(())
-    }));
-
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "settings_get_value");
-            WrapperErrorCode::error_from_option(msg.as_deref())
+            None => std::ptr::null_mut(),
         }
     }
+
+    WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_set_value(
     ptr_state: *const ClientStateHandle,
     key: StringView,
-    value: StringView,
+    variant_ptr: *const QVariant,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() {
+    if ptr_state.is_null() || variant_ptr.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-
-    // Arc::into_raw 由来のポインタから、参照カウントを増やして
-    // 独立した Arc クローンを作る（元のポインタは消費しない）
     let state = ClientStateHandle::from_ptr(ptr_state);
     let key_str = match key.as_str() {
         Some(s) => s,
         None => return WrapperErrorCode::invalid_string_error(),
     };
-
-    let value_str = match value.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
+    let Ok(key_id) = NamespacedID::parse(key_str) else {
+        return WrapperErrorCode::error_from_option(Some("invalid key"));
     };
 
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let parsed_value: toml::Value = toml::from_str(value_str).map_err(|e| {
-            IntoWrapperError::Error(Some(format!("Failed to parse value: {}", e).into()))
-        })?;
+    let variant = unsafe { &*variant_ptr };
+    let field_value = qvariant_to_field_value(variant);
 
-        let mut state = state.lock().expect("mutex poisoned");
-
-        let key = NamespacedID::parse(key_str)
-            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
-        state
-            .settings
-            .set_value(key, parsed_value)
-            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
-
-        Ok(())
-    }));
-
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
+    let mut state = state.lock().expect("mutex poisoned");
+    match state.settings.set_value(key_id, field_value) {
+        Ok(()) => WrapperErrorCode::ok(),
+        Err(e) => {
+            let err_str = e.to_string();
+            WrapperErrorCode::error_from_option(Some(&err_str))
         }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "settings_set_value");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn settings_free_qvariant(ptr: *mut QVariant) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)) };
     }
 }
 

@@ -16,4 +16,9 @@ fn main() {
     if !status.success() {
         panic!("cbindgen failed");
     }
+
+    cxx_qt_build::CxxQtBuilder::new()
+        .qt_module("Gui")
+        .file("src/ffi/cxxqt_field_value.rs")
+        .build();
 }

@@ -7,12 +7,6 @@ pub struct StringView {
     pub len: usize,
 }
 
-#[repr(C)]
-pub struct OwnedString {
-    pub ptr: *mut u8,
-    pub len: usize,
-}
-
 impl StringView {
     pub fn from_str(s: &str) -> Self {
         Self {
@@ -60,18 +54,33 @@ impl StringView {
     }
 }
 
+/// 手動で解放しないといけない
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct OwnedString {
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub capacity: usize,
+}
+
 impl OwnedString {
     pub fn from_string(s: String) -> Self {
-        let ptr = s.as_ptr() as *mut u8;
+        let mut s = s;
+
+        let ptr = s.as_mut_ptr();
         let len = s.len();
-        std::mem::forget(s); // Transfer ownership to C++
-        Self { ptr, len }
+        let capacity = s.capacity();
+
+        std::mem::forget(s);
+
+        Self { ptr, len, capacity }
     }
 
     pub fn zero() -> Self {
         Self {
             ptr: std::ptr::null_mut(),
             len: 0,
+            capacity: 0,
         }
     }
 
@@ -82,9 +91,9 @@ impl OwnedString {
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn owned_string_free(ptr: *mut u8, len: usize) {
-    if !ptr.is_null() {
-        let _ = unsafe { String::from_raw_parts(ptr, len, len) };
+pub unsafe extern "C" fn owned_string_free(str: OwnedString) {
+    if !str.is_null() {
+        let _ = unsafe { String::from_raw_parts(str.ptr, str.len, str.capacity) };
     }
 }
 

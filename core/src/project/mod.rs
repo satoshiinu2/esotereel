@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Ok;
 use esotereel_lib::{
@@ -77,7 +77,7 @@ pub(crate) fn clip_add_core(
     position: TimelineTick,
     duration: TimelineTick,
     kind_id: NamespacedID,
-    properties: BTreeMap<String, PropertyValue>,
+    properties: HashMap<NamespacedID, PropertyValue>,
     translates: ClipTranslates,
 ) -> anyhow::Result<()> {
     // key (u32) をそのまま渡してクリップを追加

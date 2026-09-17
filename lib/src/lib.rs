@@ -8,7 +8,6 @@ use crate::plugin::script::ScriptStore;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
 
-pub mod state;
 pub mod decode;
 pub mod dirs;
 pub mod plugin;
@@ -16,6 +15,7 @@ pub mod project;
 pub mod render;
 pub mod requests;
 pub mod responces;
+pub mod state;
 pub mod util;
 
 #[derive(Clone, Copy, Debug)]

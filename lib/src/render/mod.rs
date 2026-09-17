@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
-    plugin::{clip::ClipKindStore, script::ScriptStore},
+    plugin::PluginLoader,
     project::{Timeline, TimelineTick, camera::CameraInfo, ids::ResourceId},
     render::{
         video::{MediaFetchCache, update_timline_clips_texture},
@@ -26,8 +26,7 @@ pub struct RenderContext<'a> {
     pub streams: &'a Arc<DashMap<ResourceId, StreamPlayer>>,
     pub media_fetch_cache: &'a Arc<MediaFetchCache>,
 
-    pub clip_kinds: &'a ClipKindStore,
-    pub scripts: &'a ScriptStore,
+    pub plugin_loader: &'a Arc<Mutex<PluginLoader>>,
 
     pub timeline: &'a Timeline,
     pub camera_info: &'a CameraInfo,

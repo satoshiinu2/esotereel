@@ -131,9 +131,11 @@ struct CameraInfo {
 
 using TimelineTick = int64_t;
 
+/// 手動で解放しないといけない
 struct OwnedString {
   uint8_t *ptr;
   uintptr_t len;
+  uintptr_t capacity;
 };
 
 struct SettingsField {
@@ -217,28 +219,6 @@ WrapperErrorCode internal_server_start(const ClientStateHandle *ptr_state,
 void init_rust_logger(LogOutCStrFn callback);
 
 void set_log_level(StringView target, CLogLevel level);
-
-WrapperErrorCode client_state_new(const ClientStateHandle **out_state,
-                                  StringView std_plugin_dir,
-                                  StringView working_dir);
-
-WrapperErrorCode client_state_bootstrap(const ClientStateHandle *ptr_state);
-
-WrapperErrorCode client_state_network_run(const ClientStateHandle *ptr_state, StringView addr);
-
-WrapperErrorCode client_state_drop(const ClientStateHandle *ptr_state);
-
-WrapperErrorCode client_state_project_lock_read(const ClientStateHandle *ptr_state,
-                                                const void **out_guard);
-
-/// ガードをドロップ（アンロック）する関数
-WrapperErrorCode client_state_project_unlock_read(const void *guard_ptr);
-
-/// ガードからprojectポインタを取得する関数
-WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
-                                                      const Project **out_project);
-
-WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_state);
 
 const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
 
@@ -348,11 +328,13 @@ WrapperErrorCode settings_get_all_fields(const ClientStateHandle *ptr_state,
 
 WrapperErrorCode settings_get_value(const ClientStateHandle *ptr_state,
                                     StringView key,
-                                    OwnedString *output);
+                                    QVariant ***out);
 
 WrapperErrorCode settings_set_value(const ClientStateHandle *ptr_state,
                                     StringView key,
-                                    StringView value);
+                                    const QVariant *variant_ptr);
+
+void settings_free_qvariant(QVariant *ptr);
 
 int32_t settings_get_categories_count(const ClientStateHandle *ptr_state);
 
@@ -360,8 +342,30 @@ WrapperErrorCode settings_get_categories(const ClientStateHandle *ptr_state,
                                          OwnedString *output,
                                          uintptr_t output_len);
 
+WrapperErrorCode client_state_new(const ClientStateHandle **out_state,
+                                  StringView std_plugin_dir,
+                                  StringView working_dir);
+
+WrapperErrorCode client_state_bootstrap(const ClientStateHandle *ptr_state);
+
+WrapperErrorCode client_state_network_run(const ClientStateHandle *ptr_state, StringView addr);
+
+WrapperErrorCode client_state_drop(const ClientStateHandle *ptr_state);
+
+WrapperErrorCode client_state_project_lock_read(const ClientStateHandle *ptr_state,
+                                                const void **out_guard);
+
+/// ガードをドロップ（アンロック）する関数
+WrapperErrorCode client_state_project_unlock_read(const void *guard_ptr);
+
+/// ガードからprojectポインタを取得する関数
+WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
+                                                      const Project **out_project);
+
+WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_state);
+
 /// Frees a string that was allocated by Rust and returned via OwnedString
-void owned_string_free(uint8_t *ptr, uintptr_t len);
+void owned_string_free(OwnedString str);
 
 int32_t toolbar_get_buttons_count(const ClientStateHandle *ptr_state, StringView target);
 

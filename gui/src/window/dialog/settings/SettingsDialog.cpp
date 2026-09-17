@@ -174,7 +174,7 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
     layout->addWidget(nameLabel);
 
     // Get current value
-    QString currentValue = field.defaultValue;
+    FieldValue currentValue = field.defaultValue;
     auto valueResult = Settings::getValue(windowState.network, field.key);
     if (valueResult.isOk()) {
         currentValue = valueResult.unwrap();
@@ -184,34 +184,33 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
 
     if (field.kindType == SettingsFieldType::Bool) {
         auto *checkBox = new QCheckBox();
-        bool checked = (currentValue == "true");
+        bool checked = currentValue.asBool();
         checkBox->setChecked(checked);
         checkBox->setProperty("settingKey", field.key);
         connect(checkBox, &QCheckBox::checkStateChanged, this, [this, checkBox](Qt::CheckState state) {
             QString key = checkBox->property("settingKey").toString();
-            QString value = (state == Qt::Checked) ? "true" : "false";
-            Settings::setValue(windowState.network, key, value);
+            Settings::setValue(windowState.network, key, FieldValue::fromBool(state == Qt::Checked));
         });
         control = checkBox;
     } else if (field.kindType == SettingsFieldType::Int) {
         auto *spinBox = new QSpinBox();
         spinBox->setRange(0, 1000); // Default range, should be parsed from schema
-        spinBox->setValue(currentValue.toInt());
+        spinBox->setValue(static_cast<int>(currentValue.asInt()));
         spinBox->setProperty("settingKey", field.key);
         connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, spinBox](int value) {
             QString key = spinBox->property("settingKey").toString();
-            Settings::setValue(windowState.network, key, QString::number(value));
+            Settings::setValue(windowState.network, key, FieldValue::fromInt(value));
         });
         control = spinBox;
     } else if (field.kindType == SettingsFieldType::Float) {
         auto *doubleSpinBox = new QDoubleSpinBox();
         doubleSpinBox->setRange(0.0, 1000.0); // Default range
-        doubleSpinBox->setValue(currentValue.toDouble());
+        doubleSpinBox->setValue(currentValue.asFloat());
         doubleSpinBox->setProperty("settingKey", field.key);
         connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 [this, doubleSpinBox](double value) {
                     QString key = doubleSpinBox->property("settingKey").toString();
-                    Settings::setValue(windowState.network, key, QString::number(value));
+                    Settings::setValue(windowState.network, key, FieldValue::fromFloat(value));
                 });
         control = doubleSpinBox;
     } else if (field.kindType == SettingsFieldType::Enum) {
@@ -226,24 +225,24 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
             options << "Light" << "Dark" << "System";
         } else {
             // Fallback: try to parse from default value or use current value
-            options << currentValue;
+            options << currentValue.asString();
         }
 
         comboBox->addItems(options);
-        comboBox->setCurrentText(currentValue);
+        comboBox->setCurrentText(currentValue.asString());
         comboBox->setProperty("settingKey", field.key);
         connect(comboBox, &QComboBox::currentTextChanged, this, [this, comboBox](const QString &text) {
             QString key = comboBox->property("settingKey").toString();
-            Settings::setValue(windowState.network, key, text);
+            Settings::setValue(windowState.network, key, FieldValue::fromEnum(text));
         });
         control = comboBox;
     } else if (field.kindType == SettingsFieldType::String) {
         auto *lineEdit = new QLineEdit();
-        lineEdit->setText(currentValue);
+        lineEdit->setText(currentValue.asString());
         lineEdit->setProperty("settingKey", field.key);
         connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
             QString key = lineEdit->property("settingKey").toString();
-            Settings::setValue(windowState.network, key, text);
+            Settings::setValue(windowState.network, key, FieldValue::fromString(text));
         });
         control = lineEdit;
     } else if (field.kindType == SettingsFieldType::Color) {
@@ -251,27 +250,26 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         colorButton->setProperty("settingKey", field.key);
         connect(colorButton, &QPushButton::clicked, this, [this, colorButton]() {
             QString key = colorButton->property("settingKey").toString();
-            QString currentColor = "#FFFFFF";
+            QColor color = Qt::white;
             auto colorResult = Settings::getValue(windowState.network, key);
             if (colorResult.isOk()) {
-                currentColor = colorResult.unwrap();
+                color = colorResult.unwrap().asColor();
             }
-            QColor color = QColor(currentColor);
             QColorDialog dialog(color, this);
             if (dialog.exec() == QDialog::Accepted) {
                 QColor selectedColor = dialog.selectedColor();
-                Settings::setValue(windowState.network, key, selectedColor.name());
+                Settings::setValue(windowState.network, key, FieldValue::fromColor(selectedColor));
             }
         });
         control = colorButton;
     } else {
         // Default to line edit for unknown types
         auto *lineEdit = new QLineEdit();
-        lineEdit->setText(currentValue);
+        lineEdit->setText(currentValue.asString());
         lineEdit->setProperty("settingKey", field.key);
         connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
             QString key = lineEdit->property("settingKey").toString();
-            Settings::setValue(windowState.network, key, text);
+            Settings::setValue(windowState.network, key, FieldValue::fromString(text));
         });
         control = lineEdit;
     }

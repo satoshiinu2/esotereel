@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use rhai::module_resolvers::FileModuleResolver;
@@ -15,37 +16,67 @@ pub struct CompiledScript {
     pub ast: rhai::AST,
 
     pub available_functions: Vec<String>,
+
+    engine: Arc<rhai::Engine>,
 }
 
 impl CompiledScript {
-    pub fn compile(
-        engine: &mut rhai::Engine,
-        resolve_path: &Path,
-        source_path: &PathBuf,
-    ) -> anyhow::Result<CompiledScript> {
-        let resolver = FileModuleResolver::new_with_path(resolve_path);
-        engine.set_module_resolver(resolver);
+    pub fn compile(resolve_path: &Path, source_path: &PathBuf) -> anyhow::Result<CompiledScript> {
+        let mut engine = rhai::Engine::new();
+        register_fn_for(&mut engine);
 
-        let ast = engine
-            .compile_file(source_path.clone())
-            .map_err(|e| anyhow::anyhow!("Script compile error: {}", e))?;
+        // rhai を全部フラットに合流させる
+        let mut paths: Vec<_> = walkdir::WalkDir::new(resolve_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .map(|e| e.into_path())
+            .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "rhai"))
+            .collect();
+
+        // source_pathは優先
+        paths.retain(|p| p != source_path);
+        paths.sort();
+        paths.insert(0, source_path.clone());
+
+        // 関数名 -> 最初に定義されていたファイル
+        let mut functions = HashMap::new();
+        let mut ast = rhai::AST::empty();
+
+        for path in paths {
+            let clip_ast = engine.compile_file(path.clone())?;
+
+            for func in clip_ast.iter_functions() {
+                let name = func.name.to_string();
+
+                if let Some(previous_path) = functions.insert(name.clone(), path.clone()) {
+                    anyhow::bail!(
+                        "Duplicate function '{}': '{}' and '{}'",
+                        name,
+                        previous_path.display(),
+                        path.display()
+                    );
+                }
+            }
+
+            ast = ast.merge(&clip_ast);
+        }
 
         let available_functions = ast.iter_functions().map(|f| f.name.to_string()).collect();
-
         Ok(CompiledScript {
             ast,
             available_functions,
+            engine: Arc::new(engine),
         })
     }
 
     pub fn call<T: Clone + Send + Sync + 'static>(
         &self,
-        engine: &rhai::Engine,
         fn_name: &str,
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<T> {
         let mut scope = rhai::Scope::new();
-        let result = engine
+        let result = self
+            .engine
             .call_fn::<T>(&mut scope, &self.ast, fn_name, args)
             .map_err(|e| anyhow::anyhow!("Function '{}' call error: {}", fn_name, e))?;
         Ok(result)
@@ -76,19 +107,14 @@ impl ScriptRegistry {
 #[derive(Debug)]
 pub struct ScriptStore {
     pub registry: ScriptRegistry,
-    pub engine: rhai::Engine, // 唯一のEngineインスタンス
     scripts: HashMap<String, CompiledScript>,
     has_disk_loaded: bool,
 }
 
 impl ScriptStore {
     pub fn new() -> Self {
-        let mut engine = rhai::Engine::new();
-        register_fn_for(&mut engine);
-
         Self {
             registry: ScriptRegistry::default(),
-            engine,
             scripts: HashMap::new(),
             has_disk_loaded: false,
         }
@@ -98,7 +124,9 @@ impl ScriptStore {
         &mut self,
         plugin_buttons: HashMap<String, CompiledScript>,
     ) -> anyhow::Result<()> {
-        self.registry.merge_plugin_scripts(plugin_buttons)
+        self.registry.merge_plugin_scripts(plugin_buttons.clone())?;
+        self.scripts.extend(plugin_buttons);
+        Ok(())
     }
 
     pub fn apply_loaded_script(
@@ -120,10 +148,10 @@ impl ScriptStore {
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<T> {
         let script = self
-            .registry
-            .scripts_for_plugin(plugin_id)
+            .scripts
+            .get(plugin_id)
             .ok_or(EsotereelError::PluginNotFound(plugin_id.to_string()))?;
 
-        script.call(&self.engine, fn_name, args)
+        script.call(fn_name, args)
     }
 }

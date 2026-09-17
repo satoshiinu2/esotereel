@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use esotereel_lib::{
-    plugin::NamespacedID,
+    plugin::{NamespacedID, property::PropertySchema},
     project::{
         clip::ClipData,
         command::{ClipMoveCtx, CommandRequest},
@@ -105,12 +105,18 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         scale: [400.0, 300.0, 1.0],
     });
 
+    let kind_id = NamespacedID::parse("std:video").unwrap();
+    let loader = state.common.plugin_loader.lock().expect("mutex poisoned");
+    let property_schema = &loader.get_clip_kind(&kind_id).unwrap().property_schema;
+    let properties = PropertySchema::default_properties(&property_schema);
+    drop(loader);
+
     let command = CommandRequest::AddClip {
         layer_id,
         position,
         duration: 10000,
-        kind_id: NamespacedID::parse("std::video").unwrap(),
-        properties: BTreeMap::new(),
+        kind_id,
+        properties,
         translates,
     };
 

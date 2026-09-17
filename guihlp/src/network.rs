@@ -92,9 +92,20 @@ impl ClientNetworkHandler {
         }
     }
 
+    /// Response をシリアライズして AlignedVec に変換するヘルパー
+    fn serialize_response(request: &Request) -> Result<AlignedVec, String> {
+        let mut serializer = AllocSerializer::<1024>::default();
+        serializer
+            .serialize_value(request)
+            .map_err(|e| format!("Serialization error: {:?}", e))?;
+        Ok(serializer.into_serializer().into_inner())
+    }
+
     pub fn send(&self, request: &Request) {
-        let bytes = rkyv::to_bytes::<_, 1024>(request).unwrap();
-        self.send_bytes(bytes);
+        match Self::serialize_response(request) {
+            Ok(bytes) => self.send_bytes(bytes),
+            Err(e) => log::error!("Failed to serialize response: {}", e),
+        }
     }
 
     fn send_bytes(&self, bytes: AlignedVec) {

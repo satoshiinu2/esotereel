@@ -1,17 +1,13 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Context;
 use dashmap::DashMap;
 
 use crate::dirs::Directories;
-use crate::plugin::clip::ClipKindStore;
 use crate::plugin::property::PropertySchema;
-use crate::plugin::script::{CompiledScript, ScriptStore};
 use crate::plugin::toolbar::ToolbarButtonSpec;
-use crate::plugin::{NamespacedID, PluginLoadedResult, PluginLoader};
+use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
-use crate::project::clip::ClipKind;
 use crate::{HostRole, StreamState};
 
 pub struct CommonState {
@@ -22,8 +18,6 @@ pub struct CommonState {
     pub path_to_stream: Arc<DashMap<String, StreamState>>,
 
     pub plugin_loader: Arc<Mutex<PluginLoader>>,
-    pub scripts: ScriptStore,
-    pub clip_kinds: ClipKindStore,
 }
 
 impl CommonState {
@@ -37,8 +31,6 @@ impl CommonState {
             path_to_stream: Arc::new(DashMap::new()),
             plugin_loader: shared_plugin_loader
                 .unwrap_or(Arc::new(Mutex::new(PluginLoader::new()))),
-            scripts: ScriptStore::new(),
-            clip_kinds: ClipKindStore::new(),
         }
     }
 
@@ -48,22 +40,6 @@ impl CommonState {
     ) -> anyhow::Result<Vec<PluginLoadedResult>> {
         let mut loader = self.plugin_loader.lock().expect("mutex poisoned");
         loader.load_from_disk(&self.dir, role).await
-    }
-
-    fn merge_common_plugin_fields(
-        &mut self,
-        plugin_scripts: HashMap<String, CompiledScript>,
-        plugin_clip_kinds: HashMap<NamespacedID, ClipKind>,
-    ) -> anyhow::Result<()> {
-        self.scripts
-            .merge_plugin_scripts(plugin_scripts)
-            .context("plugin script conflict during load_plugins")?;
-
-        self.clip_kinds
-            .merge_plugin_kinds(plugin_clip_kinds)
-            .context("plugin clip kind conflict during load_plugins")?;
-
-        Ok(())
     }
 }
 
@@ -95,17 +71,14 @@ pub trait HostBootstrap: std::ops::Deref<Target = CommonState> + std::ops::Deref
     }
 
     fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
-        let (plugin_schemas, plugin_clip_kinds, plugin_toolbar_buttons, plugin_scripts) = {
+        let (plugin_schemas, plugin_toolbar_buttons) = {
             let loader = self.plugin_loader.lock().expect("mutex poisoned");
             (
                 loader.collect_all_schemas(),
-                loader.collect_all_clip_kinds(),
                 loader.collect_all_toolbars(),
-                loader.collect_all_scripts(),
             )
         };
 
-        self.merge_common_plugin_fields(plugin_scripts, plugin_clip_kinds)?;
         self.apply_extra_plugin_fields(plugin_schemas, plugin_toolbar_buttons)
     }
 }

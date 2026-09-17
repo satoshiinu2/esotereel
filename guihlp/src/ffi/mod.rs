@@ -5,14 +5,16 @@ use esotereel_lib::{project::Project, util::result::format_any_error};
 use crate::{ON_CONNECTED_CALLBACKS, network::OnConnectedFn};
 
 pub mod commands;
+pub mod cxxqt_field_value;
 pub mod debug_streams;
 pub mod internalserver;
 pub mod logger;
-pub mod state;
 pub mod project;
 pub mod render;
 pub mod requests;
+pub mod result;
 pub mod settings;
+pub mod state;
 pub mod stringview;
 pub mod toolbar;
 pub mod wgpuutil;

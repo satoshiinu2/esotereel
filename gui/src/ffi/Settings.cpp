@@ -43,38 +43,50 @@ Result<QVector<SettingsField>> Settings::getAllFields(ClientState *network) {
     return Result<QVector<SettingsField>>::ok(fields);
 }
 
-Result<QString> Settings::getValue(ClientState *network, const QString &key) {
+Result<FieldValue> Settings::getValue(ClientState *network, const QString &key) {
     if (!network) {
-        return Result<QString>::error("Network handler is null");
+        return Result<FieldValue>::error("Network handler is null");
     }
 
-    QByteArray keyUtf8 = key.toUtf8();
-    RawStringView keyView = StringView::fromQUtf8String(keyUtf8);
-    RawOwnedString output;
+    QVariant variant = esotereel_gui_helper::settings_get_value(*network, &key);
 
-    WrapperErrorCode result = esotereel_gui_helper::settings_get_value(*network, keyView, &output);
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResult<QString>(result, QString());
+    if (!variant.isValid()) {
+        return Result<FieldValue>::error("Failed to get setting value");
     }
 
-    QString value = OwnedString::toQString(output);
-    OwnedString::free(output);
-    return Result<QString>::ok(value);
+    return Result<FieldValue>::ok(FieldValue::fromVariant(variant));
 }
 
-Result<void> Settings::setValue(ClientState *network, const QString &key, const QString &value) {
+Result<void> Settings::setValue(ClientState *network, const QString &key, const FieldValue &value) {
     if (!network) {
         return Result<void>::error("Network handler is null");
     }
 
-    QByteArray keyUtf8 = key.toUtf8();
-    QByteArray valueUtf8 = value.toUtf8();
+    QVariant variant = value.toVariant();
 
-    RawStringView keyView = StringView::fromQUtf8String(keyUtf8);
-    RawStringView valueView = StringView::fromQUtf8String(valueUtf8);
+    bool ok = esotereel_gui_helper::settings_set_value(*network, key, &variant);
 
-    WrapperErrorCode result = esotereel_gui_helper::settings_set_value(*network, keyView, valueView);
-    return wrapperResultToResultVoid(result);
+    if (!ok) {
+        return Result<void>::error("Failed to set setting value");
+    }
+
+    return Result<void>::ok();
+}
+
+Result<QString> Settings::getValueString(ClientState *network, const QString &key) {
+    auto res = getValue(network, key);
+    if (res.isOk()) {
+        return Result<QString>::ok(res.unwrap().asString());
+    }
+    return Result<QString>::error(res.errorMessage().value_or("Unknown error"));
+}
+
+Result<void> Settings::setValue(ClientState *network, const QString &key, const QString &value) {
+    return setValue(network, key, FieldValue::fromString(value));
+}
+
+Result<void> Settings::setValueString(ClientState *network, const QString &key, const QString &value) {
+    return setValue(network, key, FieldValue::fromString(value));
 }
 
 Result<QStringList> Settings::getCategories(ClientState *network) {
@@ -110,5 +122,4 @@ Result<QStringList> Settings::getCategories(ClientState *network) {
 
     return Result<QStringList>::ok(categories);
 }
-
 } // namespace esotereel

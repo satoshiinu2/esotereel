@@ -1,56 +1,25 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::PathBuf,
 };
 
 use anyhow::Context;
 use colored::Color;
 
-use crate::plugin::{NamespacedID, property::parse::PropertySchemaRaw};
+use crate::{
+    plugin::{
+        NamespacedID,
+        property::{
+            parse::PropertySchemaRaw,
+            value::{FieldTypeKind, FieldValue},
+        },
+    },
+    project::value::PropertyValue,
+    util::color::RgbaColor,
+};
 
 pub mod parse;
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum FieldTypeKind {
-    Bool,
-    Int {
-        min: i64,
-        max: i64,
-    },
-    Float {
-        min: f64,
-        max: f64,
-        step: f64,
-    },
-    Enum {
-        options: Vec<String>,
-    },
-    String,
-    FilePath {
-        extensions: Option<Vec<String>>,
-    },
-    Color,
-    Array {
-        item_kind: Box<FieldTypeKind>,
-    },
-    Map {
-        value_kind: Box<FieldTypeKind>,
-        known_keys: Option<Vec<String>>,
-    },
-}
-
-#[derive(Debug, Clone)]
-pub enum FieldKind {
-    Bool,
-    Int(i64),
-    Float(f64),
-    Enum(String),
-    String(String),
-    Path(Vec<PathBuf>),
-    Color(Color),
-    Array(Vec<FieldKind>),
-    Map(HashMap<String, FieldKind>),
-}
+pub mod value;
 
 #[derive(Debug, serde::Deserialize)]
 struct SchemaFile {
@@ -64,7 +33,7 @@ pub struct PropertySchema {
     pub category: Vec<String>,
     pub label: String,
     pub kind: FieldTypeKind,
-    pub default: toml::Value,
+    pub default: FieldValue,
 }
 
 impl PropertySchema {
@@ -95,7 +64,12 @@ impl PropertySchema {
 
         // default定義されていなかったらフォールバック
         let default = match raw.default {
-            Some(v) => v,
+            Some(v) => kind.parse_toml_to(&v).with_context(|| {
+                format!(
+                    "could not derive default for key `{}` in `{plugin_id}`",
+                    raw.key
+                )
+            })?,
             None => kind.to_default_value().with_context(|| {
                 format!(
                     "could not derive default for key `{}` in `{plugin_id}`",
@@ -135,5 +109,17 @@ impl PropertySchema {
                 .with_context(|| format!("invalid Map value_kind for key `{key}`")),
             _ => Ok(()),
         }
+    }
+
+    pub fn default_properties(schema: &[PropertySchema]) -> HashMap<NamespacedID, PropertyValue> {
+        schema
+            .iter()
+            .map(|field| {
+                (
+                    field.key.clone(),
+                    PropertyValue::Static(field.default.clone()),
+                )
+            })
+            .collect()
     }
 }

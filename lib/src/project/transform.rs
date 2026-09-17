@@ -18,12 +18,12 @@ pub struct ClipTranslate {
 )]
 #[archive_attr(derive(CheckBytes))]
 //
+#[deprecated]
 pub enum ClipTranslates {
     Normal(ClipTranslate),
     Keyframe(Vec<ClipTranslate>),
     None,
 }
-#[deprecated]
 impl ClipTranslates {
     pub fn get_translate_at(&self) -> Option<ClipTranslate> {
         match self {

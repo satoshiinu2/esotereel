@@ -64,9 +64,7 @@ inline QString toQString(const RawOwnedString &raw) {
 }
 
 inline void free(const RawOwnedString &raw) {
-    if (raw.ptr) {
-        esotereel_gui_helper::owned_string_free(raw.ptr, raw.len);
-    }
+    esotereel_gui_helper::owned_string_free(raw);
 }
 
 }; // namespace esotereel::OwnedString

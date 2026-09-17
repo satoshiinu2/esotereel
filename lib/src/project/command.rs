@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
@@ -6,7 +6,6 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
-        clip::ClipData,
         ids::{ClipId, LayerId},
         transform::ClipTranslates,
         value::PropertyValue,
@@ -46,7 +45,7 @@ pub enum CommandRequest {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: BTreeMap<String, PropertyValue>,
+        properties: HashMap<NamespacedID, PropertyValue>,
 
         translates: ClipTranslates,
     },
@@ -74,7 +73,7 @@ pub enum CommandHistory {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: BTreeMap<String, PropertyValue>,
+        properties: HashMap<NamespacedID, PropertyValue>,
 
         translates: ClipTranslates,
     },

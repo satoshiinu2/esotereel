@@ -124,20 +124,20 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
 
     engine.register_fn(
-        "core_get_texture",
+        "get_texture",
         |ctx: &mut PluginRenderContext, path: &str, start: f64, lookahead: f64| {
             ctx.get_texture(path, start, lookahead)
         },
     );
     engine.register_fn(
-        "core_get_texture",
+        "get_texture",
         |ctx: &mut PluginRenderContext, path: &str, start: f64| {
             ctx.get_texture(path, start, DEFAULT_LOOKAHEAD_SECONDS)
         },
     );
 
     engine.register_fn(
-        "core_render_video",
+        "render_video",
         |ctx: &mut PluginRenderContext, tex: i64, x: f64, y: f64, w: f64, h: f64| {
             ctx.render_video(tex, x, y, w, h)
         },
@@ -151,9 +151,12 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
     engine.register_fn("core_redo", core_redo);
 }
 
+#[deprecated]
 fn core_undo() {
     info!("undo placeholder called");
 }
+
+#[deprecated]
 fn core_redo() {
     info!("redo placeholder called");
 }
