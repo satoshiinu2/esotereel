@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 APP_DIR="build/AppDir"
 DIST_DIR="dist"
@@ -54,7 +54,13 @@ if [ -f installer/icon.png ]; then
   cp installer/icon.png "$APP_DIR/usr/share/icons/hicolor/256x256/apps/esotereel.png"
 fi
 
-linuxdeployqt "$APP_DIR/usr/share/applications/esotereel.desktop" -bundle-non-qt-libs -unsupported-allow-new-glibc
+# linuxdeployqt is distributed as an AppImage. On GitHub-hosted runners it is
+# safer to execute it in extracted mode instead of directly invoking the AppImage.
+linuxdeployqt --appimage-extract-and-run \
+  "$APP_DIR/usr/share/applications/esotereel.desktop" \
+  -bundle-non-qt-libs \
+  -unsupported-allow-new-glibc \
+  -verbose=2
 
 # 6. AppImage のビルドを実行
 ARCH=x86_64 appimagetool --appimage-extract-and-run -n "$APP_DIR" "$DIST_DIR/esotereel.AppImage"
