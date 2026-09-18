@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esotereel_gui_helper.h"
 #include <QColor>
 #include <QString>
 #include <QStringList>
@@ -8,60 +9,78 @@
 
 namespace esotereel {
 
-class FieldValue {
-  public:
-    enum class Kind : uint8_t {
-        Bool,
-        Int,
-        Float,
-        Enum,
-        String,
-        Path,
-        Color,
-        Array,
-        Map,
-    };
+using CFieldValue = esotereel_gui_helper::CFieldValue;
+using CFieldValueTag = esotereel_gui_helper::CFieldValueTag;
 
-    FieldValue();
-    explicit FieldValue(const QVariant &variant, Kind kind = Kind::String);
-    FieldValue(const FieldValue &other);
-    FieldValue(FieldValue &&other) noexcept;
-    ~FieldValue();
-
-    FieldValue &operator=(const FieldValue &other);
-    FieldValue &operator=(FieldValue &&other) noexcept;
-
-    // Direct constructors
-    static FieldValue fromBool(bool value);
-    static FieldValue fromInt(int64_t value);
-    static FieldValue fromFloat(double value);
-    static FieldValue fromString(const QString &value);
-    static FieldValue fromEnum(const QString &value);
-    static FieldValue fromColor(const QColor &color);
-    static FieldValue fromPaths(const QStringList &paths);
-    static FieldValue fromArray(const QVariantList &items);
-    static FieldValue fromMap(const QVariantMap &map);
-
-    // QVariant conversion
-    static FieldValue fromVariant(const QVariant &variant);
-    QVariant toVariant() const;
-
-    // Getters
-    Kind kind() const noexcept;
-    bool asBool(bool defaultValue = false) const;
-    int64_t asInt(int64_t defaultValue = 0) const;
-    double asFloat(double defaultValue = 0.0) const;
-    QString asString(const QString &defaultValue = QString()) const;
-    QColor asColor(const QColor &defaultValue = Qt::white) const;
-    QStringList asPaths() const;
-    QVariantList asArray() const;
-    QVariantMap asMap() const;
-
-    bool isValid() const noexcept;
-
-  private:
-    Kind m_kind;
-    QVariant m_value;
+struct EnumValue {
+    std::string value;
 };
 
+struct PathValue {
+    std::vector<std::string> value;
+};
+
+struct RgbaColor {
+    float r;
+    float g;
+    float b;
+    float a;
+};
+
+class FieldValue {
+  public:
+    using Array = std::vector<FieldValue>;
+    using Map = std::map<std::string, FieldValue>;
+    using Path = PathValue;
+
+    using Variant = std::variant<bool, std::int64_t, double, EnumValue, std::string, Path, RgbaColor, Array, Map>;
+
+    FieldValue() = default;
+
+    explicit FieldValue(Variant value) : value_(std::move(value)) {}
+
+    static FieldValue fromC(const CFieldValue &value);
+
+    // Static factory methods
+    static FieldValue fromBool(bool value) { return FieldValue(value); }
+    static FieldValue fromInt(std::int64_t value) { return FieldValue(value); }
+    static FieldValue fromFloat(double value) { return FieldValue(value); }
+    static FieldValue fromEnum(const std::string &value) { return FieldValue(EnumValue{value}); }
+    static FieldValue fromString(const std::string &value) { return FieldValue(value); }
+    static FieldValue fromString(const QString &value) { return FieldValue(value.toStdString()); }
+    static FieldValue fromPath(const PathValue &value) { return FieldValue(value); }
+    static FieldValue fromColor(const RgbaColor &value) { return FieldValue(value); }
+    static FieldValue fromArray(const Array &value) { return FieldValue(value); }
+    static FieldValue fromMap(const Map &value) { return FieldValue(value); }
+
+    const Variant &variant() const noexcept {
+        return value_;
+    }
+
+    Variant &variant() noexcept {
+        return value_;
+    }
+
+    // Type conversion methods
+    bool asBool() const { return std::get<bool>(value_); }
+    std::int64_t asInt() const { return std::get<std::int64_t>(value_); }
+    double asFloat() const { return std::get<double>(value_); }
+    std::string asEnum() const { return std::get<EnumValue>(value_).value; }
+    std::string asString() const {
+        if (std::holds_alternative<std::string>(value_)) {
+            return std::get<std::string>(value_);
+        } else if (std::holds_alternative<EnumValue>(value_)) {
+            return std::get<EnumValue>(value_).value;
+        }
+        return "";
+    }
+    QString asQString() const { return QString::fromStdString(asString()); }
+    PathValue asPath() const { return std::get<PathValue>(value_); }
+    RgbaColor asColor() const { return std::get<RgbaColor>(value_); }
+    Array asArray() const { return std::get<Array>(value_); }
+    Map asMap() const { return std::get<Map>(value_); }
+
+  private:
+    Variant value_;
+};
 } // namespace esotereel

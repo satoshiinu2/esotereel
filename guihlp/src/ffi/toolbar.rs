@@ -47,8 +47,8 @@ pub unsafe extern "C" fn toolbar_get_buttons_count(
     let state = ClientStateHandle::from_ptr(ptr_state);
 
     let target_str = match target.as_str() {
-        Some(s) => s,
-        None => return -1,
+        Ok(s) => s,
+        Err(_) => return -1,
     };
     let state = state.lock().expect("mutex poisoned");
 
@@ -88,8 +88,8 @@ pub unsafe extern "C" fn toolbar_get_buttons(
     let state = ClientStateHandle::from_ptr(ptr_state);
 
     let target_str = match target.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
+        Ok(s) => s,
+        Err(_) => return WrapperErrorCode::invalid_string_error(),
     };
     let state = state.lock().expect("mutex poisoned");
 
@@ -137,12 +137,12 @@ pub unsafe extern "C" fn toolbar_set_layout(
 
     let state = ClientStateHandle::from_ptr(ptr_state);
     let target_str = match target.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
+        Ok(s) => s,
+        Err(_) => return WrapperErrorCode::invalid_string_error(),
     };
     let ids_str = match ids_toml_array.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
+        Ok(s) => s,
+        Err(_) => return WrapperErrorCode::invalid_string_error(),
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
@@ -189,8 +189,8 @@ pub unsafe extern "C" fn toolbar_handle_action(
     let state = ClientStateHandle::from_ptr(ptr_state);
 
     let button_id = match button_id.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
+        Ok(s) => s,
+        Err(_) => return WrapperErrorCode::invalid_string_error(),
     };
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
@@ -206,7 +206,10 @@ pub unsafe extern "C" fn toolbar_handle_action(
                 )))?;
 
         state
+            .common
             .scripts
+            .read()
+            .expect("lock poisoned")
             .call::<()>(plugin_id, &button.action.func_name, ())
             .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
 

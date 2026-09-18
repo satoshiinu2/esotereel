@@ -21,6 +21,18 @@ enum class WrapperErrorCode {
   Panic = 4,
 };
 
+enum class CFieldValueTag : uint32_t {
+  Bool,
+  Int,
+  Float,
+  Enum,
+  String,
+  Path,
+  Color,
+  Array,
+  Map,
+};
+
 enum class CLogLevel : uint8_t {
   Off,
   Error,
@@ -60,9 +72,8 @@ struct ClientStateHandle;
 
 struct Clip;
 
-/// レイヤーには特定の役割を持たせない(Video/Audio/Effectで型を分けない)。
-/// children があれば Folder として振る舞う。実行時にフラット化するかは
-/// executor 側の責務で、データ構造上は葉レイヤーと区別しない。
+struct FieldValue;
+
 struct Layer;
 
 /// Folderの中身(名前・開閉状態・並び順)。
@@ -94,6 +105,65 @@ using LayerFolderId = uint64_t;
 struct StringView {
   const uint8_t *ptr;
   uintptr_t len;
+};
+
+/// 手動で解放しないといけない
+struct OwnedString {
+  uint8_t *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+};
+
+struct OwnedStringArray {
+  OwnedString *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+};
+
+struct RgbaColor {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+  uint8_t a;
+};
+
+struct CFieldValue;
+struct CFieldValueMapEntry;
+
+struct CFieldValueArray {
+  CFieldValue *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+};
+
+
+
+struct CFieldValueMap {
+  CFieldValueMapEntry *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+};
+
+union CFieldValueData {
+  uint8_t bool_value;
+  int64_t int_value;
+  double float_value;
+  OwnedString enum_value;
+  OwnedString string_value;
+  OwnedStringArray path_value;
+  RgbaColor color_value;
+  CFieldValueArray array_value;
+  CFieldValueMap map_value;
+};
+
+struct CFieldValue {
+  CFieldValueTag tag;
+  CFieldValueData data;
+};
+
+struct CFieldValueMapEntry {
+  OwnedString key;
+  CFieldValue value;
 };
 
 using OnServerReadyCFn = void(*)(bool, StringView);
@@ -131,19 +201,42 @@ struct CameraInfo {
 
 using TimelineTick = int64_t;
 
-/// 手動で解放しないといけない
-struct OwnedString {
-  uint8_t *ptr;
-  uintptr_t len;
-  uintptr_t capacity;
-};
-
 struct SettingsField {
   OwnedString key;
   OwnedString category;
   OwnedString label;
   SettingsFieldType kind_type;
-  OwnedString default_value;
+  CFieldValue default_value;
+};
+
+template<typename T>
+union FfiOptionUnion {
+  T some;
+};
+
+template<typename T>
+struct FfiOption {
+  bool has_value;
+  FfiOptionUnion<T> value;
+};
+
+template<typename T>
+union FfiResultUnion {
+  T ok;
+  OwnedString err;
+};
+
+template<typename T>
+struct FfiResult {
+  bool is_ok;
+  FfiResultUnion<T> value;
+};
+
+using CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
+
+struct FfiResultVoid {
+  bool is_ok;
+  OwnedString err;
 };
 
 struct FfiToolbarButton {
@@ -156,6 +249,15 @@ struct FfiToolbarButton {
 };
 
 using ScriptId = uint64_t;
+
+template<typename T>
+struct FfiArray {
+  T *ptr;
+  uintptr_t len;
+  uintptr_t cap;
+  /// free_fnを呼んでcから解放
+  void (*free_fn)(FfiArray<T>*);
+};
 
 extern "C" {
 
@@ -209,6 +311,10 @@ bool debug_streams_write_loaded_streams_sec_arr(const ClientStateHandle *ptr_sta
                                                 uint32_t resource_id,
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
+
+CFieldValue *esotereel_field_value_export(const FieldValue *value);
+
+void esotereel_field_value_free(CFieldValue *value);
 
 WrapperErrorCode internal_server_start(const ClientStateHandle *ptr_state,
                                        StringView addr,
@@ -326,15 +432,11 @@ WrapperErrorCode settings_get_all_fields(const ClientStateHandle *ptr_state,
                                          SettingsField *output,
                                          uintptr_t output_len);
 
-WrapperErrorCode settings_get_value(const ClientStateHandle *ptr_state,
-                                    StringView key,
-                                    QVariant ***out);
+CFieldValueResult settings_get_value(const ClientStateHandle *ptr_state, StringView key);
 
-WrapperErrorCode settings_set_value(const ClientStateHandle *ptr_state,
-                                    StringView key,
-                                    const QVariant *variant_ptr);
-
-void settings_free_qvariant(QVariant *ptr);
+FfiResultVoid settings_set_value(const ClientStateHandle *ptr_state,
+                                 StringView key,
+                                 CFieldValue value);
 
 int32_t settings_get_categories_count(const ClientStateHandle *ptr_state);
 
@@ -366,6 +468,8 @@ WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 void owned_string_free(OwnedString str);
+
+void owned_string_array_free(OwnedString value);
 
 int32_t toolbar_get_buttons_count(const ClientStateHandle *ptr_state, StringView target);
 

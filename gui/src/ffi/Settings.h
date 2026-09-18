@@ -26,13 +26,14 @@ class SettingsField {
     SettingsField(esotereel_gui_helper::SettingsField ffi)
         : key(OwnedString::toQString(ffi.key)), category(OwnedString::toQString(ffi.category)),
           label(OwnedString::toQString(ffi.label)), kindType(ffi.kind_type),
-          defaultValue(FieldValue::fromString(OwnedString::toQString(ffi.default_value))) {
+          defaultValue(FieldValue::fromC(ffi.default_value)) {
 
         // Free the owned strings
         OwnedString::free(ffi.key);
         OwnedString::free(ffi.category);
         OwnedString::free(ffi.label);
-        OwnedString::free(ffi.default_value);
+        // Note: default_value is a CFieldValue which may contain owned strings that need to be freed
+        // This is handled in the fromC conversion
     }
 };
 

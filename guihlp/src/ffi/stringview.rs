@@ -1,3 +1,5 @@
+use esotereel_lib::util::result::EsotereelError;
+
 use crate::slice_from_ptr_or_empty;
 use std::borrow::Cow;
 
@@ -26,12 +28,14 @@ impl StringView {
         }
     }
 
-    pub fn as_str(&self) -> Option<&str> {
+    pub fn as_str(&self) -> anyhow::Result<&str> {
         if self.ptr.is_null() {
-            return None;
+            anyhow::bail!(EsotereelError::NullPointer(
+                "StringView pointer is null".to_owned()
+            ));
         }
         let slice = unsafe { slice_from_ptr_or_empty(self.ptr, self.len) };
-        std::str::from_utf8(slice).ok()
+        std::str::from_utf8(slice).map_err(anyhow::Error::from)
     }
 
     pub fn as_string_lossy(&self) -> Cow<'_, str> {
@@ -76,6 +80,24 @@ impl OwnedString {
         Self { ptr, len, capacity }
     }
 
+    pub fn as_str(&self) -> anyhow::Result<&str> {
+        if self.ptr.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer(
+                "OwnedString pointer is null".to_owned()
+            ));
+        }
+        let slice = unsafe { slice_from_ptr_or_empty(self.ptr, self.len) };
+        std::str::from_utf8(slice).map_err(anyhow::Error::from)
+    }
+
+    pub fn as_string_lossy(&self) -> Cow<'_, str> {
+        if self.ptr.is_null() {
+            return Cow::Owned(String::new());
+        }
+        let slice = unsafe { slice_from_ptr_or_empty(self.ptr, self.len) };
+        String::from_utf8_lossy(slice)
+    }
+
     pub fn zero() -> Self {
         Self {
             ptr: std::ptr::null_mut(),
@@ -87,13 +109,21 @@ impl OwnedString {
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
+
+    pub unsafe fn free(self) {
+        if self.ptr.is_null() {
+            return;
+        }
+
+        let _ = unsafe { String::from_raw_parts(self.ptr, self.len, self.capacity) };
+    }
 }
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn owned_string_free(str: OwnedString) {
-    if !str.is_null() {
-        let _ = unsafe { String::from_raw_parts(str.ptr, str.len, str.capacity) };
+    unsafe {
+        str.free();
     }
 }
 
@@ -106,14 +136,63 @@ impl From<StringView> for String {
     }
 }
 
-impl From<String> for StringView {
-    fn from(value: String) -> Self {
-        StringView::from_str(value.as_str())
-    }
-}
-
 impl From<&str> for StringView {
     fn from(value: &str) -> Self {
         StringView::from_str(value)
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct OwnedStringArray {
+    pub ptr: *mut OwnedString,
+    pub len: usize,
+    pub capacity: usize,
+}
+
+impl OwnedStringArray {
+    pub fn from_vec(mut values: Vec<OwnedString>) -> Self {
+        let result = Self {
+            ptr: values.as_mut_ptr(),
+            len: values.len(),
+            capacity: values.capacity(),
+        };
+
+        std::mem::forget(values);
+
+        result
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+            capacity: 0,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    pub unsafe fn free(self) {
+        if self.ptr.is_null() {
+            return;
+        }
+
+        let values = unsafe { Vec::from_raw_parts(self.ptr, self.len, self.capacity) };
+
+        for value in values {
+            unsafe {
+                value.free();
+            }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn owned_string_array_free(value: OwnedString) {
+    unsafe {
+        value.free();
     }
 }

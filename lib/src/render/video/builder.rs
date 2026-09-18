@@ -9,6 +9,7 @@ use crate::{
     render::{RenderContext, vertex::Vertex},
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
+use log::info;
 use rhai::plugin;
 
 pub struct VertexBatch {
@@ -65,6 +66,11 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             Arc::clone(ctx.media_fetch_cache),
         );
         let props_dynamic = field_values_to_rhai_map(&clip.properties);
+
+        // info!(
+        //     "clip.properties: {:?} props_dynamic: {:?}",
+        //     clip.properties, props_dynamic
+        // );
 
         let call_result: Result<(), _> =
             script.call(&kind.func_name, (render_ctx.clone(), props_dynamic));

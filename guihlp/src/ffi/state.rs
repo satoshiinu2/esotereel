@@ -42,11 +42,13 @@ pub extern "C" fn client_state_new(
 
     let std_plugin_dir = std_plugin_dir
         .as_str()
+        .ok()
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(s));
 
     let working_dir = working_dir
         .as_str()
+        .ok()
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(s));
 
@@ -102,7 +104,7 @@ pub extern "C" fn client_state_network_run(
     let state = state.lock().expect("mutex poisoned");
     let network = Arc::clone(&state.network);
 
-    let Some(addr_str) = addr.as_str() else {
+    let Ok(addr_str) = addr.as_str() else {
         return WrapperErrorCode::invalid_string_error();
     };
     let addr = addr_str.to_string();

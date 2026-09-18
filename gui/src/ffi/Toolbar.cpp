@@ -10,7 +10,7 @@ namespace esotereel {
 
 Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *network, const QString &target) {
     if (!network) {
-        return Result<QVector<ToolbarButton>>::error("Network handler is null");
+        return Result<QVector<ToolbarButton>>::err("Network handler is null");
     }
 
     QVector<ToolbarButton> buttons;
@@ -20,7 +20,7 @@ Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *network, const Q
 
     int32_t count = esotereel_gui_helper::toolbar_get_buttons_count(*network, targetView);
     if (count < 0) {
-        return Result<QVector<ToolbarButton>>::error("Failed to get toolbar buttons count");
+        return Result<QVector<ToolbarButton>>::err("Failed to get toolbar buttons count");
     }
     if (count == 0) {
         return Result<QVector<ToolbarButton>>::ok(buttons);
@@ -42,7 +42,7 @@ Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *network, const Q
 
 Result<void> Toolbar::setLayout(ClientState *network, const QString &target, const QStringList &orderedIds) {
     if (!network) {
-        return Result<void>::error("Network handler is null");
+        return Result<void>::err("Network handler is null");
     }
 
     // ["id1","id2",...] 形式のTOML配列文字列にする(id自体に " は含まれない前提)

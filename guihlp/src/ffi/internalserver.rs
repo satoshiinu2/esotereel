@@ -27,18 +27,20 @@ pub extern "C" fn internal_server_start(
     let state = state.lock().expect("mutex poisoned");
     let plugin_loader_clone = Arc::clone(&state.plugin_loader);
 
-    let Some(addr_str) = addr.as_str() else {
+    let Ok(addr_str) = addr.as_str() else {
         return WrapperErrorCode::invalid_string_error();
     };
     let addr = addr_str.to_string();
 
     let std_plugin_dir = std_plugin_dir
         .as_str()
+        .ok()
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(s));
 
     let working_dir = working_dir
         .as_str()
+        .ok()
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(s));
 

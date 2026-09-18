@@ -144,7 +144,7 @@ pub extern "C" fn req_load_stream(
     let state = state.lock().expect("mutex poisoned");
     let network = &state.network;
 
-    let Some(path) = path.as_str() else {
+    let Ok(path) = path.as_str() else {
         return WrapperErrorCode::invalid_string_error();
     };
     let path = path.to_string();

@@ -8,7 +8,7 @@ use dashmap::DashMap;
 use esotereel_lib::{
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
-    plugin::{PluginLoader, script::ScriptStore},
+    plugin::PluginLoader,
     project::ids::ResourceId,
     state::CommonState,
 };
@@ -26,8 +26,6 @@ pub struct ServerState {
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
-
-    pub scripts: ScriptStore,
 }
 
 impl ServerState {
@@ -43,7 +41,6 @@ impl ServerState {
             streams: DashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal,
-            scripts: ScriptStore::new(),
         }
     }
 
@@ -52,19 +49,6 @@ impl ServerState {
             .get(path)
             .and_then(|s| s.as_option())
             .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))
-    }
-
-    pub fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
-        let plugin_scripts = {
-            let loader = self.plugin_loader.lock().expect("mutex poisoned");
-            loader.collect_all_scripts()
-        };
-
-        self.scripts
-            .merge_plugin_scripts(plugin_scripts)
-            .context("plugin script conflict during load_plugins")?;
-
-        Ok(())
     }
 }
 

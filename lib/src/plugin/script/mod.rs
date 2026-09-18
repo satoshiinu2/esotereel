@@ -4,9 +4,13 @@ use std::{
     sync::Arc,
 };
 
-use rhai::module_resolvers::FileModuleResolver;
+use log::warn;
 
-use crate::{plugin::script::api::register_fn_for, util::result::EsotereelError};
+use crate::{
+    plugin::registry::PluginDefinitionRegistry,
+    plugin::script::api::register_fn_for,
+    util::result::EsotereelError,
+};
 
 pub mod api;
 pub mod bridge;
@@ -28,8 +32,13 @@ impl CompiledScript {
         // rhai を全部フラットに合流させる
         let mut paths: Vec<_> = walkdir::WalkDir::new(resolve_path)
             .into_iter()
-            .filter_map(|e| e.ok())
-            .map(|e| e.into_path())
+            .filter_map(|e| match e {
+                Ok(entry) => Some(entry.into_path()),
+                Err(err) => {
+                    warn!("Failed to read plugin directory entry: {err}");
+                    None
+                }
+            })
             .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "rhai"))
             .collect();
 
@@ -38,20 +47,25 @@ impl CompiledScript {
         paths.sort();
         paths.insert(0, source_path.clone());
 
-        // 関数名 -> 最初に定義されていたファイル
-        let mut functions = HashMap::new();
+        // (関数名, 引数の数) -> 最初に定義されていたファイル
+        // オーバーロード(同名・異なるarity)は許容し、
+        // 同じシグネチャの重複だけを衝突として扱う
+        let mut functions: HashMap<(String, usize), PathBuf> = HashMap::new();
         let mut ast = rhai::AST::empty();
 
         for path in paths {
             let clip_ast = engine.compile_file(path.clone())?;
 
             for func in clip_ast.iter_functions() {
-                let name = func.name.to_string();
+                let key = (func.name.to_string(), func.params.len());
 
-                if let Some(previous_path) = functions.insert(name.clone(), path.clone()) {
+                if let Some(previous_path) = functions.insert(key.clone(), path.clone()) {
+                    // 同一ファイル内での再定義はコンパイラ側で弾かれるはずなので、
+                    // ここに来るのは異なるファイル間の衝突のみ
                     anyhow::bail!(
-                        "Duplicate function '{}': '{}' and '{}'",
-                        name,
+                        "Duplicate function '{}' ({} args): '{}' and '{}'",
+                        key.0,
+                        key.1,
                         previous_path.display(),
                         path.display()
                     );
@@ -83,62 +97,67 @@ impl CompiledScript {
     }
 }
 
+/// プラグインから供給されるスクリプトをid衝突チェック付きで集約するレジストリ。
 #[derive(Debug, Default)]
 pub struct ScriptRegistry {
-    scripts: HashMap<String, CompiledScript>,
+    inner: PluginDefinitionRegistry<String, CompiledScript>,
 }
 
 impl ScriptRegistry {
-    pub fn scripts_for_plugin(&self, id: &str) -> Option<&CompiledScript> {
-        self.scripts.get(id)
+    pub fn get(&self, id: &str) -> Option<&CompiledScript> {
+        self.inner.get(id)
     }
 
+    pub fn contains(&self, id: &str) -> bool {
+        self.inner.contains(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &CompiledScript)> {
+        self.inner.iter()
+    }
+
+    /// プラグイン由来のスクリプトを合流させる。
+    /// 既存(組み込み/他プラグイン)とid衝突があればエラーにする。
     pub fn merge_plugin_scripts(
         &mut self,
-        plugin_buttons: HashMap<String, CompiledScript>,
+        plugin_scripts: HashMap<String, CompiledScript>,
     ) -> anyhow::Result<()> {
-        let mut merged = self.scripts.clone();
-        merged.extend(plugin_buttons);
-        self.scripts = merged;
-        Ok(())
+        self.inner.merge(plugin_scripts)
     }
 }
 
-#[derive(Debug)]
+/// スクリプトの唯一の保管場所。
+/// 以前は `ScriptRegistry` と `ScriptStore` の2箇所に同じ内容を持たせていたが、
+/// 状態不整合のリスクがあるため単一の HashMap に統一した。
+/// 現在は ScriptRegistry を薄くラップする構造に戻している。
+#[derive(Debug, Default)]
 pub struct ScriptStore {
-    pub registry: ScriptRegistry,
-    scripts: HashMap<String, CompiledScript>,
-    has_disk_loaded: bool,
+    registry: ScriptRegistry,
 }
 
 impl ScriptStore {
     pub fn new() -> Self {
         Self {
             registry: ScriptRegistry::default(),
-            scripts: HashMap::new(),
-            has_disk_loaded: false,
         }
+    }
+
+    pub fn scripts_for_plugin(&self, id: &str) -> Option<&CompiledScript> {
+        self.registry.get(id)
     }
 
     pub fn merge_plugin_scripts(
         &mut self,
-        plugin_buttons: HashMap<String, CompiledScript>,
+        plugin_scripts: HashMap<String, CompiledScript>,
     ) -> anyhow::Result<()> {
-        self.registry.merge_plugin_scripts(plugin_buttons.clone())?;
-        self.scripts.extend(plugin_buttons);
-        Ok(())
+        self.registry.merge_plugin_scripts(plugin_scripts)
     }
 
     pub fn apply_loaded_script(
         &mut self,
         loaded: HashMap<String, CompiledScript>,
     ) -> anyhow::Result<()> {
-        for (target, source) in loaded {
-            self.scripts.insert(target, source);
-        }
-        self.has_disk_loaded = true;
-
-        Ok(())
+        self.registry.merge_plugin_scripts(loaded)
     }
 
     pub fn call<T: Clone + Send + Sync + 'static>(
@@ -148,7 +167,7 @@ impl ScriptStore {
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<T> {
         let script = self
-            .scripts
+            .registry
             .get(plugin_id)
             .ok_or(EsotereelError::PluginNotFound(plugin_id.to_string()))?;
 

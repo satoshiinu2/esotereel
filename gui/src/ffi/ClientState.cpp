@@ -53,7 +53,7 @@ bool ClientState::run(QString addr) {
 
 Result<Project> ClientState::getProject() const {
     if (!isValid()) {
-        return Result<Project>::error("Invalid network handler");
+        return Result<Project>::err("Invalid network handler");
     }
 
     const void *guard_ptr;
@@ -68,30 +68,22 @@ Result<Project> ClientState::getProject() const {
 
 Result<void> ClientState::bootstrap() const {
     if (!isValid()) {
-        return Result<void>::error("Invalid network handler");
+        return Result<void>::err("Invalid network handler");
     }
 
     auto result = esotereel_gui_helper::client_state_bootstrap(network_ptr);
 
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResultVoid(result);
-    }
-
-    return {};
+    return wrapperResultToResultVoid(result);
 }
 
 Result<void> ClientState::logDirectoriesInfo() const {
     if (!isValid()) {
-        return Result<void>::error("Invalid network handler");
+        return Result<void>::err("Invalid network handler");
     }
 
     auto result = esotereel_gui_helper::client_state_log_directories_info(network_ptr);
 
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResultVoid(result);
-    }
-
-    return {};
+    return wrapperResultToResultVoid(result);
 }
 
 Requests ClientState::requests() const {

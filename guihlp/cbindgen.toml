@@ -10,7 +10,6 @@ parse_deps = true
 clean = true
 include = ["esotereel_lib"]
 
-
 [export.rename]
 "Vec3" = "QVector3D"
 "Mat4" = "QMatrix4x4"
@@ -26,7 +25,28 @@ include = [
     "Project",
     "Timeline",
     "Layer",
-    "",
     "StringView",
     "OwnedString",
+    "CFieldValue",
+    "CFieldValueTag",
+    "CFieldValueData",
+    "CFieldValueMap",
+    "CFieldValueMapEntry",
+    "CFieldValueArray",
+    "FfiResult",
+    "FfiOption",
+    "FfiArray",
+    "FfiResult_i32",
+    "FfiResult_f32",
+    "FfiResult_bool",
+    "FfiResult_void",
+    "FfiResult_CFieldValue",
+    "FfiResult_TimelineId",
+    "FfiResult_ClipId",
+    "FfiResult_Option_CFieldValue",
+    "FfiOption_i32",
+    "FfiOption_CFieldValue",
+    "FfiArray_i32",
+    "FfiArray_f32",
+    "FfiArray_CFieldValue",
 ]

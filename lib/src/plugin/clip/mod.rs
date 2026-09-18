@@ -6,6 +6,7 @@ use crate::{
     plugin::{
         NamespacedID,
         property::{PropertySchema, parse::PropertySchemaRaw},
+        registry::PluginDefinitionRegistry,
     },
     project::clip::ClipKind,
 };
@@ -82,20 +83,20 @@ impl ClipKind {
 /// ToolbarRegistry / SchemaRegistry と対になる。
 #[derive(Debug, Default)]
 pub struct ClipKindRegistry {
-    kinds: HashMap<NamespacedID, ClipKind>,
+    inner: PluginDefinitionRegistry<NamespacedID, ClipKind>,
 }
 
 impl ClipKindRegistry {
     pub fn get(&self, id: &NamespacedID) -> Option<&ClipKind> {
-        self.kinds.get(id)
+        self.inner.get(id)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&NamespacedID, &ClipKind)> {
-        self.kinds.iter()
+        self.inner.iter()
     }
 
     pub fn contains(&self, id: &NamespacedID) -> bool {
-        self.kinds.contains_key(id)
+        self.inner.contains(id)
     }
 
     /// プラグイン由来のClipKindを合流させる。
@@ -104,13 +105,7 @@ impl ClipKindRegistry {
         &mut self,
         plugin_kinds: HashMap<NamespacedID, ClipKind>,
     ) -> anyhow::Result<()> {
-        for id in plugin_kinds.keys() {
-            if self.kinds.contains_key(id) {
-                anyhow::bail!("duplicate clip kind id `{}`", id);
-            }
-        }
-        self.kinds.extend(plugin_kinds);
-        Ok(())
+        self.inner.merge(plugin_kinds)
     }
 }
 

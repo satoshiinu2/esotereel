@@ -9,8 +9,10 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::project::ids::{ClipId, LayerId, ResourceId, TimelineId};
 
-#[derive(Archive, Serialize, Deserialize, Debug)]
+// TODO: cow
+#[derive(Archive, Serialize, Deserialize, Debug, thiserror::Error)]
 pub enum EsotereelError {
+    NullPointer(String),
     LockError(String),
     IoError(String),
     AccessError(String),
@@ -30,6 +32,7 @@ pub enum EsotereelError {
 impl fmt::Display for EsotereelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            EsotereelError::NullPointer(msg) => write!(f, "Null pointer error: {}", msg),
             EsotereelError::LockError(msg) => write!(f, "Lock error: {}", msg),
             EsotereelError::IoError(msg) => write!(f, "IO error: {}", msg),
             EsotereelError::AccessError(msg) => write!(f, "Access error: {}", msg),
@@ -47,8 +50,6 @@ impl fmt::Display for EsotereelError {
         }
     }
 }
-
-impl std::error::Error for EsotereelError {}
 
 pub type EsotereelResult<T> = Result<T>;
 

@@ -12,6 +12,7 @@ use rkyv::{Archive, CheckBytes, bytecheck};
     PartialEq,
 )]
 #[archive_attr(derive(CheckBytes))]
+#[repr(C)]
 pub struct RgbaColor {
     pub r: u8,
     pub g: u8,

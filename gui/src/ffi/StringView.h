@@ -3,6 +3,7 @@
 #include "esotereel_gui_helper.h"
 #include <QString>
 #include <cstdint>
+#include <qobject.h>
 #include <string>
 
 using RawStringView = esotereel_gui_helper::StringView;
@@ -43,6 +44,11 @@ inline RawStringView fromQUtf8String(const QByteArray &utf8) {
 }; // namespace esotereel::StringView
 
 namespace esotereel::OwnedString {
+
+inline void free(const RawOwnedString &raw) {
+    esotereel_gui_helper::owned_string_free(raw);
+}
+
 inline bool isNull(const RawOwnedString &raw) {
     return raw.ptr == nullptr || raw.len == 0;
 }
@@ -55,6 +61,12 @@ inline std::string toStdString(const RawOwnedString &raw) {
     return std::string(reinterpret_cast<const char *>(raw.ptr), raw.len);
 }
 
+inline std::string intoStdString(const RawOwnedString &raw) {
+    auto str = toStdString(raw);
+    free(raw);
+    return str;
+}
+
 inline QString toQString(const RawOwnedString &raw) {
     if (!raw.ptr || raw.len == 0) {
         return QString();
@@ -63,8 +75,10 @@ inline QString toQString(const RawOwnedString &raw) {
     return QString::fromUtf8(reinterpret_cast<const char *>(raw.ptr), static_cast<int>(raw.len));
 }
 
-inline void free(const RawOwnedString &raw) {
-    esotereel_gui_helper::owned_string_free(raw);
+inline QString intoQString(const RawOwnedString &raw) {
+    auto str = toQString(raw);
+    free(raw);
+    return str;
 }
 
 }; // namespace esotereel::OwnedString

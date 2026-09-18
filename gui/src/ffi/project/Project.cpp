@@ -42,7 +42,7 @@ Project &Project::operator=(Project &&other) noexcept {
 
 Result<Project> Project::lockRead(const ClientState *network) {
     if (!network || !network->isValid())
-        return Result<Project>::error("Invalid network handler");
+        return Result<Project>::err("Invalid network handler");
 
     const void *guard_ptr = nullptr;
     // C++ クラスが保持する FFI 用ポインタ (raw_ptr) を渡す
@@ -57,7 +57,7 @@ Result<Project> Project::lockRead(const ClientState *network) {
 
 Result<Project> Project::byGuard(const void *guard_ptr) {
     if (!guard_ptr)
-        return Result<Project>::error("Guard pointer is null");
+        return Result<Project>::err("Guard pointer is null");
 
     const RawProject *project_ptr = nullptr;
     auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);

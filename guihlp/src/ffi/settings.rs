@@ -3,20 +3,25 @@ use std::{
     sync::Arc,
 };
 
-use cxx_qt_lib::QVariant;
-use esotereel_lib::plugin::{
-    NamespacedID,
-    property::{PropertySchema, value::FieldTypeKind},
+use esotereel_lib::{
+    plugin::{
+        NamespacedID,
+        property::{PropertySchema, value::FieldTypeKind},
+    },
+    util::result::EsotereelError,
 };
 
 use crate::{
     IntoWrapperError, WrapperErrorCode,
     ffi::{
-        cxxqt_field_value::{field_value_to_qvariant, qvariant_to_field_value},
+        field_value::CFieldValue,
         log_if_panicked,
+        option::FfiOption,
+        result::{FfiResult, FfiResultVoid},
         state::ClientStateHandle,
         stringview::{OwnedString, StringView},
     },
+    ffi_fn,
 };
 
 #[repr(C)]
@@ -38,7 +43,7 @@ pub struct SettingsField {
     pub category: OwnedString,
     pub label: OwnedString,
     pub kind_type: SettingsFieldType,
-    pub default_value: OwnedString,
+    pub default_value: CFieldValue,
 }
 
 impl SettingsField {
@@ -56,14 +61,14 @@ impl SettingsField {
         };
 
         let category_str = field.category.join(" > ");
-        let default_str = field.default.to_string();
+        let default_value = CFieldValue::wrap_ffi(&field.default);
 
         Self {
             key: OwnedString::from_string(field.key.full().to_owned()),
             category: OwnedString::from_string(category_str),
             label: OwnedString::from_string(field.label.clone()),
             kind_type,
-            default_value: OwnedString::from_string(default_str),
+            default_value,
         }
     }
 }
@@ -138,75 +143,59 @@ pub unsafe extern "C" fn settings_get_all_fields(
     }
 }
 
+pub type CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_value(
     ptr_state: *const ClientStateHandle,
     key: StringView,
-    out: *mut *mut *mut QVariant,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let key_str = match key.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
-    };
-
-    let Ok(key_id) = NamespacedID::parse(key_str) else {
-        return WrapperErrorCode::null_ptr();
-    };
-
-    let state = state.lock().expect("mutex poisoned");
-    unsafe {
-        *out = match state.settings.get_value(&key_id) {
-            Some(val) => {
-                let mut variant = field_value_to_qvariant(val);
-                Box::into_raw(Box::new(&mut variant))
+) -> CFieldValueResult {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        key: StringView,
+    ) -> anyhow::Result<Option<CFieldValue>> {
+        {
+            if ptr_state.is_null() {
+                return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
             }
-            None => std::ptr::null_mut(),
+            let state = ClientStateHandle::from_ptr(ptr_state);
+            let key_str = key.as_str()?;
+            let key = NamespacedID::parse(key_str)?;
+            let state = state.lock().expect("mutex poisoned");
+            let value = state
+                .settings
+                .get_value(&key)
+                .map(|value| CFieldValue::wrap_ffi(value));
+            Ok(value)
         }
     }
-
-    WrapperErrorCode::ok()
+    FfiResult::from_result(inner(ptr_state, key).map(FfiOption::from))
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_set_value(
     ptr_state: *const ClientStateHandle,
     key: StringView,
-    variant_ptr: *const QVariant,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() || variant_ptr.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let key_str = match key.as_str() {
-        Some(s) => s,
-        None => return WrapperErrorCode::invalid_string_error(),
-    };
-    let Ok(key_id) = NamespacedID::parse(key_str) else {
-        return WrapperErrorCode::error_from_option(Some("invalid key"));
-    };
-
-    let variant = unsafe { &*variant_ptr };
-    let field_value = qvariant_to_field_value(variant);
-
-    let mut state = state.lock().expect("mutex poisoned");
-    match state.settings.set_value(key_id, field_value) {
-        Ok(()) => WrapperErrorCode::ok(),
-        Err(e) => {
-            let err_str = e.to_string();
-            WrapperErrorCode::error_from_option(Some(&err_str))
+    value: CFieldValue,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        key: StringView,
+        value: CFieldValue,
+    ) -> anyhow::Result<()> {
+        {
+            if ptr_state.is_null() {
+                return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+            }
+            let state = ClientStateHandle::from_ptr(ptr_state);
+            let key_str = key.as_str()?;
+            let key = NamespacedID::parse(key_str)?;
+            let mut state = state.lock().expect("mutex poisoned");
+            let field_value = value.unwrap_ffi()?;
+            state.settings.set_value(key, field_value)
         }
     }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn settings_free_qvariant(ptr: *mut QVariant) {
-    if !ptr.is_null() {
-        unsafe { drop(Box::from_raw(ptr)) };
-    }
+    FfiResultVoid::from_result(inner(ptr_state, key, value))
 }
 
 #[unsafe(no_mangle)]

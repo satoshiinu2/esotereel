@@ -62,15 +62,15 @@ template <typename T> Result<T> wrapperResultToResult(WrapperErrorCode code, T v
     case WrapperErrorCode::Ok:
         return Result<T>::ok(std::move(value));
     case WrapperErrorCode::NotFound:
-        return Result<T>::error(std::string("Not found: ") + (msg ? msg : ""));
+        return Result<T>::err(std::string("Not found: ") + (msg ? msg : ""));
     case WrapperErrorCode::Error:
-        return Result<T>::error(std::string("Error: ") + (msg ? msg : ""));
+        return Result<T>::err(std::string("Error: ") + (msg ? msg : ""));
     case WrapperErrorCode::NullPtr:
-        return Result<T>::error(std::string("Null pointer: ") + (msg ? msg : ""));
+        return Result<T>::err(std::string("Null pointer: ") + (msg ? msg : ""));
     case WrapperErrorCode::Panic:
-        return Result<T>::error(std::string("Panic: ") + (msg ? msg : ""));
+        return Result<T>::err(std::string("Panic: ") + (msg ? msg : ""));
     default:
-        return Result<T>::error(std::string("Unknown error"));
+        return Result<T>::err(std::string("Unknown error"));
     }
 }
 
@@ -82,15 +82,15 @@ inline Result<void> wrapperResultToResultVoid(WrapperErrorCode code) {
     case WrapperErrorCode::Ok:
         return Result<void>::ok();
     case WrapperErrorCode::NotFound:
-        return Result<void>::error(std::string("Not found: ") + (msg ? msg : ""));
+        return Result<void>::err(std::string("Not found: ") + (msg ? msg : ""));
     case WrapperErrorCode::Error:
-        return Result<void>::error(std::string("Error: ") + (msg ? msg : ""));
+        return Result<void>::err(std::string("Error: ") + (msg ? msg : ""));
     case WrapperErrorCode::NullPtr:
-        return Result<void>::error(std::string("Null pointer: ") + (msg ? msg : ""));
+        return Result<void>::err(std::string("Null pointer: ") + (msg ? msg : ""));
     case WrapperErrorCode::Panic:
-        return Result<void>::error(std::string("Panic: ") + (msg ? msg : ""));
+        return Result<void>::err(std::string("Panic: ") + (msg ? msg : ""));
     default:
-        return Result<void>::error(std::string("Unknown error"));
+        return Result<void>::err(std::string("Unknown error"));
     }
 }
 } // namespace esotereel

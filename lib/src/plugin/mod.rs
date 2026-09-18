@@ -12,12 +12,18 @@ use rkyv::{Archive, CheckBytes, bytecheck};
 use crate::{
     HostRole,
     dirs::Directories,
-    plugin::{property::PropertySchema, script::CompiledScript, toolbar::ToolbarButtonSpec},
+    plugin::{
+        clip::ClipKindStore,
+        property::PropertySchema,
+        script::CompiledScript,
+        toolbar::ToolbarButtonSpec,
+    },
     project::clip::ClipKind,
 };
 
 pub mod clip;
 pub mod property;
+pub mod registry;
 pub mod script;
 pub mod settings;
 pub mod toolbar;
@@ -289,7 +295,7 @@ pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
     is_loaded: bool,
     // インデックスで検索コストを最小化
-    clip_kinds_index: HashMap<NamespacedID, ClipKind>,
+    clip_kinds: ClipKindStore,
     scripts_index: HashMap<String, CompiledScript>,
     schemas_index: Vec<PropertySchema>,
     toolbars_index: Vec<(String, ToolbarButtonSpec)>,
@@ -300,7 +306,7 @@ impl PluginLoader {
         Self {
             plugins: Vec::new(),
             is_loaded: false,
-            clip_kinds_index: HashMap::new(),
+            clip_kinds: ClipKindStore::new(),
             scripts_index: HashMap::new(),
             schemas_index: Vec::new(),
             toolbars_index: Vec::new(),
@@ -432,16 +438,16 @@ impl PluginLoader {
     }
 
     fn rebuild_indices(&mut self) {
-        self.clip_kinds_index.clear();
+        self.clip_kinds = ClipKindStore::new();
         self.scripts_index.clear();
         self.schemas_index.clear();
         self.toolbars_index.clear();
 
         for plugin in &self.plugins {
-            // clip_kinds index
-            for (id, kind) in plugin.clip_kinds.iter() {
-                self.clip_kinds_index.insert(id.clone(), kind.clone());
-            }
+            // clip_kinds
+            self.clip_kinds
+                .merge_plugin_kinds(plugin.clip_kinds.clone())
+                .expect("clip kind conflict during rebuild_indices");
 
             // scripts index
             if let Some(script) = plugin.script.as_ref() {
@@ -490,7 +496,11 @@ impl PluginLoader {
     }
 
     pub fn collect_all_clip_kinds(&self) -> HashMap<NamespacedID, ClipKind> {
-        self.clip_kinds_index.clone()
+        self.clip_kinds
+            .registry
+            .iter()
+            .map(|(id, kind)| (id.clone(), kind.clone()))
+            .collect()
     }
 
     pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
@@ -503,7 +513,7 @@ impl PluginLoader {
 
     // ホットパス用の直接アクセスメソッド
     pub fn get_clip_kind(&self, id: &NamespacedID) -> Option<&ClipKind> {
-        self.clip_kinds_index.get(id)
+        self.clip_kinds.get(id)
     }
 
     pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
