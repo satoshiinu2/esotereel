@@ -33,14 +33,15 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
     let state = ClientStateHandle::from_ptr(ptr_state);
 
     let clip_data = {
-        let state = state.lock().expect("mutex poisoned");
-        let project_arc = match state.project.as_ref() {
+        let state_guard = state.lock().expect("mutex poisoned");
+        let project_guard = state_guard.project.write().expect("mutex poisoned");
+
+        let project = match project_guard.as_ref() {
             Some(arc) => arc,
             None => return WrapperErrorCode::not_found(Some("project not found")),
         };
 
-        let lock = project_arc.read().unwrap();
-        let timeline = match lock.timeline(timeline_id) {
+        let timeline = match project.timeline_ref(timeline_id) {
             Some(tl) => tl,
             None => return WrapperErrorCode::not_found(Some("timeline not found")),
         };
@@ -106,7 +107,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
     });
 
     let kind_id = NamespacedID::parse("std:video").unwrap();
-    let loader = state.common.plugin_loader.lock().expect("mutex poisoned");
+    let loader = state.common.plugin_loader.read().expect("mutex poisoned");
     let property_schema = &loader.get_clip_kind(&kind_id).unwrap().property_schema;
     let properties = PropertySchema::default_properties(&property_schema);
     drop(loader);

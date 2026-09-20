@@ -12,7 +12,7 @@ using FfiLayerRow = esotereel_gui_helper::FfiLayerRow;
 using FfiLayerRowKind = esotereel_gui_helper::FfiLayerRowKind;
 using ClipRenderInfo = esotereel_gui_helper::ClipRenderInfo;
 using RenderRowsResult = esotereel_gui_helper::RenderRowsResult;
-using RawProject = esotereel_gui_helper::Project;
+using RawOptionProject = esotereel_gui_helper::OptionProject;
 using RawTimeline = esotereel_gui_helper::Timeline;
 using TimelineId = esotereel_gui_helper::TimelineId;
 

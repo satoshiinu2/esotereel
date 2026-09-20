@@ -81,6 +81,9 @@ struct LayerFolder;
 
 struct OffscreenTarget;
 
+template<typename T = void>
+struct Option;
+
 struct Project;
 
 struct RenderRowsResult;
@@ -239,6 +242,8 @@ struct FfiResultVoid {
   OwnedString err;
 };
 
+using OptionProject = Option<Project>;
+
 struct FfiToolbarButton {
   OwnedString id;
   OwnedString label;
@@ -326,9 +331,9 @@ void init_rust_logger(LogOutCStrFn callback);
 
 void set_log_level(StringView target, CLogLevel level);
 
-const Timeline *project_get_timeline(const Project *ptr, TimelineId id);
+const Timeline *project_get_timeline(const Option<Project> *ptr, TimelineId id);
 
-uintptr_t project_get_timeline_count(const Project *ptr);
+uintptr_t project_get_timeline_count(const Option<Project> *ptr);
 
 uint64_t clip_get_id(const Clip *ptr);
 
@@ -336,7 +341,7 @@ int64_t clip_get_position(const Clip *ptr);
 
 int64_t clip_get_duration(const Clip *ptr);
 
-WrapperErrorCode render_rows_build(const Project *project,
+WrapperErrorCode render_rows_build(const Option<Project> *project,
                                    const Timeline *timeline,
                                    const uint64_t *open_ids_ptr,
                                    uintptr_t open_ids_len,
@@ -353,8 +358,6 @@ WrapperErrorCode render_rows_get_rows(const RenderRowsResult *ptr,
 WrapperErrorCode render_rows_get_clips(const RenderRowsResult *ptr,
                                        const ClipRenderInfo **out_ptr,
                                        uintptr_t *out_len);
-
-void project_debug_log(const Project *ptr);
 
 WrapperErrorCode layer_find_clip_at_frame(const Layer *layer_ptr,
                                           const Timeline *timeline_ptr,
@@ -462,7 +465,7 @@ WrapperErrorCode client_state_project_unlock_read(const void *guard_ptr);
 
 /// ガードからprojectポインタを取得する関数
 WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
-                                                      const Project **out_project);
+                                                      const OptionProject **out_project);
 
 WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_state);
 

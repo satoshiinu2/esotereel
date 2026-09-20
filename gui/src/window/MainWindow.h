@@ -27,7 +27,7 @@ class SettingsDialog;
 } // namespace dialog
 
 struct WindowGState {
-    ClientState *const network;
+    ClientState *const state;
     TimelineWidget *focusedTimeline = nullptr;
     CameraInfo *camera{};
 };
@@ -44,6 +44,7 @@ class MainWindow : public QMainWindow {
 
   private slots:
     void openSettingsDialog();
+    void openDebugWindow();
 
   private:
     ads::CDockManager *dockManager;

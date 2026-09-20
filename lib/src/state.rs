@@ -13,13 +13,14 @@ use crate::project::Project;
 use crate::{HostRole, StreamState};
 
 pub struct CommonState {
-    pub project: Option<Arc<RwLock<Project>>>,
+    pub project: Arc<RwLock<Option<Project>>>,
 
     pub dir: Directories,
 
-    pub path_to_stream: Arc<DashMap<String, StreamState>>,
+    /// path -> stream_states
+    pub stream_state_map: Arc<DashMap<String, StreamState>>,
 
-    pub plugin_loader: Arc<Mutex<PluginLoader>>,
+    pub plugin_loader: Arc<RwLock<PluginLoader>>,
 
     pub clip_kinds: Arc<RwLock<ClipKindStore>>,
 
@@ -29,24 +30,21 @@ pub struct CommonState {
 impl CommonState {
     pub fn new(
         dirs_def: Directories,
-        shared_plugin_loader: Option<Arc<Mutex<PluginLoader>>>,
+        shared_plugin_loader: Option<Arc<RwLock<PluginLoader>>>,
     ) -> Self {
         Self {
-            project: None,
+            project: Arc::new(RwLock::new(None)),
             dir: dirs_def,
-            path_to_stream: Arc::new(DashMap::new()),
+            stream_state_map: Arc::new(DashMap::new()),
             plugin_loader: shared_plugin_loader
-                .unwrap_or(Arc::new(Mutex::new(PluginLoader::new()))),
+                .unwrap_or(Arc::new(RwLock::new(PluginLoader::new()))),
             clip_kinds: Arc::new(RwLock::new(ClipKindStore::new())),
             scripts: Arc::new(RwLock::new(ScriptStore::new())),
         }
     }
 
-    pub async fn load_plugins(
-        &mut self,
-        role: HostRole,
-    ) -> anyhow::Result<Vec<PluginLoadedResult>> {
-        let mut loader = self.plugin_loader.lock().expect("mutex poisoned");
+    pub async fn load_plugins(&self, role: HostRole) -> anyhow::Result<Vec<PluginLoadedResult>> {
+        let mut loader = self.plugin_loader.write().expect("mutex poisoned");
         loader.load_from_disk(&self.dir, role).await
     }
 }
@@ -80,7 +78,7 @@ pub trait HostBootstrap: std::ops::Deref<Target = CommonState> + std::ops::Deref
 
     fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
         let (schemas, toolbar_buttons, clip_kinds, scripts) = {
-            let loader = self.plugin_loader.lock().expect("mutex poisoned");
+            let loader = self.plugin_loader.read().expect("mutex poisoned");
             (
                 loader.collect_all_schemas(),
                 loader.collect_all_toolbars(),

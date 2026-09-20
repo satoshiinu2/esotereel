@@ -1,16 +1,13 @@
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, RwLock,
     atomic::{AtomicU32, Ordering},
 };
 
 use anyhow::Context;
 use dashmap::DashMap;
 use esotereel_lib::{
-    decode::videostreamer::VideoStreamer,
-    dirs::Directories,
-    plugin::PluginLoader,
-    project::ids::ResourceId,
-    state::CommonState,
+    decode::videostreamer::VideoStreamer, dirs::Directories, plugin::PluginLoader,
+    project::ids::ResourceId, state::CommonState,
 };
 use tokio::sync::Notify;
 
@@ -31,7 +28,7 @@ pub struct ServerState {
 impl ServerState {
     pub fn new(
         dirs_def: Directories,
-        shared_plugin_loader: Option<Arc<Mutex<PluginLoader>>>,
+        shared_plugin_loader: Option<Arc<RwLock<PluginLoader>>>,
     ) -> Self {
         let dirty_signal = Arc::new(Notify::new());
 
@@ -45,7 +42,7 @@ impl ServerState {
     }
 
     pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {
-        self.path_to_stream
+        self.stream_state_map
             .get(path)
             .and_then(|s| s.as_option())
             .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))

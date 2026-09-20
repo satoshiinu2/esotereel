@@ -19,7 +19,7 @@ serde_json = "1"
 wgpu = "29"
 ffmpeg-next = "9.0"
 image = "0.25"
-dashmap = "6.1"
+dashmap = "6"
 getset = "0.1"
 glam = { version = "0.33", features = ["bytemuck"] }
 ordered-float = "5"

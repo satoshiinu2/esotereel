@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 anyhow = "1.0"
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
 esotereel_core = { package = "esotereel_core", path = "../core" }
+# esotereel_debug_ui = { package = "esotereel_debug_ui", path = "../dbg-ui" }
 rkyv = { version = "0.7", features = ["validation"] }
 bytecheck = "0.6"
 log = "0.4"

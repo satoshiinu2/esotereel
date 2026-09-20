@@ -84,7 +84,7 @@ void SettingsDialog::setupUI() {
 }
 
 void SettingsDialog::loadSettings() {
-    auto fieldsResult = Settings::getAllFields(windowState.network);
+    auto fieldsResult = Settings::getAllFields(windowState.state);
     if (fieldsResult.is_ok()) {
         allFields = fieldsResult.unwrap();
         qDebug() << "Loaded" << allFields.size() << "settings fields";
@@ -110,7 +110,7 @@ void SettingsDialog::populateCategories() {
     categoryTree->clear();
 
     QStringList categories;
-    auto categoriesResult = Settings::getCategories(windowState.network);
+    auto categoriesResult = Settings::getCategories(windowState.state);
     if (categoriesResult.is_ok()) {
         categories = categoriesResult.unwrap();
         qDebug() << "Got categories from Settings:" << categories;
@@ -175,7 +175,7 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
 
     // Get current value
     FieldValue currentValue = field.defaultValue;
-    auto valueResult = Settings::getValue(windowState.network, field.key);
+    auto valueResult = Settings::getValue(windowState.state, field.key);
     if (valueResult.is_ok()) {
         currentValue = valueResult.unwrap();
     }
@@ -261,7 +261,7 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         connect(colorButton, &QPushButton::clicked, this, [this, colorButton]() {
             QString key = colorButton->property("settingKey").toString();
             QColor color = Qt::white;
-            auto colorResult = Settings::getValue(windowState.network, key);
+            auto colorResult = Settings::getValue(windowState.state, key);
             if (colorResult.is_ok()) {
                 auto rgba = colorResult.unwrap().asColor();
                 color = QColor::fromRgbF(rgba.r, rgba.g, rgba.b, rgba.a);
@@ -269,12 +269,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
             QColorDialog dialog(color, this);
             if (dialog.exec() == QDialog::Accepted) {
                 QColor selectedColor = dialog.selectedColor();
-                RgbaColor rgba{
-                    static_cast<float>(selectedColor.redF()),
-                    static_cast<float>(selectedColor.greenF()),
-                    static_cast<float>(selectedColor.blueF()),
-                    static_cast<float>(selectedColor.alphaF())
-                };
+                RgbaColor rgba{static_cast<float>(selectedColor.redF()), static_cast<float>(selectedColor.greenF()),
+                               static_cast<float>(selectedColor.blueF()), static_cast<float>(selectedColor.alphaF())};
                 // TODO: Implement when CFieldValue conversion is ready
                 // Settings::setValue(windowState.network, key, FieldValue::fromColor(rgba));
                 qWarning() << "Setting value not yet implemented for key:" << key;

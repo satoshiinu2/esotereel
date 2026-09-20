@@ -78,7 +78,7 @@ void GpuPreviewWidget::triggerRenderFrame() {
         return;
     }
 
-    auto projectResult = windowState->network->getProject();
+    auto projectResult = windowState->state->getProject();
     if (projectResult.isError()) {
         return;
     }

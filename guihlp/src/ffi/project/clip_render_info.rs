@@ -55,7 +55,7 @@ pub struct RenderRowsResult {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn render_rows_build(
-    project: *const Project,
+    project: *const Option<Project>,
     timeline: *const Timeline,
     open_ids_ptr: *const u64,
     open_ids_len: usize,
@@ -79,6 +79,16 @@ pub unsafe extern "C" fn render_rows_build(
             .iter()
             .cloned()
             .collect()
+    };
+
+    let Some(project) = project else {
+        unsafe {
+            *out = Box::into_raw(Box::new(RenderRowsResult {
+                rows: Vec::new(),
+                clips: Vec::new(),
+            }))
+        };
+        return WrapperErrorCode::Ok;
     };
 
     let mut layer_rows = Vec::new();
@@ -289,7 +299,7 @@ mod tests {
 
         let mut rows = Vec::new();
         {
-            let timeline = project.timeline(timeline_id).unwrap();
+            let timeline = project.timeline_ref(timeline_id).unwrap();
             build_layer_rows(
                 &project,
                 timeline,

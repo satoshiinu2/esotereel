@@ -165,7 +165,7 @@ void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
     // ルーラー
     this->drawRuler(p, r);
 
-    auto projectResult = this->windowState.network->getProject();
+    auto projectResult = this->windowState.state->getProject();
     if (projectResult.isError()) {
         // Lock is busy - skip project rendering and continue with basic UI elements
         // This prevents UI deadlock when network thread holds write lock

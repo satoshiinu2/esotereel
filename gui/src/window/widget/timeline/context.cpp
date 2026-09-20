@@ -62,7 +62,7 @@ void TimelineCanvasWidget::contextMenuEvent(QContextMenuEvent *e) {
 
     // ロック保持のスコープを限定
     {
-        auto projectResult = windowState.network->getProject();
+        auto projectResult = windowState.state->getProject();
         if (projectResult.isError()) {
             menu.exec(e->globalPos());
             return;
@@ -155,7 +155,7 @@ void TimelineCanvasWidget::addLayer(std::optional<LayerFolderId> parentFolderId,
         return;
     }
 
-    this->windowState.network->requests().addLayer(this->timelineId, parentFolderId, insertIndex, name.toStdString());
+    this->windowState.state->requests().addLayer(this->timelineId, parentFolderId, insertIndex, name.toStdString());
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
     if (parentFolderId.has_value()) {
@@ -175,7 +175,7 @@ void TimelineCanvasWidget::addFolder(std::optional<LayerFolderId> parentFolderId
         return;
     }
 
-    this->windowState.network->requests().addFolder(this->timelineId, parentFolderId, insertIndex, name.toStdString());
+    this->windowState.state->requests().addFolder(this->timelineId, parentFolderId, insertIndex, name.toStdString());
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
     if (parentFolderId.has_value()) {
@@ -193,7 +193,7 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
 
     // スコープでロック期間を最小化
     {
-        auto projectResult = windowState.network->getProject();
+        auto projectResult = windowState.state->getProject();
         if (projectResult.isError())
             return;
         auto project = projectResult.unwrapOrMove();
@@ -219,13 +219,13 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
 
     if (canAdd) {
         // ロックを持たない状態でネットワークへリクエスト
-        this->windowState.network->requests().addClipAt(this->timelineId, frame, layerId);
+        this->windowState.state->requests().addClipAt(this->timelineId, frame, layerId);
         this->markRowsDirty();
         update();
     }
 }
 
 void TimelineCanvasWidget::debugProjectLog() {
-    this->windowState.network->requests().debugProjectLog();
+    this->windowState.state->requests().debugProjectLog();
 }
 } // namespace esotereel::window

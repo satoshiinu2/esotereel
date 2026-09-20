@@ -117,7 +117,7 @@ void TimelineCanvasWidget::updateSnapshot() const {
 
     // スコープ内でロックを取得し、RenderRowsを構築したら即座にロックを破棄
     {
-        auto projectResult = windowState.network->getProject();
+        auto projectResult = windowState.state->getProject();
         if (projectResult.isError()) {
             return;
         }
@@ -211,7 +211,7 @@ void TimelineCanvasWidget::processPendingFetch() {
     this->fetchPending = false;
 
     {
-        auto projectResult = windowState.network->getProject();
+        auto projectResult = windowState.state->getProject();
         if (projectResult.isError())
             return;
     }
@@ -220,7 +220,7 @@ void TimelineCanvasWidget::processPendingFetch() {
     auto visible = getVisibleFrameRange();
 
     // Wrapper 経由で FFI (req_fetch_frame) を実行
-    this->windowState.network->requests().fetchFrame(this->timelineId, this->playhead, visible);
+    this->windowState.state->requests().fetchFrame(this->timelineId, this->playhead, visible);
 }
 
 std::pair<TimelineTick, TimelineTick> TimelineCanvasWidget::getVisibleFrameRange() const noexcept {

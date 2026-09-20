@@ -50,26 +50,25 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let offscreen = unsafe { &*ptr_offscreen };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        let state = state.lock().expect("mutex poisoned");
+        let state_guard = state.lock().expect("mutex poisoned");
+        let project_guard = state_guard.project.read().expect("mutex poisoned");
 
-        let project_arc = match state.project.as_ref() {
+        let project = match project_guard.as_ref() {
             Some(arc) => Ok(arc),
             None => Err(WrapperErrorCode::not_found(Some("project not found"))),
         }?;
 
-        // Get timeline data with minimal lock time
-        let lock = project_arc.read().unwrap();
-        let timeline = match lock.timeline(timeline_id) {
+        let timeline = match project.timeline_ref(timeline_id) {
             Some(tl) => Ok(tl),
             None => Err(WrapperErrorCode::not_found(Some("timeline not found"))),
         }?;
 
         let ctx = RenderContext {
-            path_to_stream: &state.path_to_stream,
-            streams: &state.stream_players,
+            path_to_stream: &state_guard.stream_state_map,
+            streams: &state_guard.stream_players,
 
-            media_fetch_cache: &state.media_fetch_cache,
-            plugin_loader: &state.common.plugin_loader,
+            media_fetch_cache: &state_guard.media_fetch_cache,
+            plugin_loader: &state_guard.plugin_loader,
 
             timeline,
             camera_info,

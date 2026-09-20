@@ -49,28 +49,20 @@ pub unsafe extern "C" fn req_fetch_frame(
     }
 
     let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        // Arc::into_raw 由来のポインタから、参照カウントを増やして
-        // 独立した Arc クローンを作る（元のポインタは消費しない）
-        let raw = ptr_state as *const Mutex<ClientState>;
-        let state: Arc<Mutex<ClientState>> = unsafe {
-            Arc::increment_strong_count(raw);
-            Arc::from_raw(raw)
-        };
+        let state = ClientStateHandle::from_ptr(ptr_state);
 
-        let project_arc = {
-            let state = state.lock().expect("mutex poisoned");
-            state.project.as_ref().map(Arc::clone)
-        };
+        let state_guard = state.lock().expect("mutex poisoned");
 
-        let project_arc = project_arc.ok_or_else(|| IntoWrapperError::NotFound(None))?;
+        let project_guard = state_guard.project.read().expect("mutex poisoned");
+
+        let project = match project_guard.as_ref() {
+            Some(arc) => Ok(arc),
+            None => Err(IntoWrapperError::NotFound(Some("project not found".into()))),
+        }?;
 
         let req = {
-            let state = state.lock().expect("mutex poisoned");
-            let project_guard = project_arc
-                .read()
-                .map_err(|_| IntoWrapperError::Error(Some("lock poisoned".into())))?;
-            let timeline = project_guard
-                .timeline(timeline_id)
+            let timeline = project
+                .timeline_ref(timeline_id)
                 .ok_or_else(|| IntoWrapperError::Error(Some("invalid timeline id".into())))?;
 
             let lookahead = 60;
@@ -78,16 +70,15 @@ pub unsafe extern "C" fn req_fetch_frame(
 
             request_stream_packets_for_time(
                 timeline,
-                &state.path_to_stream,
-                &state.stream_players,
+                &state_guard.stream_state_map,
+                &state_guard.stream_players,
                 frame_range,
-                &state.media_fetch_cache,
+                &state_guard.media_fetch_cache,
             )
         };
 
         {
-            let state = state.lock().expect("mutex poisoned");
-            let network = &state.network;
+            let network = &state_guard.network;
 
             for req in req.iter() {
                 network.send(req);
@@ -118,8 +109,8 @@ pub unsafe extern "C" fn req_fetch_frame(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) {
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = &state.network;
+    let state_guard = state.lock().expect("mutex poisoned");
+    let network = &state_guard.network;
 
     network.send(&Request::DebugFetchProjectStruct);
 }

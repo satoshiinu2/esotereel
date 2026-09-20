@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::{
     StreamState,
@@ -26,7 +26,7 @@ pub struct RenderContext<'a> {
     pub streams: &'a Arc<DashMap<ResourceId, StreamPlayer>>,
     pub media_fetch_cache: &'a Arc<MediaFetchCache>,
 
-    pub plugin_loader: &'a Arc<Mutex<PluginLoader>>,
+    pub plugin_loader: &'a Arc<RwLock<PluginLoader>>,
 
     pub timeline: &'a Timeline,
     pub camera_info: &'a CameraInfo,
@@ -55,6 +55,9 @@ pub fn render_frame_offscreen(
     let view_matrix = ctx.camera_info.get_view_mat();
 
     let view_projection_matrix = proj_matrix * view_matrix;
+
+    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
+    update_timline_clips_texture(util, ctx);
 
     // 頂点作成
     let vertices = build_vertices(ctx);
@@ -97,9 +100,6 @@ pub fn render_frame_offscreen(
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Encoder"),
         });
-
-    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
-    update_timline_clips_texture(util, ctx);
 
     {
         // RenderPass の作成

@@ -20,13 +20,17 @@ mod network;
 pub mod responces;
 pub mod state;
 
+#[deprecated(note = "TODO: replace with client state")]
 static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
+#[deprecated(note = "TODO: replace with client state")]
 static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();
 
+#[deprecated(note = "use FfiResult")]
 thread_local! {
     static LAST_ERR_MSG:RefCell<CString>=RefCell::new(CString::new("").unwrap());
 }
 
+#[deprecated(note = "use FfiResult")]
 pub enum IntoWrapperError<'a> {
     Ok,
     NullPtr,
@@ -36,6 +40,7 @@ pub enum IntoWrapperError<'a> {
 }
 
 #[repr(C)]
+#[deprecated(note = "use FfiResult")]
 pub enum WrapperErrorCode {
     Ok = 0,
     NullPtr = 1,

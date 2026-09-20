@@ -106,7 +106,7 @@ impl PluginRenderContext {
     }
 
     pub fn into_parts(self) -> (Vec<VertexBatch>, Vec<String>) {
-        // idc this code
+        // idc this code wtf
         (
             Arc::try_unwrap(self.batches)
                 .map(|m| m.into_inner().unwrap_or_default())

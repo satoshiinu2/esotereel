@@ -27,7 +27,7 @@ impl Project {
         id
     }
 
-    pub fn timeline(&self, id: TimelineId) -> Option<&Timeline> {
+    pub fn timeline_ref(&self, id: TimelineId) -> Option<&Timeline> {
         self.timelines.get(&id)
     }
 

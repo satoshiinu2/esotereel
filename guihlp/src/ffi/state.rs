@@ -12,6 +12,7 @@ use std::{
 };
 
 pub struct ClientStateHandle(pub Arc<Mutex<ClientState>>);
+pub type OptionProject = Option<Project>;
 
 impl ClientStateHandle {
     pub fn from_ptr(ptr_state: *const ClientStateHandle) -> Arc<Mutex<ClientState>> {
@@ -157,8 +158,8 @@ pub struct ProjectReadGuard {
 }
 
 struct ProjectReadGuardInner {
-    _guard: RwLockReadGuard<'static, Project>,
-    project_ptr: *const Project,
+    _guard: RwLockReadGuard<'static, OptionProject>,
+    project_ptr: *const OptionProject,
 }
 
 #[unsafe(no_mangle)]
@@ -172,28 +173,25 @@ pub unsafe extern "C" fn client_state_project_lock_read(
 
     let state = ClientStateHandle::from_ptr(ptr_state);
 
-    let Ok(app_state) = state.lock() else {
+    let Ok(state_guard) = state.lock() else {
         return WrapperErrorCode::panic(Some("mutex poisoned"));
     };
 
-    let Some(project_arc) = app_state.project.as_ref() else {
-        return WrapperErrorCode::not_found(Some("project not found"));
+    let Ok(project_guard) = state_guard.project.read() else {
+        return WrapperErrorCode::panic(Some("mutex poisoned"));
     };
 
-    // Use try_read to avoid blocking the UI thread - if lock is not immediately available, return error
-    let lock = match project_arc.try_read() {
-        Ok(guard) => guard,
-        Err(_) => return WrapperErrorCode::error(Some("lock busy - retry later")),
-    };
-
-    let project_ptr: *const Project = &*lock;
+    let project_ptr: *const Option<Project> = &*project_guard;
 
     // Extend lifetime to 'static - this is safe because:
     // 1. The guard is owned by the Box and will only be freed when unlock is called
     // 2. The project_ptr remains valid as long as the guard is held
     // 3. C++ side is responsible for calling unlock to free the guard
     let extended_guard = unsafe {
-        std::mem::transmute::<RwLockReadGuard<'_, Project>, RwLockReadGuard<'static, Project>>(lock)
+        std::mem::transmute::<
+            RwLockReadGuard<'_, Option<Project>>,
+            RwLockReadGuard<'static, Option<Project>>,
+        >(project_guard)
     };
 
     let inner = ProjectReadGuardInner {
@@ -233,7 +231,7 @@ pub unsafe extern "C" fn client_state_project_unlock_read(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn project_guard_get_project_from_guard(
     guard_ptr: *const c_void,
-    out_project: *mut *const Project,
+    out_project: *mut *const OptionProject,
 ) -> WrapperErrorCode {
     if guard_ptr.is_null() || out_project.is_null() {
         return WrapperErrorCode::null_ptr();

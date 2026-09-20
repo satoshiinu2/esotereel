@@ -57,7 +57,7 @@ void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
         } else {
             // フォルダー行のラベル(▶▼)クリックは開閉トグルのみ行い、
             // ドラッグ選択/クリップドラッグは開始しない
-            auto projectResult = windowState.network->getProject();
+            auto projectResult = windowState.state->getProject();
             if (!projectResult.isError()) {
                 auto project = projectResult.unwrapOrMove();
                 if (this->handleFolderLabelClick(project, mousePos)) {
@@ -86,7 +86,7 @@ void TimelineCanvasWidget::mouseMoveEvent(QMouseEvent *e) {
 void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
     QWidget::mouseReleaseEvent(e);
 
-    auto projectResult = windowState.network->getProject();
+    auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
         return; // Handle error appropriately
     }
@@ -110,7 +110,7 @@ void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
 DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickPos) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
-    auto projectResult = windowState.network->getProject();
+    auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
         return DragOther{};
     }
@@ -137,7 +137,7 @@ DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickP
 }
 
 void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
-    auto projectResult = windowState.network->getProject();
+    auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
         return;
     }
@@ -163,7 +163,7 @@ void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
 }
 
 void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
-    auto projectResult = windowState.network->getProject();
+    auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
         return;
     }

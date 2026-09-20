@@ -153,7 +153,7 @@ void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const 
     // 挙動は変えず、意味の無い重複ループのみ削除しています。
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
-    this->windowState.network->requests().moveClips(this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
+    this->windowState.state->requests().moveClips(this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
 
     this->markRowsDirty();
     update();

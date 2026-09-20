@@ -8,17 +8,17 @@
 #include "esotereel_gui_helper.h"
 
 namespace esotereel {
-using RawProject = esotereel_gui_helper::Project;
+using RawOptionProject = esotereel_gui_helper::OptionProject;
 
 class Timeline;
 class ClientState; // C++ ラッパークラスの前方宣言
 
 class Project {
     const void *guard_ptr = nullptr;
-    const RawProject *project_ptr = nullptr;
+    const RawOptionProject *project_ptr = nullptr;
 
   public:
-    Project(const void *g, const RawProject *p);
+    Project(const void *g, const RawOptionProject *p);
     ~Project();
 
     // コピー禁止（二重ドロップ/アンロックを確実に防止）
@@ -29,7 +29,7 @@ class Project {
     Project(Project &&other) noexcept;
     Project &operator=(Project &&other) noexcept;
 
-    operator const RawProject *() const noexcept {
+    operator const RawOptionProject *() const noexcept {
         return project_ptr;
     }
 

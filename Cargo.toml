@@ -1,7 +1,3 @@
 [workspace]
-members = [
-    "lib",
-    "guihlp",
-    "core",
-]
+members = ["lib", "guihlp", "core"]
 resolver = "2"

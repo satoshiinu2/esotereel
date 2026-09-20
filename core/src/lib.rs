@@ -12,7 +12,7 @@ use esotereel_lib::{
     responces::Response,
     util::result::EsotereelError,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 pub mod network;
 pub mod project;
@@ -24,12 +24,12 @@ pub async fn server_network_start<F>(
     on_server_ready: Option<F>, // 起動成功したか, アドレス
 
     dirs_def: Directories,
-    plugin_loader: Option<Arc<Mutex<PluginLoader>>>, // クライアント側から提供
+    plugin_loader: Option<Arc<RwLock<PluginLoader>>>, // クライアント側から提供
 ) where
     F: FnOnce(bool, &str),
 {
     let was_plugin_producted = plugin_loader.is_some();
-    let mut state = ServerState::new(dirs_def, plugin_loader);
+    let state = ServerState::new(dirs_def, plugin_loader);
 
     // プラグインが提供されたものではなかったらプラグインを並列で読み込む(すでに読み込まれているので)
     if !was_plugin_producted {
@@ -64,14 +64,13 @@ pub async fn server_network_start<F>(
 async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()> {
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
-    let state_lock = state.lock().expect("mutex poisoned");
-
-    let project_arc = state_lock.project.as_ref();
-    let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
-    let project_arc = Arc::new(project_arc);
+    let state_guard = state.lock().expect("mutex poisoned");
 
     let changes = {
-        let mut project = project_arc.write().unwrap();
+        let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
 
         let mut changes = project.drain_changes();
         if changes.is_empty() {
@@ -86,7 +85,7 @@ async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()>
     };
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(state_lock);
+    drop(state_guard);
 
     for (timeline_id, changeset) in changes {
         dispatch_changeset(state, timeline_id, changeset)?;
@@ -101,17 +100,15 @@ fn dispatch_changeset(
     changeset: ChangeSet,
 ) -> anyhow::Result<()> {
     // ロックを再度取得してタイムラインデータを取得
-    let state_lock = state.lock().expect("mutex poisoned");
-    let network = Arc::clone(&state_lock.network);
-
-    let project_arc = state_lock.project.as_ref();
-    let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
-    let project_arc = Arc::clone(&project_arc);
-
-    let project = project_arc.write().unwrap();
+    let state_guard = state.lock().expect("mutex poisoned");
+    let network = Arc::clone(&state_guard.network);
+    let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+    let project = project_guard
+        .as_mut()
+        .ok_or(EsotereelError::ProjectNotFound)?;
 
     let timeline = project
-        .timeline(timeline_id)
+        .timeline_ref(timeline_id)
         .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
     // clips_upsertedの処理
@@ -191,7 +188,8 @@ fn dispatch_changeset(
         changeset.outline_folders_removed.iter().copied().collect();
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(state_lock);
+    drop(project_guard);
+    drop(state_guard);
 
     // ネットワーク送信
     if !clips.is_empty() {

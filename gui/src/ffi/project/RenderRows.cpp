@@ -10,7 +10,7 @@ namespace esotereel {
 using FfiLayerRow = esotereel_gui_helper::FfiLayerRow;
 using ClipRenderInfo = esotereel_gui_helper::ClipRenderInfo;
 using RenderRowsResult = esotereel_gui_helper::RenderRowsResult;
-using RawProject = esotereel_gui_helper::Project;
+using RawOptionProject = esotereel_gui_helper::OptionProject;
 using RawTimeline = esotereel_gui_helper::Timeline;
 
 RenderRows::RenderRows(const Project &project, const TimelineId &timeline_id, const std::vector<uint64_t> &openIds,
@@ -18,7 +18,7 @@ RenderRows::RenderRows(const Project &project, const TimelineId &timeline_id, co
     if (!project.isValid()) {
         return;
     }
-    auto project_ptr = static_cast<const RawProject *>(project);
+    auto project_ptr = static_cast<const RawOptionProject *>(project);
     auto timeline = project.timelineOf(timeline_id);
     if (!timeline.isValid()) {
         return;

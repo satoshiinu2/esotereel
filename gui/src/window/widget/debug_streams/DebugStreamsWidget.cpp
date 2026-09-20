@@ -97,7 +97,7 @@ void DebugStreamsWidget::paintEvent(QPaintEvent *e) {
 }
 
 void DebugStreamsWidget::updateMap() {
-    const esotereel_gui_helper::ClientStateHandle *raw_network = *windowState->network;
+    const esotereel_gui_helper::ClientStateHandle *raw_network = *windowState->state;
 
     size_t resourceCount = esotereel_gui_helper::debug_streams_get_resources_arr_size(raw_network);
 

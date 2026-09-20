@@ -1,8 +1,8 @@
 #include "MainWindow.h"
 #include "ads_globals.h"
 #include "dialog/settings/SettingsDialog.h"
+#include "esotereel_gui_helper.h"
 #include "ffi/Requests.h"
-#include "ffi/project/camera.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineCanvasWidget.h"
 #include "widget/timeline/TimelineWidget.h"
@@ -74,6 +74,8 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
     QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettingsDialog);
+    QAction *debugWindowAction = toolsMenu->addAction(tr("Debug window"));
+    connect(debugWindowAction, &QAction::triggered, this, &MainWindow::openDebugWindow);
 }
 
 void MainWindow::markDirtyTimeline(TimelineId timelineId) {
@@ -86,5 +88,8 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
 void MainWindow::openSettingsDialog() {
     dialog::SettingsDialog settingsDialog(windowState, this);
     settingsDialog.exec();
+}
+void MainWindow::openDebugWindow() {
+    // esotereel_gui_helper::launch_debug_window(*this->windowState.state);
 }
 } // namespace esotereel::window

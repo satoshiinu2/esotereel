@@ -56,11 +56,11 @@ pub(super) fn on_responce_recveve(
 
             let real_project = Project::from_meta(timeline_metas);
             let timeline_len = real_project.timeline_count();
-            let project_arc = Arc::new(RwLock::new(real_project));
+            let project_arc = Arc::new(RwLock::new(Some(real_project)));
 
             {
                 let mut state = state.lock().expect("mutex poisoned");
-                state.project = Some(project_arc);
+                state.project = project_arc;
             }
 
             for i in 0..timeline_len {
@@ -68,15 +68,13 @@ pub(super) fn on_responce_recveve(
             }
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -88,22 +86,21 @@ pub(super) fn on_responce_recveve(
             }
 
             // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
         ArchivedResponse::RemoveClip {
             timeline_id,
             clip_ids,
         } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -113,7 +110,8 @@ pub(super) fn on_responce_recveve(
                 }
             }
             // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
 
@@ -121,15 +119,13 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layers,
         } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -144,22 +140,21 @@ pub(super) fn on_responce_recveve(
                 }
             }
             // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
         ArchivedResponse::RemoveLayer {
             timeline_id,
             layer_ids,
         } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -172,7 +167,8 @@ pub(super) fn on_responce_recveve(
                 }
             }
             // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
 
@@ -181,15 +177,13 @@ pub(super) fn on_responce_recveve(
             folders,
             children,
         } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -206,7 +200,8 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
 
@@ -214,15 +209,13 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             folder_ids,
         } => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
-
-            let project_arc = project_arc.ok_or_else(|| EsotereelError::ProjectNotFound)?;
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
 
             {
-                let mut project = project_arc.write().unwrap();
                 let timeline = project
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
@@ -232,7 +225,8 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            drop(project_arc);
+            drop(project_guard);
+            drop(state_guard);
             mark_dirty_timeline(*timeline_id);
         }
 
@@ -261,7 +255,7 @@ pub(super) fn on_responce_recveve(
                 let state = state.lock().expect("mutex poisoned");
                 state.stream_players.insert(*resource_id, player);
                 state
-                    .path_to_stream
+                    .stream_state_map
                     .insert(path.as_ref().to_owned(), StreamState::Loaded(*resource_id));
             }
 
@@ -308,14 +302,10 @@ pub(super) fn on_responce_recveve(
             }
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
-            let project_arc = {
-                let state = state.lock().expect("mutex poisoned");
-                state.project.as_ref().map(Arc::clone)
-            };
+            let state_guard = state.lock().expect("mutex poisoned");
+            let project_guard = state_guard.project.read().unwrap();
 
-            if let Some(project_arc) = project_arc {
-                let project = project_arc.read().unwrap();
-
+            if let Some(project) = project_guard.as_ref() {
                 let client_str = format!("{:#?}", project);
 
                 info!("Client: {}", client_str.green());

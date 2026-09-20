@@ -30,7 +30,7 @@ TimelineToolbarWidget::builtinCommands() {
 void TimelineToolbarWidget::dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget,
                                      const ToolbarButton &button) {
     auto mutableButton = button;
-    mutableButton.handleAction(windowState.network).unwrap();
+    mutableButton.handleAction(windowState.state).unwrap();
 }
 
 void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString &target,
@@ -41,7 +41,7 @@ void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString
     }
     currentButtons.clear();
 
-    auto buttonsResult = Toolbar::getButtons(windowState.network, target);
+    auto buttonsResult = Toolbar::getButtons(windowState.state, target);
     if (buttonsResult.isError()) {
         qWarning() << "TimelineToolbarWidget: failed to load buttons for target" << target;
         return;
