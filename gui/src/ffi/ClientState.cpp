@@ -7,7 +7,7 @@
 #include "project/Project.h"
 
 namespace esotereel {
-ClientState::ClientState(QString stdPluginDir, QString workingDir) {
+ClientState::ClientState(GuiCallbacks callbacks, QString stdPluginDir, QString workingDir) {
 
     QByteArray stdPluginDirUtf8 = stdPluginDir.toUtf8();
     auto stdPluginDirView = StringView::fromQUtf8String(stdPluginDirUtf8);
@@ -15,7 +15,7 @@ ClientState::ClientState(QString stdPluginDir, QString workingDir) {
     QByteArray workingDirUtf8 = workingDir.toUtf8();
     auto workingDirView = StringView::fromQUtf8String(workingDirUtf8);
 
-    auto result = esotereel_gui_helper::client_state_new(&network_ptr, stdPluginDirView, workingDirView);
+    auto result = esotereel_gui_helper::client_state_new(callbacks, stdPluginDirView, workingDirView, &network_ptr);
     checkWrapperResult(result);
 }
 

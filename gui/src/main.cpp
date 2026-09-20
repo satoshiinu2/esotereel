@@ -26,7 +26,7 @@ Q_LOGGING_CATEGORY(logRust, "lib")
 void bootcore(QString corePath);
 void startInternalServer();
 void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi);
-void setCallBacks();
+void onConnectedCallBack();
 
 esotereel::window::MainWindow *window;
 esotereel::ClientState *state;
@@ -35,12 +35,16 @@ QString addr;
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
-    setCallBacks();
-
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 
-    esotereel::ClientState n(stdPluginDir, workingDir);
+    esotereel_gui_helper::GuiCallbacks callbacks;
+
+    callbacks.on_test = +[]() {};
+    callbacks.mark_dirty_timeline = +[](TimelineId id) { window->markDirtyTimeline(id); };
+    callbacks.on_connected = +[]() { onConnectedCallBack(); };
+
+    esotereel::ClientState n(callbacks, stdPluginDir, workingDir);
     state = &n;
 
     n.logDirectoriesInfo();
@@ -78,16 +82,4 @@ void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi) {
 void onConnectedCallBack() {
     // placeholder
     state->requests().newProject();
-}
-
-void setCallBacks() {
-    esotereel_gui_helper::GuiCallbacks callbacks;
-
-    callbacks.on_test = +[]() {};
-    callbacks.mark_dirty_timeline = +[](TimelineId id) { window->markDirtyTimeline(id); };
-
-    esotereel_gui_helper::init();
-    esotereel_gui_helper::init_rust_logger(esotereel::qtLogCallback);
-    esotereel_gui_helper::set_gui_callbacks(callbacks);
-    esotereel_gui_helper::set_on_connected_callback(onConnectedCallBack);
 }

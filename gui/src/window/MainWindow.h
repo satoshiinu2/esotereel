@@ -44,7 +44,6 @@ class MainWindow : public QMainWindow {
 
   private slots:
     void openSettingsDialog();
-    void openDebugWindow();
 
   private:
     ads::CDockManager *dockManager;

@@ -12,12 +12,12 @@ use esotereel_lib::{
         settings::SettingsStore,
         toolbar::{ToolbarButtonSpec, ToolbarStore},
     },
-    project::ids::ResourceId,
+    project::ids::{ResourceId, TimelineId},
     render::video::{MediaFetchCache, builder::VertexBatch},
     state::{CommonState, HostBootstrap},
 };
 
-use crate::network::ClientNetworkHandler;
+use crate::{GuiCallbacks, network::ClientNetworkHandler};
 
 pub struct ClientState {
     pub common: CommonState,
@@ -30,10 +30,12 @@ pub struct ClientState {
 
     pub settings: SettingsStore,
     pub toolbar: ToolbarStore,
+
+    pub gui_callbacks: GuiCallbacks,
 }
 
 impl ClientState {
-    pub fn new(dirs_def: Directories) -> Self {
+    pub fn new(gui_callbacks: GuiCallbacks, dirs_def: Directories) -> Self {
         Self {
             common: CommonState::new(dirs_def, None),
             network: Arc::new(ClientNetworkHandler::new()),
@@ -41,7 +43,12 @@ impl ClientState {
             settings: SettingsStore::default(),
             toolbar: ToolbarStore::default(),
             media_fetch_cache: Arc::new(MediaFetchCache::default()),
+            gui_callbacks,
         }
+    }
+
+    pub fn mark_dirty_timeline(&self, id: TimelineId) {
+        (self.gui_callbacks.mark_dirty_timeline)(id);
     }
 }
 

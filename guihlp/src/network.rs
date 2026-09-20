@@ -9,8 +9,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
+use crate::on_responce_recveve;
 use crate::state::ClientState;
-use crate::{ON_CONNECTED_CALLBACKS, on_responce_recveve};
 
 type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
@@ -42,7 +42,7 @@ impl ClientNetworkHandler {
             *guard = Some(tx);
         }
 
-        self.on_connected();
+        self.on_connected(&state);
 
         let instance = Arc::clone(&self);
 
@@ -124,9 +124,12 @@ impl ClientNetworkHandler {
         }
     }
 
-    fn on_connected(&self) {
-        if let Some(cb) = ON_CONNECTED_CALLBACKS.get() {
-            cb();
-        }
+    fn on_connected(&self, state: &Arc<Mutex<ClientState>>) {
+        let fn_ptr = state
+            .lock()
+            .expect("mutex poisoned")
+            .gui_callbacks
+            .on_connected;
+        (fn_ptr)()
     }
 }

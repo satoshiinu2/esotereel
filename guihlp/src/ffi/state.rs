@@ -1,7 +1,7 @@
 use esotereel_lib::{dirs::Directories, project::Project, state::HostBootstrap};
 
 use crate::{
-    WrapperErrorCode,
+    GuiCallbacks, WrapperErrorCode,
     ffi::{log_if_panicked, stringview::StringView},
     state::ClientState,
 };
@@ -33,9 +33,10 @@ impl std::ops::Deref for ClientStateHandle {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn client_state_new(
-    out_state: *mut *const ClientStateHandle,
+    callbacks: GuiCallbacks,
     std_plugin_dir: StringView,
     working_dir: StringView,
+    out_state: *mut *const ClientStateHandle,
 ) -> WrapperErrorCode {
     if out_state.is_null() {
         return WrapperErrorCode::null_ptr();
@@ -55,7 +56,7 @@ pub extern "C" fn client_state_new(
 
     let dirs_def = Directories::new(std_plugin_dir, working_dir);
 
-    let state = Arc::new(Mutex::new(ClientState::new(dirs_def)));
+    let state = Arc::new(Mutex::new(ClientState::new(callbacks, dirs_def)));
 
     unsafe {
         *out_state = Arc::into_raw(state) as *const ClientStateHandle;

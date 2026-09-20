@@ -20,7 +20,7 @@ use esotereel_lib::{
 use log::info;
 use rkyv::Deserialize;
 
-use crate::{mark_dirty_timeline, state::ClientState};
+use crate::state::ClientState;
 
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
@@ -58,13 +58,14 @@ pub(super) fn on_responce_recveve(
             let timeline_len = real_project.timeline_count();
             let project_arc = Arc::new(RwLock::new(Some(real_project)));
 
-            {
-                let mut state = state.lock().expect("mutex poisoned");
-                state.project = project_arc;
-            }
+            let mut state_guard = state.lock().expect("mutex poisoned");
+            state_guard.project = project_arc;
+
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
+            drop(state_guard);
 
             for i in 0..timeline_len {
-                mark_dirty_timeline(i as TimelineId);
+                fn_ptr(i as TimelineId);
             }
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
@@ -85,10 +86,10 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::RemoveClip {
             timeline_id,
@@ -109,10 +110,11 @@ pub(super) fn on_responce_recveve(
                     timeline.remove_clip_by_id_in(*layer_id, *clip_id);
                 }
             }
-            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
 
         ArchivedResponse::UpdateLayer {
@@ -139,10 +141,11 @@ pub(super) fn on_responce_recveve(
                     timeline.apply_layer_meta(meta);
                 }
             }
-            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::RemoveLayer {
             timeline_id,
@@ -166,10 +169,11 @@ pub(super) fn on_responce_recveve(
                     // (親も別途upsertで送られてくるので)
                 }
             }
-            // ロックを解放してからC++コールバックを呼び出す（デッドロック回避）
+
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
 
         ArchivedResponse::UpdateOutline {
@@ -200,9 +204,10 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
 
         ArchivedResponse::Removes {
@@ -225,9 +230,10 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
             drop(state_guard);
-            mark_dirty_timeline(*timeline_id);
+            (fn_ptr)(*timeline_id);
         }
 
         ArchivedResponse::StreamMetadata {

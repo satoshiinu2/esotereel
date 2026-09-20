@@ -92,14 +92,9 @@ struct Timeline;
 
 struct WGpuUtil;
 
-using TimelineId = uint64_t;
-
-struct GuiCallbacks {
-  void (*on_test)();
-  void (*mark_dirty_timeline)(TimelineId timeline_type);
-};
-
 using OnConnectedFn = void(*)();
+
+using TimelineId = uint64_t;
 
 using LayerId = uint64_t;
 
@@ -242,6 +237,12 @@ struct FfiResultVoid {
   OwnedString err;
 };
 
+struct GuiCallbacks {
+  void (*on_test)();
+  void (*mark_dirty_timeline)(TimelineId timeline_type);
+  void (*on_connected)();
+};
+
 using OptionProject = Option<Project>;
 
 struct FfiToolbarButton {
@@ -267,10 +268,6 @@ struct FfiArray {
 extern "C" {
 
 const char *get_last_err_msg();
-
-void init();
-
-void set_gui_callbacks(GuiCallbacks callbacks);
 
 void set_on_connected_callback(OnConnectedFn callback);
 
@@ -447,9 +444,10 @@ WrapperErrorCode settings_get_categories(const ClientStateHandle *ptr_state,
                                          OwnedString *output,
                                          uintptr_t output_len);
 
-WrapperErrorCode client_state_new(const ClientStateHandle **out_state,
+WrapperErrorCode client_state_new(GuiCallbacks callbacks,
                                   StringView std_plugin_dir,
-                                  StringView working_dir);
+                                  StringView working_dir,
+                                  const ClientStateHandle **out_state);
 
 WrapperErrorCode client_state_bootstrap(const ClientStateHandle *ptr_state);
 

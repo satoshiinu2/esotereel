@@ -25,8 +25,8 @@ static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
 #[deprecated(note = "TODO: replace with client state")]
 static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();
 
-#[deprecated(note = "use FfiResult")]
 thread_local! {
+    #[deprecated(note = "use FfiResult")]
     static LAST_ERR_MSG:RefCell<CString>=RefCell::new(CString::new("").unwrap());
 }
 
@@ -151,21 +151,7 @@ pub unsafe extern "C" fn get_last_err_msg() -> *const c_char {
 pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
     pub mark_dirty_timeline: extern "C" fn(timeline_type: TimelineId),
-}
-
-// is it needed??
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn init() {}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn set_gui_callbacks(callbacks: GuiCallbacks) {
-    GUI_CALLBACKS.set(callbacks).ok();
-}
-
-pub fn mark_dirty_timeline(timeline_type: TimelineId) {
-    if let Some(cb) = GUI_CALLBACKS.get() {
-        (cb.mark_dirty_timeline)(timeline_type);
-    }
+    pub on_connected: extern "C" fn(),
 }
 
 /// # Safety

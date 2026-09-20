@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Result.h"
+#include "esotereel_gui_helper.h"
 #include "ffi/project/Project.h"
 #include <QWidget>
 #include <qcontainerfwd.h>
@@ -17,6 +18,7 @@ namespace esotereel {
 class Requests;
 
 using RawClientNetworkHandler = esotereel_gui_helper::ClientStateHandle;
+using GuiCallbacks = esotereel_gui_helper::GuiCallbacks;
 
 class ClientState {
 
@@ -25,7 +27,7 @@ class ClientState {
     bool isWayland;
 
   public:
-    ClientState(QString stdPluginDir, QString workingDir);
+    ClientState(GuiCallbacks callbacks, QString stdPluginDir, QString workingDir);
     ~ClientState();
     ClientState(const ClientState &) = delete;
     ClientState &operator=(const ClientState &) = delete;
