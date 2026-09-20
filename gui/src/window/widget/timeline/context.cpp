@@ -155,7 +155,7 @@ void TimelineCanvasWidget::addLayer(std::optional<LayerFolderId> parentFolderId,
         return;
     }
 
-    this->windowState.state->requests().addLayer(this->timelineId, parentFolderId, insertIndex, name.toStdString());
+    this->commandQueue.addLayer(this->timelineId, parentFolderId, insertIndex, name.toStdString());
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
     if (parentFolderId.has_value()) {
@@ -175,7 +175,7 @@ void TimelineCanvasWidget::addFolder(std::optional<LayerFolderId> parentFolderId
         return;
     }
 
-    this->windowState.state->requests().addFolder(this->timelineId, parentFolderId, insertIndex, name.toStdString());
+    this->commandQueue.addFolder(this->timelineId, parentFolderId, insertIndex, name.toStdString());
 
     // 子として追加した場合は、追加直後にそのフォルダーが見えるようにしておく
     if (parentFolderId.has_value()) {
@@ -219,7 +219,7 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
 
     if (canAdd) {
         // ロックを持たない状態でネットワークへリクエスト
-        this->windowState.state->requests().addClipAt(this->timelineId, frame, layerId);
+        commandQueue.addClipAt(this->timelineId, frame, layerId);
         this->markRowsDirty();
         update();
     }

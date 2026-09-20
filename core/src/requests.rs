@@ -83,24 +83,23 @@ pub fn on_request_receive(
                 state_guard.network.send(client_id, &cmd);
             }
         }
-        ArchivedRequest::Command {
-            command,
-            timeline_id,
-        } => {
+        ArchivedRequest::Command { commands } => {
             let state_guard = state.lock().expect("mutex poisoned");
             let mut project_guard = state_guard.project.write().expect("mutex poisoned");
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
+            for (timeline_id, command) in commands.iter() {
+                let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
 
-            info!("request: {:?}", command);
+                info!("request: {:?}", command);
 
-            let history = command_to_history(project, *timeline_id, command)?;
-            handle_command_action(project, *timeline_id, &history)?;
+                let history = command_to_history(project, *timeline_id, command)?;
+                handle_command_action(project, *timeline_id, &history)?;
 
-            info!("history: {:?}", history);
+                info!("history: {:?}", history);
+            }
 
             drop(project);
 

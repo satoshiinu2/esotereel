@@ -155,7 +155,7 @@ void TimelineCanvasWidget::drawRuler(QPainter &p, const QRect &r) const {
 void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
     QWidget::paintEvent(e);
 
-    this->updateSnapshot();
+    this->postRender();
 
     QPainter p(this);
     QRect r = rect();

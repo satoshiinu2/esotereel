@@ -72,6 +72,8 @@ struct ClientStateHandle;
 
 struct Clip;
 
+struct CommandQueue;
+
 struct FieldValue;
 
 struct Layer;
@@ -94,6 +96,20 @@ struct WGpuUtil;
 
 using OnConnectedFn = void(*)();
 
+/// 手動で解放しないといけない
+struct OwnedString {
+  uint8_t *ptr;
+  uintptr_t len;
+  uintptr_t capacity;
+};
+
+struct FfiResultVoid {
+  bool is_ok;
+  OwnedString err;
+};
+
+using OptionProject = Option<Project>;
+
 using TimelineId = uint64_t;
 
 using LayerId = uint64_t;
@@ -103,13 +119,6 @@ using LayerFolderId = uint64_t;
 struct StringView {
   const uint8_t *ptr;
   uintptr_t len;
-};
-
-/// 手動で解放しないといけない
-struct OwnedString {
-  uint8_t *ptr;
-  uintptr_t len;
-  uintptr_t capacity;
 };
 
 struct OwnedStringArray {
@@ -232,18 +241,11 @@ struct FfiResult {
 
 using CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
 
-struct FfiResultVoid {
-  bool is_ok;
-  OwnedString err;
-};
-
 struct GuiCallbacks {
   void (*on_test)();
   void (*mark_dirty_timeline)(TimelineId timeline_type);
   void (*on_connected)();
 };
-
-using OptionProject = Option<Project>;
 
 struct FfiToolbarButton {
   OwnedString id;
@@ -271,7 +273,14 @@ const char *get_last_err_msg();
 
 void set_on_connected_callback(OnConnectedFn callback);
 
-WrapperErrorCode req_cmd_clip_move_mul(const ClientStateHandle *ptr_state,
+CommandQueue *command_queue_new();
+
+FfiResultVoid command_queue_drop(CommandQueue *ptr);
+
+FfiResultVoid command_queue_send_all(CommandQueue *ptr_queue, const ClientStateHandle *ptr_state);
+
+WrapperErrorCode req_cmd_clip_move_mul(CommandQueue *ptr_queue,
+                                       const OptionProject *ptr_opt_project,
                                        TimelineId timeline_id,
                                        const uint64_t *ptr,
                                        uintptr_t len,
@@ -279,12 +288,14 @@ WrapperErrorCode req_cmd_clip_move_mul(const ClientStateHandle *ptr_state,
                                        int64_t duration_added,
                                        intptr_t layer_moved);
 
-WrapperErrorCode req_cmd_add_clip_dummy(const ClientStateHandle *ptr_state,
+/// be careful of deadlock
+WrapperErrorCode req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
+                                        const ClientStateHandle *ptr_state,
                                         TimelineId timeline_id,
                                         int64_t position,
                                         LayerId layer_id);
 
-WrapperErrorCode req_cmd_add_layer(const ClientStateHandle *ptr_state,
+WrapperErrorCode req_cmd_add_layer(CommandQueue *ptr_queue,
                                    TimelineId timeline_id,
                                    bool has_parent,
                                    LayerFolderId parent_folder_id,
@@ -292,7 +303,7 @@ WrapperErrorCode req_cmd_add_layer(const ClientStateHandle *ptr_state,
                                    uintptr_t insert_index,
                                    StringView name);
 
-WrapperErrorCode req_cmd_add_folder(const ClientStateHandle *ptr_state,
+WrapperErrorCode req_cmd_add_folder(CommandQueue *ptr_queue,
                                     TimelineId timeline_id,
                                     bool has_parent,
                                     LayerFolderId parent_folder_id,

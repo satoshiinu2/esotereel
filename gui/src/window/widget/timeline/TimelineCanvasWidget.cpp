@@ -1,12 +1,14 @@
 #include "TimelineCanvasWidget.h"
 #include "ffi/ClientState.h"
+#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
 #include "ffi/project/Clip.h"
 #include <tuple>
 
 namespace esotereel::window {
 TimelineCanvasWidget::TimelineCanvasWidget(WindowGState &windowState, size_t timelineIdx, QWidget *parent = nullptr)
-    : QWidget(parent), windowState(windowState), timelineId(timelineIdx) {
+    : QWidget(parent), windowState(windowState), timelineId(timelineIdx),
+      commandQueue(CommandQueue(windowState.state)) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
 
@@ -109,6 +111,11 @@ void TimelineCanvasWidget::togglePlayback() {
         this->playbackTimer->start(16); // 約60FPSでUI更新
         this->isPlaying = true;
     }
+}
+
+void TimelineCanvasWidget::postRender() {
+    this->commandQueue.sendAll();
+    this->updateSnapshot();
 }
 
 void TimelineCanvasWidget::updateSnapshot() const {

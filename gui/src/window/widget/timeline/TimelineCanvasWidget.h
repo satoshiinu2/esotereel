@@ -22,6 +22,7 @@
 #include <QVariant>
 #include <QWidget>
 
+#include "ffi/CommandQueue.h"
 #include "ffi/project/Clip.h"
 #include "ffi/project/Layer.h"
 #include "ffi/project/Project.h"
@@ -111,10 +112,19 @@ class TimelineCanvasWidget : public QWidget {
     void markRowsDirty();
 
     // ツールバー(Builtinボタン)から呼ぶための薄いラッパー。
-    void addLayerAtRoot() { this->addLayer(std::nullopt, std::nullopt); }
-    void addFolderAtRoot() { this->addFolder(std::nullopt, std::nullopt); }
-    void zoomBy(float_t factor) { this->zoom = std::clamp(this->zoom * factor, 0.1f, 10.0f); update(); }
-    void togglePlaybackPublic() { this->togglePlayback(); }
+    void addLayerAtRoot() {
+        this->addLayer(std::nullopt, std::nullopt);
+    }
+    void addFolderAtRoot() {
+        this->addFolder(std::nullopt, std::nullopt);
+    }
+    void zoomBy(float_t factor) {
+        this->zoom = std::clamp(this->zoom * factor, 0.1f, 10.0f);
+        update();
+    }
+    void togglePlaybackPublic() {
+        this->togglePlayback();
+    }
 
   protected:
     void paintEvent(QPaintEvent *e) override;
@@ -147,11 +157,13 @@ class TimelineCanvasWidget : public QWidget {
     mutable std::unique_ptr<RenderRows> cachedRows;
     mutable bool rowsDirty = true;
     mutable bool fetchPending = false;
+    CommandQueue commandQueue;
 
     // functions
     QColor getLabelBgColor() const noexcept;
     QRect getInnerRect() const noexcept;
     std::tuple<Clip, uint64_t> findClipAt(const Project &project, const QPoint &local) const;
+    void postRender();
     void updateSnapshot() const;
 
     void drawLayers(const Project &project, QPainter &p, const QRect &r) const;

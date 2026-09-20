@@ -35,6 +35,8 @@ QString addr;
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
+    esotereel_gui_helper::init_rust_logger(esotereel::qtLogCallback);
+
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 

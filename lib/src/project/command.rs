@@ -6,7 +6,7 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
-        ids::{ClipId, LayerId},
+        ids::{ClipId, LayerFolderId, LayerId},
         transform::ClipTranslates,
         value::PropertyValue,
     },
@@ -50,12 +50,12 @@ pub enum CommandRequest {
         translates: ClipTranslates,
     },
     AddLayer {
-        parent_folder_id: Option<LayerId>,
+        parent_folder_id: Option<LayerFolderId>,
         insert_index: Option<usize>,
         name: String,
     },
     AddFolder {
-        parent_folder_id: Option<LayerId>,
+        parent_folder_id: Option<LayerFolderId>,
         insert_index: Option<usize>,
         name: String,
     },

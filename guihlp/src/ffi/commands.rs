@@ -1,24 +1,102 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    panic::{AssertUnwindSafe, catch_unwind},
+    sync::Arc,
+};
 
 use esotereel_lib::{
     plugin::{NamespacedID, property::PropertySchema},
     project::{
+        Project,
         clip::ClipData,
         command::{ClipMoveCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
         transform::{ClipTranslate, ClipTranslates},
     },
+    requests::Request,
+    util::result::EsotereelError,
 };
 
 use crate::{
     WrapperErrorCode,
-    ffi::{state::ClientStateHandle, stringview::StringView},
+    ffi::{
+        result::{FfiResult, FfiResultVoid},
+        state::{ClientStateHandle, OptionProject},
+        stringview::StringView,
+    },
+    network::ClientNetworkHandler,
     slice_from_ptr_or_empty,
 };
 
+#[derive(Default, Debug)]
+pub struct CommandQueue {
+    pending: VecDeque<(TimelineId, CommandRequest)>,
+}
+
+impl CommandQueue {
+    pub(super) fn send_all(&mut self, network: &ClientNetworkHandler) {
+        if self.pending.is_empty() {
+            return;
+        }
+
+        let req = &Request::Command {
+            commands: std::mem::take(&mut self.pending),
+        };
+
+        network.send(req);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn command_queue_new() -> *mut CommandQueue {
+    Box::into_raw(Box::new(CommandQueue::default()))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn command_queue_drop(ptr: *mut CommandQueue) -> FfiResultVoid {
+    fn inner(ptr: *mut CommandQueue) -> anyhow::Result<()> {
+        if ptr.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("command_queue_drop".to_owned()))
+        }
+        catch_unwind(AssertUnwindSafe(|| {
+            unsafe { drop(Box::from_raw(ptr)) };
+        }))
+        .map_err(|_| anyhow::anyhow!("panic while dropping command queue"))
+    }
+    FfiResultVoid::from_result(inner(ptr))
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn command_queue_send_all(
+    ptr_queue: *mut CommandQueue,
+    ptr_state: *const ClientStateHandle,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_queue: *mut CommandQueue,
+        ptr_state: *const ClientStateHandle,
+    ) -> anyhow::Result<()> {
+        if ptr_queue.is_null() || ptr_state.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer(
+                "command_queue_send_all".to_owned()
+            ))
+        }
+
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state = state.lock().expect("mutex poisoned");
+        let network = &state.network;
+
+        catch_unwind(AssertUnwindSafe(|| {
+            let queue = unsafe { &mut *ptr_queue };
+            queue.send_all(network);
+        }))
+        .map_err(|_| anyhow::anyhow!("panic while sending command queue"))
+    }
+    FfiResultVoid::from_result(inner(ptr_queue, ptr_state))
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_clip_move_mul(
-    ptr_state: *const ClientStateHandle,
+    ptr_queue: *mut CommandQueue,
+    ptr_opt_project: *const OptionProject,
     timeline_id: TimelineId,
     ptr: *const u64,
     len: usize,
@@ -26,17 +104,12 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
     duration_added: i64,
     layer_moved: isize,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() {
+    if ptr_queue.is_null() || ptr_opt_project.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
-    let state = ClientStateHandle::from_ptr(ptr_state);
-
     let clip_data = {
-        let state_guard = state.lock().expect("mutex poisoned");
-        let project_guard = state_guard.project.write().expect("mutex poisoned");
-
-        let project = match project_guard.as_ref() {
+        let project = match unsafe { &*ptr_opt_project } {
             Some(arc) => arc,
             None => return WrapperErrorCode::not_found(Some("project not found")),
         };
@@ -72,28 +145,28 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
 
     let command = CommandRequest::ClipsMove { clips: clip_data };
 
-    {
-        let state = state.lock().expect("mutex poisoned");
-        state.network.req_command(timeline_id, command);
-    }
+    let mut queue = unsafe { &mut *ptr_queue };
+    queue.pending.push_back((timeline_id, command));
 
     WrapperErrorCode::ok()
 }
 
+/// be careful of deadlock
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_clip_dummy(
+    ptr_queue: *mut CommandQueue,
     ptr_state: *const ClientStateHandle,
     timeline_id: TimelineId,
     position: i64,
     layer_id: LayerId,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() {
+    if ptr_queue.is_null() || ptr_state.is_null() {
         return WrapperErrorCode::null_ptr();
     }
 
+    // lock here
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = Arc::clone(&state.network);
+    let state_guard = state.lock().expect("mutex poisoned");
 
     let clip_data = ClipData::Video {
         path: "/home/satoshiinu/Videos/3.mp4".to_string(),
@@ -107,7 +180,13 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
     });
 
     let kind_id = NamespacedID::parse("std:video").unwrap();
-    let loader = state.common.plugin_loader.read().expect("mutex poisoned");
+
+    // TODO: server side default_properties
+    let loader = state_guard
+        .common
+        .plugin_loader
+        .read()
+        .expect("mutex poisoned");
     let property_schema = &loader.get_clip_kind(&kind_id).unwrap().property_schema;
     let properties = PropertySchema::default_properties(&property_schema);
     drop(loader);
@@ -121,14 +200,15 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         translates,
     };
 
-    network.req_command(timeline_id, command);
+    let mut queue = unsafe { &mut *ptr_queue };
+    queue.pending.push_back((timeline_id, command));
 
     WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_layer(
-    ptr_state: *const ClientStateHandle,
+    ptr_queue: *mut CommandQueue,
     timeline_id: TimelineId,
     has_parent: bool,
     parent_folder_id: LayerFolderId,
@@ -136,12 +216,9 @@ pub unsafe extern "C" fn req_cmd_add_layer(
     insert_index: usize,
     name: StringView,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() {
+    if ptr_queue.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = Arc::clone(&state.network);
 
     let command = CommandRequest::AddLayer {
         parent_folder_id: has_parent.then_some(parent_folder_id),
@@ -149,13 +226,15 @@ pub unsafe extern "C" fn req_cmd_add_layer(
         name: name.as_string_lossy().into_owned(),
     };
 
-    network.req_command(timeline_id, command);
+    let mut queue = unsafe { &mut *ptr_queue };
+    queue.pending.push_back((timeline_id, command));
+
     WrapperErrorCode::ok()
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_folder(
-    ptr_state: *const ClientStateHandle,
+    ptr_queue: *mut CommandQueue,
     timeline_id: TimelineId,
     has_parent: bool,
     parent_folder_id: LayerFolderId,
@@ -163,13 +242,9 @@ pub unsafe extern "C" fn req_cmd_add_folder(
     insert_index: usize,
     name: StringView,
 ) -> WrapperErrorCode {
-    if ptr_state.is_null() {
+    if ptr_queue.is_null() {
         return WrapperErrorCode::null_ptr();
     }
-
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = Arc::clone(&state.network);
 
     let command = CommandRequest::AddFolder {
         parent_folder_id: has_parent.then_some(parent_folder_id),
@@ -177,6 +252,8 @@ pub unsafe extern "C" fn req_cmd_add_folder(
         name: name.as_string_lossy().into_owned(),
     };
 
-    network.req_command(timeline_id, command);
+    let mut queue = unsafe { &mut *ptr_queue };
+    queue.pending.push_back((timeline_id, command));
+
     WrapperErrorCode::ok()
 }

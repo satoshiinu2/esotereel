@@ -115,17 +115,6 @@ pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) {
     network.send(&Request::DebugFetchProjectStruct);
 }
 
-impl ClientNetworkHandler {
-    pub(super) fn req_command(&self, timeline_id: u64, command: CommandRequest) {
-        let req = Request::Command {
-            command,
-            timeline_id,
-        };
-
-        self.send(&req);
-    }
-}
-
 #[unsafe(no_mangle)]
 pub extern "C" fn req_load_stream(
     ptr_state: *const ClientStateHandle,

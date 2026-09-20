@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{collections::VecDeque, ops::Range};
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
@@ -15,8 +15,7 @@ pub enum Request {
     NewProject,
     ProjectAll,
     Command {
-        command: CommandRequest,
-        timeline_id: TimelineId,
+        commands: VecDeque<(TimelineId, CommandRequest)>,
     },
     InitStream {
         path: String,

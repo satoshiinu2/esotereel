@@ -1,7 +1,6 @@
 #include "TimelineCanvasWidget.h"
 #include "Utils.h"
-#include "ffi/ClientState.h"
-#include "ffi/Requests.h"
+#include "ffi/CommandQueue.h"
 #include "ffi/project/Clip.h"
 #include "ffi/project/Timeline.h"
 
@@ -153,7 +152,7 @@ void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const 
     // 挙動は変えず、意味の無い重複ループのみ削除しています。
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
-    this->windowState.state->requests().moveClips(this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
+    this->commandQueue.moveClips(project, this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
 
     this->markRowsDirty();
     update();

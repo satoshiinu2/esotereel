@@ -189,9 +189,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         checkBox->setProperty("settingKey", field.key);
         connect(checkBox, &QCheckBox::checkStateChanged, this, [this, checkBox](Qt::CheckState state) {
             QString key = checkBox->property("settingKey").toString();
-            // TODO: Implement when CFieldValue conversion is ready
-            // Settings::setValue(windowState.network, key, FieldValue::fromBool(state == Qt::Checked));
-            qWarning() << "Setting value not yet implemented for key:" << key;
+
+            Settings::setValue(windowState.state, key, FieldValue::fromBool(state == Qt::Checked));
         });
         control = checkBox;
     } else if (field.kindType == SettingsFieldType::Int) {
@@ -201,9 +200,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         spinBox->setProperty("settingKey", field.key);
         connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, spinBox](int value) {
             QString key = spinBox->property("settingKey").toString();
-            // TODO: Implement when CFieldValue conversion is ready
-            // Settings::setValue(windowState.network, key, FieldValue::fromInt(value));
-            qWarning() << "Setting value not yet implemented for key:" << key;
+
+            Settings::setValue(windowState.state, key, FieldValue::fromInt(value));
         });
         control = spinBox;
     } else if (field.kindType == SettingsFieldType::Float) {
@@ -214,9 +212,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
                 [this, doubleSpinBox](double value) {
                     QString key = doubleSpinBox->property("settingKey").toString();
-                    // TODO: Implement when CFieldValue conversion is ready
-                    // Settings::setValue(windowState.network, key, FieldValue::fromFloat(value));
-                    qWarning() << "Setting value not yet implemented for key:" << key;
+
+                    Settings::setValue(windowState.state, key, FieldValue::fromFloat(value));
                 });
         control = doubleSpinBox;
     } else if (field.kindType == SettingsFieldType::Enum) {
@@ -239,9 +236,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         comboBox->setProperty("settingKey", field.key);
         connect(comboBox, &QComboBox::currentTextChanged, this, [this, comboBox](const QString &text) {
             QString key = comboBox->property("settingKey").toString();
-            // TODO: Implement when CFieldValue conversion is ready
-            // Settings::setValue(windowState.network, key, FieldValue::fromEnum(text.toStdString()));
-            qWarning() << "Setting value not yet implemented for key:" << key;
+
+            Settings::setValue(windowState.state, key, FieldValue::fromEnum(text.toStdString()));
         });
         control = comboBox;
     } else if (field.kindType == SettingsFieldType::String) {
@@ -250,9 +246,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         lineEdit->setProperty("settingKey", field.key);
         connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
             QString key = lineEdit->property("settingKey").toString();
-            // TODO: Implement when CFieldValue conversion is ready
-            // Settings::setValue(windowState.network, key, FieldValue::fromString(text));
-            qWarning() << "Setting value not yet implemented for key:" << key;
+
+            Settings::setValue(windowState.state, key, FieldValue::fromString(text));
         });
         control = lineEdit;
     } else if (field.kindType == SettingsFieldType::Color) {
@@ -271,9 +266,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
                 QColor selectedColor = dialog.selectedColor();
                 RgbaColor rgba{static_cast<float>(selectedColor.redF()), static_cast<float>(selectedColor.greenF()),
                                static_cast<float>(selectedColor.blueF()), static_cast<float>(selectedColor.alphaF())};
-                // TODO: Implement when CFieldValue conversion is ready
-                // Settings::setValue(windowState.network, key, FieldValue::fromColor(rgba));
-                qWarning() << "Setting value not yet implemented for key:" << key;
+
+                Settings::setValue(windowState.state, key, FieldValue::fromColor(rgba));
             }
         });
         control = colorButton;
@@ -284,9 +278,8 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
         lineEdit->setProperty("settingKey", field.key);
         connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
             QString key = lineEdit->property("settingKey").toString();
-            // TODO: Implement when CFieldValue conversion is ready
-            // Settings::setValue(windowState.network, key, FieldValue::fromString(text));
-            qWarning() << "Setting value not yet implemented for key:" << key;
+
+            Settings::setValue(windowState.state, key, FieldValue::fromString(text));
         });
         control = lineEdit;
     }
@@ -344,13 +337,10 @@ void SettingsDialog::onOkButtonClicked() {
 }
 
 void SettingsDialog::onResetButtonClicked() {
-    // Reset all settings to defaults
-    // TODO: Implement when CFieldValue conversion is ready
-    /*
+
     for (const auto &field : allFields) {
-        Settings::setValue(windowState.network, field.key, field.defaultValue);
+        Settings::setValue(windowState.state, field.key, field.defaultValue);
     }
-    */
 
     // Refresh the current view
     if (categoryTree->currentItem()) {

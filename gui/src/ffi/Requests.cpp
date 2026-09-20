@@ -3,36 +3,13 @@
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/project/RenderRows.h"
-#include <cstdint>
 
 namespace esotereel {
+
 Requests::Requests(const ClientState *network) : ptr_network(*network) {}
 
 void Requests::newProject() {
     esotereel_gui_helper::req_new_project(ptr_network);
-}
-
-void Requests::moveClips(TimelineId timelineId, const std::vector<ClipId> &clipIds, TimelineTick posMoved,
-                         TimelineTick durationMoved, int64_t layerMoved) noexcept {
-    esotereel_gui_helper::req_cmd_clip_move_mul(ptr_network, timelineId, clipIds.data(), clipIds.size(), posMoved,
-                                                durationMoved, layerMoved);
-}
-
-void Requests::addClipAt(TimelineId timelineId, TimelineTick position, LayerId layerId) noexcept {
-    esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_network, timelineId, position, layerId);
-}
-
-void Requests::addLayer(TimelineId timelineId, std::optional<uint64_t> parentLayerId,
-                        std::optional<uint32_t> insertIndex, const std::string &name) noexcept {
-    esotereel_gui_helper::req_cmd_add_layer(ptr_network, timelineId, parentLayerId.has_value(),
-                                            parentLayerId.value_or(0), insertIndex.has_value(), insertIndex.value_or(0),
-                                            StringView::fromStdString(name));
-}
-void Requests::addFolder(TimelineId timelineId, std::optional<uint64_t> parentLayerId,
-                         std::optional<uint32_t> insertIndex, const std::string &name) noexcept {
-    esotereel_gui_helper::req_cmd_add_folder(ptr_network, timelineId, parentLayerId.has_value(),
-                                             parentLayerId.value_or(0), insertIndex.has_value(),
-                                             insertIndex.value_or(0), StringView::fromStdString(name));
 }
 
 void Requests::loadStream(QString path) noexcept {

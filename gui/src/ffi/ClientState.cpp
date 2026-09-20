@@ -1,4 +1,5 @@
 #include "ClientState.h"
+#include "CommandQueue.h"
 #include "Requests.h"
 #include "Result.h"
 #include "StringView.h"
