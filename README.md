@@ -33,5 +33,6 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 - Settings loading (lib/src/plugin/settings/mod.rs:124)
 - Timeline toolbar button icons (gui/src/window/widget/timeline/TimelineToolbarWidget.cpp:56)
 - Deprecated API replacements (guihlp/src/lib.rs)
+- FFI boundary Result/Option/Array redesign (especially nested types)
 
 See [Open Questions](docs/open-questions.md) for detailed specifications.
