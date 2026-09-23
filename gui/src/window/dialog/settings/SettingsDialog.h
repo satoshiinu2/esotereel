@@ -41,7 +41,6 @@ class SettingsDialog : public QDialog {
     void loadSettings();
     void populateCategories();
     void populateSettings(const QString &category = QString());
-    void createSettingControl(const QListWidgetItem *item, const esotereel::SettingsField &field);
     QWidget *createControlForField(const esotereel::SettingsField &field);
 
     WindowGState &windowState;

@@ -7,9 +7,11 @@ use colored::Colorize;
 use esotereel_lib::{
     StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
+    plugin::NamespacedID,
     project::{
         Project,
-        ids::{LayerFolderId, LayerId, TimelineId},
+        clip::ClipBindingValue,
+        ids::{ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
         layer_outline::{Meta, OutlineNode},
         timeline::TimelineMeta,
@@ -83,6 +85,37 @@ pub(super) fn on_responce_recveve(
                 for (layer_id, archived_clip) in clips.iter() {
                     let clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
                     timeline.upsert_clip_from_network(*layer_id, clip);
+                }
+            }
+
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
+            drop(project_guard);
+            drop(state_guard);
+            (fn_ptr)(*timeline_id);
+        }
+        ArchivedResponse::UpdateClipProperty {
+            timeline_id,
+            clip_id,
+            key,
+            value,
+        } => {
+            let state_guard = state.lock().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
+
+            {
+                let timeline = project
+                    .timeline_mut(*timeline_id)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+                let clip_id: ClipId = clip_id.deserialize(&mut rkyv::Infallible).unwrap();
+                let key: NamespacedID = key.deserialize(&mut rkyv::Infallible).unwrap();
+                let value: ClipBindingValue = value.deserialize(&mut rkyv::Infallible).unwrap();
+
+                if let Some(clip) = timeline.get_clip_mut(clip_id) {
+                    clip.set_property_value(key, value)?;
                 }
             }
 

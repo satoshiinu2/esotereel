@@ -1,4 +1,5 @@
 #pragma once
+#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
 #include <DockManager.h>
 #include <QAction>
@@ -22,6 +23,8 @@ class TimelineWidget;
 
 class DebugStreamsWidget;
 
+class ClipPropertiesPanel;
+
 namespace dialog {
 class SettingsDialog;
 } // namespace dialog
@@ -36,6 +39,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
   public:
     explicit MainWindow(ClientState &network, QWidget *parent = nullptr);
+    ~MainWindow();
 
     void markDirtyTimeline(TimelineId timelineId);
 
@@ -49,6 +53,8 @@ class MainWindow : public QMainWindow {
     ads::CDockManager *dockManager;
     TimelineWidget *timelineWidget;
     DebugStreamsWidget *debugStreamsWidget;
+    ClipPropertiesPanel *clipPropertiesPanel;
+    esotereel::CommandQueue *commandQueue;
 };
 
 } // namespace esotereel::window

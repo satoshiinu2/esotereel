@@ -68,6 +68,11 @@ pub struct OwnedString {
 }
 
 impl OwnedString {
+    pub fn from_string_view(sv: StringView) -> Self {
+        let s = sv.as_string_lossy().into_owned();
+        Self::from_string(s)
+    }
+
     pub fn from_string(s: String) -> Self {
         let mut s = s;
 
@@ -127,6 +132,11 @@ pub unsafe extern "C" fn owned_string_free(str: OwnedString) {
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn owned_string_new(str: StringView) -> OwnedString {
+    OwnedString::from_string_view(str)
+}
+
 impl From<StringView> for String {
     fn from(value: StringView) -> Self
     where
@@ -142,6 +152,7 @@ impl From<&str> for StringView {
     }
 }
 
+#[deprecated(note = "Use FfiArray<OwnedString> instead")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct OwnedStringArray {
@@ -187,12 +198,5 @@ impl OwnedStringArray {
                 value.free();
             }
         }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn owned_string_array_free(value: OwnedString) {
-    unsafe {
-        value.free();
     }
 }

@@ -7,6 +7,7 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
     if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();
+            emit clipSelectionChanged(timelineId, 0);
             update();
             return false;
         }
@@ -17,12 +18,15 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
     if (ctrl) {
         if (this->selectedClipIds.count(id)) {
             this->selectedClipIds.erase(id);
+            emit clipSelectionChanged(timelineId, 0);
         } else {
             this->selectedClipIds.insert(id);
+            emit clipSelectionChanged(timelineId, id);
         }
     } else {
         this->selectedClipIds.clear();
         this->selectedClipIds.insert(id);
+        emit clipSelectionChanged(timelineId, id);
     }
     update();
     return true;

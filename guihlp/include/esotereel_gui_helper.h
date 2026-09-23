@@ -42,18 +42,8 @@ enum class CLogLevel : uint8_t {
   Trace,
 };
 
-enum class FfiLayerRowKind {
-  Layer,
-  Folder,
-};
-
-enum class Direction {
-  Front,
-  Back,
-  Top,
-  Bottom,
-  Left,
-  Right,
+enum class CClipBindingValueTag : uint32_t {
+  Static,
 };
 
 enum class SettingsFieldType {
@@ -66,6 +56,20 @@ enum class SettingsFieldType {
   Color,
   Array,
   Map,
+};
+
+enum class FfiLayerRowKind {
+  Layer,
+  Folder,
+};
+
+enum class Direction {
+  Front,
+  Back,
+  Top,
+  Bottom,
+  Left,
+  Right,
 };
 
 struct ClientStateHandle;
@@ -128,10 +132,10 @@ struct OwnedStringArray {
 };
 
 struct RgbaColor {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-  uint8_t a;
+  float r;
+  float g;
+  float b;
+  float a;
 };
 
 struct CFieldValue;
@@ -177,43 +181,17 @@ using OnServerReadyCFn = void(*)(bool, StringView);
 
 using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
 
-struct FfiLayerRow {
-  FfiLayerRowKind node_kind;
-  LayerId node_id;
-  TimelineId timeline_id;
-  uint32_t depth;
-  bool is_folder_open;
-  uint32_t clip_start;
-  uint32_t clip_count;
-};
-
-struct ClipRenderInfo {
-  uint64_t clip_id;
-  int64_t abs_frame;
-  int64_t duration;
-  bool is_composite;
-  bool is_open;
-};
-
 using ClipId = uint64_t;
-
-struct CameraInfo {
-  QVector3D position;
-  QVector3D rotation;
-  bool is_orthographic;
-  Direction orthographic_direction;
-  float scale_factor;
-  float fov;
-};
 
 using TimelineTick = int64_t;
 
-struct SettingsField {
-  OwnedString key;
-  OwnedString category;
-  OwnedString label;
-  SettingsFieldType kind_type;
-  CFieldValue default_value;
+union CClipBindingValueData {
+  CFieldValue static_value;
+};
+
+struct CClipBindingValue {
+  CClipBindingValueTag tag;
+  CClipBindingValueData data;
 };
 
 template<typename T>
@@ -239,6 +217,56 @@ struct FfiResult {
   FfiResultUnion<T> value;
 };
 
+using CClipBindingValueResult = FfiResult<FfiOption<CClipBindingValue>>;
+
+struct FfiPropertySchema {
+  OwnedString key;
+  OwnedString category;
+  OwnedString label;
+  SettingsFieldType kind_type;
+  CFieldValue default_value;
+};
+
+template<typename T>
+struct FfiArray {
+  T *ptr;
+  uintptr_t len;
+  uintptr_t cap;
+  /// free_fnを呼んでcから解放
+  void (*free_fn)(FfiArray<T>*);
+};
+
+using FfiPropertySchemaArrayResult = FfiResult<FfiArray<FfiPropertySchema>>;
+
+using FfiStringArrayResult = FfiResult<FfiArray<OwnedString>>;
+
+struct FfiLayerRow {
+  FfiLayerRowKind node_kind;
+  LayerId node_id;
+  TimelineId timeline_id;
+  uint32_t depth;
+  bool is_folder_open;
+  uint32_t clip_start;
+  uint32_t clip_count;
+};
+
+struct ClipRenderInfo {
+  uint64_t clip_id;
+  int64_t abs_frame;
+  int64_t duration;
+  bool is_composite;
+  bool is_open;
+};
+
+struct CameraInfo {
+  QVector3D position;
+  QVector3D rotation;
+  bool is_orthographic;
+  Direction orthographic_direction;
+  float scale_factor;
+  float fov;
+};
+
 using CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
 
 struct GuiCallbacks {
@@ -257,15 +285,6 @@ struct FfiToolbarButton {
 };
 
 using ScriptId = uint64_t;
-
-template<typename T>
-struct FfiArray {
-  T *ptr;
-  uintptr_t len;
-  uintptr_t cap;
-  /// free_fnを呼んでcから解放
-  void (*free_fn)(FfiArray<T>*);
-};
 
 extern "C" {
 
@@ -343,11 +362,24 @@ const Timeline *project_get_timeline(const Option<Project> *ptr, TimelineId id);
 
 uintptr_t project_get_timeline_count(const Option<Project> *ptr);
 
-uint64_t clip_get_id(const Clip *ptr);
+ClipId clip_get_id(const Clip *ptr);
 
-int64_t clip_get_position(const Clip *ptr);
+TimelineTick clip_get_position(const Clip *ptr);
 
-int64_t clip_get_duration(const Clip *ptr);
+TimelineTick clip_get_duration(const Clip *ptr);
+
+CClipBindingValueResult clip_get_property_value(const Clip *ptr, StringView key);
+
+FfiPropertySchemaArrayResult clip_get_all_fields(const ClientStateHandle *ptr_state,
+                                                 const Clip *ptr_clip);
+
+FfiStringArrayResult clip_get_categories(const ClientStateHandle *ptr_state, const Clip *ptr);
+
+FfiResultVoid clip_set_property_value(CommandQueue *ptr_queue,
+                                      TimelineId timeline_id,
+                                      ClipId clip_id,
+                                      StringView key,
+                                      CClipBindingValue value);
 
 WrapperErrorCode render_rows_build(const Option<Project> *project,
                                    const Timeline *timeline,
@@ -437,11 +469,7 @@ void req_project_log(const ClientStateHandle *ptr_state);
 
 WrapperErrorCode req_load_stream(const ClientStateHandle *ptr_state, StringView path);
 
-int32_t settings_get_all_fields_count(const ClientStateHandle *ptr_state);
-
-WrapperErrorCode settings_get_all_fields(const ClientStateHandle *ptr_state,
-                                         SettingsField *output,
-                                         uintptr_t output_len);
+FfiPropertySchemaArrayResult settings_get_all_fields(const ClientStateHandle *ptr_state);
 
 CFieldValueResult settings_get_value(const ClientStateHandle *ptr_state, StringView key);
 
@@ -449,11 +477,7 @@ FfiResultVoid settings_set_value(const ClientStateHandle *ptr_state,
                                  StringView key,
                                  CFieldValue value);
 
-int32_t settings_get_categories_count(const ClientStateHandle *ptr_state);
-
-WrapperErrorCode settings_get_categories(const ClientStateHandle *ptr_state,
-                                         OwnedString *output,
-                                         uintptr_t output_len);
+FfiStringArrayResult settings_get_categories(const ClientStateHandle *ptr_state);
 
 WrapperErrorCode client_state_new(GuiCallbacks callbacks,
                                   StringView std_plugin_dir,
@@ -481,7 +505,7 @@ WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_
 /// Frees a string that was allocated by Rust and returned via OwnedString
 void owned_string_free(OwnedString str);
 
-void owned_string_array_free(OwnedString value);
+OwnedString owned_string_new(StringView str);
 
 int32_t toolbar_get_buttons_count(const ClientStateHandle *ptr_state, StringView target);
 

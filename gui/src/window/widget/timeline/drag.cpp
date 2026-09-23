@@ -145,11 +145,6 @@ void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const 
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
     int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
-    // NOTE: 元実装では配置可否をここでも再チェックしていましたが、結果に関わらず
-    // 常に同じ場所へ処理が合流し moveClips を送信していたため、判定自体は
-    // ドロップの可否に影響していませんでした(handleClipDragContinue内の
-    // drag->isWrong 表示のみが実質的な可否フィードバックです)。
-    // 挙動は変えず、意味の無い重複ループのみ削除しています。
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->commandQueue.moveClips(project, this->timelineId, exclude_vec, frameMoved, 0, layerMoved);

@@ -1,10 +1,9 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    path::PathBuf,
+    borrow::Cow,
+    collections::{HashMap, HashSet},
 };
 
 use anyhow::Context;
-use colored::Color;
 
 use crate::{
     plugin::{
@@ -14,8 +13,7 @@ use crate::{
             value::{FieldTypeKind, FieldValue},
         },
     },
-    project::value::PropertyValue,
-    util::color::RgbaColor,
+    project::clip::ClipBindingValue,
 };
 
 pub mod parse;
@@ -46,16 +44,16 @@ impl PropertySchema {
             )
         })?;
 
-        let fields = parsed
+        let properties = parsed
             .fields
             .into_iter()
             .map(|raw| Self::parse_one(raw, plugin_id))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
-        Self::validate_fields(&fields)
+        Self::validate_properties(&properties)
             .with_context(|| format!("schema validation failed in `{plugin_id}`"))?;
 
-        Ok(fields)
+        Ok(properties)
     }
 
     pub fn parse_one(raw: PropertySchemaRaw, plugin_id: &str) -> anyhow::Result<PropertySchema> {
@@ -87,13 +85,13 @@ impl PropertySchema {
         })
     }
 
-    pub fn validate_fields(fields: &[PropertySchema]) -> anyhow::Result<()> {
+    pub fn validate_properties(properties: &[PropertySchema]) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
-        for field in fields {
-            if !seen.insert(&field.key) {
-                anyhow::bail!("duplicate settings key `{}`", field.key,);
+        for property in properties {
+            if !seen.insert(&property.key) {
+                anyhow::bail!("duplicate property key `{}`", property.key,);
             }
-            Self::validate_kind(&field.key, &field.kind)?;
+            Self::validate_kind(&property.key, &property.kind)?;
         }
         Ok(())
     }
@@ -110,16 +108,10 @@ impl PropertySchema {
             _ => Ok(()),
         }
     }
+}
 
-    pub fn default_properties(schema: &[PropertySchema]) -> HashMap<NamespacedID, PropertyValue> {
-        schema
-            .iter()
-            .map(|field| {
-                (
-                    field.key.clone(),
-                    PropertyValue::Static(field.default.clone()),
-                )
-            })
-            .collect()
-    }
+pub trait PropertyHost {
+    fn properties(&self) -> Cow<'_, [PropertySchema]>;
+    fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue>;
+    fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()>;
 }

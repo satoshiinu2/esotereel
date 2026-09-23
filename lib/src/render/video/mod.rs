@@ -7,7 +7,7 @@ use ffmpeg::util::frame::video::Video;
 
 use crate::{
     StreamState,
-    project::{clip::ClipData, ids::ClipId},
+    project::ids::ClipId,
     render::{RenderContext, wgpuutil::WGpuUtil},
 };
 

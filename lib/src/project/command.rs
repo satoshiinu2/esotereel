@@ -6,9 +6,9 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
+        clip::ClipBindingValue,
         ids::{ClipId, LayerFolderId, LayerId},
         transform::ClipTranslates,
-        value::PropertyValue,
     },
 };
 
@@ -45,7 +45,7 @@ pub enum CommandRequest {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, PropertyValue>,
+        properties: HashMap<NamespacedID, ClipBindingValue>,
 
         translates: ClipTranslates,
     },
@@ -58,6 +58,11 @@ pub enum CommandRequest {
         parent_folder_id: Option<LayerFolderId>,
         insert_index: Option<usize>,
         name: String,
+    },
+    SetClipPropertyValue {
+        clip_id: ClipId,
+        key: NamespacedID,
+        value: ClipBindingValue,
     },
 }
 
@@ -73,7 +78,7 @@ pub enum CommandHistory {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, PropertyValue>,
+        properties: HashMap<NamespacedID, ClipBindingValue>,
 
         translates: ClipTranslates,
     },
@@ -86,5 +91,10 @@ pub enum CommandHistory {
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
+    },
+    SetClipPropertyValue {
+        clip_id: u64,
+        key: NamespacedID,
+        value: ClipBindingValue,
     },
 }

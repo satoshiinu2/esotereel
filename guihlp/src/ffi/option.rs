@@ -40,25 +40,3 @@ impl<T: Copy> FfiOption<T> {
         }
     }
 }
-
-macro_rules! export_option {
-    ($name:ident, $ty:ty) => {
-        paste::paste! {
-            #[allow(non_camel_case_types)]
-            pub type [<FfiOption_ $name>] = FfiOption<$ty>;
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn [<ffi_option_ $name _free>](opt: *mut FfiOption<$ty>) {
-                unsafe {
-                    if (*opt).has_value {
-                        std::ptr::drop_in_place(&mut (*opt).value.some);
-                    }
-                }
-            }
-        }
-    };
-}
-
-// export_option!(i32, i32);
-// export_option!(CFieldValue, CFieldValue);
-// export_option!(String, OwnedString);

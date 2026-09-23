@@ -1,5 +1,9 @@
 // project/change.rs (新規)
-use crate::project::ids::{ClipId, LayerFolderId, LayerId};
+use crate::project::{
+    clip::ClipBindingValue,
+    ids::{ClipId, LayerFolderId, LayerId},
+};
+use crate::plugin::NamespacedID;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]
@@ -9,11 +13,19 @@ pub struct RemovedClipInfo {
     pub duration: i64,
 }
 
+#[derive(Debug, Clone)]
+pub struct ClipPropertyChange {
+    pub clip_id: ClipId,
+    pub key: NamespacedID,
+    pub value: ClipBindingValue,
+}
+
 /// 未同期の差分。drain_changes()で取り出されるまで蓄積され続ける。
 #[derive(Debug, Default, Clone)]
 pub struct ChangeSet {
     pub clips_upserted: HashSet<ClipId>,
     pub clips_removed: HashMap<ClipId, RemovedClipInfo>,
+    pub clip_properties_changed: Vec<ClipPropertyChange>,
 
     pub layers_upserted: HashSet<LayerId>,
     pub layers_removed: HashSet<LayerId>,
@@ -30,7 +42,9 @@ impl ChangeSet {
     }
 
     pub fn is_clip_empty(&self) -> bool {
-        self.clips_upserted.is_empty() && self.clips_removed.is_empty()
+        self.clips_upserted.is_empty()
+            && self.clips_removed.is_empty()
+            && self.clip_properties_changed.is_empty()
     }
 
     pub(crate) fn mark_clip_upserted(&mut self, id: ClipId) {
@@ -41,6 +55,19 @@ impl ChangeSet {
     pub(crate) fn mark_clip_removed(&mut self, id: ClipId, info: RemovedClipInfo) {
         self.clips_upserted.remove(&id);
         self.clips_removed.insert(id, info);
+    }
+
+    pub(crate) fn mark_clip_property_changed(
+        &mut self,
+        clip_id: ClipId,
+        key: NamespacedID,
+        value: ClipBindingValue,
+    ) {
+        self.clip_properties_changed.push(ClipPropertyChange {
+            clip_id,
+            key,
+            value,
+        });
     }
 
     pub fn is_layer_empty(&self) -> bool {

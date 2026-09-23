@@ -8,12 +8,12 @@ use crate::plugin::NamespacedID;
 use crate::project::TimelineTick;
 use crate::project::change::{ChangeSet, RemovedClipInfo};
 use crate::project::chunk_index::ChunkIndex;
-use crate::project::clip::{Clip, ClipData};
+use crate::project::clip::Clip;
+use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::transform::ClipTranslates;
-use crate::project::value::PropertyValue;
 use crate::util::result::{EsotereelError, EsotereelResult};
 
 /// Composite/Script/Mirrorの入れ子実行を無限ループさせないための上限。
@@ -247,7 +247,7 @@ impl Timeline {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, PropertyValue>,
+        properties: HashMap<NamespacedID, ClipBindingValue>,
         translates: ClipTranslates,
     ) -> EsotereelResult<ClipId> {
         // 重複チェック(既存 try_insert 相当)
@@ -457,6 +457,17 @@ impl Timeline {
         self.invalidate_index();
         self.changes.clips_upserted.retain(|_| true); // no-op placeholder, see below
         self.changes.mark_clip_upserted(id);
+    }
+
+    pub fn touch_property_changed(
+        &mut self,
+        clip_id: ClipId,
+        key: NamespacedID,
+        value: ClipBindingValue,
+    ) {
+        self.invalidate_index();
+        self.changes
+            .mark_clip_property_changed(clip_id, key, value);
     }
 
     pub(crate) fn touch_removed(&mut self, clip: &Clip, layer_id: LayerId) {

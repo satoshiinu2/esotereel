@@ -1,70 +1,37 @@
 #pragma once
+
 #include "esotereel_gui_helper.h"
 #include <cstddef>
 
-namespace esotereel {
+namespace esotereel::Array {
 
 template <typename T> using FfiArray = esotereel_gui_helper::FfiArray<T>;
 
-template <typename T> class Array {
-  private:
-    FfiArray<T> raw_;
+template <typename T> inline size_t size(const FfiArray<T> &raw) noexcept {
+    return raw.len;
+}
 
-  public:
-    explicit Array(FfiArray<T> raw) : raw_(raw) {}
+template <typename T> inline bool isEmpty(const FfiArray<T> &raw) noexcept {
+    return raw.len == 0;
+}
 
-    Array(const Array &) = delete;
-    Array &operator=(const Array &) = delete;
+template <typename T> inline const T *data(const FfiArray<T> &raw) noexcept {
+    return raw.ptr;
+}
 
-    Array(Array &&other) noexcept : raw_(other.raw_) {
-        other.raw_ = {};
+template <typename T> inline T *data(FfiArray<T> &raw) noexcept {
+    return raw.ptr;
+}
+
+// OwnedString::free と同じノリ: FfiArrayはRustのVecを借りているだけなので、
+// 使い終わったら必ずfree()を呼ぶこと（呼び忘れるとリーク）。
+template <typename T> inline void free(FfiArray<T> &raw) {
+    if (raw.free_fn) {
+        raw.free_fn(&raw);
     }
+    raw.ptr = nullptr;
+    raw.len = 0;
+    raw.cap = 0;
+}
 
-    Array &operator=(Array &&other) noexcept {
-        if (this != &other) {
-            reset();
-
-            raw_ = other.raw_;
-            other.raw_ = {};
-        }
-        return *this;
-    }
-
-    ~Array() {
-        reset();
-    }
-
-    size_t size() const noexcept {
-        return raw_.len;
-    }
-
-    bool empty() const noexcept {
-        return raw_.len == 0;
-    }
-
-    T *data() noexcept {
-        return raw_.ptr;
-    }
-
-    const T *data() const noexcept {
-        return raw_.ptr;
-    }
-
-    T &operator[](size_t index) noexcept {
-        return raw_.ptr[index];
-    }
-
-    const T &operator[](size_t index) const noexcept {
-        return raw_.ptr[index];
-    }
-
-  private:
-    void reset() noexcept {
-        if (raw_.free_fn) {
-            raw_.free_fn(&raw_);
-        }
-
-        raw_ = {};
-    }
-};
-} // namespace esotereel
+} // namespace esotereel::Array

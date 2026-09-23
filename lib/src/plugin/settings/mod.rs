@@ -1,10 +1,10 @@
-use std::{collections::HashMap, path::Path};
+use std::{borrow::Cow, collections::HashMap, path::Path};
 
 use anyhow::Context;
 
 use crate::plugin::{
     NamespacedID,
-    property::{PropertySchema, value::FieldValue},
+    property::{PropertyHost, PropertySchema, value::FieldValue},
 };
 
 #[derive(Debug, Default)]
@@ -25,7 +25,7 @@ impl SettingsSchemaRegistry {
     ) -> anyhow::Result<()> {
         let mut merged = self.fields.clone();
         merged.extend(plugin_fields);
-        PropertySchema::validate_fields(&merged)
+        PropertySchema::validate_properties(&merged)
             .context("plugin schema conflicts with existing settings")?;
         self.fields = merged;
         Ok(())
@@ -103,6 +103,25 @@ impl SettingsStore {
     }
 }
 
+impl PropertyHost for SettingsStore {
+    fn properties(&self) -> Cow<'_, [PropertySchema]> {
+        Cow::Borrowed(self.schema.fields())
+    }
+
+    fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue> {
+        self.values.get(key)
+    }
+
+    fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()> {
+        if !self.schema.fields().iter().any(|f| f.key == key) {
+            anyhow::bail!("unknown settings key: {}", key);
+        }
+        self.values.insert(key, value);
+        Ok(())
+    }
+}
+
+// TODO:
 pub async fn load_settings_values(path: &Path) -> anyhow::Result<HashMap<String, toml::Value>> {
     if !path.exists() {
         return Ok(HashMap::new());

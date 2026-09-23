@@ -8,7 +8,7 @@ use esotereel_lib::{
     plugin::{NamespacedID, property::PropertySchema},
     project::{
         Project,
-        clip::ClipData,
+        clip::{ClipBindingValue, ClipData},
         command::{ClipMoveCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
         transform::{ClipTranslate, ClipTranslates},
@@ -34,6 +34,10 @@ pub struct CommandQueue {
 }
 
 impl CommandQueue {
+    pub fn enqueue(&mut self, timeline_id: TimelineId, command: CommandRequest) {
+        self.pending.push_back((timeline_id, command));
+    }
+
     pub(super) fn send_all(&mut self, network: &ClientNetworkHandler) {
         if self.pending.is_empty() {
             return;
@@ -145,8 +149,8 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
 
     let command = CommandRequest::ClipsMove { clips: clip_data };
 
-    let mut queue = unsafe { &mut *ptr_queue };
-    queue.pending.push_back((timeline_id, command));
+    let queue = unsafe { &mut *ptr_queue };
+    queue.enqueue(timeline_id, command);
 
     WrapperErrorCode::ok()
 }
@@ -188,7 +192,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         .read()
         .expect("mutex poisoned");
     let property_schema = &loader.get_clip_kind(&kind_id).unwrap().property_schema;
-    let properties = PropertySchema::default_properties(&property_schema);
+    let properties = ClipBindingValue::default_properties(&property_schema);
     drop(loader);
 
     let command = CommandRequest::AddClip {
@@ -200,8 +204,8 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         translates,
     };
 
-    let mut queue = unsafe { &mut *ptr_queue };
-    queue.pending.push_back((timeline_id, command));
+    let queue = unsafe { &mut *ptr_queue };
+    queue.enqueue(timeline_id, command);
 
     WrapperErrorCode::ok()
 }
@@ -226,8 +230,8 @@ pub unsafe extern "C" fn req_cmd_add_layer(
         name: name.as_string_lossy().into_owned(),
     };
 
-    let mut queue = unsafe { &mut *ptr_queue };
-    queue.pending.push_back((timeline_id, command));
+    let queue = unsafe { &mut *ptr_queue };
+    queue.enqueue(timeline_id, command);
 
     WrapperErrorCode::ok()
 }
@@ -252,8 +256,8 @@ pub unsafe extern "C" fn req_cmd_add_folder(
         name: name.as_string_lossy().into_owned(),
     };
 
-    let mut queue = unsafe { &mut *ptr_queue };
-    queue.pending.push_back((timeline_id, command));
+    let queue = unsafe { &mut *ptr_queue };
+    queue.enqueue(timeline_id, command);
 
     WrapperErrorCode::ok()
 }

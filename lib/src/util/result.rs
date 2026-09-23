@@ -7,7 +7,10 @@ use std::{
 use anyhow::Result;
 use rkyv::{Archive, Deserialize, Serialize};
 
-use crate::project::ids::{ClipId, LayerId, ResourceId, TimelineId};
+use crate::{
+    plugin::NamespacedID,
+    project::ids::{ClipId, LayerId, ResourceId, TimelineId},
+};
 
 // TODO: cow
 #[derive(Archive, Serialize, Deserialize, Debug, thiserror::Error)]
@@ -20,6 +23,7 @@ pub enum EsotereelError {
     ProjectNotFound,
     TimelineNotFound(TimelineId),
     ClipNotFound(ClipId),
+    ClipKindNotFound(NamespacedID),
     LayerNotFound(LayerId),
     DuplicateLayerId(LayerId),
     PluginNotFound(String),
@@ -38,12 +42,13 @@ impl fmt::Display for EsotereelError {
             EsotereelError::AccessError(msg) => write!(f, "Access error: {}", msg),
             EsotereelError::DecodeError(msg) => write!(f, "Decode error: {}", msg),
             EsotereelError::ProjectNotFound => write!(f, "Project not found"),
-            EsotereelError::TimelineNotFound(id) => write!(f, "Timeline {} not found", id),
-            EsotereelError::LayerNotFound(id) => write!(f, "Layer {} not found", id),
-            EsotereelError::DuplicateLayerId(id) => write!(f, "Duplicate layer ID {}", id),
-            EsotereelError::PluginNotFound(id) => write!(f, "Plugin {} not found", id),
-            EsotereelError::ClipNotFound(id) => write!(f, "Clip {} not found", id),
-            EsotereelError::StreamNotFound(id) => write!(f, "Stream {} not found", id),
+            EsotereelError::TimelineNotFound(id) => write!(f, "Timeline '{}' not found", id),
+            EsotereelError::LayerNotFound(id) => write!(f, "Layer '{}' not found", id),
+            EsotereelError::DuplicateLayerId(id) => write!(f, "Duplicate layer ID '{}'", id),
+            EsotereelError::PluginNotFound(id) => write!(f, "Plugin '{}' not found", id),
+            EsotereelError::ClipNotFound(id) => write!(f, "Clip '{}' not found", id),
+            EsotereelError::ClipKindNotFound(id) => write!(f, "ClipKind '{}' not found", id),
+            EsotereelError::StreamNotFound(id) => write!(f, "Stream '{}' not found", id),
             EsotereelError::InvalidCommand => write!(f, "Invalid command"),
             EsotereelError::ClipOverlap => write!(f, "Clip overlap"),
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),

@@ -2,7 +2,9 @@
 #include "ads_globals.h"
 #include "dialog/settings/SettingsDialog.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
+#include "widget/clip_property/ClipPropertiesPanel.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineCanvasWidget.h"
 #include "widget/timeline/TimelineWidget.h"
@@ -63,6 +65,18 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     dockManager->addDockWidget(ads::RightDockWidgetArea, debugStreamsDock, previewDock->dockAreaWidget());
 #endif
 
+    this->commandQueue = new esotereel::CommandQueue(&network);
+    this->clipPropertiesPanel = new ClipPropertiesPanel(&network, *this->commandQueue);
+    auto *clipPropertiesDock = new ads::CDockWidget(dockManager, "Clip Properties");
+    clipPropertiesDock->setWidget(clipPropertiesPanel);
+    dockManager->addDockWidget(ads::RightDockWidgetArea, clipPropertiesDock, previewDock->dockAreaWidget());
+
+    // Connect timeline selection to clip properties panel
+    connect(timelineWidget->canvas, &TimelineCanvasWidget::clipSelectionChanged,
+            this, [this](TimelineId timelineId, ClipId clipId) {
+                clipPropertiesPanel->setClip(timelineId, clipId);
+            });
+
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;
 
@@ -70,10 +84,15 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     viewMenu->addAction(previewDock->toggleViewAction());
     viewMenu->addAction(timelineDock->toggleViewAction());
     viewMenu->addAction(debugStreamsDock->toggleViewAction());
+    viewMenu->addAction(clipPropertiesDock->toggleViewAction());
 
     QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
     QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettingsDialog);
+}
+
+MainWindow::~MainWindow() {
+    delete commandQueue;
 }
 
 void MainWindow::markDirtyTimeline(TimelineId timelineId) {

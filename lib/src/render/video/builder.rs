@@ -1,16 +1,11 @@
 use std::sync::Arc;
 
 use crate::{
-    plugin::{
-        NamespacedID,
-        script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
-    },
-    project::{Clip, clip::ClipData},
+    plugin::script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
+    project::Clip,
     render::{RenderContext, vertex::Vertex},
 };
 use glam::{EulerRot, Mat4, Quat, Vec3};
-use log::info;
-use rhai::plugin;
 
 pub struct VertexBatch {
     pub vertices: Vec<Vertex>,

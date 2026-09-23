@@ -1,57 +1,48 @@
 #include "Settings.h"
 #include "ClientState.h"
 #include "StringView.h"
-#include "WrapperResult.h"
 
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
 
 namespace esotereel {
 
-Result<QVector<SettingsField>> Settings::getAllFields(ClientState *network) {
-    if (!network) {
-        return Result<QVector<SettingsField>>::err("Network handler is null");
+Result<QVector<SettingsField>> Settings::getAllFields(ClientState *state) {
+    if (!state) {
+        return Result<QVector<SettingsField>>::err("State is null");
     }
+
+    auto result = esotereel_gui_helper::settings_get_all_fields(*state);
+
+    if (!result.is_ok) {
+        return Result<QVector<SettingsField>>::err(OwnedString::intoStdString(result.value.err));
+    }
+
+    auto &array = result.value.ok;
 
     QVector<SettingsField> fields;
+    fields.reserve(static_cast<int>(array.len));
 
-    // Get count first
-    int32_t count = esotereel_gui_helper::settings_get_all_fields_count(*network);
-    if (count < 0) {
-        return Result<QVector<SettingsField>>::err("Failed to get fields count");
+    for (std::size_t i = 0; i < array.len; ++i) {
+        // SettingsFieldのコンストラクタがkey/category/labelのOwnedStringを解放する。
+        fields.append(SettingsField(array.ptr[i]));
     }
 
-    if (count == 0) {
-        return Result<QVector<SettingsField>>::ok(fields);
-    }
-
-    // Allocate buffer
-    QVector<esotereel_gui_helper::SettingsField> ffiFields(count);
-
-    WrapperErrorCode result = esotereel_gui_helper::settings_get_all_fields(*network, ffiFields.data(), count);
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResult<QVector<SettingsField>>(result, fields);
-    }
-
-    // Convert to Qt types and free memory
-    for (int i = 0; i < count; ++i) {
-        const auto &ffi = ffiFields[i];
-
-        fields.append(SettingsField(ffi));
-    }
+    // 配列コンテナ自体(Vecのバッファ)を解放。中身のOwnedStringは上でfree済み。
+    array.free_fn(&array);
 
     return Result<QVector<SettingsField>>::ok(fields);
 }
 
-Result<FieldValue> Settings::getValue(ClientState *network, const QString &key) {
-    if (!network) {
-        return Result<FieldValue>::err("Network handler is null");
+Result<FieldValue> Settings::getValue(ClientState *state, const QString &key) {
+    if (!state) {
+        return Result<FieldValue>::err("State is null");
     }
 
     QByteArray keyUtf8 = key.toUtf8();
     RawStringView keyView = StringView::fromQUtf8String(keyUtf8);
 
-    auto result = esotereel_gui_helper::settings_get_value(*network, keyView);
+    auto result = esotereel_gui_helper::settings_get_value(*state, keyView);
 
     if (!result.is_ok) {
         return Result<FieldValue>::err(OwnedString::intoStdString(result.value.err));
@@ -65,20 +56,31 @@ Result<FieldValue> Settings::getValue(ClientState *network, const QString &key) 
     }
 }
 
-Result<void> Settings::setValue(ClientState *network, const QString &key, const FieldValue &value) {
-    if (!network) {
-        return Result<void>::err("Network handler is null");
+Result<void> Settings::setValue(ClientState *state, const QString &key, const FieldValue &value) {
+    if (!state) {
+        return Result<void>::err("State is null");
     }
 
-    // Convert FieldValue to CFieldValue
-    // This is complex because we need to allocate memory in Rust and convert the variant
-    // For now, return error until we implement the full conversion
-    return Result<void>::err("Setting value from FieldValue not yet implemented - need CFieldValue conversion");
+    QByteArray keyUtf8 = key.toUtf8();
+    RawStringView keyView = StringView::fromQUtf8String(keyUtf8);
+
+    esotereel_gui_helper::CFieldValue cValue = value.toC();
+
+    auto result = esotereel_gui_helper::settings_set_value(*state, keyView, cValue);
+
+    // toC()で自前確保したバッファを解放(Rustが作るCFieldValueの解放とは別ルート)。
+    FieldValue::freeC(cValue);
+
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
 }
 
-Result<QString> Settings::getValueString(ClientState *network, const QString &key) {
-    auto res = getValue(network, key);
-    if (res.is_ok()) {
+Result<QString> Settings::getValueString(ClientState *state, const QString &key) {
+    auto res = getValue(state, key);
+    if (res.isOk()) {
         // Convert FieldValue to string
         if (std::holds_alternative<std::string>(res.unwrap().variant())) {
             return Result<QString>::ok(QString::fromStdString(std::get<std::string>(res.unwrap().variant())));
@@ -88,46 +90,36 @@ Result<QString> Settings::getValueString(ClientState *network, const QString &ke
     return Result<QString>::err(res.error());
 }
 
-Result<void> Settings::setValue(ClientState *network, const QString &key, const QString &value) {
-    // Temporarily disabled until CFieldValue conversion is implemented
-    return Result<void>::err("Setting value not yet implemented");
+Result<void> Settings::setValue(ClientState *state, const QString &key, const QString &value) {
+    return setValue(state, key, FieldValue::fromString(value));
 }
 
-Result<void> Settings::setValueString(ClientState *network, const QString &key, const QString &value) {
-    // Temporarily disabled until CFieldValue conversion is implemented
-    return Result<void>::err("Setting value not yet implemented");
+Result<void> Settings::setValueString(ClientState *state, const QString &key, const QString &value) {
+    return setValue(state, key, value);
 }
 
-Result<QStringList> Settings::getCategories(ClientState *network) {
-    if (!network) {
-        return Result<QStringList>::err("Network handler is null");
+Result<QStringList> Settings::getCategories(ClientState *state) {
+    if (!state) {
+        return Result<QStringList>::err("State is null");
     }
+
+    auto result = esotereel_gui_helper::settings_get_categories(*state);
+
+    if (!result.is_ok) {
+        return Result<QStringList>::err(OwnedString::intoStdString(result.value.err));
+    }
+
+    auto &array = result.value.ok;
 
     QStringList categories;
+    categories.reserve(static_cast<int>(array.len));
 
-    // Get count first
-    int32_t count = esotereel_gui_helper::settings_get_categories_count(*network);
-    if (count < 0) {
-        return Result<QStringList>::err("Failed to get categories count");
+    for (std::size_t i = 0; i < array.len; ++i) {
+        categories.append(OwnedString::toQString(array.ptr[i]));
+        OwnedString::free(array.ptr[i]);
     }
 
-    if (count == 0) {
-        return Result<QStringList>::ok(categories);
-    }
-
-    // Allocate buffer
-    QVector<RawOwnedString> categoryViews(count);
-
-    WrapperErrorCode result = esotereel_gui_helper::settings_get_categories(*network, categoryViews.data(), count);
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResult<QStringList>(result, categories);
-    }
-
-    // Convert to Qt types and free memory
-    for (int i = 0; i < count; ++i) {
-        categories.append(OwnedString::toQString(categoryViews[i]));
-        OwnedString::free(categoryViews[i]);
-    }
+    array.free_fn(&array);
 
     return Result<QStringList>::ok(categories);
 }

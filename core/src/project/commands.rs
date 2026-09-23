@@ -73,6 +73,15 @@ pub fn command_to_history(
             insert_index,
             name,
         },
+        CommandRequest::SetClipPropertyValue {
+            clip_id,
+            key,
+            value,
+        } => CommandHistory::SetClipPropertyValue {
+            clip_id,
+            key,
+            value,
+        },
     };
 
     Ok(history)
@@ -133,6 +142,22 @@ pub fn handle_command_action(
                 insert_index,
                 name.to_string(),
             )?;
+        }
+        CommandHistory::SetClipPropertyValue {
+            clip_id,
+            key,
+            value,
+        } => {
+            let timeline = project
+                .timeline_mut(timeline_id)
+                .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+
+            let clip = timeline
+                .get_clip_mut(*clip_id)
+                .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
+
+            clip.set_property_value(key.clone(), value.clone())?;
+            timeline.touch_property_changed(*clip_id, key.clone(), value.clone());
         }
     };
     Ok(())

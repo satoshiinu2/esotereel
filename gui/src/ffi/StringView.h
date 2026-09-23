@@ -81,4 +81,15 @@ inline QString intoQString(const RawOwnedString &raw) {
     return str;
 }
 
+inline RawOwnedString fromStdString(const std::string &str) {
+    if (str.empty()) {
+        return {nullptr, 0};
+    }
+    return esotereel_gui_helper::owned_string_new(StringView::fromStdString(str));
+}
+
+inline RawOwnedString fromQUtf8String(const QByteArray &utf8) {
+    return esotereel_gui_helper::owned_string_new(StringView::fromQUtf8String(utf8));
+}
+
 }; // namespace esotereel::OwnedString

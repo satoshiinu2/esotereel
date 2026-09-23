@@ -17,13 +17,13 @@ struct ClientNetworkHandler;
 namespace esotereel {
 class Requests;
 
-using RawClientNetworkHandler = esotereel_gui_helper::ClientStateHandle;
+using RawClientStateHandle = esotereel_gui_helper::ClientStateHandle;
 using GuiCallbacks = esotereel_gui_helper::GuiCallbacks;
 
 class ClientState {
 
   private:
-    const RawClientNetworkHandler *network_ptr;
+    const RawClientStateHandle *network_ptr;
     bool isWayland;
 
   public:
@@ -35,7 +35,7 @@ class ClientState {
     ClientState(ClientState &&other) noexcept;
     ClientState &operator=(ClientState &&other) noexcept;
 
-    operator const RawClientNetworkHandler *() const noexcept {
+    operator const RawClientStateHandle *() const noexcept {
         return network_ptr;
     }
 

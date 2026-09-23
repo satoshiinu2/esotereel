@@ -126,6 +126,9 @@ class TimelineCanvasWidget : public QWidget {
         this->togglePlayback();
     }
 
+  signals:
+    void clipSelectionChanged(TimelineId timelineId, ClipId clipId);
+
   protected:
     void paintEvent(QPaintEvent *e) override;
     void resizeEvent(QResizeEvent *e) override;

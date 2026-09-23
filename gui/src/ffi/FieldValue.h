@@ -41,6 +41,16 @@ class FieldValue {
 
     static FieldValue fromC(const CFieldValue &value);
 
+    // C++ -> Rust方向の変換。
+    // 戻り値のCFieldValueは、String/Enum/Path/Mapの場合Path/Array/Mapの
+    // バッファをこの関数内でnew[]する。使い終わったら必ずFieldValue::freeC()
+    // で解放すること(Rust側のwrap_ffiが作るCFieldValueとは解放方法が異なる)。
+    CFieldValue toC() const;
+
+    // toC()で作ったCFieldValueを解放する。Rustが作ったCFieldValue
+    // (esotereel_field_value_free等)とは別物なので混同しないこと。
+    static void freeC(CFieldValue &value);
+
     // Static factory methods
     static FieldValue fromBool(bool value) { return FieldValue(value); }
     static FieldValue fromInt(std::int64_t value) { return FieldValue(value); }
@@ -84,3 +94,5 @@ class FieldValue {
     Variant value_;
 };
 } // namespace esotereel
+
+Q_DECLARE_METATYPE(esotereel::FieldValue)

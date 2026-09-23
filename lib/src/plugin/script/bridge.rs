@@ -4,19 +4,19 @@ use rhai::{Dynamic, Map};
 
 use crate::{
     plugin::{NamespacedID, property::value::FieldValue},
-    project::value::PropertyValue,
+    project::clip::ClipBindingValue,
 };
 
-pub fn field_values_to_rhai_map(properties: &HashMap<NamespacedID, PropertyValue>) -> Map {
+pub fn field_values_to_rhai_map(properties: &HashMap<NamespacedID, ClipBindingValue>) -> Map {
     properties
         .iter()
         .map(|(k, v)| (k.to_string().into(), property_value_to_dynamic(v)))
         .collect()
 }
 
-fn property_value_to_dynamic(v: &PropertyValue) -> Dynamic {
+fn property_value_to_dynamic(v: &ClipBindingValue) -> Dynamic {
     match v {
-        PropertyValue::Static(fv) => field_value_to_dynamic(fv),
+        ClipBindingValue::Static(fv) => field_value_to_dynamic(fv),
         // 将来Keyframes等が増えたら、ここでmedia_time時点の値を評価して渡す
     }
 }

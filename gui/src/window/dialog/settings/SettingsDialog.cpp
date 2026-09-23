@@ -1,19 +1,14 @@
 #include "SettingsDialog.h"
 #include "window/MainWindow.h"
-#include <QCheckBox>
-#include <QColor>
-#include <QColorDialog>
-#include <QComboBox>
-#include <QDoubleSpinBox>
+#include "window/dialog/property/FieldControlFactory.h"
+
 #include <QFont>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLineEdit>
 #include <QScrollArea>
-#include <QSpinBox>
 #include <QVBoxLayout>
 
 namespace esotereel::window::dialog {
@@ -85,24 +80,18 @@ void SettingsDialog::setupUI() {
 
 void SettingsDialog::loadSettings() {
     auto fieldsResult = Settings::getAllFields(windowState.state);
-    if (fieldsResult.is_ok()) {
+    if (fieldsResult.isOk()) {
         allFields = fieldsResult.unwrap();
-        qDebug() << "Loaded" << allFields.size() << "settings fields";
-        for (const auto &field : allFields) {
-            qDebug() << "Field:" << field.key << "Category:" << field.category << "Label:" << field.label;
-        }
     } else {
         qWarning() << "Failed to get fields:" << QString::fromStdString(fieldsResult.error());
     }
 
-    // Group fields by category
     fieldsByCategory.clear();
     for (const auto &field : allFields) {
         QString category = field.category.isEmpty() ? "General" : field.category;
         fieldsByCategory[category].append(field);
     }
 
-    qDebug() << "Categories:" << fieldsByCategory.keys();
     populateCategories();
 }
 
@@ -111,17 +100,14 @@ void SettingsDialog::populateCategories() {
 
     QStringList categories;
     auto categoriesResult = Settings::getCategories(windowState.state);
-    if (categoriesResult.is_ok()) {
+    if (categoriesResult.isOk()) {
         categories = categoriesResult.unwrap();
-        qDebug() << "Got categories from Settings:" << categories;
     } else {
         qWarning() << "Failed to get categories:" << QString::fromStdString(categoriesResult.error());
     }
 
     if (categories.isEmpty()) {
-        // Fallback to categories from fields
         categories = fieldsByCategory.keys();
-        qDebug() << "Using fallback categories from fields:" << categories;
     }
 
     for (const QString &category : categories) {
@@ -130,9 +116,6 @@ void SettingsDialog::populateCategories() {
         item->setData(0, Qt::UserRole, category);
     }
 
-    qDebug() << "Total categories in tree:" << categoryTree->topLevelItemCount();
-
-    // Select first category
     if (categoryTree->topLevelItemCount() > 0) {
         categoryTree->setCurrentItem(categoryTree->topLevelItem(0));
         populateSettings(categoryTree->topLevelItem(0)->text(0));
@@ -145,22 +128,19 @@ void SettingsDialog::populateSettings(const QString &category) {
     QString searchCategory = category.isEmpty() ? "General" : category;
     QVector<SettingsField> fields = fieldsByCategory.value(searchCategory);
 
-    qDebug() << "Populating settings for category:" << searchCategory << "with" << fields.size() << "fields";
-
     for (const auto &field : fields) {
         auto *item = new QListWidgetItem(settingsList);
         item->setText(field.label);
         item->setData(Qt::UserRole, QVariant::fromValue(field));
 
-        // Create custom widget for this setting
         QWidget *widget = createControlForField(field);
         item->setSizeHint(widget->sizeHint());
         settingsList->setItemWidget(item, widget);
     }
-
-    qDebug() << "Total items in settings list:" << settingsList->count();
 }
 
+// フィールド1つ分の「ラベル + コントロール」の組み立てだけをここで行い、
+// コントロール自体の生成とSettingsへのバインドはFieldControlFactoryに委譲する。
 QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
     auto *container = new QWidget();
     auto *layout = new QVBoxLayout(container);
@@ -173,120 +153,21 @@ QWidget *SettingsDialog::createControlForField(const SettingsField &field) {
     nameLabel->setFont(labelFont);
     layout->addWidget(nameLabel);
 
-    // Get current value
-    FieldValue currentValue = field.defaultValue;
-    auto valueResult = Settings::getValue(windowState.state, field.key);
-    if (valueResult.is_ok()) {
-        currentValue = valueResult.unwrap();
-    }
-
-    QWidget *control = nullptr;
-
-    if (field.kindType == SettingsFieldType::Bool) {
-        auto *checkBox = new QCheckBox();
-        bool checked = currentValue.asBool();
-        checkBox->setChecked(checked);
-        checkBox->setProperty("settingKey", field.key);
-        connect(checkBox, &QCheckBox::checkStateChanged, this, [this, checkBox](Qt::CheckState state) {
-            QString key = checkBox->property("settingKey").toString();
-
-            Settings::setValue(windowState.state, key, FieldValue::fromBool(state == Qt::Checked));
-        });
-        control = checkBox;
-    } else if (field.kindType == SettingsFieldType::Int) {
-        auto *spinBox = new QSpinBox();
-        spinBox->setRange(0, 1000); // Default range, should be parsed from schema
-        spinBox->setValue(static_cast<int>(currentValue.asInt()));
-        spinBox->setProperty("settingKey", field.key);
-        connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, [this, spinBox](int value) {
-            QString key = spinBox->property("settingKey").toString();
-
-            Settings::setValue(windowState.state, key, FieldValue::fromInt(value));
-        });
-        control = spinBox;
-    } else if (field.kindType == SettingsFieldType::Float) {
-        auto *doubleSpinBox = new QDoubleSpinBox();
-        doubleSpinBox->setRange(0.0, 1000.0); // Default range
-        doubleSpinBox->setValue(currentValue.asFloat());
-        doubleSpinBox->setProperty("settingKey", field.key);
-        connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
-                [this, doubleSpinBox](double value) {
-                    QString key = doubleSpinBox->property("settingKey").toString();
-
-                    Settings::setValue(windowState.state, key, FieldValue::fromFloat(value));
-                });
-        control = doubleSpinBox;
-    } else if (field.kindType == SettingsFieldType::Enum) {
-        auto *comboBox = new QComboBox();
-        // For enum types, we need to parse the options from the schema
-        // This is a simplified version - in a real implementation, we'd parse the schema properly
-        QStringList options;
-        // Hardcode some common enum options based on the key
-        if (field.key.contains("log_level") || field.key.contains("level")) {
-            options << "Off" << "Error" << "Warn" << "Info" << "Debug" << "Trace";
-        } else if (field.key.contains("theme")) {
-            options << "Light" << "Dark" << "System";
-        } else {
-            // Fallback: try to parse from default value or use current value
-            options << currentValue.asQString();
+    widget::FieldBinding binding;
+    binding.getValue = [this, field]() {
+        FieldValue value = field.defaultValue;
+        auto result = Settings::getValue(windowState.state, field.key);
+        if (result.isOk()) {
+            value = result.unwrap();
         }
+        return value;
+    };
+    binding.setValue = [this, field](const FieldValue &value) {
+        Settings::setValue(windowState.state, field.key, value);
+    };
 
-        comboBox->addItems(options);
-        comboBox->setCurrentText(currentValue.asQString());
-        comboBox->setProperty("settingKey", field.key);
-        connect(comboBox, &QComboBox::currentTextChanged, this, [this, comboBox](const QString &text) {
-            QString key = comboBox->property("settingKey").toString();
-
-            Settings::setValue(windowState.state, key, FieldValue::fromEnum(text.toStdString()));
-        });
-        control = comboBox;
-    } else if (field.kindType == SettingsFieldType::String) {
-        auto *lineEdit = new QLineEdit();
-        lineEdit->setText(currentValue.asQString());
-        lineEdit->setProperty("settingKey", field.key);
-        connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
-            QString key = lineEdit->property("settingKey").toString();
-
-            Settings::setValue(windowState.state, key, FieldValue::fromString(text));
-        });
-        control = lineEdit;
-    } else if (field.kindType == SettingsFieldType::Color) {
-        auto *colorButton = new QPushButton("Choose Color");
-        colorButton->setProperty("settingKey", field.key);
-        connect(colorButton, &QPushButton::clicked, this, [this, colorButton]() {
-            QString key = colorButton->property("settingKey").toString();
-            QColor color = Qt::white;
-            auto colorResult = Settings::getValue(windowState.state, key);
-            if (colorResult.is_ok()) {
-                auto rgba = colorResult.unwrap().asColor();
-                color = QColor::fromRgbF(rgba.r, rgba.g, rgba.b, rgba.a);
-            }
-            QColorDialog dialog(color, this);
-            if (dialog.exec() == QDialog::Accepted) {
-                QColor selectedColor = dialog.selectedColor();
-                RgbaColor rgba{static_cast<float>(selectedColor.redF()), static_cast<float>(selectedColor.greenF()),
-                               static_cast<float>(selectedColor.blueF()), static_cast<float>(selectedColor.alphaF())};
-
-                Settings::setValue(windowState.state, key, FieldValue::fromColor(rgba));
-            }
-        });
-        control = colorButton;
-    } else {
-        // Default to line edit for unknown types
-        auto *lineEdit = new QLineEdit();
-        lineEdit->setText(currentValue.asQString());
-        lineEdit->setProperty("settingKey", field.key);
-        connect(lineEdit, &QLineEdit::textChanged, this, [this, lineEdit](const QString &text) {
-            QString key = lineEdit->property("settingKey").toString();
-
-            Settings::setValue(windowState.state, key, FieldValue::fromString(text));
-        });
-        control = lineEdit;
-    }
-
-    if (control) {
-        layout->addWidget(control);
-    }
+    QWidget *control = widget::FieldControlFactory::createControl(field, binding);
+    layout->addWidget(control);
 
     return container;
 }
@@ -301,14 +182,12 @@ void SettingsDialog::onCategorySelected(QTreeWidgetItem *item, int column) {
 
 void SettingsDialog::onSearchTextChanged(const QString &text) {
     if (text.isEmpty()) {
-        // Show all settings for current category
         if (categoryTree->currentItem()) {
             populateSettings(categoryTree->currentItem()->text(0));
         }
         return;
     }
 
-    // Filter settings based on search text
     settingsList->clear();
 
     for (const auto &field : allFields) {
@@ -325,24 +204,18 @@ void SettingsDialog::onSearchTextChanged(const QString &text) {
 }
 
 void SettingsDialog::onApplyButtonClicked() {
-    // Apply changes without closing the dialog
-    // Settings are already applied in real-time via the connect() calls
-    // This button could be used to persist settings to disk
-    qDebug() << "Settings applied";
+    // Settings are already applied in real-time via the bindings above.
 }
 
 void SettingsDialog::onOkButtonClicked() {
-    // Apply changes and close the dialog
     accept();
 }
 
 void SettingsDialog::onResetButtonClicked() {
-
     for (const auto &field : allFields) {
         Settings::setValue(windowState.state, field.key, field.defaultValue);
     }
 
-    // Refresh the current view
     if (categoryTree->currentItem()) {
         populateSettings(categoryTree->currentItem()->text(0));
     }

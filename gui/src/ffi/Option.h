@@ -1,74 +1,27 @@
 #pragma once
 #include "esotereel_gui_helper.h"
-#include <cstddef>
-#include <stdexcept>
-#include <string>
 
-namespace esotereel {
+namespace esotereel::Option {
 
 template <typename T> using FfiOption = esotereel_gui_helper::FfiOption<T>;
 
-template <typename T> class Option {
-  public:
-    Option() = default;
+// FfiOptionはCopyなだけの値でリソースを持たないので、free()は不要。
+// StringView.h / OwnedString.h と同じノリで、素の構造体を薄い自由関数で読み書きする。
 
-    explicit Option(FfiOption<T> raw) : raw_(raw) {}
+template <typename T> inline bool isSome(const FfiOption<T> &opt) noexcept {
+    return opt.has_value;
+}
 
-    bool is_some() const noexcept {
-        return raw_.has_value;
-    }
+template <typename T> inline bool isNone(const FfiOption<T> &opt) noexcept {
+    return !opt.has_value;
+}
 
-    bool is_none() const noexcept {
-        return !raw_.has_value;
-    }
+template <typename T> inline const T &unwrap(const FfiOption<T> &opt) noexcept {
+    return opt.value.some;
+}
 
-    const T &unwrap() const {
-        if (!is_some())
-            throw std::logic_error("FfiOption: unwrap() called on None");
+template <typename T> inline T unwrapOr(const FfiOption<T> &opt, T fallback) noexcept {
+    return opt.has_value ? opt.value.some : fallback;
+}
 
-        return raw_.value.some;
-    }
-
-    T &unwrap() {
-        if (!is_some())
-            throw std::logic_error("FfiOption: unwrap() called on None");
-
-        return raw_.value.some;
-    }
-
-    const T &expect(const char *message) const {
-        if (!is_some())
-            throw std::logic_error(message);
-
-        return raw_.value.some;
-    }
-
-    T unwrap_or(T fallback) const {
-        if (is_some())
-            return raw_.value.some;
-
-        return fallback;
-    }
-
-    T unwrap_or_default() const
-        requires std::default_initializable<T>
-    {
-        if (is_some())
-            return raw_.value.some;
-
-        return T{};
-    }
-
-    explicit operator bool() const noexcept {
-        return is_some();
-    }
-
-    const FfiOption<T> &raw() const noexcept {
-        return raw_;
-    }
-
-  private:
-    FfiOption<T> raw_{};
-};
-
-} // namespace esotereel
+} // namespace esotereel::Option

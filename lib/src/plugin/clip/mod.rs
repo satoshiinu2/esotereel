@@ -56,7 +56,7 @@ impl ClipKind {
 
         // このClipKind内だけで閉じたキー空間として検証する
         // (他のClipKindや設定のキーとは無関係)
-        PropertySchema::validate_fields(&property_schema)
+        PropertySchema::validate_properties(&property_schema)
             .with_context(|| format!("invalid property schema for clip kind `{id}`"))?;
 
         Ok((

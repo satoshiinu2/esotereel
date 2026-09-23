@@ -2,12 +2,14 @@ use rkyv::{Archive, CheckBytes, bytecheck};
 use std::collections::{BTreeMap, HashMap};
 
 use crate::{
-    plugin::{NamespacedID, property::PropertySchema},
+    plugin::{
+        NamespacedID,
+        property::{PropertySchema, value::FieldValue},
+    },
     project::{
         TimelineTick,
         ids::{ClipId, ScriptId, TimelineId},
         transform::ClipTranslates,
-        value::PropertyValue,
     },
 };
 
@@ -21,7 +23,7 @@ pub struct Clip {
     pub duration: TimelineTick,
 
     pub kind_id: NamespacedID,
-    pub properties: HashMap<NamespacedID, PropertyValue>,
+    pub properties: HashMap<NamespacedID, ClipBindingValue>,
     pub translates: ClipTranslates,
 }
 
@@ -31,7 +33,7 @@ impl Clip {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, PropertyValue>,
+        properties: HashMap<NamespacedID, ClipBindingValue>,
         translates: ClipTranslates,
     ) -> Self {
         Self {
@@ -51,12 +53,57 @@ impl Clip {
     pub fn set_position(&mut self, new_pos: i64) {
         self.position = new_pos;
     }
+
+    pub fn get_property_value(&self, key: &NamespacedID) -> Option<&ClipBindingValue> {
+        self.properties.get(key)
+    }
+
+    pub fn set_property_value(
+        &mut self,
+        key: NamespacedID,
+        value: ClipBindingValue,
+    ) -> anyhow::Result<()> {
+        self.properties.insert(key, value);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ClipKind {
     pub func_name: String,
     pub property_schema: Vec<PropertySchema>,
+}
+
+#[derive(
+    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
+)]
+#[archive_attr(derive(CheckBytes))]
+pub enum ClipBindingValue {
+    Static(FieldValue),
+    // 将来的に Keyframes(Vec<(TimelineTick, FieldValue)>) 等を追加予定
+}
+
+impl ClipBindingValue {
+    // TODO: 将来的に Keyframes等を追加したら、ここもそれに応じて変更する
+    pub fn in_frame_of(&self) -> Option<&FieldValue> {
+        match self {
+            ClipBindingValue::Static(v) => Some(v),
+        }
+    }
+
+    pub fn default_properties(
+        schema: &[PropertySchema],
+    ) -> HashMap<NamespacedID, ClipBindingValue> {
+        schema
+            .iter()
+            .map(|field| {
+                (
+                    field.key.clone(),
+                    ClipBindingValue::Static(field.default.clone()),
+                )
+            })
+            .collect()
+    }
 }
 
 /// Compositionへの参照。Mirrorは複数Clipが同じTimelineIdを共有し、

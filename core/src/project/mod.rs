@@ -5,10 +5,10 @@ use esotereel_lib::{
     plugin::NamespacedID,
     project::{
         Clip, Project, TimelineTick,
+        clip::ClipBindingValue,
         command::ClipMoveHistoryCtx,
         ids::{LayerId, TimelineId},
         transform::ClipTranslates,
-        value::PropertyValue,
     },
     util::result::EsotereelError,
 };
@@ -77,7 +77,7 @@ pub(crate) fn clip_add_core(
     position: TimelineTick,
     duration: TimelineTick,
     kind_id: NamespacedID,
-    properties: HashMap<NamespacedID, PropertyValue>,
+    properties: HashMap<NamespacedID, ClipBindingValue>,
     translates: ClipTranslates,
 ) -> anyhow::Result<()> {
     // key (u32) をそのまま渡してクリップを追加

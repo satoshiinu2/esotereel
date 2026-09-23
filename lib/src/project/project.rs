@@ -2,11 +2,11 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::plugin::NamespacedID;
 use crate::project::change::ChangeSet;
+use crate::project::clip::ClipBindingValue;
 use crate::project::clip::ClipData;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::project::transform::ClipTranslates;
-use crate::project::value::PropertyValue;
 use crate::util::result::EsotereelError;
 
 #[derive(Debug, Default)]
@@ -81,7 +81,7 @@ impl Project {
         position: i64,
         duration: i64,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, PropertyValue>,
+        properties: HashMap<NamespacedID, ClipBindingValue>,
         translates: ClipTranslates,
     ) -> anyhow::Result<ClipId> {
         let timeline = self
@@ -127,30 +127,6 @@ impl Project {
                 (!cs.is_empty()).then_some((id, cs))
             })
             .collect()
-    }
-
-    // TODO: clip -> nested_timeline_id の逆引きマップ
-    pub fn propagate_nested_dirty(&mut self, changed: &[(TimelineId, ChangeSet)]) {
-        let changed_ids: std::collections::HashSet<TimelineId> =
-            changed.iter().map(|(id, _)| *id).collect();
-
-        // 全timeline全clipを舐めて、nested_timeline_idがchanged_idsに含まれるものを探す
-        let mut to_touch: Vec<(TimelineId, ClipId)> = Vec::new();
-        for (&tid, tl) in self.timelines.iter() {
-            for (&cid, clip) in tl.iter_clips() {
-                // TODO!
-                // if let Some(nested) = clip.data.nested_timeline_id() {
-                //     if changed_ids.contains(&nested) {
-                //         to_touch.push((tid, cid));
-                //     }
-                // }
-            }
-        }
-        for (tid, cid) in to_touch {
-            if let Some(tl) = self.timelines.get_mut(&tid) {
-                tl.touch_upsert(cid); // touch_upsertをpub(crate)にして呼ぶ
-            }
-        }
     }
 
     /// ProjectAll用の軽量メタ情報。Clip本体を含まない。

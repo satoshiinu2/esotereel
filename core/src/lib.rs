@@ -4,7 +4,7 @@ use esotereel_lib::{
     dirs::Directories,
     plugin::PluginLoader,
     project::{
-        change::ChangeSet,
+        change::{ChangeSet, ClipPropertyChange},
         ids::{ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
         layer_outline::{Meta, OutlineNode},
@@ -78,7 +78,6 @@ async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()>
         }
 
         // Composite/Area/Script経由でネストしているclipへの波及も回収
-        project.propagate_nested_dirty(&changes);
         changes.extend(project.drain_changes());
 
         changes
@@ -192,6 +191,21 @@ fn dispatch_changeset(
     drop(state_guard);
 
     // ネットワーク送信
+    for prop_change in &changeset.clip_properties_changed {
+        let targets = network.clients_watching_timeline(timeline_id);
+        if !targets.is_empty() {
+            network.send_to_many(
+                &targets,
+                &Response::UpdateClipProperty {
+                    timeline_id,
+                    clip_id: prop_change.clip_id,
+                    key: prop_change.key.clone(),
+                    value: prop_change.value.clone(),
+                },
+            );
+        }
+    }
+
     if !clips.is_empty() {
         let targets = network.clients_watching_in(timeline_id, &range);
         if !targets.is_empty() {

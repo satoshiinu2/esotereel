@@ -29,17 +29,12 @@ template <typename T> class Result {
         return Result(std::move(error));
     }
 
-    bool is_ok() const noexcept {
+    bool isOk() const noexcept {
         return std::holds_alternative<T>(value_);
     }
 
-    bool is_err() const noexcept {
-        return std::holds_alternative<std::string>(value_);
-    }
-
-    // Compatibility aliases
     bool isError() const noexcept {
-        return is_err();
+        return std::holds_alternative<std::string>(value_);
     }
 
     T &unwrap() {
@@ -113,8 +108,7 @@ class ResultVoid {
 };
 
 // Template specialization for Result<void>
-template <>
-class Result<void> {
+template <> class Result<void> {
   public:
     explicit Result(FfiResultVoid raw) {
         if (raw.is_ok) {

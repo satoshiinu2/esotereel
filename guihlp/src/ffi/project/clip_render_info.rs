@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use esotereel_lib::project::{
     Project, Timeline,
-    clip::ClipData,
     ids::{LayerFolderId, LayerId, TimelineId},
     layer_outline::OutlineNode,
 };

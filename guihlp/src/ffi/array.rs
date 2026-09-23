@@ -51,28 +51,3 @@ impl<T> FfiArray<T> {
         unsafe { Vec::from_raw_parts(self.ptr, self.len, self.cap) }
     }
 }
-
-macro_rules! export_array {
-    ($name:ident, $ty:ty) => {
-        paste::paste! {
-            #[allow(non_camel_case_types)]
-            pub type [<FfiArray_ $name>] = FfiArray<$ty>;
-
-            #[unsafe(no_mangle)]
-            pub extern "C" fn [<ffi_array_ $name _free>](arr: *mut FfiArray<$ty>) {
-                unsafe {
-                    let a = &mut *arr;
-                    if !a.ptr.is_null() {
-                        drop(Vec::from_raw_parts(a.ptr, a.len, a.cap));
-                        a.ptr = std::ptr::null_mut();
-                        a.len = 0;
-                        a.cap = 0;
-                    }
-                }
-            }
-        }
-    };
-}
-
-// export_array!(i32, i32);
-// export_array!(CFieldValue, CFieldValue);

@@ -95,7 +95,13 @@ impl ToString for FieldValue {
                 .collect::<Vec<_>>()
                 .join(", "),
             Self::Color(color) => {
-                format!("#{:02X}{:02X}{:02X}{:02X}", color.r, color.g, color.b, color.a)
+                format!(
+                    "#{:02X}{:02X}{:02X}{:02X}",
+                    (color.r * 255.0) as u8,
+                    (color.g * 255.0) as u8,
+                    (color.b * 255.0) as u8,
+                    (color.a * 255.0) as u8
+                )
             }
             Self::Array(values) => values
                 .iter()
@@ -242,7 +248,7 @@ impl FieldTypeKind {
     // 補助関数: `#RRGGBBAA` または `#RRGGBB` の文字列から RgbaColor へ変換
     fn parse_rgba_color(hex_str: &str) -> Result<RgbaColor, ConvertError> {
         let hex = hex_str.trim_start_matches('#');
-        let (r, g, b, a) = match hex.len() {
+        let (r8, g8, b8, a8) = match hex.len() {
             6 => (
                 u8::from_str_radix(&hex[0..2], 16),
                 u8::from_str_radix(&hex[2..4], 16),
@@ -258,8 +264,13 @@ impl FieldTypeKind {
             _ => return Err(ConvertError::InvalidColor(hex_str.to_string())),
         };
 
-        match (r, g, b, a) {
-            (Ok(r), Ok(g), Ok(b), Ok(a)) => Ok(RgbaColor { r, g, b, a }), // RgbaColor構造体に合わせる
+        match (r8, g8, b8, a8) {
+            (Ok(r8), Ok(g8), Ok(b8), Ok(a8)) => Ok(RgbaColor {
+                r: r8 as f32 / 255.0,
+                g: g8 as f32 / 255.0,
+                b: b8 as f32 / 255.0,
+                a: a8 as f32 / 255.0,
+            }),
             _ => Err(ConvertError::InvalidColor(hex_str.to_string())),
         }
     }

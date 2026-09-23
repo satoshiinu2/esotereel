@@ -2,8 +2,10 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
+use crate::plugin::NamespacedID;
 use crate::project::{
     Clip,
+    clip::ClipBindingValue,
     ids::{ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     layer::LayerMeta,
     layer_outline::{Meta, OutlineNode},
@@ -20,6 +22,12 @@ pub enum Response {
     UpdateClip {
         timeline_id: TimelineId,
         clips: Vec<(LayerId, Clip)>,
+    },
+    UpdateClipProperty {
+        timeline_id: TimelineId,
+        clip_id: ClipId,
+        key: NamespacedID,
+        value: ClipBindingValue,
     },
     RemoveClip {
         timeline_id: TimelineId,

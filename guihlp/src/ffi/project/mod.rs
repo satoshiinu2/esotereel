@@ -1,6 +1,7 @@
 use esotereel_lib::project::{Project, Timeline, ids::TimelineId};
 
 pub mod clip;
+pub mod clip_property;
 pub mod clip_render_info;
 pub mod layer;
 pub mod timeline;
