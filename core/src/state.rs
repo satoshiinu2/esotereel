@@ -6,8 +6,12 @@ use std::sync::{
 use anyhow::Context;
 use dashmap::DashMap;
 use esotereel_lib::{
-    decode::videostreamer::VideoStreamer, dirs::Directories, plugin::PluginLoader,
-    project::ids::ResourceId, state::CommonState,
+    HostRole,
+    decode::videostreamer::VideoStreamer,
+    dirs::Directories,
+    plugin::{PluginLoader, property::PropertySchema, toolbar::ToolbarButtonSpec},
+    project::ids::ResourceId,
+    state::{CommonState, HostBootstrap},
 };
 use tokio::sync::Notify;
 
@@ -46,6 +50,20 @@ impl ServerState {
             .get(path)
             .and_then(|s| s.as_option())
             .unwrap_or_else(|| self.next_resource_id.fetch_add(1, Ordering::SeqCst))
+    }
+}
+
+impl HostBootstrap for ServerState {
+    const ROLE: HostRole = HostRole::Server;
+
+    fn apply_extra_plugin_fields(
+        &mut self,
+        plugin_schemas: Vec<PropertySchema>,
+        plugin_toolbar_buttons: Vec<(String, ToolbarButtonSpec)>,
+    ) -> anyhow::Result<()> {
+        let _ = plugin_schemas;
+        let _ = plugin_toolbar_buttons;
+        Ok(())
     }
 }
 

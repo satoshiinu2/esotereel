@@ -117,12 +117,10 @@ pub unsafe extern "C" fn clip_get_all_fields(
         let state = state.lock().expect("mutex poisoned");
         let clip = unsafe { &*ptr_clip };
 
-        let clip_kinds = state.clip_kinds.read().expect("mutex poisoned");
-        let schema = clip_kinds
-            .get(&clip.kind_id)
-            .ok_or_else(|| EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?
-            .property_schema
-            .clone();
+        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+        let schema = plugin_loader
+            .get_clip_properties(&clip.kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
 
         let fields: Vec<FfiPropertySchema> =
             schema.iter().map(FfiPropertySchema::from_schema).collect();
@@ -156,15 +154,13 @@ pub unsafe extern "C" fn clip_get_categories(
         let state = state.lock().expect("mutex poisoned");
         let clip = unsafe { &*ptr };
 
-        let clip_kinds = state.clip_kinds.read().expect("mutex poisoned");
-        let schema = clip_kinds
-            .get(&clip.kind_id)
-            .ok_or_else(|| EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?
-            .property_schema
-            .clone();
+        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+        let schema = plugin_loader
+            .get_clip_properties(&clip.kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
 
         let mut categories = HashSet::new();
-        for field in &schema {
+        for field in schema {
             for cat in &field.category {
                 categories.insert(cat.clone());
             }

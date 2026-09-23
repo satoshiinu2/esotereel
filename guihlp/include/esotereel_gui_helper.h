@@ -308,11 +308,11 @@ WrapperErrorCode req_cmd_clip_move_mul(CommandQueue *ptr_queue,
                                        intptr_t layer_moved);
 
 /// be careful of deadlock
-WrapperErrorCode req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
-                                        const ClientStateHandle *ptr_state,
-                                        TimelineId timeline_id,
-                                        int64_t position,
-                                        LayerId layer_id);
+FfiResultVoid req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
+                                     const ClientStateHandle *ptr_state,
+                                     TimelineId timeline_id,
+                                     int64_t position,
+                                     LayerId layer_id);
 
 WrapperErrorCode req_cmd_add_layer(CommandQueue *ptr_queue,
                                    TimelineId timeline_id,

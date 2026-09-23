@@ -10,6 +10,7 @@ use esotereel_lib::{
         layer_outline::{Meta, OutlineNode},
     },
     responces::Response,
+    state::HostBootstrap,
     util::result::EsotereelError,
 };
 use std::sync::{Arc, Mutex, RwLock};
@@ -29,15 +30,11 @@ pub async fn server_network_start<F>(
     F: FnOnce(bool, &str),
 {
     let was_plugin_producted = plugin_loader.is_some();
-    let state = ServerState::new(dirs_def, plugin_loader);
+    let mut state = ServerState::new(dirs_def, plugin_loader);
 
     // プラグインが提供されたものではなかったらプラグインを並列で読み込む(すでに読み込まれているので)
     if !was_plugin_producted {
-        if let Err(e) = state.load_plugins(HostRole::Server).await {
-            log::error!("Failed to load plugins: {}", e);
-        } else {
-            log::info!("Server plugins loaded successfully");
-        }
+        state.boot_strap().await;
     }
 
     // async タスク用に Clone

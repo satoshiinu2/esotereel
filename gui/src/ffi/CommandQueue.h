@@ -37,7 +37,7 @@ class CommandQueue {
     void moveClips(const Project &project, TimelineId timelineIdx, const std::vector<ClipId> &clipIds,
                    TimelineTick posMoved, TimelineTick durationMoved, int64_t layerMoved) noexcept;
 
-    void addClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId) noexcept;
+    Result<void> addClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId) noexcept;
     void addLayer(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
                   const std::string &name) noexcept;
     void addFolder(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,

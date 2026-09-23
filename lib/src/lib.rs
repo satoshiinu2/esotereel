@@ -4,7 +4,6 @@ use dashmap::DashMap;
 
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 use crate::dirs::Directories;
-use crate::plugin::script::ScriptStore;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
 

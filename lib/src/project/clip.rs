@@ -1,5 +1,5 @@
 use rkyv::{Archive, CheckBytes, bytecheck};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::{
     plugin::{
@@ -70,8 +70,8 @@ impl Clip {
 
 #[derive(Debug, Clone)]
 pub struct ClipKind {
-    pub func_name: String,
-    pub property_schema: Vec<PropertySchema>,
+    pub render_script: String,
+    pub tags: HashSet<String>,
 }
 
 #[derive(

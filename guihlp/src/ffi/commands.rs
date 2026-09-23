@@ -163,51 +163,74 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
     timeline_id: TimelineId,
     position: i64,
     layer_id: LayerId,
-) -> WrapperErrorCode {
-    if ptr_queue.is_null() || ptr_state.is_null() {
-        return WrapperErrorCode::null_ptr();
+) -> FfiResultVoid {
+    fn inner(
+        ptr_queue: *mut CommandQueue,
+        ptr_state: *const ClientStateHandle,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+    ) -> anyhow::Result<()> {
+        if ptr_queue.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_string()));
+        }
+        if ptr_state.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_state".to_string()));
+        }
+
+        // lock here
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state_guard = state.lock().expect("mutex poisoned");
+
+        let clip_data = ClipData::Video {
+            path: "/home/satoshiinu/Videos/3.mp4".to_string(),
+            media_offset: 0.0,
+        };
+
+        let translates = ClipTranslates::Normal(ClipTranslate {
+            position: [-100.0, -100.0, 0.0],
+            rotation: [0.0, 0.0, 0.0],
+            scale: [400.0, 300.0, 1.0],
+        });
+
+        let kind_id = NamespacedID::parse("std:video").unwrap();
+
+        // TODO: server side default_properties
+        let loader = state_guard
+            .common
+            .plugin_loader
+            .read()
+            .expect("mutex poisoned");
+
+        let property_schema = loader
+            .get_clip_properties(&kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
+
+        let properties = ClipBindingValue::default_properties(property_schema);
+        drop(loader);
+
+        let command = CommandRequest::AddClip {
+            layer_id,
+            position,
+            duration: 10000,
+            kind_id,
+            properties,
+            translates,
+        };
+
+        let queue = unsafe { &mut *ptr_queue };
+        queue.enqueue(timeline_id, command);
+
+        Ok(())
     }
 
-    // lock here
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state_guard = state.lock().expect("mutex poisoned");
-
-    let clip_data = ClipData::Video {
-        path: "/home/satoshiinu/Videos/3.mp4".to_string(),
-        media_offset: 0.0,
-    };
-
-    let translates = ClipTranslates::Normal(ClipTranslate {
-        position: [-100.0, -100.0, 0.0],
-        rotation: [0.0, 0.0, 0.0],
-        scale: [400.0, 300.0, 1.0],
-    });
-
-    let kind_id = NamespacedID::parse("std:video").unwrap();
-
-    // TODO: server side default_properties
-    let loader = state_guard
-        .common
-        .plugin_loader
-        .read()
-        .expect("mutex poisoned");
-    let property_schema = &loader.get_clip_kind(&kind_id).unwrap().property_schema;
-    let properties = ClipBindingValue::default_properties(&property_schema);
-    drop(loader);
-
-    let command = CommandRequest::AddClip {
-        layer_id,
-        position,
-        duration: 10000,
-        kind_id,
-        properties,
-        translates,
-    };
-
-    let queue = unsafe { &mut *ptr_queue };
-    queue.enqueue(timeline_id, command);
-
-    WrapperErrorCode::ok()
+    match catch_unwind(AssertUnwindSafe(|| {
+        inner(ptr_queue, ptr_state, timeline_id, position, layer_id)
+    })) {
+        Ok(Ok(_)) => FfiResultVoid::ok(),
+        Ok(Err(e)) => FfiResultVoid::err(e),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }
 
 #[unsafe(no_mangle)]

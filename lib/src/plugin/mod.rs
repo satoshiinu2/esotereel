@@ -13,7 +13,7 @@ use crate::{
     HostRole,
     dirs::Directories,
     plugin::{
-        clip::ClipKindStore,
+        clip::{ClipKindStore, PendingProperty},
         property::PropertySchema,
         script::CompiledScript,
         toolbar::ToolbarButtonSpec,
@@ -106,6 +106,7 @@ pub struct Plugin {
     pub manifest: PluginManifest,
     pub setting_schemas: Vec<PropertySchema>,
     pub clip_kinds: HashMap<NamespacedID, ClipKind>,
+    pub pending_properties: Vec<PendingProperty>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub script: Option<CompiledScript>,
     pub dir: PathBuf,
@@ -117,7 +118,8 @@ impl Plugin {
         let manifest = Self::load_manifest(&dir.join("manifest.toml"))?;
 
         let setting_schemas = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
-        let clip_kinds = Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
+        let (clip_kinds, pending_properties) =
+            Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
 
@@ -126,18 +128,19 @@ impl Plugin {
             .map_or_default(|s| s.available_functions.clone());
 
         log::info!(
-            "Plugin '{}' v{} (ID: {}) loaded successfully: Settings schemas: {}, Clip kinds: {}, Toolbar buttons: {}, Available scripts: {}",
+            "Plugin '{}' v{} (ID: {}) loaded successfully: Settings schemas: {}, Clip kinds: {}, Pending properties: {}, Toolbar buttons: {}, Available scripts: {}",
             manifest.name,
             manifest.version,
             manifest.id,
             setting_schemas.len(),
             clip_kinds.len(),
+            pending_properties.len(),
             toolbar_buttons.len(),
             avaliable_functions.len()
         );
 
         log::info!(
-            "Plugin '{}' debug info: \nSettings schemas: {:?}, \nClip kinds: {:?}, \nToolbar buttons: {:?}, \nAvailable scripts: {:?}",
+            "Plugin '{}' debug info: \nSettings schemas: {:?}, \nClip kinds: {:?},\nPending properties: {:?}, \nToolbar buttons: {:?}, \nAvailable scripts: {:?}",
             manifest.id,
             setting_schemas
                 .iter()
@@ -147,6 +150,10 @@ impl Plugin {
                 .iter()
                 .map(|(id, _)| id.full())
                 .collect::<Vec<_>>(),
+            pending_properties
+                .iter()
+                .flat_map(|p| p.fields.iter().map(|schema| schema.key.full()))
+                .collect::<Vec<_>>(),
             toolbar_buttons.iter().map(|b| &b.id).collect::<Vec<_>>(),
             avaliable_functions
         );
@@ -155,6 +162,7 @@ impl Plugin {
             manifest,
             setting_schemas,
             clip_kinds,
+            pending_properties,
             toolbar_buttons,
             script,
             dir: dir.to_owned(),
@@ -228,12 +236,15 @@ impl Plugin {
         }
     }
 
+    /// clips/ 配下の全TOMLからkindsとpending propertiesを集める。
+    /// この時点ではpropertiesはまだ適用しない(他ファイル/他プラグインのkindsに
+    /// 依存しうるため、解決はPluginLoader::rebuild_indicesまで遅延させる)。
     fn load_clip_kinds(
         manifest: &PluginManifest,
         clips_dir: &Path,
-    ) -> anyhow::Result<HashMap<NamespacedID, ClipKind>> {
+    ) -> anyhow::Result<(HashMap<NamespacedID, ClipKind>, Vec<PendingProperty>)> {
         if !clips_dir.exists() {
-            return Ok(HashMap::new());
+            return Ok((HashMap::new(), Vec::new()));
         }
 
         let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(clips_dir)
@@ -247,25 +258,32 @@ impl Plugin {
         toml_paths.sort();
 
         let mut all_kinds = HashMap::new();
+        let mut all_pending = Vec::new();
         for path in toml_paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
-            let kinds = ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
-                format!(
-                    "invalid clip kinds in `{}` for plugin `{}`",
-                    path.display(),
-                    manifest.id
-                )
-            })?;
-            all_kinds.extend(kinds);
+            let (kinds, pending) =
+                ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
+                    format!(
+                        "invalid clip kinds in `{}` for plugin `{}`",
+                        path.display(),
+                        manifest.id
+                    )
+                })?;
+
+            for (id, kind) in kinds {
+                if all_kinds.insert(id.clone(), kind).is_some() {
+                    anyhow::bail!(
+                        "duplicate clip kind id `{}` across files in `{}`",
+                        id,
+                        manifest.id
+                    );
+                }
+            }
+            all_pending.extend(pending);
         }
 
-        // 個別ファイル内の重複はparse_toml側で検証済みなので、
-        // ここではファイルをまたいだプラグイン全体でのid重複だけを見る
-        ClipKind::validate_kinds(&all_kinds)
-            .with_context(|| format!("duplicate clip kind id across files in `{}`", manifest.id))?;
-
-        Ok(all_kinds)
+        Ok((all_kinds, all_pending))
     }
 
     fn namespaced_toolbar_buttons(
@@ -294,8 +312,10 @@ pub struct PluginLoadedResult {
 pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
     is_loaded: bool,
-    // インデックスで検索コストを最小化
     clip_kinds: ClipKindStore,
+
+    // インデックスで検索コストを最小化
+    clip_properties_index: HashMap<NamespacedID, Vec<PropertySchema>>,
     scripts_index: HashMap<String, CompiledScript>,
     schemas_index: Vec<PropertySchema>,
     toolbars_index: Vec<(String, ToolbarButtonSpec)>,
@@ -307,6 +327,7 @@ impl PluginLoader {
             plugins: Vec::new(),
             is_loaded: false,
             clip_kinds: ClipKindStore::new(),
+            clip_properties_index: HashMap::new(),
             scripts_index: HashMap::new(),
             schemas_index: Vec::new(),
             toolbars_index: Vec::new(),
@@ -422,7 +443,7 @@ impl PluginLoader {
             .filter_map(|r| r.result.ok())
             .collect::<Vec<_>>();
 
-        self.rebuild_indices();
+        self.rebuild_indices()?;
         self.is_loaded = true;
 
         // 呼び出し側が個別の成否も見たい場合のために結果自体も返す
@@ -437,18 +458,40 @@ impl PluginLoader {
             .collect())
     }
 
-    fn rebuild_indices(&mut self) {
-        self.clip_kinds = ClipKindStore::new();
+    /// 全プラグインのclip_kindsをマージし、その後で全プラグインの
+    /// pending_propertiesを解決・適用する。他プラグインのkindを対象にする
+    /// プロパティ拡張もここで初めて解決できるため、必ずこの順序で行う。
+    fn rebuild_indices(&mut self) -> anyhow::Result<()> {
         self.scripts_index.clear();
         self.schemas_index.clear();
         self.toolbars_index.clear();
 
+        // 1段階目: 全プラグインのkindsをマージ(まだpropertyは未適用の状態)
+        let mut merged_kinds: HashMap<NamespacedID, ClipKind> = HashMap::new();
         for plugin in &self.plugins {
-            // clip_kinds
-            self.clip_kinds
-                .merge_plugin_kinds(plugin.clip_kinds.clone())
-                .expect("clip kind conflict during rebuild_indices");
+            for (id, kind) in &plugin.clip_kinds {
+                if merged_kinds.insert(id.clone(), kind.clone()).is_some() {
+                    anyhow::bail!("duplicate clip kind id `{}` across plugins", id);
+                }
+            }
+        }
 
+        // 全プラグインのpending propertiesを、出揃ったkinds全体に対して解決・適用
+        let all_pending: Vec<PendingProperty> = self
+            .plugins
+            .iter()
+            .flat_map(|p| p.pending_properties.iter().cloned())
+            .collect();
+        self.clip_properties_index = ClipKind::resolve_properties(&merged_kinds, all_pending)
+            .context("failed to resolve property extensions")?;
+
+        let mut clip_kinds = ClipKindStore::new();
+        clip_kinds
+            .merge_plugin_kinds(merged_kinds)
+            .context("clip kind conflict during rebuild_indices")?;
+        self.clip_kinds = clip_kinds;
+
+        for plugin in &self.plugins {
             // scripts index
             if let Some(script) = plugin.script.as_ref() {
                 self.scripts_index
@@ -466,6 +509,27 @@ impl PluginLoader {
                     .push((plugin.manifest.id.clone(), button.clone()));
             }
         }
+
+        log::info!(
+            "Plugin indices rebuilt: clip_kinds={}, properties={}, scripts={}, schemas={}, toolbars={}",
+            self.clip_properties_index.len(),
+            self.clip_properties_index.len(),
+            self.scripts_index.len(),
+            self.schemas_index.len(),
+            self.toolbars_index.len()
+        );
+
+        Ok(())
+    }
+
+    pub fn load_additional_plugin(&mut self, dir: &Path) -> anyhow::Result<PluginManifest> {
+        let plugin = Plugin::load(dir)
+            .with_context(|| format!("Failed to load plugin at {}", dir.display()))?;
+        let manifest = plugin.manifest.clone();
+        self.plugins.push(plugin);
+        self.rebuild_indices()?; // 新規分も含めて全体を組み直す
+        log::info!("Loaded additional plugin '{}'", manifest.id);
+        Ok(manifest)
     }
 
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
@@ -484,10 +548,23 @@ impl PluginLoader {
         // 成功したら配列内の古いインスタンスを差し替え
         if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
             self.plugins[index] = reloaded_plugin;
-            self.rebuild_indices(); // インデックスを再構築
+            // 他プラグインのpending propertiesが差し替え対象のkindを参照している
+            // 可能性があるため、必ず全プラグイン分を再解決する
+            self.rebuild_indices()?;
             log::info!("Reloaded plugin '{}'", plugin_id);
         }
 
+        Ok(())
+    }
+
+    pub fn unload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
+        let before = self.plugins.len();
+        self.plugins.retain(|p| p.manifest.id != plugin_id);
+        if self.plugins.len() == before {
+            anyhow::bail!("Plugin `{}` not found in loaded plugins", plugin_id);
+        }
+        self.rebuild_indices()?; // 依存解決のため全体を組み直す
+        log::info!("Unloaded plugin '{}'", plugin_id);
         Ok(())
     }
 
@@ -495,20 +572,8 @@ impl PluginLoader {
         self.schemas_index.clone()
     }
 
-    pub fn collect_all_clip_kinds(&self) -> HashMap<NamespacedID, ClipKind> {
-        self.clip_kinds
-            .registry
-            .iter()
-            .map(|(id, kind)| (id.clone(), kind.clone()))
-            .collect()
-    }
-
     pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
         self.toolbars_index.clone()
-    }
-
-    pub fn collect_all_scripts(&self) -> HashMap<String, CompiledScript> {
-        self.scripts_index.clone()
     }
 
     // ホットパス用の直接アクセスメソッド
@@ -516,7 +581,25 @@ impl PluginLoader {
         self.clip_kinds.get(id)
     }
 
+    pub fn get_clip_properties(&self, id: &NamespacedID) -> Option<&[PropertySchema]> {
+        self.clip_properties_index.get(id).map(|v| v.as_slice())
+    }
+
     pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
         self.scripts_index.get(plugin_id)
+    }
+
+    pub fn call_script<T: Clone + Send + Sync + 'static>(
+        &self,
+        plugin_id: &str,
+        fn_name: &str,
+        args: impl rhai::FuncArgs,
+    ) -> anyhow::Result<T> {
+        let script = self
+            .scripts_index
+            .get(plugin_id)
+            .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
+
+        script.call(fn_name, args)
     }
 }

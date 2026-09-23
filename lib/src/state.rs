@@ -4,9 +4,7 @@ use anyhow::Context;
 use dashmap::DashMap;
 
 use crate::dirs::Directories;
-use crate::plugin::clip::ClipKindStore;
 use crate::plugin::property::PropertySchema;
-use crate::plugin::script::ScriptStore;
 use crate::plugin::toolbar::ToolbarButtonSpec;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
@@ -21,10 +19,6 @@ pub struct CommonState {
     pub stream_state_map: Arc<DashMap<String, StreamState>>,
 
     pub plugin_loader: Arc<RwLock<PluginLoader>>,
-
-    pub clip_kinds: Arc<RwLock<ClipKindStore>>,
-
-    pub scripts: Arc<RwLock<ScriptStore>>,
 }
 
 impl CommonState {
@@ -38,8 +32,6 @@ impl CommonState {
             stream_state_map: Arc::new(DashMap::new()),
             plugin_loader: shared_plugin_loader
                 .unwrap_or(Arc::new(RwLock::new(PluginLoader::new()))),
-            clip_kinds: Arc::new(RwLock::new(ClipKindStore::new())),
-            scripts: Arc::new(RwLock::new(ScriptStore::new())),
         }
     }
 
@@ -54,13 +46,13 @@ pub trait HostBootstrap: std::ops::Deref<Target = CommonState> + std::ops::Deref
 
     async fn boot_strap(&mut self) {
         if let Err(e) = self.load_plugins(Self::ROLE).await {
-            log::error!("Failed to load plugins: {}", e);
+            log::error!("Failed to load plugins: {:?}", e);
         } else {
             log::info!("Plugins loaded successfully");
         }
 
         if let Err(e) = self.apply_plugin_fields() {
-            log::error!("Failed to apply settings: {}", e);
+            log::error!("Failed to apply settings: {:?}", e);
         } else {
             log::info!("Settings applied successfully");
         }
@@ -77,27 +69,10 @@ pub trait HostBootstrap: std::ops::Deref<Target = CommonState> + std::ops::Deref
     }
 
     fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
-        let (schemas, toolbar_buttons, clip_kinds, scripts) = {
+        let (schemas, toolbar_buttons) = {
             let loader = self.plugin_loader.read().expect("mutex poisoned");
-            (
-                loader.collect_all_schemas(),
-                loader.collect_all_toolbars(),
-                loader.collect_all_clip_kinds(),
-                loader.collect_all_scripts(),
-            )
+            (loader.collect_all_schemas(), loader.collect_all_toolbars())
         };
-
-        self.clip_kinds
-            .write()
-            .expect("lock poisoned")
-            .merge_plugin_kinds(clip_kinds)
-            .context("plugin clip kind conflict during load_plugins")?;
-
-        self.scripts
-            .write()
-            .expect("lock poisoned")
-            .merge_plugin_scripts(scripts)
-            .context("plugin script conflict during load_plugins")?;
 
         self.apply_extra_plugin_fields(schemas, toolbar_buttons)
     }

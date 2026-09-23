@@ -1,9 +1,12 @@
 [[kinds]]
 id = "video"
-func_name = "render_clip_video"
+render_script = "render_clip_video"
+tags = ["media"]
 
+[[properties]]
+target = ["std:video"]
 
-[[kinds.fields]]
+[[properties.fields]]
 key = "source"
 label = "Source"
 category = ["Media"]

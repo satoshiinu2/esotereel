@@ -68,7 +68,7 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         // );
 
         let call_result: Result<(), _> =
-            script.call(&kind.func_name, (render_ctx.clone(), props_dynamic));
+            script.call(&kind.render_script, (render_ctx.clone(), props_dynamic));
 
         if let Err(e) = call_result {
             log::warn!(

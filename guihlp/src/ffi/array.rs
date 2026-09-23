@@ -1,5 +1,3 @@
-use crate::ffi::field_value::CFieldValue;
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct FfiArray<T> {

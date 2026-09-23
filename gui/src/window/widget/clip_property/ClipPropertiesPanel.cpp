@@ -98,13 +98,12 @@ void ClipPropertiesPanel::rebuild() {
     // category は "動画 > ベーシック > 位置とサイズ" のように " > " 区切りで
     // タブ > タブ > 折りたたみセクション の3階層に対応させる。
     // 第1階層(タブ) -> 第2階層(タブ) -> 第3階層(セクション名) -> フィールド一覧
-    QMap<QString, QMap<QString, QMap<QString, QVector<ClipPropertySchema>>>> tree;
+    QMap<QString, QMap<QString, QVector<ClipPropertySchema>>> tree;
     for (const auto &field : fields) {
-        const QStringList parts = field.category.split(" > ");
+        const QStringList parts = field.category.split("/");
         const QString top = parts.value(0, "General");
-        const QString sub = parts.value(1, "General");
-        const QString section = parts.value(2, "General");
-        tree[top][sub][section].append(field);
+        const QString section = parts.value(1, "General");
+        tree[top][section].append(field);
 
         qDebug() << "field:" << field.key << "category:" << field.category;
     }
@@ -112,27 +111,20 @@ void ClipPropertiesPanel::rebuild() {
     for (auto topIt = tree.constBegin(); topIt != tree.constEnd(); ++topIt) {
         qDebug() << "top:" << topIt.key();
 
-        auto *subTabs = new QTabWidget();
-
-        for (auto subIt = topIt.value().constBegin(); subIt != topIt.value().constEnd(); ++subIt) {
+        for (auto sectionIt = topIt.value().constBegin(); sectionIt != topIt.value().constEnd(); ++sectionIt) {
             auto *page = new QWidget();
             auto *pageLayout = new QVBoxLayout(page);
-            qDebug() << "  sub:" << subIt.key();
 
-            for (auto sectionIt = subIt.value().constBegin(); sectionIt != subIt.value().constEnd(); ++sectionIt) {
-                auto *section = new widget::CollapsibleSection(sectionIt.key());
-                for (const auto &field : sectionIt.value()) {
-                    section->contentLayout()->addWidget(buildRow(field));
-                }
-                pageLayout->addWidget(section);
-                qDebug() << "    section:" << sectionIt.key() << "fields:" << sectionIt.value().size();
+            auto *section = new widget::CollapsibleSection(sectionIt.key());
+            for (const auto &field : sectionIt.value()) {
+                section->contentLayout()->addWidget(buildRow(field));
             }
+            pageLayout->addWidget(section);
+            qDebug() << "    section:" << sectionIt.key() << "fields:" << sectionIt.value().size();
             pageLayout->addStretch();
 
-            subTabs->addTab(page, subIt.key());
+            topTabs->addTab(page, topIt.key());
         }
-
-        topTabs->addTab(subTabs, topIt.key());
     }
 }
 

@@ -207,10 +207,10 @@ pub unsafe extern "C" fn toolbar_handle_action(
 
         state
             .common
-            .scripts
+            .plugin_loader
             .read()
             .expect("lock poisoned")
-            .call::<()>(plugin_id, &button.action.func_name, ())
+            .call_script::<()>(plugin_id, &button.action.func_name, ())
             .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
 
         Ok(())

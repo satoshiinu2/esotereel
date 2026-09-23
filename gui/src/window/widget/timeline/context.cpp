@@ -219,7 +219,7 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
 
     if (canAdd) {
         // ロックを持たない状態でネットワークへリクエスト
-        commandQueue.addClipAt(this->timelineId, frame, layerId);
+        commandQueue.addClipAt(this->timelineId, frame, layerId).unwrap();
         this->markRowsDirty();
         update();
     }
