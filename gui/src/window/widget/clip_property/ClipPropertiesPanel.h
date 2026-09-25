@@ -2,6 +2,7 @@
 
 #include <QTabWidget>
 #include <QWidget>
+#include <vector>
 
 #include "ffi/ClipProperty.h"
 #include "ffi/Settings.h"
@@ -17,8 +18,8 @@ class ClipPropertiesPanel : public QWidget {
   public:
     ClipPropertiesPanel(ClientState *state, CommandQueue &commandQueue, QWidget *parent = nullptr);
 
-    // クリップの選択が変わるたびに呼ぶ。timelineId/clipIdはsetValueの宛先として保持する。
-    void setClip(const TimelineId timelineId, const ClipId clipId);
+    // クリップの選択が変わるたびに呼ぶ。timelineId/clipIdsはsetValueの宛先として保持する。
+    void setClips(const TimelineId timelineId, const std::vector<ClipId> &clipIds);
 
   private:
     void rebuild();
@@ -28,7 +29,7 @@ class ClipPropertiesPanel : public QWidget {
     CommandQueue &commandQueue_;
 
     TimelineId timelineId;
-    ClipId clipId{};
+    std::vector<ClipId> clipIds;
 
     QTabWidget *topTabs;
 };

@@ -73,8 +73,8 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
 
     // Connect timeline selection to clip properties panel
     connect(timelineWidget->canvas, &TimelineCanvasWidget::clipSelectionChanged,
-            this, [this](TimelineId timelineId, ClipId clipId) {
-                clipPropertiesPanel->setClip(timelineId, clipId);
+            this, [this](TimelineId timelineId, const std::vector<ClipId> &clipIds) {
+                clipPropertiesPanel->setClips(timelineId, clipIds);
             });
 
     // default timeline

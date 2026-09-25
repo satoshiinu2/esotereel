@@ -9,6 +9,7 @@
 #include <qwidget.h>
 #include <set>
 #include <variant>
+#include <vector>
 
 #include <QBrush>
 #include <QColor>
@@ -127,7 +128,7 @@ class TimelineCanvasWidget : public QWidget {
     }
 
   signals:
-    void clipSelectionChanged(TimelineId timelineId, ClipId clipId);
+    void clipSelectionChanged(TimelineId timelineId, const std::vector<ClipId> &clipIds);
 
   protected:
     void paintEvent(QPaintEvent *e) override;

@@ -135,6 +135,70 @@ pub unsafe extern "C" fn clip_get_all_fields(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clip_get_common_fields(
+    ptr_state: *const ClientStateHandle,
+    ptr_clips: *const *const Clip,
+    num_clips: usize,
+) -> FfiPropertySchemaArrayResult {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        ptr_clips: *const *const Clip,
+        num_clips: usize,
+    ) -> anyhow::Result<FfiArray<FfiPropertySchema>> {
+        if ptr_state.is_null() || ptr_clips.is_null() || num_clips == 0 {
+            return Err(EsotereelError::NullPointer("ptr_clips".to_string()).into());
+        }
+
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state = state.lock().expect("mutex poisoned");
+
+        let clips = unsafe { std::slice::from_raw_parts(ptr_clips, num_clips) };
+
+        if clips.is_empty() {
+            return Ok(FfiArray::from_vec(vec![]));
+        }
+
+        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+
+        // First clip's schema as base
+        let first_clip = unsafe { &*clips[0] };
+        let base_schema = plugin_loader
+            .get_clip_properties(&first_clip.kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(first_clip.kind_id.clone()))?;
+
+        // Find common fields across all clips
+        let mut common_fields: Vec<PropertySchema> = base_schema.to_vec();
+
+        for &clip_ptr in &clips[1..] {
+            let clip = unsafe { &*clip_ptr };
+            let clip_schema = plugin_loader
+                .get_clip_properties(&clip.kind_id)
+                .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
+
+            // Keep only fields that exist in both schemas
+            common_fields.retain(|field| {
+                clip_schema
+                    .iter()
+                    .any(|other| field.key == other.key && field.kind == other.kind)
+            });
+        }
+
+        let fields: Vec<FfiPropertySchema> = common_fields
+            .iter()
+            .map(FfiPropertySchema::from_schema)
+            .collect();
+
+        Ok(FfiArray::from_vec(fields))
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, ptr_clips, num_clips))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
+}
+
 pub type FfiStringArrayResult = FfiResult<FfiArray<OwnedString>>;
 
 #[unsafe(no_mangle)]

@@ -21,9 +21,9 @@ ClipPropertiesPanel::ClipPropertiesPanel(ClientState *state, esotereel::CommandQ
     layout->addWidget(topTabs);
 }
 
-void ClipPropertiesPanel::setClip(const TimelineId timelineId, const ClipId clipId) {
+void ClipPropertiesPanel::setClips(const TimelineId timelineId, const std::vector<ClipId> &clipIds) {
     this->timelineId = timelineId;
-    this->clipId = clipId;
+    this->clipIds = clipIds;
     rebuild();
 }
 
@@ -42,13 +42,16 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
 
     widget::FieldBinding binding;
     binding.getValue = [this, key]() -> FieldValue {
+        if (clipIds.empty()) {
+            return FieldValue{};
+        }
         auto projectResult = state->getProject();
         if (projectResult.isError()) {
             return FieldValue{};
         }
         Project project = projectResult.unwrapOrMove();
         Timeline timeline = project.timelineOf(timelineId);
-        auto [clip, layerId] = timeline.findClipById(clipId);
+        auto [clip, layerId] = timeline.findClipById(clipIds[0]);
 
         auto result = getValue(clip, key);
         if (result.isOk()) {
@@ -61,7 +64,9 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
         return FieldValue{}; // フォールバック。field.defaultValueを使う形に調整してください
     };
     binding.setValue = [this, key](const FieldValue &value) {
-        setValue(commandQueue_, timelineId, clipId, key, ClipPropertyValue::fromStatic(value));
+        for (const auto &clipId : clipIds) {
+            setValue(commandQueue_, timelineId, clipId, key, ClipPropertyValue::fromStatic(value));
+        }
     };
 
     QWidget *control = widget::FieldControlFactory::createControl(field, binding);
@@ -73,25 +78,32 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
 void ClipPropertiesPanel::rebuild() {
     topTabs->clear();
 
+    if (clipIds.empty()) {
+        return;
+    }
+
     auto projectResult = state->getProject();
     if (projectResult.isError()) {
         return;
     }
     Project project = projectResult.unwrapOrMove();
     Timeline timeline = project.timelineOf(timelineId);
-    auto [clip, layerId] = timeline.findClipById(clipId);
 
-    qDebug() << "[ClipPropertiesPanel] clip isValid:" << clip.isValid();
+    std::vector<Clip> clips;
+    for (const auto &clipId : clipIds) {
+        auto [clip, layerId] = timeline.findClipById(clipId);
+        clips.push_back(std::move(clip));
+    }
 
-    auto fieldsResult = getAllFields(state, clip);
+    auto fieldsResult = getCommonFields(state, clips);
     if (!fieldsResult.isOk()) {
-        qWarning() << "Failed to get clip fields:" << QString::fromStdString(fieldsResult.error());
+        qWarning() << "Failed to get common clip fields:" << QString::fromStdString(fieldsResult.error());
         return;
     }
     const QVector<ClipPropertySchema> fields = fieldsResult.unwrap();
 
     qDebug() << "[ClipPropertiesPanel] rebuild:"
-             << "timelineId =" << timelineId << "clipId =" << clipId;
+             << "timelineId =" << timelineId << "clipIds count =" << clipIds.size();
 
     qDebug() << "[ClipPropertiesPanel] fields =" << fields.size();
 

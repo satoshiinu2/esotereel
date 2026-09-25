@@ -2,6 +2,7 @@
 
 #include "FfiConvert.h"
 #include "ffi/ClipProperty.h"
+#include <vector>
 
 namespace esotereel::window {
 
@@ -13,13 +14,30 @@ Result<QVector<ClipPropertySchema>> getAllFields(ClientState *state, const Clip 
     return convertArrayResult(raw, [](const FfiPropertySchema &schema) { return ClipPropertySchema(schema); });
 }
 
+Result<QVector<ClipPropertySchema>> getCommonFields(ClientState *state, const std::vector<Clip> &clips) {
+    if (clips.empty()) {
+        return Result<QVector<ClipPropertySchema>>::ok(QVector<ClipPropertySchema>());
+    }
+
+    // Convert Clip wrapper pointers to raw Clip pointers using operator const RawClip*()
+    std::vector<const esotereel_gui_helper::Clip *> raw_clips;
+    for (const auto &clip : clips) {
+        raw_clips.push_back(clip); // Uses operator const RawClip*()
+    }
+
+    auto raw = esotereel_gui_helper::clip_get_common_fields(*state, raw_clips.data(), raw_clips.size());
+    return convertArrayResult(raw, [](const FfiPropertySchema &schema) { return ClipPropertySchema(schema); });
+}
+
 Result<QStringList> getCategories(ClientState *state, const Clip &clip) {
     auto raw = esotereel_gui_helper::clip_get_categories(*state, clip);
-    return convertArrayResult(raw, [](const RawOwnedString &owned) { return esotereel::OwnedString::toQString(owned); });
+    return convertArrayResult(raw,
+                              [](const RawOwnedString &owned) { return esotereel::OwnedString::toQString(owned); });
 }
 
 Result<std::optional<ClipPropertyValue>> getValue(const Clip &clip, const QString &key) {
-    auto raw = esotereel_gui_helper::clip_get_property_value(clip, esotereel::StringView::fromStdString(key.toStdString()));
+    auto raw =
+        esotereel_gui_helper::clip_get_property_value(clip, esotereel::StringView::fromStdString(key.toStdString()));
     return convertOptionResult(raw, [](const CClipBindingValue &value) { return ClipPropertyValue::fromC(value); });
 }
 

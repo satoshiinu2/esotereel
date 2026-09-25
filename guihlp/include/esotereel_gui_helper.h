@@ -373,6 +373,10 @@ CClipBindingValueResult clip_get_property_value(const Clip *ptr, StringView key)
 FfiPropertySchemaArrayResult clip_get_all_fields(const ClientStateHandle *ptr_state,
                                                  const Clip *ptr_clip);
 
+FfiPropertySchemaArrayResult clip_get_common_fields(const ClientStateHandle *ptr_state,
+                                                    const Clip *const *ptr_clips,
+                                                    uintptr_t num_clips);
+
 FfiStringArrayResult clip_get_categories(const ClientStateHandle *ptr_state, const Clip *ptr);
 
 FfiResultVoid clip_set_property_value(CommandQueue *ptr_queue,

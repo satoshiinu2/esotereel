@@ -19,7 +19,7 @@ pub enum ConvertError {
     InvalidOption(String),
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum FieldTypeKind {
     Bool,
     Int {

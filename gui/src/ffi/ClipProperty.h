@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include <QString>
 #include <QVector>
@@ -15,6 +16,9 @@ using FfiPropertySchema = esotereel_gui_helper::FfiPropertySchema;
 
 // clip_get_all_fields のラッパー。ClipPropertySchemaを使用
 Result<QVector<ClipPropertySchema>> getAllFields(ClientState *state, const Clip &clip);
+
+// clip_get_common_fields のラッパー。複数のクリップの共通プロパティを取得
+Result<QVector<ClipPropertySchema>> getCommonFields(ClientState *state, const std::vector<Clip> &clips);
 
 // clip_get_categories のラッパー。
 Result<QStringList> getCategories(ClientState *state, const Clip &clip);

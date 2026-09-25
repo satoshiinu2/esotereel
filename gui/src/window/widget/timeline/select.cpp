@@ -7,7 +7,8 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
     if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();
-            emit clipSelectionChanged(timelineId, 0);
+            std::vector<ClipId> empty;
+            emit clipSelectionChanged(timelineId, empty);
             update();
             return false;
         }
@@ -18,16 +19,15 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
     if (ctrl) {
         if (this->selectedClipIds.count(id)) {
             this->selectedClipIds.erase(id);
-            emit clipSelectionChanged(timelineId, 0);
         } else {
             this->selectedClipIds.insert(id);
-            emit clipSelectionChanged(timelineId, id);
         }
     } else {
         this->selectedClipIds.clear();
         this->selectedClipIds.insert(id);
-        emit clipSelectionChanged(timelineId, id);
     }
+    std::vector<ClipId> clipIds(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    emit clipSelectionChanged(timelineId, clipIds);
     update();
     return true;
 }
@@ -86,6 +86,8 @@ void TimelineCanvasWidget::handleAreaSelEnd(const Project &project) {
         layerIdx++;
     }
 
+    std::vector<ClipId> clipIds(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    emit clipSelectionChanged(timelineId, clipIds);
     update();
 }
 
