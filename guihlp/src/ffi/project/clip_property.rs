@@ -21,7 +21,7 @@ use crate::ffi::{
     option::FfiOption,
     result::{FfiResult, FfiResultVoid},
     state::ClientStateHandle,
-    stringview::{OwnedString, StringView},
+    stringview::{FfiOwnedString, FfiStringView},
 };
 
 pub use crate::ffi::settings::{FfiPropertySchema, SettingsFieldType as PropertyFieldType};
@@ -78,9 +78,9 @@ pub type CClipBindingValueResult = FfiResult<FfiOption<CClipBindingValue>>;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clip_get_property_value(
     ptr: *const Clip,
-    key: StringView,
+    key: FfiStringView,
 ) -> CClipBindingValueResult {
-    fn inner(ptr: *const Clip, key: StringView) -> anyhow::Result<Option<CClipBindingValue>> {
+    fn inner(ptr: *const Clip, key: FfiStringView) -> anyhow::Result<Option<CClipBindingValue>> {
         if ptr.is_null() {
             return Err(EsotereelError::NullPointer("ptr".to_string()).into());
         }
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn clip_get_common_fields(
     }
 }
 
-pub type FfiStringArrayResult = FfiResult<FfiArray<OwnedString>>;
+pub type FfiStringArrayResult = FfiResult<FfiArray<FfiOwnedString>>;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clip_get_categories(
@@ -209,7 +209,7 @@ pub unsafe extern "C" fn clip_get_categories(
     fn inner(
         ptr_state: *const ClientStateHandle,
         ptr: *const Clip,
-    ) -> anyhow::Result<FfiArray<OwnedString>> {
+    ) -> anyhow::Result<FfiArray<FfiOwnedString>> {
         if ptr_state.is_null() || ptr.is_null() {
             return Err(EsotereelError::NullPointer("ptr".to_string()).into());
         }
@@ -232,7 +232,8 @@ pub unsafe extern "C" fn clip_get_categories(
         let mut cats: Vec<_> = categories.into_iter().collect();
         cats.sort();
 
-        let owned: Vec<OwnedString> = cats.into_iter().map(OwnedString::from_string).collect();
+        let owned: Vec<FfiOwnedString> =
+            cats.into_iter().map(FfiOwnedString::from_string).collect();
         Ok(FfiArray::from_vec(owned))
     }
 
@@ -248,14 +249,14 @@ pub unsafe extern "C" fn clip_set_property_value(
     ptr_queue: *mut CommandQueue,
     timeline_id: TimelineId,
     clip_id: ClipId,
-    key: StringView,
+    key: FfiStringView,
     value: CClipBindingValue,
 ) -> FfiResultVoid {
     fn inner(
         ptr_queue: *mut CommandQueue,
         timeline_id: TimelineId,
         clip_id: ClipId,
-        key: StringView,
+        key: FfiStringView,
         value: CClipBindingValue,
     ) -> anyhow::Result<()> {
         if ptr_queue.is_null() {

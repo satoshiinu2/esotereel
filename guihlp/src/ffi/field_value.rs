@@ -1,6 +1,6 @@
 use esotereel_lib::{plugin::property::value::FieldValue, util::color::RgbaColor};
 
-use crate::ffi::stringview::{OwnedString, OwnedStringArray};
+use crate::ffi::stringview::{FfiOwnedString, FfiOwnedStringArray};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,10 +30,10 @@ pub union CFieldValueData {
     pub int_value: i64,
     pub float_value: f64,
 
-    pub enum_value: OwnedString,
-    pub string_value: OwnedString,
+    pub enum_value: FfiOwnedString,
+    pub string_value: FfiOwnedString,
 
-    pub path_value: OwnedStringArray,
+    pub path_value: FfiOwnedStringArray,
 
     pub color_value: RgbaColor,
 
@@ -68,7 +68,7 @@ impl CFieldValueArray {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CFieldValueMapEntry {
-    pub key: OwnedString,
+    pub key: FfiOwnedString,
     pub value: CFieldValue,
 }
 
@@ -120,27 +120,27 @@ impl CFieldValue {
             FieldValue::Enum(v) => CFieldValue {
                 tag: CFieldValueTag::Enum,
                 data: CFieldValueData {
-                    enum_value: OwnedString::from_string(v.clone()),
+                    enum_value: FfiOwnedString::from_string(v.clone()),
                 },
             },
 
             FieldValue::String(v) => CFieldValue {
                 tag: CFieldValueTag::String,
                 data: CFieldValueData {
-                    string_value: OwnedString::from_string(v.clone()),
+                    string_value: FfiOwnedString::from_string(v.clone()),
                 },
             },
 
             FieldValue::Path(paths) => {
                 let values = paths
                     .iter()
-                    .map(|path| OwnedString::from_string(path.to_string_lossy().into_owned()))
+                    .map(|path| FfiOwnedString::from_string(path.to_string_lossy().into_owned()))
                     .collect();
 
                 CFieldValue {
                     tag: CFieldValueTag::Path,
                     data: CFieldValueData {
-                        path_value: OwnedStringArray::from_vec(values),
+                        path_value: FfiOwnedStringArray::from_vec(values),
                     },
                 }
             }
@@ -183,7 +183,7 @@ impl CFieldValue {
                 let mut entries: Vec<CFieldValueMapEntry> = values
                     .iter()
                     .map(|(key, value)| CFieldValueMapEntry {
-                        key: OwnedString::from_string(key.clone()),
+                        key: FfiOwnedString::from_string(key.clone()),
                         value: CFieldValue::wrap_ffi(value),
                     })
                     .collect();

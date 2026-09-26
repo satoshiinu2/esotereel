@@ -1,5 +1,6 @@
 #include "GpuRenderWorker.h"
 #include "ffi/ClientState.h"
+#include "ffi/Result.h"
 #include "ffi/WrapperResult.h"
 #include "ffi/project/Timeline.h"
 
@@ -9,19 +10,23 @@ void GpuRenderWorker::initialize(int w, int h) {
         return;
 
     // Rust側 wgpuutil_new(width, height) -> *mut WGpuUtil のFFI呼び出し
-    auto result = esotereel_gui_helper::wgpuutil_new(w, h, &wgpuutil_ptr);
-    if (!checkWrapperResult(result)) {
+    auto result = esotereel_gui_helper::wgpuutil_new(w, h);
+    if (!result.is_ok) {
         wgpuutil_ptr = nullptr;
         emit initFailed("failed to init wgpuutil");
         return;
     }
 
+    wgpuutil_ptr = result.value.ok;
+
     // OffscreenTargetも同時に作る
-    auto result2 = esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h, &offscreen_ptr);
-    if (!checkWrapperResult(result2)) {
+    auto result2 = esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h);
+    if (!result2.is_ok) {
         offscreen_ptr = nullptr;
         emit initFailed("failed to init offscreen target");
     }
+
+    offscreen_ptr = result2.value.ok;
 }
 
 void GpuRenderWorker::resize(int w, int h) {
@@ -33,11 +38,13 @@ void GpuRenderWorker::resize(int w, int h) {
         esotereel_gui_helper::offscreen_target_drop(offscreen_ptr);
         offscreen_ptr = nullptr;
     }
-    auto result = esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h, &offscreen_ptr);
-    if (!checkWrapperResult(result)) {
+    auto result = esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h);
+    if (!result.is_ok) {
         offscreen_ptr = nullptr;
         emit frameFailed("failed to resize offscreen target");
     }
+
+    offscreen_ptr = result.value.ok;
 }
 
 void GpuRenderWorker::renderFrame(TimelineId timelineId, CameraInfo *camera, int64_t currentFrame) {

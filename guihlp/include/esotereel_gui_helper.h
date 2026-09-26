@@ -13,14 +13,6 @@
 
 namespace esotereel_gui_helper {
 
-enum class WrapperErrorCode {
-  Ok = 0,
-  NullPtr = 1,
-  NotFound = 2,
-  Error = 3,
-  Panic = 4,
-};
-
 enum class CFieldValueTag : uint32_t {
   Bool,
   Int,
@@ -56,6 +48,14 @@ enum class SettingsFieldType {
   Color,
   Array,
   Map,
+};
+
+enum class WrapperErrorCode {
+  Ok = 0,
+  NullPtr = 1,
+  NotFound = 2,
+  Error = 3,
+  Panic = 4,
 };
 
 enum class FfiLayerRowKind {
@@ -101,7 +101,7 @@ struct WGpuUtil;
 using OnConnectedFn = void(*)();
 
 /// 手動で解放しないといけない
-struct OwnedString {
+struct FfiOwnedString {
   uint8_t *ptr;
   uintptr_t len;
   uintptr_t capacity;
@@ -109,7 +109,7 @@ struct OwnedString {
 
 struct FfiResultVoid {
   bool is_ok;
-  OwnedString err;
+  FfiOwnedString err;
 };
 
 using OptionProject = Option<Project>;
@@ -120,13 +120,13 @@ using LayerId = uint64_t;
 
 using LayerFolderId = uint64_t;
 
-struct StringView {
+struct FfiStringView {
   const uint8_t *ptr;
   uintptr_t len;
 };
 
-struct OwnedStringArray {
-  OwnedString *ptr;
+struct FfiOwnedStringArray {
+  FfiOwnedString *ptr;
   uintptr_t len;
   uintptr_t capacity;
 };
@@ -159,9 +159,9 @@ union CFieldValueData {
   uint8_t bool_value;
   int64_t int_value;
   double float_value;
-  OwnedString enum_value;
-  OwnedString string_value;
-  OwnedStringArray path_value;
+  FfiOwnedString enum_value;
+  FfiOwnedString string_value;
+  FfiOwnedStringArray path_value;
   RgbaColor color_value;
   CFieldValueArray array_value;
   CFieldValueMap map_value;
@@ -173,13 +173,13 @@ struct CFieldValue {
 };
 
 struct CFieldValueMapEntry {
-  OwnedString key;
+  FfiOwnedString key;
   CFieldValue value;
 };
 
-using OnServerReadyCFn = void(*)(bool, StringView);
+using OnServerReadyCFn = void(*)(bool, FfiStringView);
 
-using LogOutCStrFn = void(*)(uintptr_t level, StringView target, StringView msg);
+using LogOutCStrFn = void(*)(uintptr_t level, FfiStringView target, FfiStringView msg);
 
 using ClipId = uint64_t;
 
@@ -208,7 +208,7 @@ struct FfiOption {
 template<typename T>
 union FfiResultUnion {
   T ok;
-  OwnedString err;
+  FfiOwnedString err;
 };
 
 template<typename T>
@@ -220,9 +220,9 @@ struct FfiResult {
 using CClipBindingValueResult = FfiResult<FfiOption<CClipBindingValue>>;
 
 struct FfiPropertySchema {
-  OwnedString key;
-  OwnedString category;
-  OwnedString label;
+  FfiOwnedString key;
+  FfiOwnedString category;
+  FfiOwnedString label;
   SettingsFieldType kind_type;
   CFieldValue default_value;
 };
@@ -238,7 +238,7 @@ struct FfiArray {
 
 using FfiPropertySchemaArrayResult = FfiResult<FfiArray<FfiPropertySchema>>;
 
-using FfiStringArrayResult = FfiResult<FfiArray<OwnedString>>;
+using FfiStringArrayResult = FfiResult<FfiArray<FfiOwnedString>>;
 
 struct FfiLayerRow {
   FfiLayerRowKind node_kind;
@@ -269,20 +269,40 @@ struct CameraInfo {
 
 using CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
 
+/// out_state 出力パラメータを廃止し、生成したポインタ自体を戻り値として返す形に変更。
+using ClientStateNewResult = FfiResult<const ClientStateHandle*>;
+
 struct GuiCallbacks {
   void (*on_test)();
   void (*mark_dirty_timeline)(TimelineId timeline_type);
   void (*on_connected)();
 };
 
+/// out_guard 出力パラメータを廃止し、ガードの生ポインタ自体を戻り値として返す形に変更。
+using ProjectLockReadResult = FfiResult<const void*>;
+
+/// ガードからprojectポインタを取得する関数
+/// out_project 出力パラメータを廃止し、ポインタ自体を戻り値として返す形に変更。
+using ProjectFromGuardResult = FfiResult<const OptionProject*>;
+
 struct FfiToolbarButton {
-  OwnedString id;
-  OwnedString label;
-  OwnedString tooltip;
+  FfiOwnedString id;
+  FfiOwnedString label;
+  FfiOwnedString tooltip;
   /// アイコン未指定なら空文字列。
-  OwnedString icon;
-  OwnedString action;
+  FfiOwnedString icon;
+  FfiOwnedString action;
 };
+
+/// 個数取得(toolbar_get_buttons_count)+バッファ書き込み(toolbar_get_buttons)の2関数ペアを、
+/// FfiArrayを直接返す1関数に統合。呼び出し側(C++)はFfiArray::free_fnで解放する。
+using FfiToolbarButtonArrayResult = FfiResult<FfiArray<FfiToolbarButton>>;
+
+/// out 出力パラメータを廃止し、生成したポインタ自体を戻り値として返す形に変更。
+using WGpuUtilNewResult = FfiResult<WGpuUtil*>;
+
+/// out 出力パラメータを廃止し、生成したポインタ自体を戻り値として返す形に変更。
+using OffscreenTargetNewResult = FfiResult<OffscreenTarget*>;
 
 using ScriptId = uint64_t;
 
@@ -298,14 +318,14 @@ FfiResultVoid command_queue_drop(CommandQueue *ptr);
 
 FfiResultVoid command_queue_send_all(CommandQueue *ptr_queue, const ClientStateHandle *ptr_state);
 
-WrapperErrorCode req_cmd_clip_move_mul(CommandQueue *ptr_queue,
-                                       const OptionProject *ptr_opt_project,
-                                       TimelineId timeline_id,
-                                       const uint64_t *ptr,
-                                       uintptr_t len,
-                                       int64_t position_moved,
-                                       int64_t duration_added,
-                                       intptr_t layer_moved);
+FfiResultVoid req_cmd_clip_move_mul(CommandQueue *ptr_queue,
+                                    const OptionProject *ptr_opt_project,
+                                    TimelineId timeline_id,
+                                    const uint64_t *ptr,
+                                    uintptr_t len,
+                                    int64_t position_moved,
+                                    int64_t duration_added,
+                                    intptr_t layer_moved);
 
 /// be careful of deadlock
 FfiResultVoid req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
@@ -314,21 +334,21 @@ FfiResultVoid req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
                                      int64_t position,
                                      LayerId layer_id);
 
-WrapperErrorCode req_cmd_add_layer(CommandQueue *ptr_queue,
-                                   TimelineId timeline_id,
-                                   bool has_parent,
-                                   LayerFolderId parent_folder_id,
-                                   bool has_insert_index,
-                                   uintptr_t insert_index,
-                                   StringView name);
+FfiResultVoid req_cmd_add_layer(CommandQueue *ptr_queue,
+                                TimelineId timeline_id,
+                                bool has_parent,
+                                LayerFolderId parent_folder_id,
+                                bool has_insert_index,
+                                uintptr_t insert_index,
+                                FfiStringView name);
 
-WrapperErrorCode req_cmd_add_folder(CommandQueue *ptr_queue,
-                                    TimelineId timeline_id,
-                                    bool has_parent,
-                                    LayerFolderId parent_folder_id,
-                                    bool has_insert_index,
-                                    uintptr_t insert_index,
-                                    StringView name);
+FfiResultVoid req_cmd_add_folder(CommandQueue *ptr_queue,
+                                 TimelineId timeline_id,
+                                 bool has_parent,
+                                 LayerFolderId parent_folder_id,
+                                 bool has_insert_index,
+                                 uintptr_t insert_index,
+                                 FfiStringView name);
 
 uintptr_t debug_streams_get_resources_arr_size(const ClientStateHandle *ptr_state);
 
@@ -348,15 +368,15 @@ CFieldValue *esotereel_field_value_export(const FieldValue *value);
 
 void esotereel_field_value_free(CFieldValue *value);
 
-WrapperErrorCode internal_server_start(const ClientStateHandle *ptr_state,
-                                       StringView addr,
-                                       OnServerReadyCFn on_server_ready,
-                                       StringView std_plugin_dir,
-                                       StringView working_dir);
+FfiResultVoid internal_server_start(const ClientStateHandle *ptr_state,
+                                    FfiStringView addr,
+                                    OnServerReadyCFn on_server_ready,
+                                    FfiStringView std_plugin_dir,
+                                    FfiStringView working_dir);
 
 void init_rust_logger(LogOutCStrFn callback);
 
-void set_log_level(StringView target, CLogLevel level);
+void set_log_level(FfiStringView target, CLogLevel level);
 
 const Timeline *project_get_timeline(const Option<Project> *ptr, TimelineId id);
 
@@ -368,7 +388,7 @@ TimelineTick clip_get_position(const Clip *ptr);
 
 TimelineTick clip_get_duration(const Clip *ptr);
 
-CClipBindingValueResult clip_get_property_value(const Clip *ptr, StringView key);
+CClipBindingValueResult clip_get_property_value(const Clip *ptr, FfiStringView key);
 
 FfiPropertySchemaArrayResult clip_get_all_fields(const ClientStateHandle *ptr_state,
                                                  const Clip *ptr_clip);
@@ -382,7 +402,7 @@ FfiStringArrayResult clip_get_categories(const ClientStateHandle *ptr_state, con
 FfiResultVoid clip_set_property_value(CommandQueue *ptr_queue,
                                       TimelineId timeline_id,
                                       ClipId clip_id,
-                                      StringView key,
+                                      FfiStringView key,
                                       CClipBindingValue value);
 
 WrapperErrorCode render_rows_build(const Option<Project> *project,
@@ -403,26 +423,23 @@ WrapperErrorCode render_rows_get_clips(const RenderRowsResult *ptr,
                                        const ClipRenderInfo **out_ptr,
                                        uintptr_t *out_len);
 
-WrapperErrorCode layer_find_clip_at_frame(const Layer *layer_ptr,
-                                          const Timeline *timeline_ptr,
-                                          int64_t frame,
-                                          const Clip **out);
+FfiResult<const Clip*> layer_find_clip_at_frame(const Layer *layer_ptr,
+                                                const Timeline *timeline_ptr,
+                                                int64_t frame);
 
 uintptr_t layer_get_clips_count(const Layer *ptr);
 
-StringView layer_get_name(const Layer *ptr);
+FfiResult<FfiStringView> layer_get_name(const Layer *ptr);
 
-StringView layer_folder_get_name(const LayerFolder *ptr);
+FfiResult<FfiStringView> layer_folder_get_name(const LayerFolder *ptr);
 
-WrapperErrorCode layer_get_clip_at_index(const Layer *layer_ptr,
-                                         const Timeline *timeline_ptr,
-                                         uintptr_t index,
-                                         const Clip **out);
+FfiResult<const Clip*> layer_get_clip_at_index(const Layer *layer_ptr,
+                                               const Timeline *timeline_ptr,
+                                               uintptr_t index);
 
-WrapperErrorCode layer_get_clip_at_position(const Layer *layer_ptr,
-                                            const Timeline *timeline_ptr,
-                                            int64_t position,
-                                            const Clip **out);
+FfiResult<const Clip*> layer_get_clip_at_position(const Layer *layer_ptr,
+                                                  const Timeline *timeline_ptr,
+                                                  int64_t position);
 
 WrapperErrorCode timeline_find_clip_by_id(const Timeline *ptr,
                                           ClipId clip_id,
@@ -459,83 +476,75 @@ WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
                                                  uint32_t *out_width,
                                                  uint32_t *out_height);
 
-void req_test(const ClientStateHandle *ptr_state);
+FfiResultVoid req_test(const ClientStateHandle *ptr_state);
 
-void req_new_project(const ClientStateHandle *ptr_state);
+FfiResultVoid req_new_project(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode req_fetch_frame(const ClientStateHandle *ptr_state,
-                                 TimelineId timeline_id,
-                                 TimelineTick current_frame,
-                                 TimelineTick visible_range_start,
-                                 TimelineTick visible_range_end);
+FfiResultVoid req_fetch_frame(const ClientStateHandle *ptr_state,
+                              TimelineId timeline_id,
+                              TimelineTick current_frame,
+                              TimelineTick visible_range_start,
+                              TimelineTick visible_range_end);
 
-void req_project_log(const ClientStateHandle *ptr_state);
+FfiResultVoid req_project_log(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode req_load_stream(const ClientStateHandle *ptr_state, StringView path);
+FfiResultVoid req_load_stream(const ClientStateHandle *ptr_state, FfiStringView path);
 
 FfiPropertySchemaArrayResult settings_get_all_fields(const ClientStateHandle *ptr_state);
 
-CFieldValueResult settings_get_value(const ClientStateHandle *ptr_state, StringView key);
+CFieldValueResult settings_get_value(const ClientStateHandle *ptr_state, FfiStringView key);
 
 FfiResultVoid settings_set_value(const ClientStateHandle *ptr_state,
-                                 StringView key,
+                                 FfiStringView key,
                                  CFieldValue value);
 
 FfiStringArrayResult settings_get_categories(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode client_state_new(GuiCallbacks callbacks,
-                                  StringView std_plugin_dir,
-                                  StringView working_dir,
-                                  const ClientStateHandle **out_state);
+ClientStateNewResult client_state_new(GuiCallbacks callbacks,
+                                      FfiStringView std_plugin_dir,
+                                      FfiStringView working_dir);
 
-WrapperErrorCode client_state_bootstrap(const ClientStateHandle *ptr_state);
+FfiResultVoid client_state_bootstrap(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode client_state_network_run(const ClientStateHandle *ptr_state, StringView addr);
+FfiResultVoid client_state_network_run(const ClientStateHandle *ptr_state, FfiStringView addr);
 
-WrapperErrorCode client_state_drop(const ClientStateHandle *ptr_state);
+FfiResultVoid client_state_drop(const ClientStateHandle *ptr_state);
 
-WrapperErrorCode client_state_project_lock_read(const ClientStateHandle *ptr_state,
-                                                const void **out_guard);
+ProjectLockReadResult client_state_project_lock_read(const ClientStateHandle *ptr_state);
 
 /// ガードをドロップ（アンロック）する関数
-WrapperErrorCode client_state_project_unlock_read(const void *guard_ptr);
+FfiResultVoid client_state_project_unlock_read(const void *guard_ptr);
 
-/// ガードからprojectポインタを取得する関数
-WrapperErrorCode project_guard_get_project_from_guard(const void *guard_ptr,
-                                                      const OptionProject **out_project);
+ProjectFromGuardResult project_guard_get_project_from_guard(const void *guard_ptr);
 
-WrapperErrorCode client_state_log_directories_info(const ClientStateHandle *ptr_state);
+FfiResultVoid client_state_log_directories_info(const ClientStateHandle *ptr_state);
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
-void owned_string_free(OwnedString str);
+void owned_string_free(FfiOwnedString str);
 
-OwnedString owned_string_new(StringView str);
+FfiOwnedString owned_string_new(FfiStringView str);
 
-int32_t toolbar_get_buttons_count(const ClientStateHandle *ptr_state, StringView target);
+FfiToolbarButtonArrayResult toolbar_get_buttons(const ClientStateHandle *ptr_state,
+                                                FfiStringView target);
 
-WrapperErrorCode toolbar_get_buttons(const ClientStateHandle *ptr_state,
-                                     StringView target,
-                                     FfiToolbarButton *output,
-                                     uintptr_t output_len);
+FfiResultVoid toolbar_set_layout(const ClientStateHandle *ptr_state,
+                                 FfiStringView target,
+                                 FfiStringView ids_toml_array);
 
-WrapperErrorCode toolbar_set_layout(const ClientStateHandle *ptr_state,
-                                    StringView target,
-                                    StringView ids_toml_array);
+FfiResultVoid toolbar_handle_action(const ClientStateHandle *ptr_state, FfiStringView button_id);
 
-WrapperErrorCode toolbar_handle_action(const ClientStateHandle *ptr_state, StringView button_id);
+WGpuUtilNewResult wgpuutil_new(uint32_t width, uint32_t height);
 
-WrapperErrorCode wgpuutil_new(uint32_t width, uint32_t height, WGpuUtil **out);
+FfiResultVoid wgpuutil_drop(WGpuUtil *ptr);
 
-WrapperErrorCode wgpuutil_drop(WGpuUtil *ptr);
+OffscreenTargetNewResult offscreen_target_new(WGpuUtil *ptr_wgpu, uint32_t width, uint32_t height);
 
-WrapperErrorCode offscreen_target_new(WGpuUtil *ptr_wgpu,
-                                      uint32_t width,
-                                      uint32_t height,
-                                      OffscreenTarget **out);
+FfiResultVoid offscreen_target_drop(OffscreenTarget *ptr);
 
-WrapperErrorCode offscreen_target_drop(OffscreenTarget *ptr);
-
-void wgpuutil_free_buffer(uint8_t *ptr, uintptr_t len);
+/// バッファ解放。呼び出し元が正しい(ptr, len)ペアを渡す前提の単純な解放処理であり、
+/// 失敗しうる操作ではないため FfiResult 化はせず元のまま据え置き。
+void wgpuutil_free_buffer(uint8_t *ptr,
+                          uintptr_t len);
 
 }  // extern "C"
 

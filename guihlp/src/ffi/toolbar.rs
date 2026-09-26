@@ -1,209 +1,136 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::plugin::toolbar::ToolbarButtonSpec;
+use esotereel_lib::{plugin::toolbar::ToolbarButtonSpec, util::result::EsotereelError};
 
-use crate::{
-    IntoWrapperError, WrapperErrorCode,
-    ffi::{
-        log_if_panicked,
-        state::ClientStateHandle,
-        stringview::{OwnedString, StringView},
-    },
+use crate::ffi::{
+    array::FfiArray,
+    result::{FfiResult, FfiResultVoid},
+    state::ClientStateHandle,
+    stringview::{FfiOwnedString, FfiStringView},
 };
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct FfiToolbarButton {
-    pub id: OwnedString,
-    pub label: OwnedString,
-    pub tooltip: OwnedString,
+    pub id: FfiOwnedString,
+    pub label: FfiOwnedString,
+    pub tooltip: FfiOwnedString,
     /// アイコン未指定なら空文字列。
-    pub icon: OwnedString,
-    pub action: OwnedString,
+    pub icon: FfiOwnedString,
+    pub action: FfiOwnedString,
 }
 
 impl FfiToolbarButton {
     fn from_spec(spec: &ToolbarButtonSpec) -> Self {
         Self {
-            id: OwnedString::from_string(spec.id.clone()),
-            label: OwnedString::from_string(spec.label.clone()),
-            tooltip: OwnedString::from_string(spec.tooltip.clone()),
-            icon: OwnedString::from_string(spec.icon.clone().unwrap_or_default()),
-            action: OwnedString::from_string(spec.action.func_name.clone()),
+            id: FfiOwnedString::from_string(spec.id.clone()),
+            label: FfiOwnedString::from_string(spec.label.clone()),
+            tooltip: FfiOwnedString::from_string(spec.tooltip.clone()),
+            icon: FfiOwnedString::from_string(spec.icon.clone().unwrap_or_default()),
+            action: FfiOwnedString::from_string(spec.action.func_name.clone()),
         }
     }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn toolbar_get_buttons_count(
-    ptr_state: *const ClientStateHandle,
-    target: StringView,
-) -> i32 {
-    if ptr_state.is_null() {
-        return -1;
-    }
-
-    // Arc::into_raw 由来のポインタから、参照カウントを増やして
-    // 独立した Arc クローンを作る（元のポインタは消費しない）
-    let state = ClientStateHandle::from_ptr(ptr_state);
-
-    let target_str = match target.as_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
-    };
-    let state = state.lock().expect("mutex poisoned");
-
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<i32, IntoWrapperError> {
-        Ok(state.toolbar.get_layout(target_str).len() as i32)
-    }));
-
-    match result {
-        Ok(Ok(count)) => count,
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            -1
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<i32, _>(panic), "toolbar_get_buttons_count");
-            if let Some(msg) = msg {
-                WrapperErrorCode::set_last_err_msg(Some(&msg));
-            }
-            -1
-        }
-    }
-}
+/// 個数取得(toolbar_get_buttons_count)+バッファ書き込み(toolbar_get_buttons)の2関数ペアを、
+/// FfiArrayを直接返す1関数に統合。呼び出し側(C++)はFfiArray::free_fnで解放する。
+pub type FfiToolbarButtonArrayResult = FfiResult<FfiArray<FfiToolbarButton>>;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_get_buttons(
     ptr_state: *const ClientStateHandle,
-    target: StringView,
-    output: *mut FfiToolbarButton,
-    output_len: usize,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() || output.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
+    target: FfiStringView,
+) -> FfiToolbarButtonArrayResult {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        target: FfiStringView,
+    ) -> anyhow::Result<FfiArray<FfiToolbarButton>> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    // Arc::into_raw 由来のポインタから、参照カウントを増やして
-    // 独立した Arc クローンを作る（元のポインタは消費しない）
-    let state = ClientStateHandle::from_ptr(ptr_state);
+        // Arc::into_raw 由来のポインタから、参照カウントを増やして
+        // 独立した Arc クローンを作る（元のポインタは消費しない）
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let target_str = target.as_str()?;
+        let state = state.lock().expect("mutex poisoned");
 
-    let target_str = match target.as_str() {
-        Ok(s) => s,
-        Err(_) => return WrapperErrorCode::invalid_string_error(),
-    };
-    let state = state.lock().expect("mutex poisoned");
-
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
         let ids = state.toolbar.get_layout(target_str);
-
-        let specs: Vec<&ToolbarButtonSpec> = ids
+        let buttons: Vec<FfiToolbarButton> = ids
             .iter()
             .filter_map(|id| state.toolbar.registry.buttons().find(|b| &b.id == id))
+            .map(FfiToolbarButton::from_spec)
             .collect();
 
-        let output_slice = unsafe { std::slice::from_raw_parts_mut(output, output_len) };
-        for (i, spec) in specs.iter().enumerate() {
-            if i >= output_len {
-                break;
-            }
-            output_slice[i] = FfiToolbarButton::from_spec(spec);
-        }
+        Ok(FfiArray::from_vec(buttons))
+    }
 
-        Ok(())
-    }));
-
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "toolbar_get_buttons");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, target))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_set_layout(
     ptr_state: *const ClientStateHandle,
-    target: StringView,
-    ids_toml_array: StringView,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
+    target: FfiStringView,
+    ids_toml_array: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        target: FfiStringView,
+        ids_toml_array: FfiStringView,
+    ) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let target_str = match target.as_str() {
-        Ok(s) => s,
-        Err(_) => return WrapperErrorCode::invalid_string_error(),
-    };
-    let ids_str = match ids_toml_array.as_str() {
-        Ok(s) => s,
-        Err(_) => return WrapperErrorCode::invalid_string_error(),
-    };
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let target_str = target.as_str()?;
+        let ids_str = ids_toml_array.as_str()?;
 
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
-        let parsed_value: toml::Value = toml::from_str(ids_str).map_err(|e| {
-            IntoWrapperError::Error(Some(format!("Failed to parse ids: {}", e).into()))
-        })?;
-        let ids: Vec<String> = parsed_value.try_into().map_err(|e| {
-            IntoWrapperError::Error(Some(
-                format!("ids must be an array of strings: {}", e).into(),
-            ))
-        })?;
+        let parsed_value: toml::Value =
+            toml::from_str(ids_str).map_err(|e| anyhow::anyhow!("Failed to parse ids: {}", e))?;
+        let ids: Vec<String> = parsed_value
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("ids must be an array of strings: {}", e))?;
 
         let mut state = state.lock().expect("mutex poisoned");
 
         state.toolbar.set_layout(target_str.to_string(), ids);
 
         Ok(())
-    }));
+    }
 
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "toolbar_set_layout");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, target, ids_toml_array))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_handle_action(
     ptr_state: *const ClientStateHandle,
-    button_id: StringView,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
+    button_id: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(ptr_state: *const ClientStateHandle, button_id: FfiStringView) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    // Arc::into_raw 由来のポインタから、参照カウントを増やして
-    // 独立した Arc クローンを作る（元のポインタは消費しない）
-    let state = ClientStateHandle::from_ptr(ptr_state);
-
-    let button_id = match button_id.as_str() {
-        Ok(s) => s,
-        Err(_) => return WrapperErrorCode::invalid_string_error(),
-    };
-
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
+        // Arc::into_raw 由来のポインタから、参照カウントを増やして
+        // 独立した Arc クローンを作る（元のポインタは消費しない）
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let button_id = button_id.as_str()?;
         let state = state.lock().expect("mutex poisoned");
 
-        let (plugin_id, button) =
-            state
-                .toolbar
-                .registry
-                .get_button_by(button_id)
-                .ok_or(IntoWrapperError::Error(Some(
-                    "ToolbarButton not found".into(),
-                )))?;
+        let (plugin_id, button) = state
+            .toolbar
+            .registry
+            .get_button_by(button_id)
+            .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
 
         state
             .common
@@ -211,20 +138,13 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .read()
             .expect("lock poisoned")
             .call_script::<()>(plugin_id, &button.action.func_name, ())
-            .map_err(|e| IntoWrapperError::Error(Some(e.to_string().into())))?;
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         Ok(())
-    }));
+    }
 
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "toolbar_handle_action");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, button_id))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
     }
 }

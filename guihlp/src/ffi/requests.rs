@@ -1,39 +1,54 @@
-use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
-    sync::{Arc, Mutex},
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
     project::{TimelineTick, command::CommandRequest, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
+    util::result::EsotereelError,
 };
 
-use crate::{
-    IntoWrapperError, WrapperErrorCode,
-    ffi::{log_if_panicked, state::ClientStateHandle, stringview::StringView},
-    network::ClientNetworkHandler,
-    state::ClientState,
-};
+use crate::ffi::{result::FfiResultVoid, state::ClientStateHandle, stringview::FfiStringView};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) {
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = &state.network;
+pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    let req = Request::Test;
-    network.send(&req);
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state = state.lock().expect("mutex poisoned");
+        let network = &state.network;
+
+        network.send(&Request::Test);
+        Ok(())
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn req_new_project(ptr_state: *const ClientStateHandle) {
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = &state.network;
+pub extern "C" fn req_new_project(ptr_state: *const ClientStateHandle) -> FfiResultVoid {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    let req = Request::NewProject;
-    network.send(&req);
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state = state.lock().expect("mutex poisoned");
+        let network = &state.network;
+
+        network.send(&Request::NewProject);
+        Ok(())
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -43,27 +58,32 @@ pub unsafe extern "C" fn req_fetch_frame(
     current_frame: TimelineTick,
     visible_range_start: TimelineTick,
     visible_range_end: TimelineTick,
-) -> WrapperErrorCode {
-    if ptr_state.is_null() {
-        return WrapperErrorCode::null_ptr();
-    }
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        timeline_id: TimelineId,
+        current_frame: TimelineTick,
+        visible_range_start: TimelineTick,
+        visible_range_end: TimelineTick,
+    ) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), IntoWrapperError> {
         let state = ClientStateHandle::from_ptr(ptr_state);
 
         let state_guard = state.lock().expect("mutex poisoned");
 
         let project_guard = state_guard.project.read().expect("mutex poisoned");
 
-        let project = match project_guard.as_ref() {
-            Some(arc) => Ok(arc),
-            None => Err(IntoWrapperError::NotFound(Some("project not found".into()))),
-        }?;
+        let project = project_guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("project not found"))?;
 
         let req = {
             let timeline = project
                 .timeline_ref(timeline_id)
-                .ok_or_else(|| IntoWrapperError::Error(Some("invalid timeline id".into())))?;
+                .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
 
             let lookahead = 60;
             let frame_range = current_frame..current_frame + lookahead;
@@ -91,45 +111,65 @@ pub unsafe extern "C" fn req_fetch_frame(
         }
 
         Ok(())
-    }));
+    }
 
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => {
-            e.set_last_err_msg();
-            e.into()
-        }
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "req_update_frame");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+    match catch_unwind(AssertUnwindSafe(|| {
+        inner(
+            ptr_state,
+            timeline_id,
+            current_frame,
+            visible_range_start,
+            visible_range_end,
+        )
+    })) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) {
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state_guard = state.lock().expect("mutex poisoned");
-    let network = &state_guard.network;
+pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) -> FfiResultVoid {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    network.send(&Request::DebugFetchProjectStruct);
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state_guard = state.lock().expect("mutex poisoned");
+        let network = &state_guard.network;
+
+        network.send(&Request::DebugFetchProjectStruct);
+        Ok(())
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_load_stream(
     ptr_state: *const ClientStateHandle,
-    path: StringView,
-) -> WrapperErrorCode {
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state = state.lock().expect("mutex poisoned");
-    let network = &state.network;
+    path: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(ptr_state: *const ClientStateHandle, path: FfiStringView) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
 
-    let Ok(path) = path.as_str() else {
-        return WrapperErrorCode::invalid_string_error();
-    };
-    let path = path.to_string();
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state = state.lock().expect("mutex poisoned");
+        let network = &state.network;
 
-    let req = Request::InitStream { path };
-    network.send(&req);
-    WrapperErrorCode::ok()
+        let path = path.as_str()?.to_string();
+
+        network.send(&Request::InitStream { path });
+        Ok(())
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, path))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }

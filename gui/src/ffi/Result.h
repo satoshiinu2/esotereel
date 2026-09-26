@@ -1,5 +1,7 @@
 #pragma once
 #include "esotereel_gui_helper.h"
+#include "ffi/Array.h"
+#include "ffi/Option.h"
 #include "ffi/StringView.h"
 #include <cstddef>
 #include <stdexcept>
@@ -7,12 +9,62 @@
 #include <variant>
 
 namespace esotereel {
-
+template <typename T> using FfiArray = esotereel_gui_helper::FfiArray<T>;
+template <typename T> using FfiOption = esotereel_gui_helper::FfiOption<T>;
 template <typename T> using FfiResult = esotereel_gui_helper::FfiResult<T>;
 using FfiResultVoid = esotereel_gui_helper::FfiResultVoid;
 
 template <typename T> class Result {
   public:
+    template <typename Raw, typename Converter> Result(FfiResult<FfiArray<Raw>> raw, Converter converter) {
+        using Converted = decltype(converter(std::declval<const Raw &>()));
+
+        if (!raw.is_ok) {
+            value_ = OwnedString::intoStdString(raw.value.err);
+            return;
+        }
+
+        FfiArray<Raw> array = raw.value.ok;
+        detail::ArrayFreeGuard<Raw> guard{array};
+
+        QVector<Converted> out;
+        const size_t n = Array::size(array);
+        out.reserve(static_cast<int>(n));
+        const Raw *data = Array::data(array);
+        for (size_t i = 0; i < n; ++i) {
+            out.append(converter(data[i]));
+        }
+
+        value_ = std::move(out);
+    }
+
+    template <typename Raw, typename Converter> Result(FfiResult<FfiOption<Raw>> raw, Converter converter) {
+        using Converted = decltype(converter(std::declval<const Raw &>()));
+
+        if (!raw.is_ok) {
+            value_ = OwnedString::intoStdString(raw.value.err);
+            return;
+        }
+
+        if (Option::isNone(raw.value.ok)) {
+            value_ = std::nullopt;
+            return;
+        }
+
+        value_ = converter(Option::unwrap(raw.value.ok));
+    }
+
+    template <typename Raw, typename Converter> Result(FfiResult<Raw> raw, Converter converter) {
+        using Converted = decltype(converter(std::declval<const Raw &>()));
+
+        if (!raw.is_ok) {
+            value_ = OwnedString::intoStdString(raw.value.err);
+            return;
+        }
+
+        value_ = converter(raw.value.ok);
+    }
+
     explicit Result(FfiResult<T> raw) {
         if (raw.is_ok) {
             value_ = raw.value.ok;

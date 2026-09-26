@@ -6,8 +6,8 @@
 #include <qobject.h>
 #include <string>
 
-using RawStringView = esotereel_gui_helper::StringView;
-using RawOwnedString = esotereel_gui_helper::OwnedString;
+using RawStringView = esotereel_gui_helper::FfiStringView;
+using RawOwnedString = esotereel_gui_helper::FfiOwnedString;
 
 namespace esotereel::StringView {
 inline bool isZero(const RawStringView &raw) {

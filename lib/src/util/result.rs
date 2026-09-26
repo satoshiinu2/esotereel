@@ -9,7 +9,10 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
     plugin::NamespacedID,
-    project::ids::{ClipId, LayerId, ResourceId, TimelineId},
+    project::{
+        TimelineTick,
+        ids::{ClipId, LayerId, ResourceId, TimelineId},
+    },
 };
 
 // TODO: cow
@@ -23,11 +26,13 @@ pub enum EsotereelError {
     ProjectNotFound,
     TimelineNotFound(TimelineId),
     ClipNotFound(ClipId),
+    ClipNotFoundAt(TimelineTick),
     ClipKindNotFound(NamespacedID),
     LayerNotFound(LayerId),
     DuplicateLayerId(LayerId),
     PluginNotFound(String),
     StreamNotFound(ResourceId),
+    InvalidString(String),
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
@@ -47,8 +52,10 @@ impl fmt::Display for EsotereelError {
             EsotereelError::DuplicateLayerId(id) => write!(f, "Duplicate layer ID '{}'", id),
             EsotereelError::PluginNotFound(id) => write!(f, "Plugin '{}' not found", id),
             EsotereelError::ClipNotFound(id) => write!(f, "Clip '{}' not found", id),
+            EsotereelError::ClipNotFoundAt(tick) => write!(f, "Clip not found at {tick}"),
             EsotereelError::ClipKindNotFound(id) => write!(f, "ClipKind '{}' not found", id),
             EsotereelError::StreamNotFound(id) => write!(f, "Stream '{}' not found", id),
+            EsotereelError::InvalidString(name) => write!(f, "Invalid string: {}", name),
             EsotereelError::InvalidCommand => write!(f, "Invalid command"),
             EsotereelError::ClipOverlap => write!(f, "Clip overlap"),
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),

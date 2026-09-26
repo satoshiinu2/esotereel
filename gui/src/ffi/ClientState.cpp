@@ -16,8 +16,14 @@ ClientState::ClientState(GuiCallbacks callbacks, QString stdPluginDir, QString w
     QByteArray workingDirUtf8 = workingDir.toUtf8();
     auto workingDirView = StringView::fromQUtf8String(workingDirUtf8);
 
-    auto result = esotereel_gui_helper::client_state_new(callbacks, stdPluginDirView, workingDirView, &network_ptr);
-    checkWrapperResult(result);
+    auto result = esotereel_gui_helper::client_state_new(callbacks, stdPluginDirView, workingDirView);
+
+    if (!result.is_ok) {
+        std::string error = OwnedString::intoStdString(result.value.err);
+        throw std::runtime_error("Failed to create client state: " + error);
+    }
+
+    network_ptr = result.value.ok;
 }
 
 ClientState::~ClientState() {
@@ -49,7 +55,14 @@ bool ClientState::run(QString addr) {
     auto addrView = StringView::fromQUtf8String(addrUtf8);
 
     auto result = esotereel_gui_helper::client_state_network_run(network_ptr, addrView);
-    return checkWrapperResult(result);
+
+    if (!result.is_ok) {
+        std::string error = OwnedString::intoStdString(result.err);
+        // Log error but don't throw
+        return false;
+    }
+
+    return true;
 }
 
 Result<Project> ClientState::getProject() const {
@@ -57,14 +70,13 @@ Result<Project> ClientState::getProject() const {
         return Result<Project>::err("Invalid network handler");
     }
 
-    const void *guard_ptr;
-    auto result = esotereel_gui_helper::client_state_project_lock_read(network_ptr, &guard_ptr);
+    auto result = esotereel_gui_helper::client_state_project_lock_read(network_ptr);
 
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResult<Project>(result, Project::invalid());
+    if (!result.is_ok) {
+        return Result<Project>::err(OwnedString::intoStdString(result.value.err));
     }
 
-    return Project::byGuard(guard_ptr);
+    return Project::byGuard(result.value.ok);
 }
 
 Result<void> ClientState::bootstrap() const {
@@ -74,7 +86,11 @@ Result<void> ClientState::bootstrap() const {
 
     auto result = esotereel_gui_helper::client_state_bootstrap(network_ptr);
 
-    return wrapperResultToResultVoid(result);
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
 }
 
 Result<void> ClientState::logDirectoriesInfo() const {
@@ -84,7 +100,11 @@ Result<void> ClientState::logDirectoriesInfo() const {
 
     auto result = esotereel_gui_helper::client_state_log_directories_info(network_ptr);
 
-    return wrapperResultToResultVoid(result);
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
 }
 
 Requests ClientState::requests() const {

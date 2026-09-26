@@ -2,47 +2,45 @@
 #include "ClientState.h"
 #include "StringView.h"
 #include "WrapperResult.h"
+#include "Array.h"
 
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
 
 namespace esotereel {
 
-Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *network, const QString &target) {
-    if (!network) {
-        return Result<QVector<ToolbarButton>>::err("Network handler is null");
+Result<QVector<ToolbarButton>> Toolbar::getButtons(ClientState *state, const QString &target) {
+    if (!state) {
+        return Result<QVector<ToolbarButton>>::err("State is null");
     }
-
-    QVector<ToolbarButton> buttons;
 
     QByteArray targetUtf8 = target.toUtf8();
     RawStringView targetView = StringView::fromQUtf8String(targetUtf8);
 
-    int32_t count = esotereel_gui_helper::toolbar_get_buttons_count(*network, targetView);
-    if (count < 0) {
-        return Result<QVector<ToolbarButton>>::err("Failed to get toolbar buttons count");
-    }
-    if (count == 0) {
-        return Result<QVector<ToolbarButton>>::ok(buttons);
+    auto result = esotereel_gui_helper::toolbar_get_buttons(*state, targetView);
+
+    if (!result.is_ok) {
+        return Result<QVector<ToolbarButton>>::err(OwnedString::intoStdString(result.value.err));
     }
 
-    QVector<esotereel_gui_helper::FfiToolbarButton> ffiButtons(count);
+    auto &array = result.value.ok;
 
-    WrapperErrorCode result = esotereel_gui_helper::toolbar_get_buttons(*network, targetView, ffiButtons.data(), count);
-    if (result != WrapperErrorCode::Ok) {
-        return wrapperResultToResult<QVector<ToolbarButton>>(result, buttons);
+    QVector<ToolbarButton> buttons;
+    buttons.reserve(static_cast<int>(array.len));
+
+    for (std::size_t i = 0; i < array.len; ++i) {
+        buttons.append(ToolbarButton(array.ptr[i]));
     }
 
-    for (int i = 0; i < count; ++i) {
-        buttons.append(ToolbarButton(ffiButtons[i]));
-    }
+    // Free the array
+    array.free_fn(&array);
 
     return Result<QVector<ToolbarButton>>::ok(buttons);
 }
 
-Result<void> Toolbar::setLayout(ClientState *network, const QString &target, const QStringList &orderedIds) {
-    if (!network) {
-        return Result<void>::err("Network handler is null");
+Result<void> Toolbar::setLayout(ClientState *state, const QString &target, const QStringList &orderedIds) {
+    if (!state) {
+        return Result<void>::err("State is null");
     }
 
     // ["id1","id2",...] 形式のTOML配列文字列にする(id自体に " は含まれない前提)
@@ -58,16 +56,25 @@ Result<void> Toolbar::setLayout(ClientState *network, const QString &target, con
     RawStringView targetView = StringView::fromQUtf8String(targetUtf8);
     RawStringView idsView = StringView::fromQUtf8String(idsUtf8);
 
-    WrapperErrorCode result = esotereel_gui_helper::toolbar_set_layout(*network, targetView, idsView);
-    return wrapperResultToResultVoid(result);
+    auto result = esotereel_gui_helper::toolbar_set_layout(*state, targetView, idsView);
+
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
 }
 
-Result<void> ToolbarButton::handleAction(ClientState *network) {
+Result<void> ToolbarButton::handleAction(ClientState *state) {
     QByteArray idUtf8 = this->id.toUtf8();
     RawStringView idView = StringView::fromQUtf8String(idUtf8);
 
-    WrapperErrorCode result = esotereel_gui_helper::toolbar_handle_action(*network, idView);
+    auto result = esotereel_gui_helper::toolbar_handle_action(*state, idView);
 
-    return wrapperResultToResultVoid(result);
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
 }
 } // namespace esotereel

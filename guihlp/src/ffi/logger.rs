@@ -4,9 +4,9 @@ use std::{
     sync::{LazyLock, OnceLock, RwLock},
 };
 
-use crate::ffi::stringview::StringView;
+use crate::ffi::stringview::FfiStringView;
 
-pub type LogOutCStrFn = extern "C" fn(level: usize, target: StringView, msg: StringView);
+pub type LogOutCStrFn = extern "C" fn(level: usize, target: FfiStringView, msg: FfiStringView);
 
 pub(crate) static LOG_C_CALLBACK: OnceLock<LogOutCStrFn> = OnceLock::new();
 
@@ -76,7 +76,7 @@ pub extern "C" fn init_rust_logger(callback: LogOutCStrFn) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn set_log_level(target: StringView, level: CLogLevel) {
+pub extern "C" fn set_log_level(target: FfiStringView, level: CLogLevel) {
     LOGGER
         .filters
         .write()

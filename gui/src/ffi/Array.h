@@ -3,9 +3,15 @@
 #include "esotereel_gui_helper.h"
 #include <cstddef>
 
+namespace esotereel {
+template <typename T> using FfiArray = esotereel_gui_helper::FfiArray<T>;
+}
+
 namespace esotereel::Array {
 
-template <typename T> using FfiArray = esotereel_gui_helper::FfiArray<T>;
+template <typename T> inline FfiArray<T> from(std::span<T> span) noexcept {
+    return {span.data(), span.size(), span.size()};
+}
 
 template <typename T> inline size_t size(const FfiArray<T> &raw) noexcept {
     return raw.len;
@@ -35,3 +41,14 @@ template <typename T> inline void free(FfiArray<T> &raw) {
 }
 
 } // namespace esotereel::Array
+
+namespace esotereel::detail {
+// converterが例外を投げてもFfiArrayを解放するための最小限のスコープガード。
+// 公開APIではなくconvertArrayResult内部だけの実装詳細。
+template <typename T> struct ArrayFreeGuard {
+    FfiArray<T> &raw;
+    ~ArrayFreeGuard() {
+        Array::free(raw);
+    }
+};
+} // namespace esotereel::detail

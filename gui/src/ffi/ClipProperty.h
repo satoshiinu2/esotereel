@@ -11,7 +11,7 @@
 #include "ffi/project/Clip.h"
 
 namespace esotereel::window {
-using RawOwnedString = esotereel_gui_helper::OwnedString;
+using RawOwnedString = esotereel_gui_helper::FfiOwnedString;
 using FfiPropertySchema = esotereel_gui_helper::FfiPropertySchema;
 
 // clip_get_all_fields のラッパー。ClipPropertySchemaを使用

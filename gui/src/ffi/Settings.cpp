@@ -4,6 +4,8 @@
 
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
+#include "ffi/Array.h"
+#include "ffi/Option.h"
 
 namespace esotereel {
 
@@ -14,24 +16,10 @@ Result<QVector<SettingsField>> Settings::getAllFields(ClientState *state) {
 
     auto result = esotereel_gui_helper::settings_get_all_fields(*state);
 
-    if (!result.is_ok) {
-        return Result<QVector<SettingsField>>::err(OwnedString::intoStdString(result.value.err));
-    }
-
-    auto &array = result.value.ok;
-
-    QVector<SettingsField> fields;
-    fields.reserve(static_cast<int>(array.len));
-
-    for (std::size_t i = 0; i < array.len; ++i) {
-        // SettingsFieldのコンストラクタがkey/category/labelのOwnedStringを解放する。
-        fields.append(SettingsField(array.ptr[i]));
-    }
-
-    // 配列コンテナ自体(Vecのバッファ)を解放。中身のOwnedStringは上でfree済み。
-    array.free_fn(&array);
-
-    return Result<QVector<SettingsField>>::ok(fields);
+    // Use the new Result constructor that handles FfiResult<FfiArray<T>>
+    return Result<QVector<SettingsField>>(result, [](const esotereel_gui_helper::FfiPropertySchema &schema) {
+        return SettingsField(schema);
+    });
 }
 
 Result<FieldValue> Settings::getValue(ClientState *state, const QString &key) {
@@ -48,12 +36,11 @@ Result<FieldValue> Settings::getValue(ClientState *state, const QString &key) {
         return Result<FieldValue>::err(OwnedString::intoStdString(result.value.err));
     }
 
-    // Convert CFieldValue to FieldValue
-    if (result.value.ok.has_value) {
-        return Result<FieldValue>::ok(FieldValue::fromC(result.value.ok.value.some));
-    } else {
+    if (Option::isNone(result.value.ok)) {
         return Result<FieldValue>::err("Setting not found");
     }
+
+    return Result<FieldValue>::ok(FieldValue::fromC(Option::unwrap(result.value.ok)));
 }
 
 Result<void> Settings::setValue(ClientState *state, const QString &key, const FieldValue &value) {
@@ -105,22 +92,9 @@ Result<QStringList> Settings::getCategories(ClientState *state) {
 
     auto result = esotereel_gui_helper::settings_get_categories(*state);
 
-    if (!result.is_ok) {
-        return Result<QStringList>::err(OwnedString::intoStdString(result.value.err));
-    }
-
-    auto &array = result.value.ok;
-
-    QStringList categories;
-    categories.reserve(static_cast<int>(array.len));
-
-    for (std::size_t i = 0; i < array.len; ++i) {
-        categories.append(OwnedString::toQString(array.ptr[i]));
-        OwnedString::free(array.ptr[i]);
-    }
-
-    array.free_fn(&array);
-
-    return Result<QStringList>::ok(categories);
+    // Use the new Result constructor that handles FfiResult<FfiArray<T>>
+    return Result<QStringList>(result, [](const esotereel_gui_helper::FfiOwnedString &owned) {
+        return OwnedString::toQString(owned);
+    });
 }
 } // namespace esotereel

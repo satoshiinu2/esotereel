@@ -20,22 +20,23 @@
 #include <stdexcept>
 
 using TimelineId = esotereel_gui_helper::TimelineId;
+using namespace esotereel;
 
 Q_LOGGING_CATEGORY(logRust, "lib")
 
 void bootcore(QString corePath);
 void startInternalServer();
-void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi);
+void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi);
 void onConnectedCallBack();
 
-esotereel::window::MainWindow *window;
-esotereel::ClientState *state;
+window::MainWindow *mainWindow;
+ClientState *state;
 QString addr;
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
-    esotereel_gui_helper::init_rust_logger(esotereel::qtLogCallback);
+    esotereel_gui_helper::init_rust_logger(qtLogCallback);
 
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
@@ -43,17 +44,17 @@ int main(int argc, char **argv) {
     esotereel_gui_helper::GuiCallbacks callbacks;
 
     callbacks.on_test = +[]() {};
-    callbacks.mark_dirty_timeline = +[](TimelineId id) { window->markDirtyTimeline(id); };
+    callbacks.mark_dirty_timeline = +[](TimelineId id) { mainWindow->markDirtyTimeline(id); };
     callbacks.on_connected = +[]() { onConnectedCallBack(); };
 
-    esotereel::ClientState n(callbacks, stdPluginDir, workingDir);
+    ClientState n(callbacks, stdPluginDir, workingDir);
     state = &n;
 
     n.logDirectoriesInfo();
     n.bootstrap();
 
-    esotereel::window::MainWindow w(n);
-    window = &w;
+    window::MainWindow w(n);
+    mainWindow = &w;
     w.show();
 
     startInternalServer();
@@ -72,12 +73,12 @@ void startInternalServer() {
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 
-    esotereel::InternalServer::start(*state, addr, onServerStart, stdPluginDir, workingDir);
+    InternalServer::start(*state, addr, onServerStart, stdPluginDir, workingDir);
 }
 
-void onServerStart(bool ok, esotereel_gui_helper::StringView addr_ffi) {
+void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi) {
     if (ok) {
-        state->run(esotereel::StringView::toQString(addr_ffi));
+        state->run(StringView::toQString(addr_ffi));
     }
 }
 

@@ -34,13 +34,13 @@ class ToolbarButton {
         OwnedString::free(ffi.action);
     }
 
-    Result<void> handleAction(ClientState *network);
+    Result<void> handleAction(ClientState *state);
 };
 
 class Toolbar {
   public:
-    static Result<QVector<ToolbarButton>> getButtons(ClientState *network, const QString &target);
-    static Result<void> setLayout(ClientState *network, const QString &target, const QStringList &orderedIds);
+    static Result<QVector<ToolbarButton>> getButtons(ClientState *state, const QString &target);
+    static Result<void> setLayout(ClientState *state, const QString &target, const QStringList &orderedIds);
 };
 
 } // namespace esotereel

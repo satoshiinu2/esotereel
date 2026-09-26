@@ -4,8 +4,8 @@
 #include <QString>
 
 namespace esotereel {
-void qtLogCallback(size_t level, esotereel_gui_helper::StringView target_view,
-                   esotereel_gui_helper::StringView msg_view) {
+void qtLogCallback(size_t level, esotereel_gui_helper::FfiStringView target_view,
+                   esotereel_gui_helper::FfiStringView msg_view) {
     QString target = StringView::toQString(target_view);
     QString message = StringView::toQString(msg_view);
 

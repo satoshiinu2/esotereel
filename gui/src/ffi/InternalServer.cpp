@@ -7,7 +7,7 @@
 
 namespace esotereel {
 bool InternalServer::start(ClientState &network, QString addr,
-                           void (*OnConnectedFn)(bool, esotereel_gui_helper::StringView), QString stdPluginDir,
+                           void (*OnConnectedFn)(bool, esotereel_gui_helper::FfiStringView), QString stdPluginDir,
                            QString workingDir) {
     QByteArray addrUtf8 = addr.toUtf8();
     auto addrView = StringView::fromQUtf8String(addrUtf8);
@@ -21,6 +21,12 @@ bool InternalServer::start(ClientState &network, QString addr,
     auto result =
         esotereel_gui_helper::internal_server_start(network, addrView, OnConnectedFn, stdPluginDirView, workingDirView);
 
-    return checkWrapperResult(result);
+    if (!result.is_ok) {
+        std::string error = OwnedString::intoStdString(result.err);
+        // Log error but don't throw
+        return false;
+    }
+
+    return true;
 }
 } // namespace esotereel

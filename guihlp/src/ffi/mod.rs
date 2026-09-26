@@ -5,6 +5,7 @@ use esotereel_lib::{project::Project, util::result::format_any_error};
 use crate::{ON_CONNECTED_CALLBACKS, network::OnConnectedFn};
 
 pub mod array;
+pub mod arrayview;
 pub mod commands;
 pub mod debug_streams;
 pub mod field_value;

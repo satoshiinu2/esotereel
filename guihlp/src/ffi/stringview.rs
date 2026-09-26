@@ -4,12 +4,13 @@ use crate::slice_from_ptr_or_empty;
 use std::borrow::Cow;
 
 #[repr(C)]
-pub struct StringView {
+#[derive(Clone, Copy)]
+pub struct FfiStringView {
     pub ptr: *const u8,
     pub len: usize,
 }
 
-impl StringView {
+impl FfiStringView {
     pub fn from_str(s: &str) -> Self {
         Self {
             ptr: s.as_ptr(),
@@ -61,14 +62,14 @@ impl StringView {
 /// 手動で解放しないといけない
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct OwnedString {
+pub struct FfiOwnedString {
     pub ptr: *mut u8,
     pub len: usize,
     pub capacity: usize,
 }
 
-impl OwnedString {
-    pub fn from_string_view(sv: StringView) -> Self {
+impl FfiOwnedString {
+    pub fn from_string_view(sv: FfiStringView) -> Self {
         let s = sv.as_string_lossy().into_owned();
         Self::from_string(s)
     }
@@ -126,43 +127,43 @@ impl OwnedString {
 
 /// Frees a string that was allocated by Rust and returned via OwnedString
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn owned_string_free(str: OwnedString) {
+pub unsafe extern "C" fn owned_string_free(str: FfiOwnedString) {
     unsafe {
         str.free();
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn owned_string_new(str: StringView) -> OwnedString {
-    OwnedString::from_string_view(str)
+pub unsafe extern "C" fn owned_string_new(str: FfiStringView) -> FfiOwnedString {
+    FfiOwnedString::from_string_view(str)
 }
 
-impl From<StringView> for String {
-    fn from(value: StringView) -> Self
+impl From<FfiStringView> for String {
+    fn from(value: FfiStringView) -> Self
     where
         Self: Sized,
     {
-        StringView::as_string_lossy(&value).into_owned()
+        FfiStringView::as_string_lossy(&value).into_owned()
     }
 }
 
-impl From<&str> for StringView {
+impl From<&str> for FfiStringView {
     fn from(value: &str) -> Self {
-        StringView::from_str(value)
+        FfiStringView::from_str(value)
     }
 }
 
 #[deprecated(note = "Use FfiArray<OwnedString> instead")]
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct OwnedStringArray {
-    pub ptr: *mut OwnedString,
+pub struct FfiOwnedStringArray {
+    pub ptr: *mut FfiOwnedString,
     pub len: usize,
     pub capacity: usize,
 }
 
-impl OwnedStringArray {
-    pub fn from_vec(mut values: Vec<OwnedString>) -> Self {
+impl FfiOwnedStringArray {
+    pub fn from_vec(mut values: Vec<FfiOwnedString>) -> Self {
         let result = Self {
             ptr: values.as_mut_ptr(),
             len: values.len(),

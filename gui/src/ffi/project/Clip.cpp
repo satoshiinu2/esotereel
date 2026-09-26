@@ -4,6 +4,8 @@
 #include "ffi/ClientState.h"
 #include "ffi/CommandQueue.h"
 #include "ffi/StringView.h"
+#include "ffi/Array.h"
+#include "ffi/Option.h"
 
 namespace esotereel {
 
@@ -73,11 +75,11 @@ Result<ClipPropertyValue> Clip::getPropertyValue(const QString &key) const {
         return Result<ClipPropertyValue>::err(OwnedString::intoStdString(result.value.err));
     }
 
-    if (result.value.ok.has_value) {
-        return Result<ClipPropertyValue>::ok(ClipPropertyValue::fromC(result.value.ok.value.some));
-    } else {
+    if (Option::isNone(result.value.ok)) {
         return Result<ClipPropertyValue>::err("Property not found");
     }
+
+    return Result<ClipPropertyValue>::ok(ClipPropertyValue::fromC(Option::unwrap(result.value.ok)));
 }
 
 Result<QVector<ClipPropertySchema>> Clip::getAllFields(ClientState *network) const {
@@ -87,22 +89,10 @@ Result<QVector<ClipPropertySchema>> Clip::getAllFields(ClientState *network) con
 
     auto result = esotereel_gui_helper::clip_get_all_fields(*network, ptr_clip);
 
-    if (!result.is_ok) {
-        return Result<QVector<ClipPropertySchema>>::err(OwnedString::intoStdString(result.value.err));
-    }
-
-    auto &array = result.value.ok;
-
-    QVector<ClipPropertySchema> fields;
-    fields.reserve(static_cast<int>(array.len));
-
-    for (std::size_t i = 0; i < array.len; ++i) {
-        fields.append(ClipPropertySchema(array.ptr[i]));
-    }
-
-    array.free_fn(&array);
-
-    return Result<QVector<ClipPropertySchema>>::ok(fields);
+    // Use the new Result constructor that handles FfiResult<FfiArray<T>>
+    return Result<QVector<ClipPropertySchema>>(result, [](const esotereel_gui_helper::FfiPropertySchema &schema) {
+        return ClipPropertySchema(schema);
+    });
 }
 
 Result<QStringList> Clip::getCategories(ClientState *network) const {
@@ -112,23 +102,10 @@ Result<QStringList> Clip::getCategories(ClientState *network) const {
 
     auto result = esotereel_gui_helper::clip_get_categories(*network, ptr_clip);
 
-    if (!result.is_ok) {
-        return Result<QStringList>::err(OwnedString::intoStdString(result.value.err));
-    }
-
-    auto &array = result.value.ok;
-
-    QStringList categories;
-    categories.reserve(static_cast<int>(array.len));
-
-    for (std::size_t i = 0; i < array.len; ++i) {
-        categories.append(OwnedString::toQString(array.ptr[i]));
-        OwnedString::free(array.ptr[i]);
-    }
-
-    array.free_fn(&array);
-
-    return Result<QStringList>::ok(categories);
+    // Use the new Result constructor that handles FfiResult<FfiArray<T>>
+    return Result<QStringList>(result, [](const esotereel_gui_helper::FfiOwnedString &owned) {
+        return OwnedString::toQString(owned);
+    });
 }
 
 Result<void> Clip::setPropertyValue(CommandQueue &commandQueue, TimelineId timelineId, const QString &key,

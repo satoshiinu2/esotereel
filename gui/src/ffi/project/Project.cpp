@@ -3,7 +3,7 @@
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
 #include "ffi/Result.h"
-#include "ffi/WrapperResult.h"
+#include "ffi/StringView.h"
 
 namespace esotereel {
 Project::Project(const void *g, const RawOptionProject *p) : guard_ptr(g), project_ptr(p) {}
@@ -40,16 +40,19 @@ Project &Project::operator=(Project &&other) noexcept {
     return *this;
 }
 
-Result<Project> Project::lockRead(const ClientState *network) {
-    if (!network || !network->isValid())
-        return Result<Project>::err("Invalid network handler");
+Result<Project> Project::lockRead(const ClientState *state) {
+    if (!state || !state->isValid())
+        return Result<Project>::err("Invalid state");
 
-    const void *guard_ptr = nullptr;
-    // C++ クラスが保持する FFI 用ポインタ (raw_ptr) を渡す
-    auto result = esotereel_gui_helper::client_state_project_lock_read(*network, &guard_ptr);
+    auto result = esotereel_gui_helper::client_state_project_lock_read(*state);
 
-    if (result != WrapperErrorCode::Ok || !guard_ptr) {
-        return wrapperResultToResult<Project>(result, Project::invalid());
+    if (!result.is_ok) {
+        return Result<Project>::err(OwnedString::intoStdString(result.value.err));
+    }
+
+    const void *guard_ptr = result.value.ok;
+    if (!guard_ptr) {
+        return Result<Project>::err("Guard pointer is null");
     }
 
     return Project::byGuard(guard_ptr);
@@ -59,13 +62,19 @@ Result<Project> Project::byGuard(const void *guard_ptr) {
     if (!guard_ptr)
         return Result<Project>::err("Guard pointer is null");
 
-    const RawOptionProject *project_ptr = nullptr;
-    auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr, &project_ptr);
+    auto result = esotereel_gui_helper::project_guard_get_project_from_guard(guard_ptr);
 
-    if (result != WrapperErrorCode::Ok) {
+    if (!result.is_ok) {
         // Clean up guard on error
         esotereel_gui_helper::client_state_project_unlock_read(guard_ptr);
-        return wrapperResultToResult<Project>(result, Project::invalid());
+        return Result<Project>::err(OwnedString::intoStdString(result.value.err));
+    }
+
+    const RawOptionProject *project_ptr = result.value.ok;
+    if (!project_ptr) {
+        // Clean up guard on error
+        esotereel_gui_helper::client_state_project_unlock_read(guard_ptr);
+        return Result<Project>::err("Project pointer is null");
     }
 
     return Result<Project>::ok(Project{guard_ptr, project_ptr});

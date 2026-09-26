@@ -17,7 +17,7 @@ use crate::ffi::{
     option::FfiOption,
     result::{FfiResult, FfiResultVoid},
     state::ClientStateHandle,
-    stringview::{OwnedString, StringView},
+    stringview::{FfiOwnedString, FfiStringView},
 };
 
 #[repr(C)]
@@ -37,9 +37,9 @@ pub enum SettingsFieldType {
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct FfiPropertySchema {
-    pub key: OwnedString,
-    pub category: OwnedString,
-    pub label: OwnedString,
+    pub key: FfiOwnedString,
+    pub category: FfiOwnedString,
+    pub label: FfiOwnedString,
     pub kind_type: SettingsFieldType,
     pub default_value: CFieldValue,
 }
@@ -62,9 +62,9 @@ impl FfiPropertySchema {
         let default_value = CFieldValue::wrap_ffi(&schema.default);
 
         Self {
-            key: OwnedString::from_string(schema.key.full().to_owned()),
-            category: OwnedString::from_string(category_str),
-            label: OwnedString::from_string(schema.label.clone()),
+            key: FfiOwnedString::from_string(schema.key.full().to_owned()),
+            category: FfiOwnedString::from_string(category_str),
+            label: FfiOwnedString::from_string(schema.label.clone()),
             kind_type,
             default_value,
         }
@@ -110,11 +110,11 @@ pub type CFieldValueResult = FfiResult<FfiOption<CFieldValue>>;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_value(
     ptr_state: *const ClientStateHandle,
-    key: StringView,
+    key: FfiStringView,
 ) -> CFieldValueResult {
     fn inner(
         ptr_state: *const ClientStateHandle,
-        key: StringView,
+        key: FfiStringView,
     ) -> anyhow::Result<Option<CFieldValue>> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
@@ -130,21 +130,21 @@ pub unsafe extern "C" fn settings_get_value(
         Ok(value)
     }
 
-    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, key))) {
-        Ok(r) => FfiResult::from_result(r.map(FfiOption::from)),
-        Err(panic) => FfiResult::err_panic(panic),
-    }
+    FfiResult::from_panic_result_result_option(
+        catch_unwind(AssertUnwindSafe(|| inner(ptr_state, key))),
+        FfiOption::from,
+    )
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_set_value(
     ptr_state: *const ClientStateHandle,
-    key: StringView,
+    key: FfiStringView,
     value: CFieldValue,
 ) -> FfiResultVoid {
     fn inner(
         ptr_state: *const ClientStateHandle,
-        key: StringView,
+        key: FfiStringView,
         value: CFieldValue,
     ) -> anyhow::Result<()> {
         if ptr_state.is_null() {
@@ -164,13 +164,13 @@ pub unsafe extern "C" fn settings_set_value(
     }
 }
 
-pub type FfiStringArrayResult = FfiResult<FfiArray<OwnedString>>;
+pub type FfiStringArrayResult = FfiResult<FfiArray<FfiOwnedString>>;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn settings_get_categories(
     ptr_state: *const ClientStateHandle,
 ) -> FfiStringArrayResult {
-    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<FfiArray<OwnedString>> {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<FfiArray<FfiOwnedString>> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
@@ -187,7 +187,8 @@ pub unsafe extern "C" fn settings_get_categories(
         let mut cats: Vec<_> = categories.into_iter().collect();
         cats.sort();
 
-        let owned: Vec<OwnedString> = cats.into_iter().map(OwnedString::from_string).collect();
+        let owned: Vec<FfiOwnedString> =
+            cats.into_iter().map(FfiOwnedString::from_string).collect();
         Ok(FfiArray::from_vec(owned))
     }
 

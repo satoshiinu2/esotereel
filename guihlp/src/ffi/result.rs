@@ -2,12 +2,12 @@ use std::any::Any;
 
 use esotereel_lib::util::result::format_any_error;
 
-use crate::ffi::{field_value::CFieldValue, option::FfiOption, stringview::OwnedString};
+use crate::ffi::{field_value::CFieldValue, option::FfiOption, stringview::FfiOwnedString};
 
 #[repr(C)]
 pub union FfiResultUnion<T: Copy> {
     pub ok: T,
-    pub err: OwnedString,
+    pub err: FfiOwnedString,
 }
 
 #[repr(C)]
@@ -26,7 +26,7 @@ impl<T: Copy> FfiResult<T> {
 
     pub fn err(e: anyhow::Error) -> Self {
         // {:#} で原因チェーンも含めて整形する
-        let str = OwnedString::from_string(format!("{:#}", e));
+        let str = FfiOwnedString::from_string(format!("{:#}", e));
         Self {
             is_ok: false,
             value: FfiResultUnion { err: str },
@@ -34,7 +34,7 @@ impl<T: Copy> FfiResult<T> {
     }
 
     pub fn err_panic(msg: Box<dyn Any + Send>) -> Self {
-        let str = OwnedString::from_string(format_any_error(msg));
+        let str = FfiOwnedString::from_string(format_any_error(msg));
 
         Self {
             is_ok: false,
@@ -55,25 +55,44 @@ impl<T: Copy> FfiResult<T> {
             Err(e) => Self::err_panic(e),
         }
     }
+
+    pub fn from_panic_result_result(r: Result<anyhow::Result<T>, Box<dyn Any + Send>>) -> Self {
+        match r {
+            Ok(r) => Self::from_result(r),
+            Err(e) => Self::err_panic(e),
+        }
+    }
+}
+
+impl<T: Copy> FfiResult<FfiOption<T>> {
+    pub fn from_panic_result_result_option<F>(
+        r: Result<anyhow::Result<Option<F>>, Box<dyn Any + Send>>,
+        mapper: impl FnOnce(Option<F>) -> FfiOption<T>,
+    ) -> Self {
+        match r {
+            Ok(r) => Self::from_result(r.map(mapper)),
+            Err(e) => Self::err_panic(e),
+        }
+    }
 }
 
 #[repr(C)]
 pub struct FfiResultVoid {
     pub is_ok: bool,
-    pub err: OwnedString,
+    pub err: FfiOwnedString,
 }
 
 impl FfiResultVoid {
     pub fn ok() -> Self {
         Self {
             is_ok: true,
-            err: OwnedString::zero(),
+            err: FfiOwnedString::zero(),
         }
     }
 
     pub fn err(e: anyhow::Error) -> Self {
         // {:#} で原因チェーンも含めて整形する
-        let str = OwnedString::from_string(format!("{:#}", e));
+        let str = FfiOwnedString::from_string(format!("{:#}", e));
         Self {
             is_ok: false,
             err: str,
@@ -81,7 +100,7 @@ impl FfiResultVoid {
     }
 
     pub fn err_panic(msg: Box<dyn Any + Send>) -> Self {
-        let str = OwnedString::from_string(format_any_error(msg));
+        let str = FfiOwnedString::from_string(format_any_error(msg));
 
         Self {
             is_ok: false,
@@ -99,6 +118,13 @@ impl FfiResultVoid {
     pub fn from_panic_result(r: Result<(), Box<dyn Any + Send>>) -> Self {
         match r {
             Ok(_) => Self::ok(),
+            Err(e) => Self::err_panic(e),
+        }
+    }
+
+    pub fn from_panic_result_result(r: Result<anyhow::Result<()>, Box<dyn Any + Send>>) -> Self {
+        match r {
+            Ok(r) => Self::from_result(r),
             Err(e) => Self::err_panic(e),
         }
     }

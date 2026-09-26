@@ -120,7 +120,7 @@ CFieldValue FieldValue::toC() const {
                     entries[i] = OwnedString::fromStdString(arg.value[i]);
                 }
 
-                result.data.path_value = esotereel_gui_helper::OwnedStringArray{
+                result.data.path_value = esotereel_gui_helper::FfiOwnedStringArray{
                     entries,
                     len,
                     len,

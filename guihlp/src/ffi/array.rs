@@ -26,6 +26,19 @@ impl<T> FfiArray<T> {
         }
     }
 
+    pub fn from_slice(slice: &[T]) -> Self
+    where
+        T: Clone,
+    {
+        let mut v = std::mem::ManuallyDrop::new(slice.to_vec());
+        Self {
+            ptr: v.as_mut_ptr(),
+            len: v.len(),
+            cap: v.capacity(),
+            free_fn: Self::free,
+        }
+    }
+
     unsafe extern "C" fn free(s: *mut FfiArray<T>) {
         if s.is_null() {
             return;
@@ -42,10 +55,5 @@ impl<T> FfiArray<T> {
         s.ptr = std::ptr::null_mut();
         s.len = 0;
         s.cap = 0;
-    }
-
-    /// 解放処理内部で使う。C++側からは触らせない。
-    unsafe fn into_vec(self) -> Vec<T> {
-        unsafe { Vec::from_raw_parts(self.ptr, self.len, self.cap) }
     }
 }

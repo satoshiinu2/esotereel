@@ -7,6 +7,11 @@ namespace esotereel {
 using RawFolder = esotereel_gui_helper::LayerFolder;
 
 QString LayerFolder::name() const noexcept {
-    return StringView::toQString(esotereel_gui_helper::layer_folder_get_name(raw_ptr));
+    auto result = esotereel_gui_helper::layer_folder_get_name(raw_ptr);
+    if (!result.is_ok) {
+        return QString(); // Return empty string on error
+    }
+
+    return StringView::toQString(result.value.ok);
 }
 } // namespace esotereel

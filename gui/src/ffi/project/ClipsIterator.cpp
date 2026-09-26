@@ -35,9 +35,10 @@ void ClipsIterator::advance() noexcept {
         current_index++;
         // Update current clip pointer
         if (current_index < total_count) {
-            auto result =
-                esotereel_gui_helper::layer_get_clip_at_index(raw_layer_ptr, timeline_ptr, current_index, &raw_cur_ptr);
-            if (!checkWrapperResult(result)) {
+            auto result = esotereel_gui_helper::layer_get_clip_at_index(raw_layer_ptr, timeline_ptr, current_index);
+            if (result.is_ok) {
+                raw_cur_ptr = result.value.ok;
+            } else {
                 raw_cur_ptr = nullptr;
                 current_index = total_count; // Stop iteration
             }
@@ -50,8 +51,10 @@ void ClipsIterator::advance() noexcept {
 // Initialize first clip on construction
 void ClipsIterator::initialize() noexcept {
     if (total_count > 0) {
-        auto result = esotereel_gui_helper::layer_get_clip_at_index(raw_layer_ptr, timeline_ptr, 0, &raw_cur_ptr);
-        if (!checkWrapperResult(result)) {
+        auto result = esotereel_gui_helper::layer_get_clip_at_index(raw_layer_ptr, timeline_ptr, 0);
+        if (result.is_ok) {
+            raw_cur_ptr = result.value.ok;
+        } else {
             raw_cur_ptr = nullptr;
             current_index = total_count;
         }

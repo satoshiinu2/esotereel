@@ -6,6 +6,6 @@
 
 namespace esotereel::InternalServer {
 
-bool start(ClientState &network, QString addr, void (*OnConnectedFn)(bool, esotereel_gui_helper::StringView),
+bool start(ClientState &network, QString addr, void (*OnConnectedFn)(bool, esotereel_gui_helper::FfiStringView),
            QString stdPluginDir, QString workingDir);
 } // namespace esotereel::InternalServer
