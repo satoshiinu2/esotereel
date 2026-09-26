@@ -2,8 +2,6 @@ use std::any::Any;
 
 use esotereel_lib::{project::Project, util::result::format_any_error};
 
-use crate::{ON_CONNECTED_CALLBACKS, network::OnConnectedFn};
-
 pub mod array;
 pub mod arrayview;
 pub mod commands;
@@ -23,11 +21,6 @@ pub mod toolbar;
 pub mod wgpuutil;
 
 pub type OnServerReadyFn = extern "C" fn(bool);
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn set_on_connected_callback(callback: OnConnectedFn) {
-    ON_CONNECTED_CALLBACKS.set(callback).ok();
-}
 
 pub type ProjectGuard<'a> = std::sync::RwLockReadGuard<'a, Option<Project>>;
 

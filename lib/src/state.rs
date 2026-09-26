@@ -1,6 +1,5 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
-use anyhow::Context;
 use dashmap::DashMap;
 
 use crate::dirs::Directories;

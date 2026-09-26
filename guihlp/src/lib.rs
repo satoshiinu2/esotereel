@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::ffi::{CString, c_char};
-use std::sync::OnceLock;
 
 pub use esotereel_lib::decode::streamplayer::StreamPlayer;
 pub use esotereel_lib::project::Layer;
@@ -12,18 +11,12 @@ pub use esotereel_lib::project::clip::Clip;
 pub use esotereel_lib::project::ids::{ClipId, LayerFolderId, LayerId, ScriptId, TimelineId};
 use log::error;
 
-use crate::network::OnConnectedFn;
 use crate::responces::on_responce_recveve;
 
 pub mod ffi;
 mod network;
 pub mod responces;
 pub mod state;
-
-#[deprecated(note = "TODO: replace with client state")]
-static GUI_CALLBACKS: OnceLock<GuiCallbacks> = OnceLock::new();
-#[deprecated(note = "TODO: replace with client state")]
-static ON_CONNECTED_CALLBACKS: OnceLock<OnConnectedFn> = OnceLock::new();
 
 thread_local! {
     #[deprecated(note = "use FfiResult")]

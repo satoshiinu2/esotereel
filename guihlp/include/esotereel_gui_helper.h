@@ -98,8 +98,6 @@ struct Timeline;
 
 struct WGpuUtil;
 
-using OnConnectedFn = void(*)();
-
 /// 手動で解放しないといけない
 struct FfiOwnedString {
   uint8_t *ptr;
@@ -309,8 +307,6 @@ using ScriptId = uint64_t;
 extern "C" {
 
 const char *get_last_err_msg();
-
-void set_on_connected_callback(OnConnectedFn callback);
 
 CommandQueue *command_queue_new();
 

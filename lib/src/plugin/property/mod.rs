@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::HashSet,
 };
 
 use anyhow::Context;
@@ -13,7 +13,6 @@ use crate::{
             value::{FieldTypeKind, FieldValue},
         },
     },
-    project::clip::ClipBindingValue,
 };
 
 pub mod parse;
