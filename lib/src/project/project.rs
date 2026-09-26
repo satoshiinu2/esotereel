@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, HashMap};
 use crate::plugin::NamespacedID;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
-use crate::project::clip::ClipData;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::project::transform::ClipTranslates;

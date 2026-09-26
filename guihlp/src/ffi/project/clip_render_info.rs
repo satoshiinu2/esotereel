@@ -209,7 +209,6 @@ fn build_layer_row_recursive<'a>(
                 return;
             };
             let mut clips = Vec::new();
-            let mut opened: Vec<(i64, &'a Timeline)> = Vec::new();
 
             for (&pos, &clip_id) in &layer.clips {
                 let Some(clip) = timeline.get_clip(clip_id) else {
@@ -232,19 +231,6 @@ fn build_layer_row_recursive<'a>(
                 is_folder_open: false,
                 clips,
             });
-
-            for (child_abs_frame, child_timeline) in opened {
-                build_layer_rows(
-                    project,
-                    child_timeline,
-                    &child_timeline.outline.roots,
-                    open_ids,
-                    open_folder_ids,
-                    child_abs_frame,
-                    depth + 1,
-                    result,
-                );
-            }
         }
         OutlineNode::Folder(folder_id) => {
             let Some(folder) = timeline.outline.get_folder(folder_id) else {

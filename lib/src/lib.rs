@@ -1,11 +1,4 @@
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
-
-use dashmap::DashMap;
-
 use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
-use crate::dirs::Directories;
-use crate::plugin::{PluginLoadedResult, PluginLoader};
-use crate::project::Project;
 
 pub mod decode;
 pub mod dirs;

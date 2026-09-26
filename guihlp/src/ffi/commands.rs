@@ -210,7 +210,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_guard = state.lock().expect("mutex poisoned");
 
-        let clip_data = ClipData::Video {
+        let _clip_data = ClipData::Video {
             path: "/home/satoshiinu/Videos/3.mp4".to_string(),
             media_offset: 0.0,
         };

@@ -19,6 +19,9 @@ inline RawStringView zero() {
 }
 
 inline std::string toStdString(const RawStringView &raw) {
+    if (!raw.ptr || raw.len == 0) {
+        return std::string();
+    }
     return std::string(reinterpret_cast<const char *>(raw.ptr), raw.len);
 }
 

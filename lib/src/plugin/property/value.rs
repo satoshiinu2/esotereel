@@ -1,11 +1,9 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use rkyv::{
-    Archive, CheckBytes, bytecheck,
-    with::{AsString, Map},
-};
+use rkyv::{Archive, CheckBytes, bytecheck, with::Map};
 
-use crate::util::{color::RgbaColor, rkyv_with::PathAsString};
+use crate::util::color::RgbaColor;
+use crate::util::rkyv_with::PathAsString;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
