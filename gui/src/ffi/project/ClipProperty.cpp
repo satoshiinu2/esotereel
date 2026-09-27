@@ -1,12 +1,18 @@
 #include "ClipProperty.h"
 
-#include "ffi/ClipProperty.h"
+#include "ffi/ClientState.h"
+#include "ffi/ClipPropertyValue.h"
+#include "ffi/StringView.h"
+#include "ffi/project/CommandQueue.h"
 #include <vector>
 
 namespace esotereel::window {
 
 using RawOwnedString = esotereel_gui_helper::FfiOwnedString;
 using FfiPropertySchema = esotereel_gui_helper::FfiPropertySchema;
+using Clip = esotereel::Clip;
+using ClipPropertyValue = esotereel::ClipPropertyValue;
+using CClipBindingValue = esotereel_gui_helper::CClipBindingValue;
 
 Result<QVector<ClipPropertySchema>> getAllFields(ClientState *state, const Clip &clip) {
     auto raw = esotereel_gui_helper::clip_get_all_fields(*state, clip);

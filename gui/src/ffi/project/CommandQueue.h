@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "ClientState.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/ClientState.h"
 
 namespace esotereel {
 using RawClientStateHandle = esotereel_gui_helper::ClientStateHandle;

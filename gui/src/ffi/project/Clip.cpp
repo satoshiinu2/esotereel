@@ -1,11 +1,12 @@
 #include "Clip.h"
 #include "esotereel_gui_helper.h"
 
-#include "ffi/ClientState.h"
-#include "ffi/CommandQueue.h"
-#include "ffi/StringView.h"
 #include "ffi/Array.h"
+#include "ffi/ClientState.h"
 #include "ffi/Option.h"
+#include "ffi/StringView.h"
+#include "ffi/project/ClipProperty.h"
+#include "ffi/project/CommandQueue.h"
 
 namespace esotereel {
 
@@ -90,9 +91,8 @@ Result<QVector<ClipPropertySchema>> Clip::getAllFields(ClientState *network) con
     auto result = esotereel_gui_helper::clip_get_all_fields(*network, ptr_clip);
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
-    return Result<QVector<ClipPropertySchema>>(result, [](const esotereel_gui_helper::FfiPropertySchema &schema) {
-        return ClipPropertySchema(schema);
-    });
+    return Result<QVector<ClipPropertySchema>>(
+        result, [](const esotereel_gui_helper::FfiPropertySchema &schema) { return ClipPropertySchema(schema); });
 }
 
 Result<QStringList> Clip::getCategories(ClientState *network) const {
@@ -103,9 +103,8 @@ Result<QStringList> Clip::getCategories(ClientState *network) const {
     auto result = esotereel_gui_helper::clip_get_categories(*network, ptr_clip);
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
-    return Result<QStringList>(result, [](const esotereel_gui_helper::FfiOwnedString &owned) {
-        return OwnedString::toQString(owned);
-    });
+    return Result<QStringList>(
+        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::toQString(owned); });
 }
 
 Result<void> Clip::setPropertyValue(CommandQueue &commandQueue, TimelineId timelineId, const QString &key,

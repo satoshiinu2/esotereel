@@ -1,8 +1,8 @@
 #include "CommandQueue.h"
-#include "ClientState.h"
-#include "StringView.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/ClientState.h"
 #include "ffi/Result.h"
+#include "ffi/StringView.h"
 #include "ffi/project/RenderRows.h"
 #include <cstdint>
 
@@ -23,7 +23,8 @@ void CommandQueue::moveClips(const Project &project, TimelineId timelineId, cons
 }
 
 Result<void> CommandQueue::addClipAt(TimelineId timelineId, TimelineTick position, LayerId layerId) noexcept {
-    return Result<void>(esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_queue, ptr_state, timelineId, position, layerId));
+    return Result<void>(
+        esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_queue, ptr_state, timelineId, position, layerId));
 }
 
 void CommandQueue::addLayer(TimelineId timelineId, std::optional<uint64_t> parentLayerId,

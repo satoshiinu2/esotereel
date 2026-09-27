@@ -4,8 +4,8 @@
 #include <QWidget>
 #include <vector>
 
-#include "ffi/ClipProperty.h"
 #include "ffi/Settings.h"
+#include "ffi/project/ClipProperty.h"
 
 namespace esotereel::window {
 

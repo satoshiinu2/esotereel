@@ -6,9 +6,10 @@
 #include <QString>
 #include <QVector>
 
-#include "ClipPropertyValue.h"
-#include "ffi/Settings.h"
-#include "ffi/project/Clip.h"
+#include "Clip.h"
+#include "CommandQueue.h"
+#include "ffi/ClientState.h"
+#include "ffi/ClipPropertyValue.h"
 
 namespace esotereel::window {
 using RawOwnedString = esotereel_gui_helper::FfiOwnedString;

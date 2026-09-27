@@ -23,8 +23,8 @@
 #include <QVariant>
 #include <QWidget>
 
-#include "ffi/CommandQueue.h"
 #include "ffi/project/Clip.h"
+#include "ffi/project/CommandQueue.h"
 #include "ffi/project/Layer.h"
 #include "ffi/project/Project.h"
 #include "ffi/project/RenderRows.h"

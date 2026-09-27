@@ -2,8 +2,8 @@
 #include "ads_globals.h"
 #include "dialog/settings/SettingsDialog.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
+#include "ffi/project/CommandQueue.h"
 #include "widget/clip_property/ClipPropertiesPanel.h"
 #include "widget/preview/GpuPreviewWidget.h"
 #include "widget/timeline/TimelineCanvasWidget.h"
@@ -72,8 +72,8 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     dockManager->addDockWidget(ads::RightDockWidgetArea, clipPropertiesDock, previewDock->dockAreaWidget());
 
     // Connect timeline selection to clip properties panel
-    connect(timelineWidget->canvas, &TimelineCanvasWidget::clipSelectionChanged,
-            this, [this](TimelineId timelineId, const std::vector<ClipId> &clipIds) {
+    connect(timelineWidget->canvas, &TimelineCanvasWidget::clipSelectionChanged, this,
+            [this](TimelineId timelineId, const std::vector<ClipId> &clipIds) {
                 clipPropertiesPanel->setClips(timelineId, clipIds);
             });
 

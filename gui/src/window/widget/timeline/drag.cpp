@@ -1,7 +1,7 @@
 #include "TimelineCanvasWidget.h"
 #include "Utils.h"
-#include "ffi/CommandQueue.h"
 #include "ffi/project/Clip.h"
+#include "ffi/project/CommandQueue.h"
 #include "ffi/project/Timeline.h"
 
 namespace esotereel::window {

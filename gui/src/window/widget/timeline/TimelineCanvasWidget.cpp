@@ -1,8 +1,8 @@
 #include "TimelineCanvasWidget.h"
 #include "ffi/ClientState.h"
-#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
 #include "ffi/project/Clip.h"
+#include "ffi/project/CommandQueue.h"
 #include <tuple>
 
 namespace esotereel::window {

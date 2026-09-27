@@ -2,10 +2,10 @@
 
 #include "esotereel_gui_helper.h"
 #include "ffi/ClipPropertyValue.h"
-#include "ffi/CommandQueue.h"
 #include "ffi/FieldValue.h"
 #include "ffi/Result.h"
 #include "ffi/StringView.h"
+#include "ffi/project/CommandQueue.h"
 #include <QString>
 #include <QStringList>
 #include <QVector>

@@ -1,6 +1,6 @@
 #pragma once
-#include "ffi/CommandQueue.h"
 #include "ffi/Requests.h"
+#include "ffi/project/CommandQueue.h"
 #include <DockManager.h>
 #include <QAction>
 #include <QMainWindow>

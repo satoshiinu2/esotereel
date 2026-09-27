@@ -1,10 +1,10 @@
 #include "ClientState.h"
-#include "CommandQueue.h"
 #include "Requests.h"
 #include "Result.h"
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/WrapperResult.h"
+#include "project/CommandQueue.h"
 #include "project/Project.h"
 
 namespace esotereel {

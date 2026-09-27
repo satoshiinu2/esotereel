@@ -1,5 +1,5 @@
 #include "ClipPropertiesPanel.h"
-#include "ffi/ClipProperty.h"
+#include "ffi/project/ClipProperty.h"
 #include "ffi/project/Project.h"
 #include "ffi/project/Timeline.h"
 #include "window/dialog/property/CollapsibleSection.h"
