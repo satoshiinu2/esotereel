@@ -256,6 +256,12 @@ struct ClipRenderInfo {
   bool is_open;
 };
 
+struct FrameRenderResult {
+  uint32_t width;
+  uint32_t height;
+  FfiArray<uint8_t> data;
+};
+
 struct CameraInfo {
   QVector3D position;
   QVector3D rotation;
@@ -461,16 +467,12 @@ uintptr_t timeline_get_layers_count(const Timeline *ptr);
 
 uint64_t timeline_get_layer_id_at_execution_index(const Timeline *ptr, uintptr_t index);
 
-WrapperErrorCode wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
-                                                 OffscreenTarget *ptr_offscreen,
-                                                 const ClientStateHandle *ptr_state,
-                                                 const CameraInfo *ptr_camera_info,
-                                                 TimelineId timeline_id,
-                                                 int64_t current_frame,
-                                                 uint8_t **out_data,
-                                                 uintptr_t *out_len,
-                                                 uint32_t *out_width,
-                                                 uint32_t *out_height);
+FfiResult<FrameRenderResult> wgpuutil_render_frame_offscreen(WGpuUtil *ptr_wgpu,
+                                                             OffscreenTarget *ptr_offscreen,
+                                                             const ClientStateHandle *ptr_state,
+                                                             const CameraInfo *ptr_camera_info,
+                                                             TimelineId timeline_id,
+                                                             int64_t current_frame);
 
 FfiResultVoid req_test(const ClientStateHandle *ptr_state);
 

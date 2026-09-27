@@ -9,13 +9,21 @@ use esotereel_lib::{
         RenderContext, render_frame_offscreen,
         wgpuutil::{OffscreenTarget, WGpuUtil},
     },
+    util::result::EsotereelError,
 };
 
 use crate::{
-    WrapperErrorCode,
-    ffi::{log_if_panicked, state::ClientStateHandle},
+    ffi::{array::FfiArray, result::FfiResult, state::ClientStateHandle},
     state::ClientState,
 };
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FrameRenderResult {
+    width: u32,
+    height: u32,
+    data: FfiArray<u8>,
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
@@ -25,20 +33,23 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
     ptr_camera_info: *const CameraInfo,
     timeline_id: TimelineId,
     current_frame: i64,
-    out_data: *mut *mut u8,
-    out_len: *mut usize,
-    out_width: *mut u32,
-    out_height: *mut u32,
-) -> WrapperErrorCode {
-    if ptr_wgpu.is_null()
-        || ptr_offscreen.is_null()
-        || ptr_state.is_null()
-        || ptr_camera_info.is_null()
-    {
-        return WrapperErrorCode::null_ptr();
-    }
+) -> FfiResult<FrameRenderResult> {
+    fn inner(
+        ptr_wgpu: *mut WGpuUtil,
+        ptr_offscreen: *mut OffscreenTarget,
+        ptr_state: *const ClientStateHandle,
+        ptr_camera_info: *const CameraInfo,
+        timeline_id: TimelineId,
+        current_frame: i64,
+    ) -> anyhow::Result<FrameRenderResult> {
+        if ptr_wgpu.is_null()
+            || ptr_offscreen.is_null()
+            || ptr_state.is_null()
+            || ptr_camera_info.is_null()
+        {
+            return Err(EsotereelError::NullPointer("pointer is null".to_string()).into());
+        }
 
-    let result = catch_unwind(AssertUnwindSafe(|| -> Result<(), WrapperErrorCode> {
         // Arc::into_raw 由来のポインタから、参照カウントを増やして
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let raw = ptr_state as *const Mutex<ClientState>;
@@ -55,12 +66,12 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
 
         let project = match project_guard.as_ref() {
             Some(arc) => Ok(arc),
-            None => Err(WrapperErrorCode::not_found(Some("project not found"))),
+            None => Err(EsotereelError::ProjectNotFound),
         }?;
 
         let timeline = match project.timeline_ref(timeline_id) {
             Some(tl) => Ok(tl),
-            None => Err(WrapperErrorCode::not_found(Some("timeline not found"))),
+            None => Err(EsotereelError::TimelineNotFound(timeline_id)),
         }?;
 
         let ctx = RenderContext {
@@ -76,29 +87,27 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         };
 
         render_frame_offscreen(wgpuutil, offscreen, &ctx)
-            .map_err(|msg| WrapperErrorCode::error(Some(&msg)))?;
+            .map_err(|msg| EsotereelError::RenderError(msg))?;
 
         let bytes = offscreen
             .readback(&wgpuutil.device)
-            .map_err(|msg| WrapperErrorCode::error(Some(&msg)))?;
+            .map_err(|msg| EsotereelError::RenderError(msg))?;
 
-        let mut boxed = bytes.into_boxed_slice();
-        unsafe {
-            *out_data = boxed.as_mut_ptr();
-            *out_len = boxed.len();
-            *out_width = offscreen.width;
-            *out_height = offscreen.height;
-        }
-        std::mem::forget(boxed);
-        Ok(())
-    }));
-
-    match result {
-        Ok(Ok(())) => WrapperErrorCode::ok(),
-        Ok(Err(e)) => e,
-        Err(panic) => {
-            let msg = log_if_panicked(Err::<(), _>(panic), "wgpuutil_render_frame_offscreen");
-            WrapperErrorCode::error_from_option(msg.as_deref())
-        }
+        Ok(FrameRenderResult {
+            data: FfiArray::from_vec(bytes),
+            width: offscreen.width,
+            height: offscreen.height,
+        })
     }
+
+    FfiResult::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
+        inner(
+            ptr_wgpu,
+            ptr_offscreen,
+            ptr_state,
+            ptr_camera_info,
+            timeline_id,
+            current_frame,
+        )
+    })))
 }

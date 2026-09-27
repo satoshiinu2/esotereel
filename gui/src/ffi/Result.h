@@ -25,7 +25,7 @@ template <typename T> class Result {
         }
 
         FfiArray<Raw> array = raw.value.ok;
-        detail::ArrayFreeGuard<Raw> guard{array};
+        ArrayFreeGuard<Raw> guard{array};
 
         QVector<Converted> out;
         const size_t n = Array::size(array);
