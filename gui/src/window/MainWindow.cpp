@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "WidgetManager.h"
 #include "ads_globals.h"
 #include "dialog/settings/SettingsDialog.h"
 #include "esotereel_gui_helper.h"
@@ -24,8 +25,7 @@
 
 namespace esotereel::window {
 
-MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
-    // init windowState
+void MainWindow::setupWindowState() {
     this->windowState.camera = new CameraInfo{};
     this->windowState.camera->position = QVector3D(0, 0, 0);
     this->windowState.camera->rotation = QVector3D(0, 0, 0);
@@ -33,10 +33,9 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     this->windowState.camera->orthographic_direction = Direction::Front;
     this->windowState.camera->scale_factor = 1.0;
     this->windowState.camera->fov = 60.0;
+}
 
-    resize(1280, 720);
-    setWindowTitle("Esotereel");
-
+void MainWindow::setupDockManager() {
     ads::CDockManager::setConfigFlag(ads::CDockManager::AlwaysShowTabs, false);
     this->dockManager = new ads::CDockManager(this);
     setCentralWidget(this->dockManager);
@@ -47,48 +46,61 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
         "ads--CDockWidgetTab[activeTab=\"true\"] { color: palette(window-text); "
         "font-weight: bold; }" // アクティブ（標準の文字色）
     );
+}
 
-    auto *previewWidget = new GpuPreviewWidget(&windowState);
-    auto *previewDock = new ads::CDockWidget(dockManager, "Preview");
-    previewDock->setWidget(previewWidget);
-    dockManager->addDockWidget(ads::TopDockWidgetArea, previewDock);
+void MainWindow::setupWidgets(WidgetManager &widgetManager) {
+    // Preview widget
+    widgetManager.createWidget<GpuPreviewWidget>("Preview", ads::TopDockWidgetArea, &windowState);
 
-    this->timelineWidget = new TimelineWidget(windowState, 0);
-    auto *timelineDock = new ads::CDockWidget(dockManager, "Timeline");
-    timelineDock->setWidget(timelineWidget);
-    dockManager->addDockWidget(ads::BottomDockWidgetArea, timelineDock);
+    // Timeline widget
+    this->timelineWidget = widgetManager.createWidget<TimelineWidget>("Timeline", ads::BottomDockWidgetArea, windowState, 0);
 
 #if SHOW_DEBUG_STREAMS
-    this->debugStreamsWidget = new DebugStreamsWidget(&windowState);
-    auto *debugStreamsDock = new ads::CDockWidget(dockManager, "DebugStreams");
-    debugStreamsDock->setWidget(debugStreamsWidget);
-    dockManager->addDockWidget(ads::RightDockWidgetArea, debugStreamsDock, previewDock->dockAreaWidget());
+    // Debug Streams widget (hidden by default)
+    this->debugStreamsWidget = widgetManager.createWidgetWithReferenceAndVisible<DebugStreamsWidget>(
+        "DebugStreams", ads::RightDockWidgetArea, widgetManager.getDock("Preview"), false, &windowState);
 #endif
 
-    this->commandQueue = new esotereel::CommandQueue(&network);
-    this->clipPropertiesPanel = new ClipPropertiesPanel(&network, *this->commandQueue);
-    auto *clipPropertiesDock = new ads::CDockWidget(dockManager, "Clip Properties");
-    clipPropertiesDock->setWidget(clipPropertiesPanel);
-    dockManager->addDockWidget(ads::RightDockWidgetArea, clipPropertiesDock, previewDock->dockAreaWidget());
+    // Clip Properties panel (requires CommandQueue)
+    this->commandQueue = new esotereel::CommandQueue(windowState.state);
+    this->clipPropertiesPanel = new ClipPropertiesPanel(windowState.state, *this->commandQueue);
+    widgetManager.createDock(clipPropertiesPanel, "Clip Properties", ads::RightDockWidgetArea, widgetManager.getDock("Preview"));
 
+    // default timeline
+    this->windowState.focusedTimeline = timelineWidget;
+}
+
+void MainWindow::setupConnections() {
     // Connect timeline selection to clip properties panel
     connect(timelineWidget->canvas, &TimelineCanvasWidget::clipSelectionChanged, this,
             [this](TimelineId timelineId, const std::vector<ClipId> &clipIds) {
                 clipPropertiesPanel->setClips(timelineId, clipIds);
             });
+}
 
-    // default timeline
-    this->windowState.focusedTimeline = timelineWidget;
-
+void MainWindow::setupMenus(WidgetManager &widgetManager) {
     QMenu *viewMenu = menuBar()->addMenu(tr("View"));
-    viewMenu->addAction(previewDock->toggleViewAction());
-    viewMenu->addAction(timelineDock->toggleViewAction());
-    viewMenu->addAction(debugStreamsDock->toggleViewAction());
-    viewMenu->addAction(clipPropertiesDock->toggleViewAction());
+    widgetManager.addToMenu(viewMenu, widgetManager.getDock("Preview"));
+    widgetManager.addToMenu(viewMenu, widgetManager.getDock("Timeline"));
+    widgetManager.addToMenu(viewMenu, widgetManager.getDock("DebugStreams"));
+    widgetManager.addToMenu(viewMenu, widgetManager.getDock("Clip Properties"));
 
     QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
     QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettingsDialog);
+}
+
+MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
+    setupWindowState();
+    resize(1280, 720);
+    setWindowTitle("Esotereel");
+
+    setupDockManager();
+
+    WidgetManager widgetManager(dockManager);
+    setupWidgets(widgetManager);
+    setupConnections();
+    setupMenus(widgetManager);
 }
 
 MainWindow::~MainWindow() {

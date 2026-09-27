@@ -25,6 +25,8 @@ class DebugStreamsWidget;
 
 class ClipPropertiesPanel;
 
+class WidgetManager;
+
 namespace dialog {
 class SettingsDialog;
 } // namespace dialog
@@ -50,6 +52,12 @@ class MainWindow : public QMainWindow {
     void openSettingsDialog();
 
   private:
+    void setupWindowState();
+    void setupDockManager();
+    void setupWidgets(WidgetManager &widgetManager);
+    void setupConnections();
+    void setupMenus(WidgetManager &widgetManager);
+
     ads::CDockManager *dockManager;
     TimelineWidget *timelineWidget;
     DebugStreamsWidget *debugStreamsWidget;
