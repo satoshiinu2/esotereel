@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_NO_PRIVATE_MODULE_WARNING ON CACHE BOOL "" FORCE)
 
 # cの設定
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -84,9 +84,6 @@ if (TARGET qtadvanceddocking-qt6)
         target_compile_options(qtadvanceddocking-qt6 PRIVATE "/W0")
     endif()
 endif()
-
-# コンパイラパスの指定
-set(CLANGD_COMPILER "${CMAKE_CXX_COMPILER}")
 
 # Qt6のインクルードパスを、clangdが読めるフォーマットに一括変換
 set(CLANGD_QT_PATHS "")
@@ -185,7 +182,6 @@ set(CLANGD_CONTENT
   OS: ${CLANGD_OS}
 CompileFlags:
   CompilationDatabase: build/cmake
-  Compiler: ${CLANGD_COMPILER}
 ${CLANGD_REMOVE_FLAG}
   Add: [
     \"-Igui\",
@@ -193,7 +189,7 @@ ${CLANGD_REMOVE_FLAG}
     \"-Ibuild/_deps/ads-src/src\",
 ${CLANGD_QT_PATHS}${CLANGD_SYS_INC}
 ${CLANGD_DEFINES}
-    \"-std=c++17\"
+    \"-std=c++23\"
   ]
 Index:
   Background: Build

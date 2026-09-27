@@ -19,3 +19,6 @@ dist/
 
 # rich pc
 .DS_Store
+
+# clangd
+.clangd
