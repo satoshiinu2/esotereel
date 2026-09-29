@@ -63,10 +63,10 @@ GUI Processing:
   - Determine duration (Unknown)
   - Select layer_id
   - Determine kind_id (Plugin ClipKind)
-  - Build properties map
+  - Build properties map (via ClipProperty FFI)
   - Build translates
     ↓
-C++ FFI: Command Request Creation
+C++ FFI: Command Request Creation (via CommandQueue)
     ↓
 Rust FFI: Request::Command { CommandRequest::AddClip } Serialization
     ↓
@@ -148,7 +148,7 @@ GUI Processing:
   - Determine new_layer_id
   - Build Vec<ClipMoveCtx>
     ↓
-C++ FFI: Command Request Creation
+C++ FFI: Command Request Creation (via CommandQueue)
     ↓
 Rust FFI: Request::Command { CommandRequest::ClipsMove } Serialization
     ↓
@@ -375,7 +375,7 @@ GUI Processing:
   - Get insert_index (None for end)
   - Get name
     ↓
-C++ FFI: Command Request Creation
+C++ FFI: Command Request Creation (via CommandQueue)
     ↓
 Rust FFI: Request::Command { CommandRequest::AddLayer/AddFolder } Serialization
     ↓
