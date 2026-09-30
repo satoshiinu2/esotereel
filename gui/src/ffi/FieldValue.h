@@ -42,9 +42,9 @@ class FieldValue {
     static FieldValue fromC(const CFieldValue &value);
 
     // C++ -> Rust方向の変換。
-    // 戻り値のCFieldValueは、String/Enum/Path/Mapの場合Path/Array/Mapの
-    // バッファをこの関数内でnew[]する。使い終わったら必ずFieldValue::freeC()
-    // で解放すること(Rust側のwrap_ffiが作るCFieldValueとは解放方法が異なる)。
+    // Path配列にはnew[]に対応したfree_fnを設定する。Array/Mapも含め、戻り値は
+    // 使い終わったら必ずFieldValue::freeC()で解放すること(Rust側のwrap_ffiが
+    // 作るCFieldValueとは所有権・解放方法が異なる)。
     CFieldValue toC() const;
 
     // toC()で作ったCFieldValueを解放する。Rustが作ったCFieldValue
@@ -52,16 +52,36 @@ class FieldValue {
     static void freeC(CFieldValue &value);
 
     // Static factory methods
-    static FieldValue fromBool(bool value) { return FieldValue(value); }
-    static FieldValue fromInt(std::int64_t value) { return FieldValue(value); }
-    static FieldValue fromFloat(double value) { return FieldValue(value); }
-    static FieldValue fromEnum(const std::string &value) { return FieldValue(EnumValue{value}); }
-    static FieldValue fromString(const std::string &value) { return FieldValue(value); }
-    static FieldValue fromString(const QString &value) { return FieldValue(value.toStdString()); }
-    static FieldValue fromPath(const PathValue &value) { return FieldValue(value); }
-    static FieldValue fromColor(const RgbaColor &value) { return FieldValue(value); }
-    static FieldValue fromArray(const Array &value) { return FieldValue(value); }
-    static FieldValue fromMap(const Map &value) { return FieldValue(value); }
+    static FieldValue fromBool(bool value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromInt(std::int64_t value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromFloat(double value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromEnum(const std::string &value) {
+        return FieldValue(EnumValue{value});
+    }
+    static FieldValue fromString(const std::string &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromString(const QString &value) {
+        return FieldValue(value.toStdString());
+    }
+    static FieldValue fromPath(const PathValue &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromColor(const RgbaColor &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromArray(const Array &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromMap(const Map &value) {
+        return FieldValue(value);
+    }
 
     const Variant &variant() const noexcept {
         return value_;
@@ -72,10 +92,18 @@ class FieldValue {
     }
 
     // Type conversion methods
-    bool asBool() const { return std::get<bool>(value_); }
-    std::int64_t asInt() const { return std::get<std::int64_t>(value_); }
-    double asFloat() const { return std::get<double>(value_); }
-    std::string asEnum() const { return std::get<EnumValue>(value_).value; }
+    bool asBool() const {
+        return std::get<bool>(value_);
+    }
+    std::int64_t asInt() const {
+        return std::get<std::int64_t>(value_);
+    }
+    double asFloat() const {
+        return std::get<double>(value_);
+    }
+    std::string asEnum() const {
+        return std::get<EnumValue>(value_).value;
+    }
     std::string asString() const {
         if (std::holds_alternative<std::string>(value_)) {
             return std::get<std::string>(value_);
@@ -84,11 +112,21 @@ class FieldValue {
         }
         return "";
     }
-    QString asQString() const { return QString::fromStdString(asString()); }
-    PathValue asPath() const { return std::get<PathValue>(value_); }
-    RgbaColor asColor() const { return std::get<RgbaColor>(value_); }
-    Array asArray() const { return std::get<Array>(value_); }
-    Map asMap() const { return std::get<Map>(value_); }
+    QString asQString() const {
+        return QString::fromStdString(asString());
+    }
+    PathValue asPath() const {
+        return std::get<PathValue>(value_);
+    }
+    RgbaColor asColor() const {
+        return std::get<RgbaColor>(value_);
+    }
+    Array asArray() const {
+        return std::get<Array>(value_);
+    }
+    Map asMap() const {
+        return std::get<Map>(value_);
+    }
 
   private:
     Variant value_;

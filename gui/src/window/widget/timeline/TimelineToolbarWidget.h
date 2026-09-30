@@ -21,13 +21,14 @@ class TimelineToolbarWidget : public QWidget {
     Q_OBJECT
 
   public:
-    explicit TimelineToolbarWidget(QWidget *parent = nullptr);
+    explicit TimelineToolbarWidget(TimelineId timelineId, QWidget *parent = nullptr);
 
     // FFI経由でボタン一覧(レイアウト順)を取得し、実際にQToolButtonを並べる。
     // targetは"timeline"等、Rust側のToolbarButtonSpec::targetに対応する識別子。
     void loadButtons(WindowGState &windowState, const QString &target, TimelineCanvasWidget &canvasTarget);
 
   private:
+    TimelineId timelineId;
     QHBoxLayout *layout;
     std::vector<QToolButton *> currentButtons;
 

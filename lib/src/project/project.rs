@@ -8,10 +8,75 @@ use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::project::transform::ClipTranslates;
 use crate::util::result::EsotereelError;
 
+#[derive(Debug)]
+pub struct HistoryStack {
+    undo_stack: Vec<String>, // 簡易実装のためコマンドの文字列表現
+    redo_stack: Vec<String>,
+    max_size: usize,
+}
+
+impl HistoryStack {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            max_size,
+        }
+    }
+
+    pub fn push(&mut self, command: String) {
+        self.redo_stack.clear();
+        
+        if self.undo_stack.len() >= self.max_size {
+            self.undo_stack.remove(0);
+        }
+        
+        self.undo_stack.push(command);
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
+    pub fn undo(&mut self) -> Option<String> {
+        if let Some(command) = self.undo_stack.pop() {
+            self.redo_stack.push(command.clone());
+            Some(command)
+        } else {
+            None
+        }
+    }
+
+    pub fn redo(&mut self) -> Option<String> {
+        if let Some(command) = self.redo_stack.pop() {
+            self.undo_stack.push(command.clone());
+            Some(command)
+        } else {
+            None
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+    }
+}
+
+impl Default for HistoryStack {
+    fn default() -> Self {
+        Self::new(100) // デフォルトで100個のコマンドを保持
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Project {
     timelines: BTreeMap<TimelineId, Timeline>,
     ids: IdGenerator,
+    history: HistoryStack,
 }
 
 impl Project {

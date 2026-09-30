@@ -7,7 +7,7 @@ use esotereel_lib::{
         Clip, Project, TimelineTick,
         clip::ClipBindingValue,
         command::ClipMoveHistoryCtx,
-        ids::{LayerId, TimelineId},
+        ids::{ClipId, LayerId, TimelineId},
         transform::ClipTranslates,
     },
     util::result::EsotereelError,
@@ -79,9 +79,9 @@ pub(crate) fn clip_add_core(
     kind_id: NamespacedID,
     properties: HashMap<NamespacedID, ClipBindingValue>,
     translates: ClipTranslates,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ClipId> {
     // key (u32) をそのまま渡してクリップを追加
-    project.new_clip_in_timeline(
+    let clip_id = project.new_clip_in_timeline(
         timeline_id,
         layer_id,
         position,
@@ -91,5 +91,5 @@ pub(crate) fn clip_add_core(
         translates,
     )?;
 
-    Ok(())
+    Ok(clip_id)
 }

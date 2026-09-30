@@ -1,4 +1,5 @@
 #include "FieldValue.h"
+#include "Array.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/StringView.h"
 
@@ -25,13 +26,14 @@ FieldValue::Variant convertFieldValue(const CFieldValue &value) {
         return OwnedString::intoStdString(value.data.string_value);
 
     case CFieldValueTag::Path: {
-        const auto &path = value.data.path_value;
+        auto path = value.data.path_value;
+        ArrayFreeGuard<RawOwnedString> pathGuard(path);
 
         PathValue result;
         result.value.reserve(path.len);
 
         for (std::size_t i = 0; i < path.len; ++i) {
-            result.value.emplace_back(OwnedString::intoStdString(path.ptr[i]));
+            result.value.emplace_back(OwnedString::toStdString(pathGuard.data()[i]));
         }
 
         return result;
@@ -113,18 +115,22 @@ CFieldValue FieldValue::toC() const {
             } else if constexpr (std::is_same_v<T, PathValue>) {
                 result.tag = CFieldValueTag::Path;
 
-                const auto len = arg.value.size();
-                auto *entries = len > 0 ? new RawOwnedString[len] : nullptr;
+                std::vector<RawOwnedString> entries;
+                entries.reserve(arg.value.size());
 
-                for (std::size_t i = 0; i < len; ++i) {
-                    entries[i] = OwnedString::fromStdString(arg.value[i]);
+                try {
+                    for (const auto &path : arg.value) {
+                        entries.push_back(OwnedString::fromStdString(path));
+                    }
+                } catch (...) {
+                    for (const auto &entry : entries) {
+                        OwnedString::free(entry);
+                    }
+                    throw;
                 }
 
-                result.data.path_value = esotereel_gui_helper::FfiOwnedStringArray{
-                    entries,
-                    len,
-                    len,
-                };
+                result.data.path_value =
+                    esotereel::Array::fromVector<RawOwnedString, OwnedString::free>(std::move(entries));
 
             } else if constexpr (std::is_same_v<T, RgbaColor>) {
                 result.tag = CFieldValueTag::Color;
@@ -194,13 +200,7 @@ void FieldValue::freeC(CFieldValue &value) {
 
     case CFieldValueTag::Path: {
         auto &path = value.data.path_value;
-        for (std::size_t i = 0; i < path.len; ++i) {
-            OwnedString::free(path.ptr[i]);
-        }
-        delete[] path.ptr;
-        path.ptr = nullptr;
-        path.len = 0;
-        path.capacity = 0;
+        esotereel::Array::free(path);
         break;
     }
 

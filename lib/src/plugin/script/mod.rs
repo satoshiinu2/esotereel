@@ -14,6 +14,7 @@ use crate::{
 
 pub mod api;
 pub mod bridge;
+pub use api::PluginRenderContext;
 
 #[derive(Debug, Clone)]
 pub struct CompiledScript {

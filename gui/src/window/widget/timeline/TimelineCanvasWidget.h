@@ -81,7 +81,7 @@ class TimelineCanvasWidget : public QWidget {
     int64_t playhead = 0;
     std::set<uint64_t> selectedClipIds; // clipid
 
-    explicit TimelineCanvasWidget(WindowGState &windowState, size_t timelineIdx, QWidget *parent);
+    explicit TimelineCanvasWidget(WindowGState &windowState, TimelineId timelineId, QWidget *parent);
     ~TimelineCanvasWidget();
 
     double_t frameToX(int64_t frame) const noexcept {

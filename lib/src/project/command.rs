@@ -66,13 +66,14 @@ pub enum CommandRequest {
     },
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandHistory {
     ClipsMove {
         clips: Vec<ClipMoveHistoryCtx>,
     },
     AddClip {
+        clip_id: Option<ClipId>,
         layer_id: LayerId,
         position: TimelineTick,
         duration: TimelineTick,
@@ -83,18 +84,21 @@ pub enum CommandHistory {
         translates: ClipTranslates,
     },
     AddLayer {
+        layer_id: Option<LayerId>,
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
     },
     AddFolder {
+        folder_id: Option<LayerFolderId>,
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
     },
     SetClipPropertyValue {
-        clip_id: u64,
+        clip_id: ClipId,
         key: NamespacedID,
-        value: ClipBindingValue,
+        old_value: ClipBindingValue,
+        new_value: ClipBindingValue,
     },
 }

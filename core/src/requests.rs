@@ -6,6 +6,7 @@ use std::{
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
+    plugin::script::api::PluginActionContext,
     project::{Project, command::CommandRequest},
     requests::ArchivedRequest,
     responces::Response,
@@ -15,7 +16,7 @@ use log::info;
 use rkyv::Deserialize;
 
 use crate::{
-    project::commands::{command_to_history, handle_command_action},
+    project::commands::{command_to_history, execute_command},
     state::ServerState,
 };
 
@@ -95,8 +96,8 @@ pub fn on_request_receive(
 
                 info!("request: {:?}", command);
 
-                let history = command_to_history(project, *timeline_id, command)?;
-                handle_command_action(project, *timeline_id, &history)?;
+                let mut history = command_to_history(project, *timeline_id, command)?;
+                execute_command(project, *timeline_id, &mut history)?;
 
                 info!("history: {:?}", history);
             }
@@ -215,6 +216,48 @@ pub fn on_request_receive(
             state_guard
                 .network
                 .send(client_id, &&Response::DebugProjectStruct(Some(str)));
+        }
+        ArchivedRequest::ToolbarAction {
+            button_id,
+            func_name,
+            run_on: _,
+            timeline_id,
+        } => {
+            let button_id = button_id.as_ref();
+            let func_name = func_name.as_ref();
+
+            let state_guard = state.lock().expect("mutex poisoned");
+
+            // サーバー側のプラグインローダーから該当するプラグインを探す
+            let plugin_id = state_guard
+                .common
+                .plugin_loader
+                .read()
+                .expect("lock poisoned")
+                .find_plugin_for_toolbar_button(button_id)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Plugin not found for toolbar button: {}", button_id)
+                })?;
+
+            // PluginActionContextを作成
+            let project = state_guard.project.clone();
+
+            let context = PluginActionContext::new(project, *timeline_id);
+
+            // サーバー側でスクリプトを実行
+            state_guard
+                .common
+                .plugin_loader
+                .read()
+                .expect("lock poisoned")
+                .call_script_with_context::<()>(&plugin_id, func_name, context)
+                .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
+
+            log::info!(
+                "Server: Executed toolbar action {} from plugin {}",
+                func_name,
+                plugin_id
+            );
         }
     }
     Ok(())

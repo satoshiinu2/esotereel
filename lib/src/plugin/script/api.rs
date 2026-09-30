@@ -10,12 +10,40 @@ use log::info;
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
-    project::ids::{ClipId, ResourceId},
+    project::{Project, ids::{ClipId, ResourceId, TimelineId}},
     render::{
         vertex::Vertex,
         video::{MediaFetchCache, builder::VertexBatch},
     },
 };
+
+/// プラグインスクリプトからundo/redoを呼び出すためのコンテキスト
+#[derive(Clone)]
+pub struct PluginActionContext {
+    project: Arc<std::sync::RwLock<Option<Project>>>,
+    timeline_id: TimelineId,
+}
+
+impl PluginActionContext {
+    pub fn new(project: Arc<std::sync::RwLock<Option<Project>>>, timeline_id: TimelineId) -> Self {
+        Self {
+            project,
+            timeline_id,
+        }
+    }
+
+    pub fn undo(&self) -> bool {
+        // 実装は後で
+        log::info!("PluginActionContext::undo called");
+        false
+    }
+
+    pub fn redo(&self) -> bool {
+        // 実装は後で
+        log::info!("PluginActionContext::redo called");
+        false
+    }
+}
 
 #[derive(Clone)]
 pub struct PluginRenderContext {
@@ -122,6 +150,7 @@ pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
+    engine.register_type_with_name::<PluginActionContext>("ActionContext");
 
     engine.register_fn(
         "get_texture",
@@ -145,6 +174,14 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
 
     engine.register_fn("media_time", |ctx: &mut PluginRenderContext| {
         ctx.media_time()
+    });
+
+    // ActionContextのメソッド
+    engine.register_fn("undo", |ctx: &mut PluginActionContext| {
+        ctx.undo()
+    });
+    engine.register_fn("redo", |ctx: &mut PluginActionContext| {
+        ctx.redo()
     });
 
     engine.register_fn("core_undo", core_undo);

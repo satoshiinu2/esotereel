@@ -11,6 +11,7 @@
 namespace esotereel {
 class ClientState;
 
+using TimelineId = esotereel_gui_helper::TimelineId;
 using FfiToolbarButton = esotereel_gui_helper::FfiToolbarButton;
 
 class ToolbarButton {
@@ -34,7 +35,7 @@ class ToolbarButton {
         OwnedString::free(ffi.action);
     }
 
-    Result<void> handleAction(ClientState *state);
+    Result<void> handleAction(ClientState *state, TimelineId timelineId);
 };
 
 class Toolbar {
