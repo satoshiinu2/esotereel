@@ -16,7 +16,10 @@ use log::info;
 use rkyv::Deserialize;
 
 use crate::{
-    project::commands::{command_to_history, execute_command},
+    project::{
+        commands::command_to_history,
+        history::{HistoryStack, execute_command_with_history, redo_command, undo_command},
+    },
     state::ServerState,
 };
 
@@ -55,6 +58,7 @@ pub fn on_request_receive(
                 // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
+                state.histories.clear();
 
                 let cmd = Response::ProjectMeta { timelines };
                 state.network.send(client_id, &cmd);
@@ -85,8 +89,9 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::Command { commands } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let mut state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = state_guard.project.clone();
+            let mut project_guard = project_arc.write().expect("mutex poisoned");
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -96,14 +101,22 @@ pub fn on_request_receive(
 
                 info!("request: {:?}", command);
 
-                let mut history = command_to_history(project, *timeline_id, command)?;
-                execute_command(project, *timeline_id, &mut history)?;
+                let command_history = command_to_history(project, *timeline_id, command)?;
+                let history = state_guard
+                    .histories
+                    .entry(*timeline_id)
+                    .or_insert_with(|| HistoryStack::new(100));
+                execute_command_with_history(
+                    project,
+                    *timeline_id,
+                    command_history.clone(),
+                    history,
+                )?;
 
-                info!("history: {:?}", history);
+                info!("history: {:?}", command_history);
             }
 
-            drop(project);
-
+            drop(project_guard);
             state_guard.network.notify_dirty();
         }
         ArchivedRequest::InitStream { path } => {
@@ -226,7 +239,32 @@ pub fn on_request_receive(
             let button_id = button_id.as_ref();
             let func_name = func_name.as_ref();
 
-            let state_guard = state.lock().expect("mutex poisoned");
+            let mut state_guard = state.lock().expect("mutex poisoned");
+
+            // 標準のundo/redoはRhaiスクリプト経由ではなく、サーバーのコマンド履歴を直接操作する。
+            // スクリプト関数はActionContext引数を受け取らないため、従来の呼び出しではarityエラーになっていた。
+            if func_name == "toolbar_undo" || func_name == "toolbar_redo" {
+                let project_arc = state_guard.project.clone();
+                let mut project_guard = project_arc.write().expect("mutex poisoned");
+                let project = project_guard
+                    .as_mut()
+                    .ok_or(EsotereelError::ProjectNotFound)?;
+                let history = state_guard
+                    .histories
+                    .entry(*timeline_id)
+                    .or_insert_with(|| HistoryStack::new(100));
+
+                if func_name == "toolbar_undo" {
+                    undo_command(project, *timeline_id, history)?;
+                } else {
+                    redo_command(project, *timeline_id, history)?;
+                }
+
+                drop(project_guard);
+                state_guard.network.notify_dirty();
+                log::info!("Server: Executed {}", func_name);
+                return Ok(());
+            }
 
             // サーバー側のプラグインローダーから該当するプラグインを探す
             let plugin_id = state_guard

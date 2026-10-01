@@ -4,11 +4,17 @@ use esotereel_lib::project::ids::TimelineId;
 
 use crate::project::commands::{execute_command, execute_command_undo};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct HistoryStack {
     undo_stack: Vec<CommandHistory>,
     redo_stack: Vec<CommandHistory>,
     max_size: usize,
+}
+
+impl Default for HistoryStack {
+    fn default() -> Self {
+        Self::new(100)
+    }
 }
 
 impl HistoryStack {
@@ -92,9 +98,11 @@ pub fn undo_command(
     timeline_id: TimelineId,
     history: &mut HistoryStack,
 ) -> anyhow::Result<()> {
-    if let Some(command) = history.undo() {
+    if let Some(command) = history.undo_stack.last().cloned() {
         // undo用の逆コマンドを実行
-        execute_command_undo(project, timeline_id, command)?;
+        execute_command_undo(project, timeline_id, command.clone())?;
+        history.undo_stack.pop();
+        history.redo_stack.push(command);
     }
     Ok(())
 }
@@ -104,10 +112,11 @@ pub fn redo_command(
     timeline_id: TimelineId,
     history: &mut HistoryStack,
 ) -> anyhow::Result<()> {
-    if let Some(command) = history.redo() {
+    if let Some(mut command) = history.redo_stack.last().cloned() {
         // redo用のコマンドを実行
-        let mut command = command;
         execute_command(project, timeline_id, &mut command)?;
+        history.redo_stack.pop();
+        history.undo_stack.push(command);
     }
     Ok(())
 }

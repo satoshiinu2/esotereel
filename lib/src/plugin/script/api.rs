@@ -10,7 +10,10 @@ use log::info;
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
-    project::{Project, ids::{ClipId, ResourceId, TimelineId}},
+    project::{
+        Project,
+        ids::{ClipId, ResourceId, TimelineId},
+    },
     render::{
         vertex::Vertex,
         video::{MediaFetchCache, builder::VertexBatch},
@@ -177,23 +180,6 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
     });
 
     // ActionContextのメソッド
-    engine.register_fn("undo", |ctx: &mut PluginActionContext| {
-        ctx.undo()
-    });
-    engine.register_fn("redo", |ctx: &mut PluginActionContext| {
-        ctx.redo()
-    });
-
-    engine.register_fn("core_undo", core_undo);
-    engine.register_fn("core_redo", core_redo);
-}
-
-#[deprecated]
-fn core_undo() {
-    info!("undo placeholder called");
-}
-
-#[deprecated]
-fn core_redo() {
-    info!("redo placeholder called");
+    engine.register_fn("undo", |ctx: &mut PluginActionContext| ctx.undo());
+    engine.register_fn("redo", |ctx: &mut PluginActionContext| ctx.redo());
 }

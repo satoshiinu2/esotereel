@@ -1,9 +1,11 @@
-use std::sync::{
-    Arc, Mutex, RwLock,
-    atomic::{AtomicU32, Ordering},
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicU32, Ordering},
+    },
 };
 
-use anyhow::Context;
 use dashmap::DashMap;
 use esotereel_lib::{
     HostRole,
@@ -11,11 +13,13 @@ use esotereel_lib::{
     dirs::Directories,
     plugin::{PluginLoader, property::PropertySchema, toolbar::ToolbarButtonSpec},
     project::ids::ResourceId,
+    project::ids::TimelineId,
     state::{CommonState, HostBootstrap},
 };
 use tokio::sync::Notify;
 
 use crate::network::ServerNetworkHandler;
+use crate::project::history::HistoryStack;
 
 pub struct ServerState {
     pub common: CommonState,
@@ -23,6 +27,8 @@ pub struct ServerState {
     pub network: Arc<ServerNetworkHandler>,
 
     pub streams: DashMap<ResourceId, VideoStreamer>,
+
+    pub histories: HashMap<TimelineId, HistoryStack>,
 
     pub next_resource_id: AtomicU32,
 
@@ -40,6 +46,7 @@ impl ServerState {
             common: CommonState::new(dirs_def, shared_plugin_loader),
             network: Arc::new(ServerNetworkHandler::new(Arc::clone(&dirty_signal))),
             streams: DashMap::new(),
+            histories: HashMap::new(),
             next_resource_id: AtomicU32::new(0),
             dirty_signal,
         }
