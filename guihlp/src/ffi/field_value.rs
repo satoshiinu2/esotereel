@@ -1,27 +1,6 @@
 use esotereel_lib::{plugin::property::value::FieldValue, util::color::RgbaColor};
 
-use crate::ffi::{array::FfiArray, stringview::FfiOwnedString};
-
-unsafe extern "C" fn free_owned_string_array(array: *mut FfiArray<FfiOwnedString>) {
-    if array.is_null() {
-        return;
-    }
-
-    let array = unsafe { &mut *array };
-    if !array.ptr.is_null() {
-        for value in unsafe { std::slice::from_raw_parts(array.ptr, array.len) } {
-            unsafe { value.free() };
-        }
-
-        unsafe {
-            drop(Vec::from_raw_parts(array.ptr, array.len, array.cap));
-        }
-    }
-
-    array.ptr = std::ptr::null_mut();
-    array.len = 0;
-    array.cap = 0;
-}
+use crate::ffi::stringview::{FfiOwnedString, FfiOwnedStringArray};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +33,7 @@ pub union CFieldValueData {
     pub enum_value: FfiOwnedString,
     pub string_value: FfiOwnedString,
 
-    pub path_value: FfiArray<FfiOwnedString>,
+    pub path_value: FfiOwnedStringArray,
 
     pub color_value: RgbaColor,
 
@@ -161,10 +140,7 @@ impl CFieldValue {
                 CFieldValue {
                     tag: CFieldValueTag::Path,
                     data: CFieldValueData {
-                        path_value: FfiArray::from_vec_with_free_fn(
-                            values,
-                            free_owned_string_array,
-                        ),
+                        path_value: FfiOwnedStringArray::from_vec(values),
                     },
                 }
             }
@@ -344,8 +320,7 @@ impl CFieldValue {
                 }
 
                 CFieldValueTag::Path => {
-                    let mut array = self.data.path_value;
-                    array.free();
+                    self.data.path_value.free();
                 }
 
                 CFieldValueTag::Array => {

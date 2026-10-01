@@ -7,7 +7,6 @@ use crate::project::{
     command::CommandRequest,
     ids::{ResourceId, TimelineId},
 };
-use crate::plugin::ToolbarRunOn;
 
 #[derive(Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
@@ -30,10 +29,4 @@ pub enum Request {
         range: Range<TimelineTick>,
     },
     DebugFetchProjectStruct,
-    ToolbarAction {
-        button_id: String,
-        func_name: String,
-        run_on: ToolbarRunOn,
-        timeline_id: TimelineId,
-    },
 }

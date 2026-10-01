@@ -15,7 +15,7 @@ use crate::{
     plugin::{
         clip::{ClipKindStore, PendingProperty},
         property::PropertySchema,
-        script::{CompiledScript, api::PluginActionContext},
+        script::CompiledScript,
         toolbar::ToolbarButtonSpec,
     },
     project::clip::ClipKind,
@@ -27,7 +27,6 @@ pub mod registry;
 pub mod script;
 pub mod settings;
 pub mod toolbar;
-pub use toolbar::ToolbarRunOn;
 
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
@@ -533,13 +532,6 @@ impl PluginLoader {
         Ok(manifest)
     }
 
-    pub fn find_plugin_for_toolbar_button(&self, button_id: &str) -> Option<String> {
-        self.toolbars_index
-            .iter()
-            .find(|(_, button)| button.id == button_id)
-            .map(|(plugin_id, _)| plugin_id.clone())
-    }
-
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // 対象プラグインのディレクトリを取得
         let dir = self
@@ -609,19 +601,5 @@ impl PluginLoader {
             .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
 
         script.call(fn_name, args)
-    }
-
-    pub fn call_script_with_context<T: Clone + Send + Sync + 'static>(
-        &self,
-        plugin_id: &str,
-        fn_name: &str,
-        context: PluginActionContext,
-    ) -> anyhow::Result<T> {
-        let script = self
-            .scripts_index
-            .get(plugin_id)
-            .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
-
-        script.call(fn_name, (context,))
     }
 }

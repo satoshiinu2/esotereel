@@ -1,11 +1,6 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::{
-    plugin::{ToolbarRunOn, toolbar::ToolbarButtonSpec},
-    project::ids::TimelineId,
-    requests::Request,
-    util::result::EsotereelError,
-};
+use esotereel_lib::{plugin::toolbar::ToolbarButtonSpec, util::result::EsotereelError};
 
 use crate::ffi::{
     array::FfiArray,
@@ -81,12 +76,12 @@ pub unsafe extern "C" fn toolbar_get_buttons(
 pub unsafe extern "C" fn toolbar_set_layout(
     ptr_state: *const ClientStateHandle,
     target: FfiStringView,
-    ids: FfiArray<FfiStringView>,
+    ids_toml_array: FfiStringView,
 ) -> FfiResultVoid {
     fn inner(
         ptr_state: *const ClientStateHandle,
         target: FfiStringView,
-        ids: FfiArray<FfiStringView>,
+        ids_toml_array: FfiStringView,
     ) -> anyhow::Result<()> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
@@ -94,12 +89,13 @@ pub unsafe extern "C" fn toolbar_set_layout(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
         let target_str = target.as_str()?;
+        let ids_str = ids_toml_array.as_str()?;
 
-        let ids = ids
-            .as_slice()
-            .into_iter()
-            .map(|s| s.as_string_lossy().to_string())
-            .collect();
+        let parsed_value: toml::Value =
+            toml::from_str(ids_str).map_err(|e| anyhow::anyhow!("Failed to parse ids: {}", e))?;
+        let ids: Vec<String> = parsed_value
+            .try_into()
+            .map_err(|e| anyhow::anyhow!("ids must be an array of strings: {}", e))?;
 
         let mut state = state.lock().expect("mutex poisoned");
 
@@ -108,7 +104,7 @@ pub unsafe extern "C" fn toolbar_set_layout(
         Ok(())
     }
 
-    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, target, ids))) {
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, target, ids_toml_array))) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }
@@ -117,14 +113,9 @@ pub unsafe extern "C" fn toolbar_set_layout(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn toolbar_handle_action(
     ptr_state: *const ClientStateHandle,
-    timeline_id: TimelineId,
     button_id: FfiStringView,
 ) -> FfiResultVoid {
-    fn inner(
-        ptr_state: *const ClientStateHandle,
-        timeline_id: TimelineId,
-        button_id: FfiStringView,
-    ) -> anyhow::Result<()> {
+    fn inner(ptr_state: *const ClientStateHandle, button_id: FfiStringView) -> anyhow::Result<()> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
@@ -141,32 +132,18 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .get_button_by(button_id)
             .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
 
-        match button.action.run_on {
-            ToolbarRunOn::Client => {
-                state
-                    .common
-                    .plugin_loader
-                    .read()
-                    .expect("lock poisoned")
-                    .call_script::<()>(plugin_id, &button.action.func_name, ())
-                    .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-            }
-            ToolbarRunOn::Server => {
-                state.network.send(&Request::ToolbarAction {
-                    button_id: button_id.to_string(),
-                    func_name: button.action.func_name.clone(),
-                    run_on: button.action.run_on.clone(),
-                    timeline_id,
-                });
-            }
-        }
+        state
+            .common
+            .plugin_loader
+            .read()
+            .expect("lock poisoned")
+            .call_script::<()>(plugin_id, &button.action.func_name, ())
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         Ok(())
     }
 
-    match catch_unwind(AssertUnwindSafe(|| {
-        inner(ptr_state, timeline_id, button_id)
-    })) {
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, button_id))) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }

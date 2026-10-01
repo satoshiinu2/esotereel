@@ -17,19 +17,12 @@ impl<T> From<Vec<T>> for FfiArray<T> {
 
 impl<T> FfiArray<T> {
     pub fn from_vec(vec: Vec<T>) -> Self {
-        Self::from_vec_with_free_fn(vec, Self::free_vec)
-    }
-
-    pub fn from_vec_with_free_fn(
-        vec: Vec<T>,
-        free_fn: unsafe extern "C" fn(*mut FfiArray<T>),
-    ) -> Self {
         let mut v = std::mem::ManuallyDrop::new(vec);
         Self {
             ptr: v.as_mut_ptr(),
             len: v.len(),
             cap: v.capacity(),
-            free_fn,
+            free_fn: Self::free,
         }
     }
 
@@ -42,37 +35,11 @@ impl<T> FfiArray<T> {
             ptr: v.as_mut_ptr(),
             len: v.len(),
             cap: v.capacity(),
-            free_fn: Self::free_vec,
+            free_fn: Self::free,
         }
     }
 
-    pub fn to_vec(&self) -> Vec<T>
-    where
-        T: Clone,
-    {
-        if self.ptr.is_null() {
-            return Vec::new();
-        }
-        let slice = unsafe { std::slice::from_raw_parts(self.ptr, self.len) };
-        slice.to_vec()
-    }
-
-    pub fn as_slice(&self) -> &[T] {
-        if self.ptr.is_null() {
-            return &[];
-        }
-        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
-    }
-
-    /// Release using the allocator-specific callback carried by this array.
-    pub unsafe fn free(&mut self) {
-        let free_fn = self.free_fn;
-        unsafe {
-            free_fn(self);
-        }
-    }
-
-    unsafe extern "C" fn free_vec(s: *mut FfiArray<T>) {
+    unsafe extern "C" fn free(s: *mut FfiArray<T>) {
         if s.is_null() {
             return;
         }

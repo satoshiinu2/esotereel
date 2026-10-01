@@ -152,3 +152,52 @@ impl From<&str> for FfiStringView {
         FfiStringView::from_str(value)
     }
 }
+
+#[deprecated(note = "Use FfiArray<OwnedString> instead")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct FfiOwnedStringArray {
+    pub ptr: *mut FfiOwnedString,
+    pub len: usize,
+    pub capacity: usize,
+}
+
+impl FfiOwnedStringArray {
+    pub fn from_vec(mut values: Vec<FfiOwnedString>) -> Self {
+        let result = Self {
+            ptr: values.as_mut_ptr(),
+            len: values.len(),
+            capacity: values.capacity(),
+        };
+
+        std::mem::forget(values);
+
+        result
+    }
+
+    pub fn zero() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            len: 0,
+            capacity: 0,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_null()
+    }
+
+    pub unsafe fn free(self) {
+        if self.ptr.is_null() {
+            return;
+        }
+
+        let values = unsafe { Vec::from_raw_parts(self.ptr, self.len, self.capacity) };
+
+        for value in values {
+            unsafe {
+                value.free();
+            }
+        }
+    }
+}

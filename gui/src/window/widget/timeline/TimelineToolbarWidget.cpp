@@ -8,8 +8,7 @@
 
 namespace esotereel::window {
 
-TimelineToolbarWidget::TimelineToolbarWidget(TimelineId timelineId, QWidget *parent)
-    : timelineId(timelineId), QWidget(parent) {
+TimelineToolbarWidget::TimelineToolbarWidget(QWidget *parent) : QWidget(parent) {
     layout = new QHBoxLayout(this);
     layout->setContentsMargins(4, 2, 4, 2);
     layout->setSpacing(2);
@@ -31,7 +30,7 @@ TimelineToolbarWidget::builtinCommands() {
 void TimelineToolbarWidget::dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget,
                                      const ToolbarButton &button) {
     auto mutableButton = button;
-    mutableButton.handleAction(windowState.state, timelineId).unwrap();
+    mutableButton.handleAction(windowState.state).unwrap();
 }
 
 void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString &target,

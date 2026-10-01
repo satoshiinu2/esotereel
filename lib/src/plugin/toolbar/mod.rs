@@ -1,7 +1,6 @@
 use std::{collections::HashMap, path::Path};
 
 use anyhow::Context;
-use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::plugin::toolbar::parse::ToolbarButtonRaw;
 
@@ -13,30 +12,6 @@ mod parse;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ToolbarAction {
     pub func_name: String,
-    #[serde(default = "default_run_on")]
-    pub run_on: ToolbarRunOn,
-}
-
-#[derive(
-    Debug,
-    Clone,
-    serde::Deserialize,
-    serde::Serialize,
-    PartialEq,
-    Eq,
-    Archive,
-    Deserialize,
-    Serialize,
-)]
-#[archive_attr(derive(CheckBytes))]
-#[serde(rename_all = "lowercase")]
-pub enum ToolbarRunOn {
-    Client,
-    Server,
-}
-
-fn default_run_on() -> ToolbarRunOn {
-    ToolbarRunOn::Client
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

@@ -123,13 +123,10 @@ struct FfiStringView {
   uintptr_t len;
 };
 
-template<typename T>
-struct FfiArray {
-  T *ptr;
+struct FfiOwnedStringArray {
+  FfiOwnedString *ptr;
   uintptr_t len;
-  uintptr_t cap;
-  /// free_fnを呼んでcから解放
-  void (*free_fn)(FfiArray<T>*);
+  uintptr_t capacity;
 };
 
 struct RgbaColor {
@@ -162,7 +159,7 @@ union CFieldValueData {
   double float_value;
   FfiOwnedString enum_value;
   FfiOwnedString string_value;
-  FfiArray<FfiOwnedString> path_value;
+  FfiOwnedStringArray path_value;
   RgbaColor color_value;
   CFieldValueArray array_value;
   CFieldValueMap map_value;
@@ -226,6 +223,15 @@ struct FfiPropertySchema {
   FfiOwnedString label;
   SettingsFieldType kind_type;
   CFieldValue default_value;
+};
+
+template<typename T>
+struct FfiArray {
+  T *ptr;
+  uintptr_t len;
+  uintptr_t cap;
+  /// free_fnを呼んでcから解放
+  void (*free_fn)(FfiArray<T>*);
 };
 
 using FfiPropertySchemaArrayResult = FfiResult<FfiArray<FfiPropertySchema>>;
@@ -521,11 +527,9 @@ FfiToolbarButtonArrayResult toolbar_get_buttons(const ClientStateHandle *ptr_sta
 
 FfiResultVoid toolbar_set_layout(const ClientStateHandle *ptr_state,
                                  FfiStringView target,
-                                 FfiArray<FfiStringView> ids);
+                                 FfiStringView ids_toml_array);
 
-FfiResultVoid toolbar_handle_action(const ClientStateHandle *ptr_state,
-                                    TimelineId timeline_id,
-                                    FfiStringView button_id);
+FfiResultVoid toolbar_handle_action(const ClientStateHandle *ptr_state, FfiStringView button_id);
 
 WGpuUtilNewResult wgpuutil_new(uint32_t width, uint32_t height);
 
