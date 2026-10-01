@@ -6,7 +6,7 @@ use std::{
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
-    plugin::script::api::PluginActionContext,
+    plugin::{NamespacedID, script::api::PluginActionContext},
     project::{Project, command::CommandRequest},
     requests::ArchivedRequest,
     responces::Response,
@@ -58,7 +58,7 @@ pub fn on_request_receive(
                 // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
-                state.histories.clear();
+                state.histories.lock().expect("mutex poisoned").clear();
 
                 let cmd = Response::ProjectMeta { timelines };
                 state.network.send(client_id, &cmd);
@@ -102,8 +102,8 @@ pub fn on_request_receive(
                 info!("request: {:?}", command);
 
                 let command_history = command_to_history(project, *timeline_id, command)?;
-                let history = state_guard
-                    .histories
+                let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                let history = histories
                     .entry(*timeline_id)
                     .or_insert_with(|| HistoryStack::new(100));
                 execute_command_with_history(
@@ -236,59 +236,25 @@ pub fn on_request_receive(
             run_on: _,
             timeline_id,
         } => {
-            let button_id = button_id.as_ref();
+            let button_id = NamespacedID::parse(button_id.as_ref())?;
             let func_name = func_name.as_ref();
 
-            let mut state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state.lock().expect("mutex poisoned");
 
-            // 標準のundo/redoはRhaiスクリプト経由ではなく、サーバーのコマンド履歴を直接操作する。
-            // スクリプト関数はActionContext引数を受け取らないため、従来の呼び出しではarityエラーになっていた。
-            if func_name == "toolbar_undo" || func_name == "toolbar_redo" {
-                let project_arc = state_guard.project.clone();
-                let mut project_guard = project_arc.write().expect("mutex poisoned");
-                let project = project_guard
-                    .as_mut()
-                    .ok_or(EsotereelError::ProjectNotFound)?;
-                let history = state_guard
-                    .histories
-                    .entry(*timeline_id)
-                    .or_insert_with(|| HistoryStack::new(100));
-
-                if func_name == "toolbar_undo" {
-                    undo_command(project, *timeline_id, history)?;
-                } else {
-                    redo_command(project, *timeline_id, history)?;
-                }
-
-                drop(project_guard);
-                state_guard.network.notify_dirty();
-                log::info!("Server: Executed {}", func_name);
-                return Ok(());
-            }
-
-            // サーバー側のプラグインローダーから該当するプラグインを探す
-            let plugin_id = state_guard
-                .common
-                .plugin_loader
-                .read()
-                .expect("lock poisoned")
-                .find_plugin_for_toolbar_button(button_id)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Plugin not found for toolbar button: {}", button_id)
-                })?;
+            let plugin_id = button_id.plugin_id();
 
             // PluginActionContextを作成
             let project = state_guard.project.clone();
 
             let context = PluginActionContext::new(project, *timeline_id);
 
-            // サーバー側でスクリプトを実行
+            // スクリプト実行
             state_guard
                 .common
                 .plugin_loader
                 .read()
                 .expect("lock poisoned")
-                .call_script_with_context::<()>(&plugin_id, func_name, context)
+                .call_script::<()>(&plugin_id, func_name, (context,))
                 .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
 
             log::info!(
@@ -296,6 +262,36 @@ pub fn on_request_receive(
                 func_name,
                 plugin_id
             );
+        }
+        ArchivedRequest::Undo { timeline_id } => {
+            let mut state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = state_guard.project.clone();
+            let mut project_guard = project_arc.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
+
+            let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+            let history = histories
+                .entry(*timeline_id)
+                .or_insert_with(|| HistoryStack::new(100));
+
+            undo_command(project, *timeline_id, history)?;
+        }
+        ArchivedRequest::Redo { timeline_id } => {
+            let mut state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = state_guard.project.clone();
+            let mut project_guard = project_arc.write().expect("mutex poisoned");
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
+
+            let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+            let history = histories
+                .entry(*timeline_id)
+                .or_insert_with(|| HistoryStack::new(100));
+
+            redo_command(project, *timeline_id, history)?;
         }
     }
     Ok(())

@@ -296,6 +296,7 @@ struct FfiToolbarButton {
   /// アイコン未指定なら空文字列。
   FfiOwnedString icon;
   FfiOwnedString action;
+  FfiOwnedString run_on;
 };
 
 /// 個数取得(toolbar_get_buttons_count)+バッファ書き込み(toolbar_get_buttons)の2関数ペアを、
@@ -529,7 +530,9 @@ FfiResultVoid toolbar_set_layout(const ClientStateHandle *ptr_state,
                                  FfiStringView target,
                                  FfiStringView ids_toml_array);
 
-FfiResultVoid toolbar_handle_action(const ClientStateHandle *ptr_state, FfiStringView button_id);
+FfiResultVoid toolbar_handle_action(const ClientStateHandle *ptr_state,
+                                    FfiStringView button_id,
+                                    TimelineId timeline_id);
 
 WGpuUtilNewResult wgpuutil_new(uint32_t width, uint32_t height);
 

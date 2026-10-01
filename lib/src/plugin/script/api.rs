@@ -5,7 +5,6 @@ use std::{
 
 use dashmap::DashMap;
 use glam::Mat4;
-use log::info;
 
 use crate::{
     StreamState,
@@ -36,15 +35,11 @@ impl PluginActionContext {
     }
 
     pub fn undo(&self) -> bool {
-        // 実装は後で
-        log::info!("PluginActionContext::undo called");
-        false
+        todo!("Implement undo functionality for the specified timeline_id");
     }
 
     pub fn redo(&self) -> bool {
-        // 実装は後で
-        log::info!("PluginActionContext::redo called");
-        false
+        todo!("Implement undo functionality for the specified timeline_id");
     }
 }
 

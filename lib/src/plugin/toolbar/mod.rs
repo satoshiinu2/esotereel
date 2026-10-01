@@ -12,6 +12,21 @@ mod parse;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ToolbarAction {
     pub func_name: String,
+    #[serde(default)]
+    pub run_on: RunOn,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RunOn {
+    Client,
+    Server,
+}
+
+impl Default for RunOn {
+    fn default() -> Self {
+        RunOn::Client
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

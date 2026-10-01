@@ -1,6 +1,12 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::{plugin::toolbar::ToolbarButtonSpec, util::result::EsotereelError};
+use esotereel_lib::{
+    plugin::script::api::PluginActionContext,
+    plugin::toolbar::{ToolbarButtonSpec, RunOn},
+    project::ids::TimelineId,
+    requests::Request,
+    util::result::EsotereelError,
+};
 
 use crate::ffi::{
     array::FfiArray,
@@ -18,16 +24,22 @@ pub struct FfiToolbarButton {
     /// アイコン未指定なら空文字列。
     pub icon: FfiOwnedString,
     pub action: FfiOwnedString,
+    pub run_on: FfiOwnedString,
 }
 
 impl FfiToolbarButton {
     fn from_spec(spec: &ToolbarButtonSpec) -> Self {
+        let run_on_str = match spec.action.run_on {
+            RunOn::Client => "client",
+            RunOn::Server => "server",
+        };
         Self {
             id: FfiOwnedString::from_string(spec.id.clone()),
             label: FfiOwnedString::from_string(spec.label.clone()),
             tooltip: FfiOwnedString::from_string(spec.tooltip.clone()),
             icon: FfiOwnedString::from_string(spec.icon.clone().unwrap_or_default()),
             action: FfiOwnedString::from_string(spec.action.func_name.clone()),
+            run_on: FfiOwnedString::from_string(run_on_str.to_string()),
         }
     }
 }
@@ -114,8 +126,13 @@ pub unsafe extern "C" fn toolbar_set_layout(
 pub unsafe extern "C" fn toolbar_handle_action(
     ptr_state: *const ClientStateHandle,
     button_id: FfiStringView,
+    timeline_id: TimelineId,
 ) -> FfiResultVoid {
-    fn inner(ptr_state: *const ClientStateHandle, button_id: FfiStringView) -> anyhow::Result<()> {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        button_id: FfiStringView,
+        timeline_id: TimelineId,
+    ) -> anyhow::Result<()> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
@@ -132,18 +149,37 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .get_button_by(button_id)
             .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
 
+        // run_onをチェック
+        if matches!(button.action.run_on, RunOn::Server) {
+            // サーバーで実行するリクエストを送信
+            let request = Request::ToolbarAction {
+                button_id: button_id.to_string(),
+                func_name: button.action.func_name.clone(),
+                run_on: Some(timeline_id),
+                timeline_id,
+            };
+            state.network.send(&request);
+            return Ok(());
+        }
+
+        // clientまたは指定なしの場合はローカルで実行
+        // PluginActionContextを作成
+        let project = state.project.clone();
+        let context = PluginActionContext::new(project, timeline_id);
+
+        // スクリプト実行
         state
             .common
             .plugin_loader
             .read()
             .expect("lock poisoned")
-            .call_script::<()>(plugin_id, &button.action.func_name, ())
+            .call_script::<()>(plugin_id, &button.action.func_name, (context,))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         Ok(())
     }
 
-    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, button_id))) {
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, button_id, timeline_id))) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }

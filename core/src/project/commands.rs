@@ -309,10 +309,7 @@ mod tests {
 
     use super::*;
     use crate::project::history::{HistoryStack, redo_command, undo_command};
-    use esotereel_lib::{
-        plugin::NamespacedID,
-        project::{clip::ClipBindingValue, transform::ClipTranslates},
-    };
+    use esotereel_lib::{plugin::NamespacedID, project::transform::ClipTranslates};
 
     #[test]
     fn move_history_keeps_duration_on_undo_redo() {
@@ -513,7 +510,7 @@ mod tests {
 
         let mut add_history = add_command.clone();
         execute_command(&mut project, timeline_id, &mut add_history).unwrap();
-        let clip_id = match add_history {
+        let clip_id = match &add_history {
             CommandHistory::AddClip { clip_id, .. } => clip_id.expect("clip id must exist"),
             _ => panic!("unexpected command"),
         };
@@ -534,7 +531,7 @@ mod tests {
         execute_command(&mut project, timeline_id, &mut move_history).unwrap();
 
         let mut history = HistoryStack::new(10);
-        history.push(add_command.clone());
+        history.push(add_history);
         history.push(move_command.clone());
 
         undo_command(&mut project, timeline_id, &mut history).unwrap();

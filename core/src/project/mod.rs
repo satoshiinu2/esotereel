@@ -84,18 +84,12 @@ pub(crate) fn clip_add_core(
     translates: ClipTranslates,
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
-    let timeline = project
-        .timeline_mut(timeline_id)
-        .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
-
-    let clip_id = preferred_clip_id.unwrap_or_else(|| {
-        let id = project.id_generator_mut().next_clip_id();
-        id
-    });
-
     if let Some(existing) = preferred_clip_id {
         project.id_generator_mut().observe_clip(existing);
-        let clip = crate::project::clip::Clip::new(
+        let timeline = project
+            .timeline_mut(timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+        let clip = Clip::new(
             existing, position, duration, kind_id, properties, translates,
         );
         timeline.place_clip(layer_id, clip)?;

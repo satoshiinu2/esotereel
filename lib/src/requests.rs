@@ -29,4 +29,16 @@ pub enum Request {
         range: Range<TimelineTick>,
     },
     DebugFetchProjectStruct,
+    ToolbarAction {
+        button_id: String,
+        func_name: String,
+        run_on: Option<TimelineId>,
+        timeline_id: TimelineId,
+    },
+    Undo {
+        timeline_id: TimelineId,
+    },
+    Redo {
+        timeline_id: TimelineId,
+    },
 }

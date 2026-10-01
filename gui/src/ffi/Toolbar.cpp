@@ -65,11 +65,11 @@ Result<void> Toolbar::setLayout(ClientState *state, const QString &target, const
     return Result<void>::ok();
 }
 
-Result<void> ToolbarButton::handleAction(ClientState *state) {
+Result<void> ToolbarButton::handleAction(ClientState *state, TimelineId timelineId) {
     QByteArray idUtf8 = this->id.toUtf8();
     RawStringView idView = StringView::fromQUtf8String(idUtf8);
 
-    auto result = esotereel_gui_helper::toolbar_handle_action(*state, idView);
+    auto result = esotereel_gui_helper::toolbar_handle_action(*state, idView, timelineId);
 
     if (!result.is_ok) {
         return Result<void>::err(OwnedString::intoStdString(result.err));

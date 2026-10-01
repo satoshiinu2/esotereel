@@ -30,7 +30,7 @@ TimelineToolbarWidget::builtinCommands() {
 void TimelineToolbarWidget::dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget,
                                      const ToolbarButton &button) {
     auto mutableButton = button;
-    mutableButton.handleAction(windowState.state).unwrap();
+    mutableButton.handleAction(windowState.state, canvasTarget.timelineId).unwrap();
 }
 
 void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString &target,
