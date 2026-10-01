@@ -23,6 +23,7 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 - Network conflict handling
 - Plugin security
 - LOD clip view
+- full API for Requests/Responces and Commands 
 
 ### Low Priority
 - Scripting on editor

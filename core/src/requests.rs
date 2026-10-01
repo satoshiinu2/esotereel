@@ -246,7 +246,7 @@ pub fn on_request_receive(
             // PluginActionContextを作成
             let project = state_guard.project.clone();
 
-            let context = PluginActionContext::new(project, *timeline_id);
+            let context = PluginActionContext::<esotereel_lib::requests::Request>::new(project, *timeline_id);
 
             // スクリプト実行
             state_guard
@@ -254,8 +254,16 @@ pub fn on_request_receive(
                 .plugin_loader
                 .read()
                 .expect("lock poisoned")
-                .call_script::<()>(&plugin_id, func_name, (context,))
+                .call_script::<()>(&plugin_id, func_name, (context.clone(),))
                 .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
+
+            // スクリプト内で積まれた Request を回収
+            let packets = context.take_packets();
+            if !packets.is_empty() {
+                log::warn!("Server-side plugin action requested {} packets, but server-side packet processing is not yet fully hooked up to on_request_receive.", packets.len());
+                // TODO: Here, either serialize the packets using rkyv and feed them back to `on_request_receive`, 
+                // or handle the underlying `undo_command` / logic directly.
+            }
 
             log::info!(
                 "Server: Executed toolbar action {} from plugin {}",

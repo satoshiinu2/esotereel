@@ -165,7 +165,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // clientまたは指定なしの場合はローカルで実行
         // PluginActionContextを作成
         let project = state.project.clone();
-        let context = PluginActionContext::new(project, timeline_id);
+        let context = PluginActionContext::<Request>::new(project, timeline_id);
 
         // スクリプト実行
         state
@@ -173,8 +173,12 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .plugin_loader
             .read()
             .expect("lock poisoned")
-            .call_script::<()>(plugin_id, &button.action.func_name, (context,))
+            .call_script::<()>(plugin_id, &button.action.func_name, (context.clone(),))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+        for req in context.take_packets() {
+            state.network.send(&req);
+        }
 
         Ok(())
     }

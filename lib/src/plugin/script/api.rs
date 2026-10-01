@@ -17,29 +17,59 @@ use crate::{
         vertex::Vertex,
         video::{MediaFetchCache, builder::VertexBatch},
     },
+    requests::Request,
 };
 
-/// プラグインスクリプトからundo/redoを呼び出すためのコンテキスト
-#[derive(Clone)]
-pub struct PluginActionContext {
+/// プラグインスクリプトからアクションを呼び出すためのコンテキスト
+pub struct PluginActionContext<T> {
     project: Arc<std::sync::RwLock<Option<Project>>>,
-    timeline_id: TimelineId,
+    pub timeline_id: TimelineId,
+    packets: Arc<Mutex<Vec<T>>>,
 }
 
-impl PluginActionContext {
+impl<T> Clone for PluginActionContext<T> {
+    fn clone(&self) -> Self {
+        Self {
+            project: self.project.clone(),
+            timeline_id: self.timeline_id,
+            packets: self.packets.clone(),
+        }
+    }
+}
+
+impl<T> PluginActionContext<T> {
     pub fn new(project: Arc<std::sync::RwLock<Option<Project>>>, timeline_id: TimelineId) -> Self {
         Self {
             project,
             timeline_id,
+            packets: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    pub fn undo(&self) -> bool {
-        todo!("Implement undo functionality for the specified timeline_id");
+    pub fn network(&self) -> PluginNetworkContext<T> {
+        PluginNetworkContext {
+            timeline_id: self.timeline_id,
+            packets: self.packets.clone(),
+        }
     }
 
-    pub fn redo(&self) -> bool {
-        todo!("Implement undo functionality for the specified timeline_id");
+    pub fn take_packets(&self) -> Vec<T> {
+        std::mem::take(&mut *self.packets.lock().expect("mutex poisoned"))
+    }
+}
+
+/// ネットワーク通信（パケット発行）専用のサブコンテキスト
+pub struct PluginNetworkContext<T> {
+    pub timeline_id: TimelineId,
+    packets: Arc<Mutex<Vec<T>>>,
+}
+
+impl<T> Clone for PluginNetworkContext<T> {
+    fn clone(&self) -> Self {
+        Self {
+            timeline_id: self.timeline_id,
+            packets: self.packets.clone(),
+        }
     }
 }
 
@@ -148,7 +178,8 @@ pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
-    engine.register_type_with_name::<PluginActionContext>("ActionContext");
+    engine.register_type_with_name::<PluginActionContext<Request>>("ActionContext");
+    engine.register_type_with_name::<PluginNetworkContext<Request>>("NetworkContext");
 
     engine.register_fn(
         "get_texture",
@@ -174,7 +205,50 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
         ctx.media_time()
     });
 
-    // ActionContextのメソッド
-    engine.register_fn("undo", |ctx: &mut PluginActionContext| ctx.undo());
-    engine.register_fn("redo", |ctx: &mut PluginActionContext| ctx.redo());
+    // `ctx.network` のゲッター
+    engine.register_get("network", |ctx: &mut PluginActionContext<Request>| {
+        ctx.network()
+    });
+
+    // TODO: full suppert for packets, not just undo/redo
+    // NetworkContextのメソッド（オーバーロード）
+    engine.register_fn("undo", |net: &mut PluginNetworkContext<Request>| {
+        net.packets
+            .lock()
+            .expect("mutex poisoned")
+            .push(Request::Undo {
+                timeline_id: net.timeline_id,
+            });
+    });
+    engine.register_fn(
+        "undo",
+        |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
+            net.packets
+                .lock()
+                .expect("mutex poisoned")
+                .push(Request::Undo {
+                    timeline_id: timeline_id as u64,
+                });
+        },
+    );
+
+    engine.register_fn("redo", |net: &mut PluginNetworkContext<Request>| {
+        net.packets
+            .lock()
+            .expect("mutex poisoned")
+            .push(Request::Redo {
+                timeline_id: net.timeline_id,
+            });
+    });
+    engine.register_fn(
+        "redo",
+        |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
+            net.packets
+                .lock()
+                .expect("mutex poisoned")
+                .push(Request::Redo {
+                    timeline_id: timeline_id as u64,
+                });
+        },
+    );
 }
