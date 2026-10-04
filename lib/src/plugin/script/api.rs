@@ -1,6 +1,6 @@
 use std::{
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use dashmap::DashMap;
@@ -9,6 +9,7 @@ use glam::Mat4;
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
+    network::NetworkHandler,
     project::{
         Project,
         ids::{ClipId, ResourceId, TimelineId},
@@ -18,42 +19,50 @@ use crate::{
         video::{MediaFetchCache, builder::VertexBatch},
     },
     requests::Request,
+    state::HostState,
 };
 
 /// プラグインスクリプトからアクションを呼び出すためのコンテキスト
-pub struct PluginActionContext<T> {
-    project: Arc<std::sync::RwLock<Option<Project>>>,
+pub struct PluginActionContext<N: NetworkHandler> {
+    project: Arc<RwLock<Option<Project>>>,
     pub timeline_id: TimelineId,
-    packets: Arc<Mutex<Vec<T>>>,
+    packets: Arc<Mutex<Vec<Request>>>,
+    network: Arc<N>,
 }
 
-impl<T> Clone for PluginActionContext<T> {
+impl<N: NetworkHandler> Clone for PluginActionContext<N> {
     fn clone(&self) -> Self {
         Self {
             project: self.project.clone(),
             timeline_id: self.timeline_id,
             packets: self.packets.clone(),
+            network: self.network.clone(),
         }
     }
 }
 
-impl<T> PluginActionContext<T> {
-    pub fn new(project: Arc<std::sync::RwLock<Option<Project>>>, timeline_id: TimelineId) -> Self {
+impl<N: NetworkHandler> PluginActionContext<N> {
+    pub fn new(
+        network: Arc<N>,
+        project: Arc<RwLock<Option<Project>>>,
+        timeline_id: TimelineId,
+    ) -> Self {
         Self {
             project,
             timeline_id,
+            network,
             packets: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
-    pub fn network(&self) -> PluginNetworkContext<T> {
+    pub fn network(&self) -> PluginNetworkContext<Request> {
         PluginNetworkContext {
             timeline_id: self.timeline_id,
             packets: self.packets.clone(),
         }
     }
 
-    pub fn take_packets(&self) -> Vec<T> {
+    pub fn take_packets(&self) -> Vec<Request> {
         std::mem::take(&mut *self.packets.lock().expect("mutex poisoned"))
     }
 }
@@ -176,10 +185,11 @@ impl PluginRenderContext {
 
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
-pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
+/// クライアント/サーバー用の関数を登録
+pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
+    type NetworkHandlerT<T: HostState> = <T as HostState>::NetworkHandler;
+
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
-    engine.register_type_with_name::<PluginActionContext<Request>>("ActionContext");
-    engine.register_type_with_name::<PluginNetworkContext<Request>>("NetworkContext");
 
     engine.register_fn(
         "get_texture",
@@ -205,12 +215,15 @@ pub(super) fn register_fn_for(engine: &mut rhai::Engine) {
         ctx.media_time()
     });
 
-    // `ctx.network` のゲッター
-    engine.register_get("network", |ctx: &mut PluginActionContext<Request>| {
-        ctx.network()
-    });
+    engine.register_type_with_name::<PluginActionContext<NetworkHandlerT<T>>>("ActionContext");
+    engine.register_type_with_name::<PluginNetworkContext<Request>>("NetworkContext");
 
-    // TODO: full suppert for packets, not just undo/redo
+    // `ctx.network` のゲッター
+    engine.register_get(
+        "network",
+        |ctx: &mut PluginActionContext<NetworkHandlerT<T>>| ctx.network(),
+    );
+
     // NetworkContextのメソッド（オーバーロード）
     engine.register_fn("undo", |net: &mut PluginNetworkContext<Request>| {
         net.packets

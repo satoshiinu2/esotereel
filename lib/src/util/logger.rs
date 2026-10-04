@@ -1,16 +1,30 @@
-use std::sync::OnceLock;
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, OnceLock, RwLock},
+};
 
-use log::{Log, Metadata, Record};
+use log::{LevelFilter, Log, Metadata, Record};
+
+use crate::prebootstrap::PreBootstrapSettings;
 
 pub type OutLogFn = fn(level: usize, msg: String);
 
 pub(crate) static LOG_CALLBACK: OnceLock<OutLogFn> = OnceLock::new();
 
-struct QtLogger;
+struct QtLogger {
+    default_level: RwLock<LevelFilter>,
+    filters: RwLock<HashMap<String, LevelFilter>>,
+}
+
+static LOGGER: LazyLock<QtLogger> = LazyLock::new(|| QtLogger {
+    default_level: RwLock::new(LevelFilter::Info),
+    filters: RwLock::new(HashMap::new()),
+});
 
 impl Log for QtLogger {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        let target_filter = self.filters.read().unwrap().get(metadata.target()).copied();
+        metadata.level() <= target_filter.unwrap_or(*self.default_level.read().unwrap())
     }
 
     fn log(&self, record: &Record) {
@@ -31,9 +45,20 @@ impl Log for QtLogger {
 }
 
 pub fn init_logger(callback: OutLogFn) {
+    init_logger_with_settings(callback, &PreBootstrapSettings::default());
+}
+
+pub fn init_logger_with_settings(callback: OutLogFn, settings: &PreBootstrapSettings) {
     LOG_CALLBACK.set(callback).ok();
-    log::set_logger(&QtLogger).unwrap();
-    log::set_max_level(log::LevelFilter::Info);
+    *LOGGER.default_level.write().unwrap() = settings.logging.level.as_filter();
+    *LOGGER.filters.write().unwrap() = settings
+        .logging
+        .filters
+        .iter()
+        .map(|(target, level)| (target.clone(), level.as_filter()))
+        .collect();
+    log::set_logger(&*LOGGER).unwrap();
+    log::set_max_level(LevelFilter::Trace);
 
     // パニック処理
     std::panic::set_hook(Box::new(|info| {

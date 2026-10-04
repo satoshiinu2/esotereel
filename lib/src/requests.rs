@@ -8,7 +8,7 @@ use crate::project::{
     ids::{ResourceId, TimelineId},
 };
 
-#[derive(Archive, Deserialize, Serialize)]
+#[derive(Debug, Archive, Deserialize, Serialize)]
 #[archive_attr(derive(CheckBytes))]
 pub enum Request {
     Test,

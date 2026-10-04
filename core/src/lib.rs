@@ -1,6 +1,5 @@
 use crate::state::ServerState;
 use esotereel_lib::{
-    HostRole,
     dirs::Directories,
     plugin::PluginLoader,
     project::{
@@ -10,7 +9,7 @@ use esotereel_lib::{
         layer_outline::{Meta, OutlineNode},
     },
     responces::Response,
-    state::HostBootstrap,
+    state::HostState,
     util::result::EsotereelError,
 };
 use std::sync::{Arc, Mutex, RwLock};

@@ -1,11 +1,13 @@
 #include "Settings.h"
 #include "ClientState.h"
+#include "Logger.h"
 #include "StringView.h"
 
 #include "esotereel_gui_helper.h"
-#include "ffi/ClientState.h"
 #include "ffi/Array.h"
+#include "ffi/ClientState.h"
 #include "ffi/Option.h"
+#include <QHash>
 
 namespace esotereel {
 
@@ -17,9 +19,28 @@ Result<QVector<SettingsField>> Settings::getAllFields(ClientState *state) {
     auto result = esotereel_gui_helper::settings_get_all_fields(*state);
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
-    return Result<QVector<SettingsField>>(result, [](const esotereel_gui_helper::FfiPropertySchema &schema) {
-        return SettingsField(schema);
-    });
+    return Result<QVector<SettingsField>>(
+        result, [](const esotereel_gui_helper::FfiPropertySchema &schema) { return SettingsField(schema); });
+}
+
+void Settings::applyQtLogSettings(ClientState *state) {
+    QString defaultLevel = "Info";
+    QHash<QString, QString> targetLevels;
+
+    auto levelResult = getValue(state, "core:log.level");
+    if (levelResult.isOk()) {
+        defaultLevel = levelResult.unwrap().asQString();
+    }
+
+    auto filtersResult = getValue(state, "core:log.filters");
+    if (filtersResult.isOk()) {
+        const auto filters = filtersResult.unwrap().asMap();
+        for (const auto &[target, value] : filters) {
+            targetLevels.insert(QString::fromStdString(target), QString::fromStdString(value.asString()));
+        }
+    }
+
+    setQtLogSettings(defaultLevel, targetLevels);
 }
 
 Result<FieldValue> Settings::getValue(ClientState *state, const QString &key) {
@@ -62,6 +83,10 @@ Result<void> Settings::setValue(ClientState *state, const QString &key, const Fi
         return Result<void>::err(OwnedString::intoStdString(result.err));
     }
 
+    if (key == "core:log.level" || key == "core:log.filters") {
+        applyQtLogSettings(state);
+    }
+
     return Result<void>::ok();
 }
 
@@ -93,8 +118,7 @@ Result<QStringList> Settings::getCategories(ClientState *state) {
     auto result = esotereel_gui_helper::settings_get_categories(*state);
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
-    return Result<QStringList>(result, [](const esotereel_gui_helper::FfiOwnedString &owned) {
-        return OwnedString::toQString(owned);
-    });
+    return Result<QStringList>(
+        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::toQString(owned); });
 }
 } // namespace esotereel

@@ -72,6 +72,10 @@ impl Directories {
         Ok(self.config_dir()?.join("settings.toml"))
     }
 
+    pub fn prebootstrap_settings_path(&self) -> anyhow::Result<PathBuf> {
+        Ok(self.config_dir()?.join("prebootstrap.toml"))
+    }
+
     pub fn install_dir(&self) -> anyhow::Result<std::path::PathBuf> {
         let exe_dir = std::env::current_exe()
             .expect("failed to get exe path")

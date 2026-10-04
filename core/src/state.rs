@@ -11,10 +11,10 @@ use esotereel_lib::{
     HostRole,
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
-    plugin::{PluginLoader, property::PropertySchema, toolbar::ToolbarButtonSpec},
+    plugin::PluginLoader,
     project::ids::ResourceId,
     project::ids::TimelineId,
-    state::{CommonState, HostBootstrap},
+    state::{CommonState, HostState},
 };
 use tokio::sync::Notify;
 
@@ -43,7 +43,7 @@ impl ServerState {
         let dirty_signal = Arc::new(Notify::new());
 
         Self {
-            common: CommonState::new(dirs_def, shared_plugin_loader),
+            common: CommonState::new::<ServerState>(dirs_def, shared_plugin_loader),
             network: Arc::new(ServerNetworkHandler::new(Arc::clone(&dirty_signal))),
             streams: DashMap::new(),
             histories: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -60,16 +60,11 @@ impl ServerState {
     }
 }
 
-impl HostBootstrap for ServerState {
+impl HostState for ServerState {
+    type NetworkHandler = ServerNetworkHandler;
     const ROLE: HostRole = HostRole::Server;
 
-    fn apply_extra_plugin_fields(
-        &mut self,
-        plugin_schemas: Vec<PropertySchema>,
-        plugin_toolbar_buttons: Vec<(String, ToolbarButtonSpec)>,
-    ) -> anyhow::Result<()> {
-        let _ = plugin_schemas;
-        let _ = plugin_toolbar_buttons;
+    fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 }

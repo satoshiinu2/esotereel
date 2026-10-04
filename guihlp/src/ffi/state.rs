@@ -1,5 +1,5 @@
 use esotereel_lib::{
-    dirs::Directories, project::Project, state::HostBootstrap, util::result::EsotereelError,
+    dirs::Directories, project::Project, state::HostState, util::result::EsotereelError,
 };
 
 use crate::{

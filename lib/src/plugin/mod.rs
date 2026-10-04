@@ -127,37 +127,6 @@ impl Plugin {
             .as_ref()
             .map_or_default(|s| s.available_functions.clone());
 
-        log::info!(
-            "Plugin '{}' v{} (ID: {}) loaded successfully: Settings schemas: {}, Clip kinds: {}, Pending properties: {}, Toolbar buttons: {}, Available scripts: {}",
-            manifest.name,
-            manifest.version,
-            manifest.id,
-            setting_schemas.len(),
-            clip_kinds.len(),
-            pending_properties.len(),
-            toolbar_buttons.len(),
-            avaliable_functions.len()
-        );
-
-        log::info!(
-            "Plugin '{}' debug info: \nSettings schemas: {:?}, \nClip kinds: {:?},\nPending properties: {:?}, \nToolbar buttons: {:?}, \nAvailable scripts: {:?}",
-            manifest.id,
-            setting_schemas
-                .iter()
-                .map(|s| s.key.full())
-                .collect::<Vec<_>>(),
-            clip_kinds
-                .iter()
-                .map(|(id, _)| id.full())
-                .collect::<Vec<_>>(),
-            pending_properties
-                .iter()
-                .flat_map(|p| p.fields.iter().map(|schema| schema.key.full()))
-                .collect::<Vec<_>>(),
-            toolbar_buttons.iter().map(|b| &b.id).collect::<Vec<_>>(),
-            avaliable_functions
-        );
-
         Ok(Self {
             manifest,
             setting_schemas,
@@ -165,7 +134,7 @@ impl Plugin {
             pending_properties,
             toolbar_buttons,
             script,
-            dir: dir.to_owned(),
+            dir: dir.to_path_buf(),
         })
     }
 
@@ -214,7 +183,7 @@ impl Plugin {
         } else {
             Vec::new()
         };
-        let toolbar_buttons = Self::namespaced_toolbar_buttons(&manifest.id, toolbar_buttons);
+        // let toolbar_buttons = Self::namespaced_toolbar_buttons(&manifest.id, toolbar_buttons);
 
         Ok(toolbar_buttons)
     }
@@ -225,7 +194,7 @@ impl Plugin {
         script_path: &Path,
     ) -> anyhow::Result<Option<CompiledScript>> {
         if script_path.exists() {
-            // 並列で動かしているので毎回作成
+            // エンジンは ScriptEngines のプロセス共有キャッシュから取得する。
             let compiled = CompiledScript::compile(
                 plugin_path, // モジュールの解決パス (プラグインのルートディレクトリ)
                 &script_path.to_path_buf(),
@@ -291,7 +260,7 @@ impl Plugin {
         mut buttons: Vec<crate::plugin::toolbar::ToolbarButtonSpec>,
     ) -> Vec<crate::plugin::toolbar::ToolbarButtonSpec> {
         for b in &mut buttons {
-            b.id = format!("{plugin_id}.{}", b.id);
+            // b.id = NamespacedID::new(plugin_id, &b.id).expect("invalid toolbar button id");
         }
         buttons
     }
@@ -377,11 +346,11 @@ impl PluginLoader {
     pub async fn load_from_disk(
         &mut self,
         dirs_def: &Directories,
-        role: HostRole,
     ) -> anyhow::Result<Vec<PluginLoadedResult>> {
         // 既に読み込み済みならキャッシュを返す
+        // ScriptEnginesはClient/Server両方を持っているので共有OK
         if self.is_loaded {
-            log::info!("Using cached plugins for {:?}", role);
+            log::info!("Using cached plugins");
             let results = self
                 .plugins
                 .iter()
@@ -393,15 +362,19 @@ impl PluginLoader {
             return Ok(results);
         }
 
-        log::info!("Starting plugin loading for {:?}", role);
+        log::info!("Starting plugin loading");
         let plugin_dirs = Self::discover_all_plugin_dirs(dirs_def)?;
         log::info!("Discovered {} plugin directories", plugin_dirs.len());
 
         let mut tasks = vec![];
         for dir in plugin_dirs {
-            let task = tokio::task::spawn_blocking(move || PluginLoadingResult {
-                result: Plugin::load(&dir),
-                dir,
+            let dir_clone = dir.clone();
+            let task = tokio::task::spawn_blocking(move || {
+                let result = Plugin::load(&dir_clone);
+                PluginLoadingResult {
+                    result,
+                    dir: dir_clone,
+                }
             });
 
             tasks.push(task);
@@ -585,21 +558,30 @@ impl PluginLoader {
         self.clip_properties_index.get(id).map(|v| v.as_slice())
     }
 
+    pub fn get_settings_schemas(&self) -> &[PropertySchema] {
+        &self.schemas_index
+    }
+
+    pub fn get_toolbar_buttons(&self) -> &[(String, ToolbarButtonSpec)] {
+        &self.toolbars_index
+    }
+
     pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
         self.scripts_index.get(plugin_id)
     }
 
-    pub fn call_script<T: Clone + Send + Sync + 'static>(
+    pub fn call_script<R: Clone + Send + Sync + 'static>(
         &self,
+        engine: &rhai::Engine,
         plugin_id: &str,
         fn_name: &str,
         args: impl rhai::FuncArgs,
-    ) -> anyhow::Result<T> {
+    ) -> anyhow::Result<R> {
         let script = self
             .scripts_index
             .get(plugin_id)
             .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
 
-        script.call(fn_name, args)
+        script.call(engine, fn_name, args)
     }
 }

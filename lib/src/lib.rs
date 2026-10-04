@@ -2,7 +2,9 @@ use crate::decode::{streamplayer::StreamPlayer, videostreamer::VideoStreamer};
 
 pub mod decode;
 pub mod dirs;
+pub mod network;
 pub mod plugin;
+pub mod prebootstrap;
 pub mod project;
 pub mod render;
 pub mod requests;

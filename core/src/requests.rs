@@ -8,7 +8,7 @@ use esotereel_lib::{
     decode::videostreamer::VideoStreamer,
     plugin::{NamespacedID, script::api::PluginActionContext},
     project::{Project, command::CommandRequest},
-    requests::ArchivedRequest,
+    requests::{ArchivedRequest, Request},
     responces::Response,
     util::result::{EsotereelError, EsotereelResult},
 };
@@ -89,8 +89,8 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::Command { commands } => {
-            let mut state_guard = state.lock().expect("mutex poisoned");
-            let project_arc = state_guard.project.clone();
+            let state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = &state_guard.project;
             let mut project_guard = project_arc.write().expect("mutex poisoned");
             let project = project_guard
                 .as_mut()
@@ -105,7 +105,7 @@ pub fn on_request_receive(
                 let mut histories = state_guard.histories.lock().expect("mutex poisoned");
                 let history = histories
                     .entry(*timeline_id)
-                    .or_insert_with(|| HistoryStack::new(100));
+                    .or_insert_with(|| HistoryStack::default());
                 execute_command_with_history(
                     project,
                     *timeline_id,
@@ -244,9 +244,10 @@ pub fn on_request_receive(
             let plugin_id = button_id.plugin_id();
 
             // PluginActionContextを作成
-            let project = state_guard.project.clone();
+            let project = Arc::clone(&state_guard.project);
 
-            let context = PluginActionContext::<esotereel_lib::requests::Request>::new(project, *timeline_id);
+            let context =
+                PluginActionContext::new(Arc::clone(&state_guard.network), project, *timeline_id);
 
             // スクリプト実行
             state_guard
@@ -254,15 +255,50 @@ pub fn on_request_receive(
                 .plugin_loader
                 .read()
                 .expect("lock poisoned")
-                .call_script::<()>(&plugin_id, func_name, (context.clone(),))
+                .call_script::<()>(
+                    &state_guard.common.script_engine,
+                    &plugin_id,
+                    func_name,
+                    (context.clone(),),
+                )
                 .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
 
-            // スクリプト内で積まれた Request を回収
+            // スクリプト内で積まれた Request を回収して処理
             let packets = context.take_packets();
-            if !packets.is_empty() {
-                log::warn!("Server-side plugin action requested {} packets, but server-side packet processing is not yet fully hooked up to on_request_receive.", packets.len());
-                // TODO: Here, either serialize the packets using rkyv and feed them back to `on_request_receive`, 
-                // or handle the underlying `undo_command` / logic directly.
+            for packet in packets {
+                match packet {
+                    Request::Undo { timeline_id } => {
+                        let project_arc = &state_guard.project;
+                        let mut project_guard = project_arc.write().expect("mutex poisoned");
+                        let project = project_guard
+                            .as_mut()
+                            .ok_or(EsotereelError::ProjectNotFound)?;
+
+                        let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                        let history = histories
+                            .entry(timeline_id)
+                            .or_insert_with(|| HistoryStack::default());
+
+                        undo_command(project, timeline_id, history)?;
+                    }
+                    Request::Redo { timeline_id } => {
+                        let project_arc = &state_guard.project;
+                        let mut project_guard = project_arc.write().expect("mutex poisoned");
+                        let project = project_guard
+                            .as_mut()
+                            .ok_or(EsotereelError::ProjectNotFound)?;
+
+                        let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                        let history = histories
+                            .entry(timeline_id)
+                            .or_insert_with(|| HistoryStack::default());
+
+                        redo_command(project, timeline_id, history)?;
+                    }
+                    _ => {
+                        log::warn!("Unhandled packet type in toolbar action: {:?}", packet);
+                    }
+                }
             }
 
             log::info!(
@@ -272,8 +308,8 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::Undo { timeline_id } => {
-            let mut state_guard = state.lock().expect("mutex poisoned");
-            let project_arc = state_guard.project.clone();
+            let state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = &state_guard.project;
             let mut project_guard = project_arc.write().expect("mutex poisoned");
             let project = project_guard
                 .as_mut()
@@ -282,13 +318,13 @@ pub fn on_request_receive(
             let mut histories = state_guard.histories.lock().expect("mutex poisoned");
             let history = histories
                 .entry(*timeline_id)
-                .or_insert_with(|| HistoryStack::new(100));
+                .or_insert_with(|| HistoryStack::default());
 
             undo_command(project, *timeline_id, history)?;
         }
         ArchivedRequest::Redo { timeline_id } => {
-            let mut state_guard = state.lock().expect("mutex poisoned");
-            let project_arc = state_guard.project.clone();
+            let state_guard = state.lock().expect("mutex poisoned");
+            let project_arc = &state_guard.project;
             let mut project_guard = project_arc.write().expect("mutex poisoned");
             let project = project_guard
                 .as_mut()
@@ -297,7 +333,7 @@ pub fn on_request_receive(
             let mut histories = state_guard.histories.lock().expect("mutex poisoned");
             let history = histories
                 .entry(*timeline_id)
-                .or_insert_with(|| HistoryStack::new(100));
+                .or_insert_with(|| HistoryStack::default());
 
             redo_command(project, *timeline_id, history)?;
         }

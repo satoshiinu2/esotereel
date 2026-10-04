@@ -1,6 +1,7 @@
 #include "LogFilterDialog.h"
 
 #include <QComboBox>
+#include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLineEdit>
@@ -43,7 +44,37 @@ LogFilterDialog::LogFilterDialog(QWidget *parent) : QDialog(parent) {
     layout->addWidget(table);
     layout->addLayout(buttonLayout);
 
+    auto *dialogButtons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    connect(dialogButtons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(dialogButtons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    layout->addWidget(dialogButtons);
+
     setLayout(layout);
+}
+
+void LogFilterDialog::setFilters(const esotereel::FieldValue::Map &filters) {
+    table->setRowCount(0);
+    for (const auto &[targetName, filterValue] : filters) {
+        addFilter();
+        const int row = table->rowCount() - 1;
+        auto *target = qobject_cast<QLineEdit *>(table->cellWidget(row, 0));
+        auto *level = qobject_cast<QComboBox *>(table->cellWidget(row, 1));
+        target->setText(QString::fromStdString(targetName));
+        level->setCurrentText(QString::fromStdString(filterValue.asString()));
+    }
+}
+
+esotereel::FieldValue::Map LogFilterDialog::filters() const {
+    esotereel::FieldValue::Map filters;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const auto *target = qobject_cast<QLineEdit *>(table->cellWidget(row, 0));
+        const auto *level = qobject_cast<QComboBox *>(table->cellWidget(row, 1));
+        const QString targetName = target->text().trimmed();
+        if (!targetName.isEmpty()) {
+            filters[targetName.toStdString()] = esotereel::FieldValue::fromEnum(level->currentText().toStdString());
+        }
+    }
+    return filters;
 }
 
 void LogFilterDialog::addFilter() {
@@ -60,14 +91,14 @@ void LogFilterDialog::addFilter() {
     // Level
     auto *level = new QComboBox(table);
 
-    level->addItem("OFF", static_cast<int>(LogLevel::Off));
-    level->addItem("ERROR", static_cast<int>(LogLevel::Error));
-    level->addItem("WARN", static_cast<int>(LogLevel::Warn));
-    level->addItem("INFO", static_cast<int>(LogLevel::Info));
-    level->addItem("DEBUG", static_cast<int>(LogLevel::Debug));
-    level->addItem("TRACE", static_cast<int>(LogLevel::Trace));
+    level->addItem("Off", static_cast<int>(LogLevel::Off));
+    level->addItem("Error", static_cast<int>(LogLevel::Error));
+    level->addItem("Warn", static_cast<int>(LogLevel::Warn));
+    level->addItem("Info", static_cast<int>(LogLevel::Info));
+    level->addItem("Debug", static_cast<int>(LogLevel::Debug));
+    level->addItem("Trace", static_cast<int>(LogLevel::Trace));
 
-    level->setCurrentText("INFO");
+    level->setCurrentText("Info");
 
     table->setCellWidget(row, 1, level);
 

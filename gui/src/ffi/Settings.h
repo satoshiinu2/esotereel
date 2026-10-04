@@ -38,6 +38,7 @@ class SettingsField {
 class Settings {
   public:
     static Result<QVector<SettingsField>> getAllFields(ClientState *state);
+    static void applyQtLogSettings(ClientState *state);
 
     // FieldValue-based accessors (via cxx-qt / QVariant)
     static Result<FieldValue> getValue(ClientState *state, const QString &key);

@@ -10,6 +10,8 @@
 #include <QPushButton>
 #include <QSpinBox>
 
+#include "window/dialog/logfilter/LogFilterDialog.h"
+
 namespace esotereel::window::widget {
 
 using esotereel::FieldValue;
@@ -66,6 +68,18 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
             binding.setValue(FieldValue::fromEnum(text.toStdString()));
         });
         return comboBox;
+    }
+
+    if (field.kindType == SettingsFieldType::Map && field.key == "core:log.filters") {
+        auto *button = new QPushButton("Configure log ID filters...");
+        QObject::connect(button, &QPushButton::clicked, button, [binding, button]() {
+            LogFilterDialog dialog(button);
+            dialog.setFilters(binding.getValue().asMap());
+            if (dialog.exec() == QDialog::Accepted) {
+                binding.setValue(FieldValue::fromMap(dialog.filters()));
+            }
+        });
+        return button;
     }
 
     if (field.kindType == SettingsFieldType::Color) {

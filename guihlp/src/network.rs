@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex, RwLock};
 
+use esotereel_lib::network::NetworkHandler;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
 use rkyv::ser::Serializer;
@@ -18,6 +19,12 @@ pub type OnConnectedFn = extern "C" fn();
 
 pub struct ClientNetworkHandler {
     tx: RwLock<Option<ClientSender>>,
+}
+
+impl NetworkHandler for ClientNetworkHandler {
+    type Packet = Request;
+
+    type State = ClientState;
 }
 
 impl ClientNetworkHandler {

@@ -1,3 +1,4 @@
+use esotereel_lib::network::NetworkHandler;
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
@@ -20,6 +21,12 @@ pub struct ServerNetworkHandler {
     pub dirty_signal: Arc<Notify>,
     clients: RwLock<HashMap<u32, ClientSender>>,
     client_views: RwLock<HashMap<u32, HashMap<TimelineId, Range<i64>>>>,
+}
+
+impl NetworkHandler for ServerNetworkHandler {
+    type Packet = Response;
+
+    type State = ServerState;
 }
 
 impl ServerNetworkHandler {

@@ -153,9 +153,18 @@ pub unsafe extern "C" fn settings_set_value(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
         let key = NamespacedID::parse(key_str)?;
+        let is_core_setting = key.plugin_id() == "core";
         let mut state = state.lock().expect("mutex poisoned");
         let field_value = value.unwrap_ffi()?;
-        state.settings.set_value(key, field_value)
+        state.settings.set_value(key, field_value)?;
+        state.apply_logging_settings();
+
+        if is_core_setting {
+            state.save_prebootstrap_settings()
+        } else {
+            let settings_path = state.dir.client_settings_path()?;
+            state.settings.save_to_path(&settings_path)
+        }
     }
 
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, key, value))) {

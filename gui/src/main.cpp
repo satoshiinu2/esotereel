@@ -3,6 +3,7 @@
 #include "ffi/ClientState.h"
 #include "ffi/InternalServer.h"
 #include "ffi/Requests.h"
+#include "ffi/Settings.h"
 #include "ffi/StringView.h"
 #include "network/boot.h"
 #include "window/MainWindow.h"
@@ -36,6 +37,7 @@ QString addr;
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
 
+    installQtMessageHandler();
     esotereel_gui_helper::init_rust_logger(qtLogCallback);
 
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
@@ -50,6 +52,7 @@ int main(int argc, char **argv) {
     ClientState n(callbacks, stdPluginDir, workingDir);
     state = &n;
 
+    Settings::applyQtLogSettings(&n);
     n.logDirectoriesInfo();
     n.bootstrap();
 

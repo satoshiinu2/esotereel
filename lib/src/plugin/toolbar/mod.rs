@@ -1,8 +1,11 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use anyhow::Context;
 
-use crate::plugin::toolbar::parse::ToolbarButtonRaw;
+use crate::plugin::{NamespacedID, toolbar::parse::ToolbarButtonRaw};
 
 mod parse;
 
@@ -31,9 +34,7 @@ impl Default for RunOn {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ToolbarButtonSpec {
-    /// 安定キー。ユーザー設定(並び順)から参照される。
-    /// プラグイン由来のものは `{plugin_id}.{key}` にnamespace化される。
-    pub id: String,
+    pub id: NamespacedID,
     /// どのツールバーに属するか("timeline" 等)。将来複数ツールバーに対応するため。
     #[serde(default = "default_target")]
     pub target: String,
@@ -67,16 +68,13 @@ impl ToolbarButtonSpec {
         Ok(buttons)
     }
 
-    fn parse_button(raw: ToolbarButtonRaw, source_name: &str) -> anyhow::Result<ToolbarButtonSpec> {
+    fn parse_button(raw: ToolbarButtonRaw, plugin_id: &str) -> anyhow::Result<ToolbarButtonSpec> {
         let action = ToolbarAction::from_toml_value(&raw.action).with_context(|| {
-            format!(
-                "invalid `action` for button `{}` in `{source_name}`",
-                raw.id
-            )
+            format!("invalid `action` for button `{}` in `{plugin_id}`", raw.id)
         })?;
 
         Ok(ToolbarButtonSpec {
-            id: raw.id,
+            id: NamespacedID::new(plugin_id, &raw.id)?,
             target: raw.target.unwrap_or_else(default_target),
             label: raw.label,
             tooltip: raw.tooltip.unwrap_or_default(),
@@ -90,7 +88,7 @@ impl ToolbarButtonSpec {
     ) -> anyhow::Result<()> {
         let mut seen = std::collections::HashSet::new();
         for button in buttons {
-            if !seen.insert(button.id.as_str()) {
+            if !seen.insert(button.id.clone()) {
                 anyhow::bail!("duplicate toolbar button id `{}` ", button.id,);
             }
             // maybe not needed with icon button
@@ -111,50 +109,29 @@ struct ToolbarFile {
 /// settings::SchemaRegistry と対になる。
 #[derive(Debug, Default)]
 pub struct ToolbarRegistry {
-    // plugin id -> button spec
-    buttons: Vec<(String, ToolbarButtonSpec)>,
-    buttons_by_id: HashMap<String, usize>,
+    // button id -> button spec
+    buttons: HashMap<NamespacedID, ToolbarButtonSpec>,
 }
 
 impl ToolbarRegistry {
     pub fn buttons(&self) -> impl Iterator<Item = &ToolbarButtonSpec> {
-        self.buttons.iter().map(|(_, b)| b)
+        self.buttons.values()
     }
 
     pub fn buttons_for_target(&self, target: &str) -> impl Iterator<Item = &ToolbarButtonSpec> {
         self.buttons().filter(move |b| b.target == target)
     }
 
-    pub fn get_button_by(&self, id: &str) -> Option<&(String, ToolbarButtonSpec)> {
-        let index = self.buttons_by_id.get(id)?;
-        self.buttons.get(*index)
+    pub fn get_button_by(&self, id: &NamespacedID) -> Option<&ToolbarButtonSpec> {
+        self.buttons.get(id)
     }
 
-    /// プラグイン由来のボタン(namespace済み)を合流させる。
-    /// 組み込み/プラグイン間・プラグイン同士でid衝突があればエラーにする。
-    pub fn merge_plugin_buttons(
-        &mut self,
-        plugin_buttons: Vec<(String, ToolbarButtonSpec)>,
-    ) -> anyhow::Result<()> {
-        let mut merged = self.buttons.clone();
-        merged.extend(plugin_buttons);
-
-        ToolbarButtonSpec::validate_buttons(merged.iter().map(|(_, b)| b))
-            .context("plugin toolbar buttons conflict with existing buttons")?;
-
-        self.buttons = merged;
-        self.rebuild_index();
-
-        Ok(())
-    }
-
-    fn rebuild_index(&mut self) {
-        self.buttons_by_id = self
-            .buttons
-            .iter()
-            .enumerate()
-            .map(|(index, (_, b))| (b.id.clone(), index))
+    pub fn from_plugin_buttons(plugin_buttons: Vec<(String, ToolbarButtonSpec)>) -> Self {
+        let buttons: HashMap<NamespacedID, ToolbarButtonSpec> = plugin_buttons
+            .into_iter()
+            .map(|(_, spec)| (spec.id.clone(), spec))
             .collect();
+        Self { buttons }
     }
 }
 
@@ -162,7 +139,7 @@ impl ToolbarRegistry {
 pub struct ToolbarStore {
     pub registry: ToolbarRegistry,
     // target名 -> 有効なボタンidの並び順
-    layouts: HashMap<String, Vec<String>>,
+    layouts: HashMap<String, Vec<NamespacedID>>,
     has_disk_loaded: bool,
 }
 
@@ -175,11 +152,12 @@ impl ToolbarStore {
         }
     }
 
-    pub fn merge_plugin_buttons(
-        &mut self,
-        plugin_buttons: Vec<(String, ToolbarButtonSpec)>,
-    ) -> anyhow::Result<()> {
-        self.registry.merge_plugin_buttons(plugin_buttons)
+    pub fn from_plugin_buttons(plugin_buttons: Vec<(String, ToolbarButtonSpec)>) -> Self {
+        Self {
+            registry: ToolbarRegistry::from_plugin_buttons(plugin_buttons),
+            layouts: HashMap::new(),
+            has_disk_loaded: false,
+        }
     }
 
     /// レイアウト未設定のtargetに、レジストリ登録順のデフォルトを埋める。
@@ -194,7 +172,7 @@ impl ToolbarStore {
                 continue;
             }
             // registryの借用はここで終わらせてからinsertする(借用を跨がせない)
-            let default_ids: Vec<String> = self
+            let default_ids: Vec<NamespacedID> = self
                 .registry
                 .buttons_for_target(&target)
                 .into_iter()
@@ -205,7 +183,7 @@ impl ToolbarStore {
     }
 
     /// ディスクから読み込めた分だけ上書き。存在しないtargetはデフォルトのまま残る。
-    pub fn apply_loaded_layout(&mut self, loaded: HashMap<String, Vec<String>>) {
+    pub fn apply_loaded_layout(&mut self, loaded: HashMap<String, Vec<NamespacedID>>) {
         for (target, ids) in loaded {
             self.layouts.insert(target, ids);
         }
@@ -213,7 +191,7 @@ impl ToolbarStore {
     }
 
     /// レイアウト未設定ならレジストリの登録順にフォールバックした状態で返す。
-    pub fn get_layout(&self, target: &str) -> Vec<String> {
+    pub fn get_layout(&self, target: &str) -> Vec<NamespacedID> {
         match self.layouts.get(target) {
             Some(ids) => ids.clone(),
             None => self
@@ -226,14 +204,14 @@ impl ToolbarStore {
     }
 
     /// registryに存在しないidは黙って弾く。
-    pub fn set_layout(&mut self, target: String, ordered_ids: Vec<String>) {
-        let known: std::collections::HashSet<String> = self
+    pub fn set_layout(&mut self, target: String, ordered_ids: Vec<NamespacedID>) {
+        let known: HashSet<NamespacedID> = self
             .registry
             .buttons_for_target(&target)
             .into_iter()
             .map(|b| b.id.clone())
             .collect();
-        let filtered: Vec<String> = ordered_ids
+        let filtered: Vec<NamespacedID> = ordered_ids
             .into_iter()
             .filter(|id| known.contains(id))
             .collect();

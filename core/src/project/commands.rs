@@ -4,7 +4,7 @@ use esotereel_lib::{
         Project,
         clip::ClipBindingValue,
         command::{ClipMoveHistoryCtx, CommandHistory, CommandRequest},
-        ids::{ClipId, LayerFolderId, LayerId, TimelineId},
+        ids::TimelineId,
         layer::LayerRemoveStrategy,
     },
     util::result::EsotereelError,
@@ -335,7 +335,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut history = HistoryStack::new(10);
+        let mut history = HistoryStack::default();
         let command = CommandHistory::ClipsMove {
             clips: vec![ClipMoveHistoryCtx {
                 clip_id,
@@ -411,7 +411,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut history = HistoryStack::new(10);
+        let mut history = HistoryStack::default();
         let command = CommandHistory::ClipsMove {
             clips: vec![ClipMoveHistoryCtx {
                 clip_id,
@@ -530,7 +530,7 @@ mod tests {
         let mut move_history = move_command.clone();
         execute_command(&mut project, timeline_id, &mut move_history).unwrap();
 
-        let mut history = HistoryStack::new(10);
+        let mut history = HistoryStack::default();
         history.push(add_history);
         history.push(move_command.clone());
 

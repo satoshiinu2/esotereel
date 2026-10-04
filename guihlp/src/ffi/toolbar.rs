@@ -1,8 +1,12 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 
 use esotereel_lib::{
-    plugin::script::api::PluginActionContext,
-    plugin::toolbar::{ToolbarButtonSpec, RunOn},
+    plugin::{
+        NamespacedID,
+        script::api::PluginActionContext,
+        toolbar::{RunOn, ToolbarButtonSpec},
+    },
     project::ids::TimelineId,
     requests::Request,
     util::result::EsotereelError,
@@ -34,7 +38,7 @@ impl FfiToolbarButton {
             RunOn::Server => "server",
         };
         Self {
-            id: FfiOwnedString::from_string(spec.id.clone()),
+            id: FfiOwnedString::from_string(spec.id.to_string()),
             label: FfiOwnedString::from_string(spec.label.clone()),
             tooltip: FfiOwnedString::from_string(spec.tooltip.clone()),
             icon: FfiOwnedString::from_string(spec.icon.clone().unwrap_or_default()),
@@ -109,6 +113,12 @@ pub unsafe extern "C" fn toolbar_set_layout(
             .try_into()
             .map_err(|e| anyhow::anyhow!("ids must be an array of strings: {}", e))?;
 
+        let ids = ids
+            .into_iter()
+            .map(|s| NamespacedID::parse(&s))
+            .collect::<Result<Vec<NamespacedID>, _>>()
+            .map_err(|e| anyhow::anyhow!("Failed to parse NamespacedID: {}", e))?;
+
         let mut state = state.lock().expect("mutex poisoned");
 
         state.toolbar.set_layout(target_str.to_string(), ids);
@@ -116,7 +126,9 @@ pub unsafe extern "C" fn toolbar_set_layout(
         Ok(())
     }
 
-    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, target, ids_toml_array))) {
+    match catch_unwind(AssertUnwindSafe(|| {
+        inner(ptr_state, target, ids_toml_array)
+    })) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }
@@ -140,13 +152,13 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // Arc::into_raw 由来のポインタから、参照カウントを増やして
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let button_id = button_id.as_str()?;
+        let button_id = NamespacedID::parse(button_id.as_str()?)?;
         let state = state.lock().expect("mutex poisoned");
 
-        let (plugin_id, button) = state
+        let button = state
             .toolbar
             .registry
-            .get_button_by(button_id)
+            .get_button_by(&button_id)
             .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
 
         // run_onをチェック
@@ -165,7 +177,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // clientまたは指定なしの場合はローカルで実行
         // PluginActionContextを作成
         let project = state.project.clone();
-        let context = PluginActionContext::<Request>::new(project, timeline_id);
+        let context = PluginActionContext::new(Arc::clone(&state.network), project, timeline_id);
 
         // スクリプト実行
         state
@@ -173,7 +185,12 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .plugin_loader
             .read()
             .expect("lock poisoned")
-            .call_script::<()>(plugin_id, &button.action.func_name, (context.clone(),))
+            .call_script::<()>(
+                &state.common.script_engine,
+                button_id.plugin_id(),
+                &button.action.func_name,
+                (context.clone(),),
+            )
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         for req in context.take_packets() {
@@ -183,7 +200,9 @@ pub unsafe extern "C" fn toolbar_handle_action(
         Ok(())
     }
 
-    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, button_id, timeline_id))) {
+    match catch_unwind(AssertUnwindSafe(|| {
+        inner(ptr_state, button_id, timeline_id)
+    })) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }

@@ -27,6 +27,7 @@ pub struct RenderContext<'a> {
     pub media_fetch_cache: &'a Arc<MediaFetchCache>,
 
     pub plugin_loader: &'a Arc<RwLock<PluginLoader>>,
+    pub script_engine: &'a rhai::Engine,
 
     pub timeline: &'a Timeline,
     pub camera_info: &'a CameraInfo,

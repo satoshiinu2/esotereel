@@ -62,14 +62,13 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         );
         let props_dynamic = field_values_to_rhai_map(&clip.properties);
 
-        // info!(
-        //     "clip.properties: {:?} props_dynamic: {:?}",
-        //     clip.properties, props_dynamic
-        // );
-
-        let call_result: Result<(), _> =
-            script.call(&kind.render_script, (render_ctx.clone(), props_dynamic));
-
+        // TODO: call with state.call_script() instead of directly calling the loader
+        let call_result: Result<(), _> = loader.call_script::<()>(
+            ctx.script_engine,
+            plugin_id,
+            &kind.render_script,
+            (render_ctx.clone(), props_dynamic),
+        );
         if let Err(e) = call_result {
             log::warn!(
                 "plugin render script `{}` failed: {}",

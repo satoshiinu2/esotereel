@@ -33,21 +33,46 @@ impl From<CLogLevel> for LevelFilter {
     }
 }
 
-#[derive(Default)]
 struct GuiLogger {
+    default_level: RwLock<LevelFilter>,
     filters: RwLock<HashMap<String, LevelFilter>>,
+}
+
+impl Default for GuiLogger {
+    fn default() -> Self {
+        Self {
+            default_level: RwLock::new(LevelFilter::Info),
+            filters: RwLock::new(HashMap::new()),
+        }
+    }
 }
 
 static LOGGER: LazyLock<GuiLogger> = LazyLock::new(GuiLogger::default);
 
+pub fn level_filter_from_name(name: &str) -> Option<LevelFilter> {
+    match name.to_ascii_lowercase().as_str() {
+        "off" => Some(LevelFilter::Off),
+        "error" => Some(LevelFilter::Error),
+        "warn" | "warning" => Some(LevelFilter::Warn),
+        "info" => Some(LevelFilter::Info),
+        "debug" => Some(LevelFilter::Debug),
+        "trace" => Some(LevelFilter::Trace),
+        _ => None,
+    }
+}
+
+pub fn set_default_log_level(level: LevelFilter) {
+    *LOGGER.default_level.write().unwrap() = level;
+}
+
+pub fn replace_log_filters(filters: HashMap<String, LevelFilter>) {
+    *LOGGER.filters.write().unwrap() = filters;
+}
+
 impl Log for GuiLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        let filters = self.filters.read().unwrap();
-
-        let filter = filters
-            .get(metadata.target())
-            .copied()
-            .unwrap_or(LevelFilter::Info);
+        let target_filter = self.filters.read().unwrap().get(metadata.target()).copied();
+        let filter = target_filter.unwrap_or(*self.default_level.read().unwrap());
 
         metadata.level() <= filter
     }

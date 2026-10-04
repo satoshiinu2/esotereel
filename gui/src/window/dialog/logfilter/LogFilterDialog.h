@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ffi/FieldValue.h"
 #include <QDialog>
 
 class QTableWidget;
@@ -10,6 +11,8 @@ class LogFilterDialog : public QDialog {
 
   public:
     explicit LogFilterDialog(QWidget *parent = nullptr);
+    void setFilters(const esotereel::FieldValue::Map &filters);
+    esotereel::FieldValue::Map filters() const;
 
   private slots:
     void addFilter();

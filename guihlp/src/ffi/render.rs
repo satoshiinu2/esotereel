@@ -80,6 +80,7 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
 
             media_fetch_cache: &state_guard.media_fetch_cache,
             plugin_loader: &state_guard.plugin_loader,
+            script_engine: &state_guard.script_engine,
 
             timeline,
             camera_info,
