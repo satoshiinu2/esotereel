@@ -14,17 +14,18 @@ use esotereel_lib::{
     util::result::EsotereelError,
 };
 
-use crate::ffi::{
-    array::FfiArray,
+use crate::{
     commands::CommandQueue,
-    field_value::CFieldValue,
-    option::FfiOption,
-    result::{FfiResult, FfiResultVoid},
-    state::ClientStateHandle,
-    stringview::{FfiOwnedString, FfiStringView},
+    ffi::{
+        array::FfiArray,
+        field_value::CFieldValue,
+        option::FfiOption,
+        result::{FfiResult, FfiResultVoid},
+        state::ClientStateHandle,
+        stringview::{FfiOwnedString, FfiStringView},
+    },
+    settings::FfiPropertySchema,
 };
-
-pub use crate::ffi::settings::{FfiPropertySchema, SettingsFieldType as PropertyFieldType};
 
 // ---- ClipBindingValueのC表現 ----
 // 今はStaticのみ。将来Keyframesが増えたらタグを1つ足すだけで拡張できる形。

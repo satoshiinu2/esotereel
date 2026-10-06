@@ -1,53 +1,20 @@
-use std::{
-    collections::VecDeque,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
-    plugin::NamespacedID,
-    project::{
-        clip::{ClipBindingValue, ClipData},
-        command::{ClipMoveCtx, CommandRequest},
-        ids::{LayerFolderId, LayerId, TimelineId},
-        transform::{ClipTranslate, ClipTranslates},
-    },
-    requests::Request,
+    project::ids::{LayerFolderId, LayerId, TimelineId},
     util::result::EsotereelError,
 };
 
 use crate::{
     WrapperErrorCode,
+    commands::CommandQueue,
     ffi::{
         result::FfiResultVoid,
         state::{ClientStateHandle, OptionProject},
         stringview::FfiStringView,
     },
-    network::ClientNetworkHandler,
     slice_from_ptr_or_empty,
 };
-
-#[derive(Default, Debug)]
-pub struct CommandQueue {
-    pending: VecDeque<(TimelineId, CommandRequest)>,
-}
-
-impl CommandQueue {
-    pub fn enqueue(&mut self, timeline_id: TimelineId, command: CommandRequest) {
-        self.pending.push_back((timeline_id, command));
-    }
-
-    pub(super) fn send_all(&mut self, network: &ClientNetworkHandler) {
-        if self.pending.is_empty() {
-            return;
-        }
-
-        let req = &Request::Command {
-            commands: std::mem::take(&mut self.pending),
-        };
-
-        network.send(req);
-    }
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn command_queue_new() -> *mut CommandQueue {
@@ -124,47 +91,22 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
             anyhow::bail!(EsotereelError::NullPointer("ptr_opt_project".to_owned()));
         }
 
-        let clip_data = {
-            let project = match unsafe { &*ptr_opt_project } {
-                Some(arc) => arc,
-                None => anyhow::bail!(EsotereelError::ProjectNotFound),
-            };
-
-            let timeline = match project.timeline_ref(timeline_id) {
-                Some(tl) => tl,
-                None => {
-                    anyhow::bail!(EsotereelError::TimelineNotFound(timeline_id));
-                }
-            };
-
-            // 合成順を1回だけ確定させ、位置解決に使う
-            let execution_order: Vec<u64> = timeline.outline.iter_execution_order().collect();
-
-            let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
-
-            clip_ids
-                .iter()
-                .filter_map(|clip_id| {
-                    let (clip, layer_id) = timeline.get_clip_and_layer(*clip_id)?;
-
-                    let current_index = execution_order.iter().position(|&id| id == layer_id)?;
-                    let new_index = current_index.checked_add_signed(layer_moved)?;
-                    let new_layer_id = *execution_order.get(new_index)?;
-
-                    Some(ClipMoveCtx {
-                        clip_id: *clip_id,
-                        new_position: clip.position + position_moved,
-                        new_duration: clip.duration + duration_added,
-                        new_layer_id,
-                    })
-                })
-                .collect()
+        let project = match unsafe { &*ptr_opt_project } {
+            Some(arc) => arc,
+            None => anyhow::bail!(EsotereelError::ProjectNotFound),
         };
 
-        let command = CommandRequest::ClipsMove { clips: clip_data };
+        let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
 
         let queue = unsafe { &mut *ptr_queue };
-        queue.enqueue(timeline_id, command);
+        queue.req_cmd_clip_move_mul(
+            project,
+            timeline_id,
+            clip_ids,
+            position_moved,
+            duration_added,
+            layer_moved,
+        )?;
 
         Ok(())
     }
@@ -206,48 +148,11 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
             anyhow::bail!(EsotereelError::NullPointer("ptr_state".to_string()));
         }
 
-        // lock here
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_guard = state.lock().expect("mutex poisoned");
 
-        let _clip_data = ClipData::Video {
-            path: "/home/satoshiinu/Videos/3.mp4".to_string(),
-            media_offset: 0.0,
-        };
-
-        let translates = ClipTranslates::Normal(ClipTranslate {
-            position: [-100.0, -100.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            scale: [400.0, 300.0, 1.0],
-        });
-
-        let kind_id = NamespacedID::parse("std:video").unwrap();
-
-        // TODO: server side default_properties
-        let loader = state_guard
-            .common
-            .plugin_loader
-            .read()
-            .expect("mutex poisoned");
-
-        let property_schema = loader
-            .get_clip_properties(&kind_id)
-            .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
-
-        let properties = ClipBindingValue::default_properties(property_schema);
-        drop(loader);
-
-        let command = CommandRequest::AddClip {
-            layer_id,
-            position,
-            duration: 10000,
-            kind_id,
-            properties,
-            translates,
-        };
-
         let queue = unsafe { &mut *ptr_queue };
-        queue.enqueue(timeline_id, command);
+        queue.req_cmd_add_clip_dummy(&state_guard, timeline_id, position, layer_id)?;
 
         Ok(())
     }
@@ -280,14 +185,15 @@ pub unsafe extern "C" fn req_cmd_add_layer(
             anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_string()));
         }
 
-        let command = CommandRequest::AddLayer {
-            parent_folder_id: has_parent.then_some(parent_folder_id),
-            insert_index: has_insert_index.then_some(insert_index),
-            name: name.as_string_lossy().into_owned(),
-        };
-
         let queue = unsafe { &mut *ptr_queue };
-        queue.enqueue(timeline_id, command);
+        queue.req_cmd_add_layer(
+            timeline_id,
+            has_parent,
+            parent_folder_id,
+            has_insert_index,
+            insert_index,
+            name.as_str().unwrap_or(""),
+        );
         Ok(())
     }
 
@@ -327,14 +233,15 @@ pub unsafe extern "C" fn req_cmd_add_folder(
             anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_string()));
         }
 
-        let command = CommandRequest::AddFolder {
-            parent_folder_id: has_parent.then_some(parent_folder_id),
-            insert_index: has_insert_index.then_some(insert_index),
-            name: name.as_string_lossy().into_owned(),
-        };
-
         let queue = unsafe { &mut *ptr_queue };
-        queue.enqueue(timeline_id, command);
+        queue.req_cmd_add_folder(
+            timeline_id,
+            has_parent,
+            parent_folder_id,
+            has_insert_index,
+            insert_index,
+            name.as_str().unwrap_or(""),
+        );
 
         Ok(())
     }
