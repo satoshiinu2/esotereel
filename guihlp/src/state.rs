@@ -124,8 +124,8 @@ impl ClientState {
         if let Some(FieldValue::Enum(level) | FieldValue::String(level)) =
             self.settings.get_value(&level_key)
         {
-            if let Some(level) = crate::ffi::logger::level_filter_from_name(level) {
-                crate::ffi::logger::set_default_log_level(level);
+            if let Some(level) = crate::logger::level_filter_from_name(level) {
+                crate::logger::set_default_log_level(level);
             }
         }
 
@@ -137,11 +137,11 @@ impl ClientState {
                         FieldValue::Enum(level) | FieldValue::String(level) => level,
                         _ => return None,
                     };
-                    crate::ffi::logger::level_filter_from_name(level)
+                    crate::logger::level_filter_from_name(level)
                         .map(|level| (target.clone(), level))
                 })
                 .collect();
-            crate::ffi::logger::replace_log_filters(filters);
+            crate::logger::replace_log_filters(filters);
         }
     }
 

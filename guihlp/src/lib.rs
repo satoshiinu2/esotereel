@@ -18,6 +18,11 @@ mod network;
 pub mod responces;
 pub mod state;
 
+pub mod commands;
+pub mod logger;
+pub mod settings;
+pub mod render;
+
 thread_local! {
     #[deprecated(note = "use FfiResult")]
     static LAST_ERR_MSG:RefCell<CString>=RefCell::new(CString::new("").unwrap());

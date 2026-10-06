@@ -5,25 +5,15 @@ use std::{
 
 use esotereel_lib::{
     project::{camera::CameraInfo, ids::TimelineId},
-    render::{
-        RenderContext, render_frame_offscreen,
-        wgpuutil::{OffscreenTarget, WGpuUtil},
-    },
+    render::wgpuutil::{OffscreenTarget, WGpuUtil},
     util::result::EsotereelError,
 };
 
 use crate::{
-    ffi::{array::FfiArray, result::FfiResult, state::ClientStateHandle},
+    ffi::{result::FfiResult, state::ClientStateHandle},
+    render::FrameRenderResult,
     state::ClientState,
 };
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct FrameRenderResult {
-    width: u32,
-    height: u32,
-    data: FfiArray<u8>,
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
@@ -50,8 +40,6 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
             return Err(EsotereelError::NullPointer("pointer is null".to_string()).into());
         }
 
-        // Arc::into_raw 由来のポインタから、参照カウントを増やして
-        // 独立した Arc クローンを作る（元のポインタは消費しない）
         let raw = ptr_state as *const Mutex<ClientState>;
         let state: Arc<Mutex<ClientState>> = unsafe {
             Arc::increment_strong_count(raw);
@@ -62,43 +50,15 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let camera_info = unsafe { &*ptr_camera_info };
 
         let state_guard = state.lock().expect("mutex poisoned");
-        let project_guard = state_guard.project.read().expect("mutex poisoned");
 
-        let project = match project_guard.as_ref() {
-            Some(arc) => Ok(arc),
-            None => Err(EsotereelError::ProjectNotFound),
-        }?;
-
-        let timeline = match project.timeline_ref(timeline_id) {
-            Some(tl) => Ok(tl),
-            None => Err(EsotereelError::TimelineNotFound(timeline_id)),
-        }?;
-
-        let ctx = RenderContext {
-            path_to_stream: &state_guard.stream_state_map,
-            streams: &state_guard.stream_players,
-
-            media_fetch_cache: &state_guard.media_fetch_cache,
-            plugin_loader: &state_guard.plugin_loader,
-            script_engine: &state_guard.script_engine,
-
-            timeline,
+        crate::render::render_frame_offscreen_ffi(
+            wgpuutil,
+            offscreen,
+            &state_guard,
             camera_info,
+            timeline_id,
             current_frame,
-        };
-
-        render_frame_offscreen(wgpuutil, offscreen, &ctx)
-            .map_err(|msg| EsotereelError::RenderError(msg))?;
-
-        let bytes = offscreen
-            .readback(&wgpuutil.device)
-            .map_err(|msg| EsotereelError::RenderError(msg))?;
-
-        Ok(FrameRenderResult {
-            data: FfiArray::from_vec(bytes),
-            width: offscreen.width,
-            height: offscreen.height,
-        })
+        )
     }
 
     FfiResult::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {

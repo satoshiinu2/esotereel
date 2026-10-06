@@ -1,78 +1,19 @@
-use std::{
-    collections::HashSet,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use esotereel_lib::{
-    plugin::{
-        NamespacedID,
-        property::{PropertySchema, value::FieldTypeKind},
+use esotereel_lib::util::result::EsotereelError;
+
+use crate::{
+    ffi::{
+        array::FfiArray,
+        field_value::CFieldValue,
+        option::FfiOption,
+        result::{FfiResult, FfiResultVoid},
+        state::ClientStateHandle,
+        stringview::{FfiOwnedString, FfiStringView},
     },
-    util::result::EsotereelError,
+    settings::FfiPropertySchema,
 };
 
-use crate::ffi::{
-    array::FfiArray,
-    field_value::CFieldValue,
-    option::FfiOption,
-    result::{FfiResult, FfiResultVoid},
-    state::ClientStateHandle,
-    stringview::{FfiOwnedString, FfiStringView},
-};
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub enum SettingsFieldType {
-    Bool,
-    Int,
-    Float,
-    Enum,
-    String,
-    FilePath,
-    Color,
-    Array,
-    Map,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct FfiPropertySchema {
-    pub key: FfiOwnedString,
-    pub category: FfiOwnedString,
-    pub label: FfiOwnedString,
-    pub kind_type: SettingsFieldType,
-    pub default_value: CFieldValue,
-}
-
-impl FfiPropertySchema {
-    pub fn from_schema(schema: &PropertySchema) -> Self {
-        let kind_type = match &schema.kind {
-            FieldTypeKind::Bool => SettingsFieldType::Bool,
-            FieldTypeKind::Int { .. } => SettingsFieldType::Int,
-            FieldTypeKind::Float { .. } => SettingsFieldType::Float,
-            FieldTypeKind::Enum { .. } => SettingsFieldType::Enum,
-            FieldTypeKind::String => SettingsFieldType::String,
-            FieldTypeKind::FilePath { .. } => SettingsFieldType::FilePath,
-            FieldTypeKind::Color => SettingsFieldType::Color,
-            FieldTypeKind::Array { .. } => SettingsFieldType::Array,
-            FieldTypeKind::Map { .. } => SettingsFieldType::Map,
-        };
-
-        let category_str = schema.category.join(" > ");
-        let default_value = CFieldValue::wrap_ffi(&schema.default);
-
-        Self {
-            key: FfiOwnedString::from_string(schema.key.full().to_owned()),
-            category: FfiOwnedString::from_string(category_str),
-            label: FfiOwnedString::from_string(schema.label.clone()),
-            kind_type,
-            default_value,
-        }
-    }
-}
-
-/// 個数取得+バッファ書き込みの2関数ペアを、FfiArrayを直接返す1関数に統合。
-/// 呼び出し側(C++)はFfiArray::free_fnで解放する。
 pub type FfiPropertySchemaArrayResult = FfiResult<FfiArray<FfiPropertySchema>>;
 
 #[unsafe(no_mangle)]
@@ -87,13 +28,7 @@ pub unsafe extern "C" fn settings_get_all_fields(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state = state.lock().expect("mutex poisoned");
 
-        let fields: Vec<FfiPropertySchema> = state
-            .settings
-            .schema
-            .fields()
-            .iter()
-            .map(FfiPropertySchema::from_schema)
-            .collect();
+        let fields = crate::settings::get_all_fields(&state.settings);
 
         Ok(FfiArray::from_vec(fields))
     }
@@ -121,12 +56,8 @@ pub unsafe extern "C" fn settings_get_value(
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
-        let key = NamespacedID::parse(key_str)?;
         let state = state.lock().expect("mutex poisoned");
-        let value = state
-            .settings
-            .get_value(&key)
-            .map(|value| CFieldValue::wrap_ffi(value));
+        let value = crate::settings::get_value(&state.settings, key_str)?;
         Ok(value)
     }
 
@@ -152,11 +83,9 @@ pub unsafe extern "C" fn settings_set_value(
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
-        let key = NamespacedID::parse(key_str)?;
-        let is_core_setting = key.plugin_id() == "core";
+        let is_core_setting = key_str.starts_with("core:");
         let mut state = state.lock().expect("mutex poisoned");
-        let field_value = value.unwrap_ffi()?;
-        state.settings.set_value(key, field_value)?;
+        crate::settings::set_value(&mut state.settings, key_str, value)?;
         state.apply_logging_settings();
 
         if is_core_setting {
@@ -187,14 +116,7 @@ pub unsafe extern "C" fn settings_get_categories(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state = state.lock().expect("mutex poisoned");
 
-        let mut categories = HashSet::new();
-        for field in state.settings.schema.fields() {
-            for cat in &field.category {
-                categories.insert(cat.clone());
-            }
-        }
-        let mut cats: Vec<_> = categories.into_iter().collect();
-        cats.sort();
+        let cats = crate::settings::get_categories(&state.settings);
 
         let owned: Vec<FfiOwnedString> =
             cats.into_iter().map(FfiOwnedString::from_string).collect();
