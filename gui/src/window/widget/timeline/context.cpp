@@ -2,6 +2,7 @@
 #include "ffi/ClientState.h"
 #include "ffi/Requests.h"
 #include "ffi/project/RenderRows.h"
+#include "window/widget/timeline/context.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>

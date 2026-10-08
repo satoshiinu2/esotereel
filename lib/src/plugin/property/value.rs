@@ -21,12 +21,12 @@ pub enum ConvertError {
 pub enum FieldTypeKind {
     Bool,
     Int {
-        min: i64,
-        max: i64,
+        min: Option<i64>,
+        max: Option<i64>,
     },
     Float {
-        min: f64,
-        max: f64,
+        min: Option<f64>,
+        max: Option<f64>,
         step: f64,
     },
     Enum {
@@ -123,35 +123,59 @@ impl FieldTypeKind {
 
             // --- Int ---
             (FieldTypeKind::Int { min, max }, toml::Value::Integer(i)) => {
-                if i >= min && i <= max {
-                    Ok(FieldValue::Int(*i))
-                } else {
-                    Err(ConvertError::OutOfRange(format!(
-                        "値 {i} は範囲 [{min}, {max}] 外です"
-                    )))
+                if let Some(min_val) = min {
+                    if i < min_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {i} は最小値 {min_val} 未満です"
+                        )));
+                    }
                 }
+                if let Some(max_val) = max {
+                    if i > max_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {i} は最大値 {max_val} を超えています"
+                        )));
+                    }
+                }
+                Ok(FieldValue::Int(*i))
             }
 
             // --- Float ---
             (FieldTypeKind::Float { min, max, .. }, toml::Value::Float(f)) => {
-                if f >= min && f <= max {
-                    Ok(FieldValue::Float(*f))
-                } else {
-                    Err(ConvertError::OutOfRange(format!(
-                        "値 {f} は範囲 [{min}, {max}] 外です"
-                    )))
+                if let Some(min_val) = min {
+                    if f < min_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {f} は最小値 {min_val} 未満です"
+                        )));
+                    }
                 }
+                if let Some(max_val) = max {
+                    if f > max_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {f} は最大値 {max_val} を超えています"
+                        )));
+                    }
+                }
+                Ok(FieldValue::Float(*f))
             }
             // TOMLで 1.0 が Integer(1) と解釈された場合のエラー救済
             (FieldTypeKind::Float { min, max, .. }, toml::Value::Integer(i)) => {
                 let f = *i as f64;
-                if f >= *min && f <= *max {
-                    Ok(FieldValue::Float(f))
-                } else {
-                    Err(ConvertError::OutOfRange(format!(
-                        "値 {f} は範囲 [{min}, {max}] 外です"
-                    )))
+                if let Some(min_val) = min {
+                    if f < *min_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {f} は最小値 {min_val} 未満です"
+                        )));
+                    }
                 }
+                if let Some(max_val) = max {
+                    if f > *max_val {
+                        return Err(ConvertError::OutOfRange(format!(
+                            "値 {f} は最大値 {max_val} を超えています"
+                        )));
+                    }
+                }
+                Ok(FieldValue::Float(f))
             }
 
             // --- Enum ---

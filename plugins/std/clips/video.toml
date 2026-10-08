@@ -11,3 +11,10 @@ key = "source"
 label = "Source"
 category = ["Media"]
 kind = { type = "string" }
+
+[[properties.fields]]
+key = "source_offset"
+label = "Source Offset"
+category = ["Media"]
+kind = { type = "int" }
+default = 0

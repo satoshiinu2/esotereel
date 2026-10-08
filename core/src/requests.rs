@@ -321,6 +321,8 @@ pub fn on_request_receive(
                 .or_insert_with(|| HistoryStack::default());
 
             undo_command(project, *timeline_id, history)?;
+            // must send to client
+            state_guard.network.notify_dirty();
         }
         ArchivedRequest::Redo { timeline_id } => {
             let state_guard = state.lock().expect("mutex poisoned");
@@ -336,6 +338,8 @@ pub fn on_request_receive(
                 .or_insert_with(|| HistoryStack::default());
 
             redo_command(project, *timeline_id, history)?;
+            // must send to client
+            state_guard.network.notify_dirty();
         }
     }
     Ok(())

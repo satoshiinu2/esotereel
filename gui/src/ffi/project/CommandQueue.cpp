@@ -22,6 +22,12 @@ void CommandQueue::moveClips(const Project &project, TimelineId timelineId, cons
                                                 posMoved, durationMoved, layerMoved);
 }
 
+void CommandQueue::resizeClips(const Project &project, TimelineId timelineId, const std::vector<ClipId> &clipIds,
+                               bool leftEdge, int64_t frameDelta) noexcept {
+    esotereel_gui_helper::req_cmd_clip_resize_mul(ptr_queue, project, timelineId, clipIds.data(), clipIds.size(),
+                                                  leftEdge, frameDelta);
+}
+
 Result<void> CommandQueue::addClipAt(TimelineId timelineId, TimelineTick position, LayerId layerId) noexcept {
     return Result<void>(
         esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_queue, ptr_state, timelineId, position, layerId));

@@ -37,6 +37,10 @@ class CommandQueue {
     void moveClips(const Project &project, TimelineId timelineIdx, const std::vector<ClipId> &clipIds,
                    TimelineTick posMoved, TimelineTick durationMoved, int64_t layerMoved) noexcept;
 
+    // leftEdge=true: 左端(position/duration を同時に変更)、false: 右端(duration のみ)
+    void resizeClips(const Project &project, TimelineId timelineId, const std::vector<ClipId> &clipIds, bool leftEdge,
+                     int64_t frameDelta) noexcept;
+
     Result<void> addClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId) noexcept;
     void addLayer(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
                   const std::string &name) noexcept;

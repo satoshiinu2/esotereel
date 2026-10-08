@@ -234,7 +234,7 @@ impl Plugin {
             let (kinds, pending) =
                 ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
                     format!(
-                        "invalid clip kinds in `{}` for plugin `{}`",
+                        "failed parse clip kinds in `{}` for plugin `{}`",
                         path.display(),
                         manifest.id
                     )

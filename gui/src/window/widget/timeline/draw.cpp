@@ -3,6 +3,9 @@
 #include "ffi/ClientState.h"
 #include "ffi/project/LayerFolder.h"
 #include "ffi/project/RenderRows.h"
+#include "window/widget/timeline/draw.h"
+
+using esotereel::contains;
 
 namespace esotereel::window {
 QRect TimelineCanvasWidget::getInnerRect() const noexcept {
@@ -83,7 +86,8 @@ void TimelineCanvasWidget::drawRowLabel(const Project &project, const FfiLayerRo
 
 void TimelineCanvasWidget::drawClip(const ClipRenderInfo &info, QPainter &p, const QRect &r, double_t y) const {
     bool isSelected = contains(this->selectedClipIds, info.clip_id);
-    bool isDragging = std::holds_alternative<DragClip>(this->dragState);
+    bool isDragging =
+        std::holds_alternative<DragClip>(this->dragState) || std::holds_alternative<DragClipResize>(this->dragState);
 
     QColor bgColor;
     if (isSelected) {
@@ -183,6 +187,7 @@ void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
 
         // ゴースト
         this->drawDragGhost(project, p, r);
+        this->drawResizeGhost(project, p, r);
     }
     // 選択エリア
     this->drawSelectionRect(p, r);

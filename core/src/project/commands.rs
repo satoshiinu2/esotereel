@@ -1,16 +1,16 @@
 use esotereel_lib::{
-    plugin::property::value::FieldValue,
+    plugin::{NamespacedID, property::value::FieldValue},
     project::{
         Project,
         clip::ClipBindingValue,
-        command::{ClipMoveHistoryCtx, CommandHistory, CommandRequest},
+        command::{ClipMoveHistoryCtx, ClipResizeHistoryCtx, CommandHistory, CommandRequest},
         ids::TimelineId,
         layer::LayerRemoveStrategy,
     },
     util::result::EsotereelError,
 };
 
-use crate::project::{clip_add_core, clip_move_mul_core};
+use crate::project::{clip_add_core, clip_move_mul_core, clip_resize_core};
 
 pub fn command_to_history(
     project: &mut Project,
@@ -42,6 +42,60 @@ pub fn command_to_history(
                 })
                 .collect();
             CommandHistory::ClipsMove { clips: entries? }
+        }
+        CommandRequest::ClipsResize { clips } => {
+            let timeline = project
+                .timeline_mut(timeline_id)
+                .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+
+            let source_offset_key = NamespacedID::new("std", "source_offset").unwrap();
+
+            let entries: anyhow::Result<Vec<_>> = clips
+                .into_iter()
+                .map(|ctx| -> anyhow::Result<ClipResizeHistoryCtx> {
+                    let clip = timeline
+                        .get_clip(ctx.clip_id)
+                        .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
+
+                    let old_source_offset = clip
+                        .get_property_value(&source_offset_key)
+                        .and_then(|v| v.in_frame_of())
+                        .and_then(|v| match v {
+                            FieldValue::Int(i) => Some(*i),
+                            _ => None,
+                        });
+
+                    let new_position = if ctx.left_edge {
+                        clip.position + ctx.frame_delta
+                    } else {
+                        clip.position
+                    };
+
+                    let new_duration = if ctx.left_edge {
+                        clip.duration - ctx.frame_delta
+                    } else {
+                        clip.duration + ctx.frame_delta
+                    };
+
+                    let new_source_offset = if ctx.left_edge {
+                        old_source_offset.map(|o| o + ctx.frame_delta)
+                    } else {
+                        old_source_offset
+                    };
+
+                    Ok(ClipResizeHistoryCtx {
+                        clip_id: ctx.clip_id,
+                        left_edge: ctx.left_edge,
+                        old_position: clip.position,
+                        old_duration: clip.duration,
+                        old_source_offset,
+                        new_position,
+                        new_duration,
+                        new_source_offset,
+                    })
+                })
+                .collect();
+            CommandHistory::ClipsResize { clips: entries? }
         }
         CommandRequest::AddClip {
             layer_id,
@@ -130,6 +184,9 @@ pub fn execute_command(
     match command {
         CommandHistory::ClipsMove { clips } => {
             clip_move_mul_core(project, timeline_id, clips.as_slice())?
+        }
+        CommandHistory::ClipsResize { clips } => {
+            clip_resize_core(project, timeline_id, clips.as_slice())?
         }
         CommandHistory::AddClip {
             clip_id,
@@ -233,6 +290,27 @@ pub fn execute_command_undo(
                 .collect();
 
             let mut undo_command = CommandHistory::ClipsMove { clips: undo_moves };
+            execute_command(project, timeline_id, &mut undo_command)?;
+        }
+        CommandHistory::ClipsResize { clips } => {
+            // クリップリサイズのundoは、古い値に戻す
+            let undo_resizes: Vec<_> = clips
+                .iter()
+                .map(|ctx| ClipResizeHistoryCtx {
+                    clip_id: ctx.clip_id,
+                    left_edge: ctx.left_edge,
+                    old_position: ctx.new_position,
+                    old_duration: ctx.new_duration,
+                    old_source_offset: ctx.new_source_offset,
+                    new_position: ctx.old_position,
+                    new_duration: ctx.old_duration,
+                    new_source_offset: ctx.old_source_offset,
+                })
+                .collect();
+
+            let mut undo_command = CommandHistory::ClipsResize {
+                clips: undo_resizes,
+            };
             execute_command(project, timeline_id, &mut undo_command)?;
         }
         CommandHistory::AddClip {

@@ -125,6 +125,64 @@ pub unsafe extern "C" fn req_cmd_clip_move_mul(
     })))
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_cmd_clip_resize_mul(
+    ptr_queue: *mut CommandQueue,
+    ptr_opt_project: *const OptionProject,
+    timeline_id: TimelineId,
+    ptr: *const u64,
+    len: usize,
+    left_edge: bool,
+    frame_delta: i64,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_queue: *mut CommandQueue,
+        ptr_opt_project: *const OptionProject,
+        timeline_id: TimelineId,
+        ptr: *const u64,
+        len: usize,
+        left_edge: bool,
+        frame_delta: i64,
+    ) -> anyhow::Result<()> {
+        if ptr_queue.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_owned()));
+        }
+        if ptr_opt_project.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_opt_project".to_owned()));
+        }
+
+        let project = match unsafe { &*ptr_opt_project } {
+            Some(arc) => arc,
+            None => anyhow::bail!(EsotereelError::ProjectNotFound),
+        };
+
+        let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
+
+        let queue = unsafe { &mut *ptr_queue };
+        queue.req_cmd_clip_resize_mul(
+            project,
+            timeline_id,
+            clip_ids,
+            left_edge,
+            frame_delta,
+        )?;
+
+        Ok(())
+    }
+
+    FfiResultVoid::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
+        inner(
+            ptr_queue,
+            ptr_opt_project,
+            timeline_id,
+            ptr,
+            len,
+            left_edge,
+            frame_delta,
+        )
+    })))
+}
+
 /// be careful of deadlock
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_clip_dummy(

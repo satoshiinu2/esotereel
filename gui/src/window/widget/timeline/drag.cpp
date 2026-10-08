@@ -6,7 +6,7 @@
 
 namespace esotereel::window {
 
-static std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId) {
+std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId) {
     size_t rowIdx = 0;
     for (const auto &row : rows.rows()) {
         if (row.timeline_id == timelineId && row.node_kind == FfiLayerRowKind::Layer) {

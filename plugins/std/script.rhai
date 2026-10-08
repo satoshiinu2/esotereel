@@ -1,7 +1,7 @@
 fn toolbar_undo(ctx) {
-    ctx.undo();
+    ctx.network.undo();
 }
 
 fn toolbar_redo(ctx) {
-    ctx.redo();
+    ctx.network.redo();
 }

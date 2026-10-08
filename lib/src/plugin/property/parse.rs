@@ -48,8 +48,8 @@ impl FieldTypeKind {
             },
 
             "float" => FieldTypeKind::Float {
-                min: get_f64(table, "min")?,
-                max: get_f64(table, "max")?,
+                min: get_optional_f64(table, "min")?,
+                max: get_optional_f64(table, "max")?,
                 step: get_f64(table, "step")?,
             },
 
@@ -107,16 +107,20 @@ impl FieldTypeKind {
             FieldTypeKind::Bool => FieldValue::Bool(false),
 
             FieldTypeKind::Int { min, max } => {
-                // 0がレンジ内ならそれを、範囲外ならminを使う
-                let v = if *min <= 0 && 0 <= *max { 0 } else { *min };
+                // 0がレンジ内ならそれを、範囲外なら最も近い境界値を使う
+                let v = match (min, max) {
+                    (Some(min), _) if *min > 0 => *min,
+                    (_, Some(max)) if *max < 0 => *max,
+                    _ => 0,
+                };
                 FieldValue::Int(v)
             }
 
             FieldTypeKind::Float { min, max, .. } => {
-                let v = if *min <= 0.0 && 0.0 <= *max {
-                    0.0
-                } else {
-                    *min
+                let v = match (min, max) {
+                    (Some(min), _) if *min > 0.0 => *min,
+                    (_, Some(max)) if *max < 0.0 => *max,
+                    _ => 0.0,
                 };
                 FieldValue::Float(v)
             }
@@ -143,16 +147,27 @@ impl FieldTypeKind {
     }
 }
 
-fn get_i64(table: &toml::value::Table, key: &str) -> Result<i64> {
-    table
-        .get(key)
-        .and_then(|v| v.as_integer())
-        .with_context(|| format!("missing or invalid integer field `{key}`"))
+fn get_i64(table: &toml::value::Table, key: &str) -> Result<Option<i64>> {
+    match table.get(key) {
+        Some(value) => value
+            .as_integer()
+            .map(Some)
+            .with_context(|| format!("field `{key}` must be an integer")),
+        None => Ok(None),
+    }
+}
+
+fn get_optional_f64(table: &toml::value::Table, key: &str) -> Result<Option<f64>> {
+    match table.get(key) {
+        Some(value) => value
+            .as_float()
+            .or_else(|| value.as_integer().map(|i| i as f64))
+            .map(Some)
+            .with_context(|| format!("field `{key}` must be a float or integer")),
+        None => Ok(None),
+    }
 }
 
 fn get_f64(table: &toml::value::Table, key: &str) -> Result<f64> {
-    table
-        .get(key)
-        .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
-        .with_context(|| format!("missing or invalid float field `{key}`"))
+    get_optional_f64(table, key)?.with_context(|| format!("missing or invalid float field `{key}`"))
 }

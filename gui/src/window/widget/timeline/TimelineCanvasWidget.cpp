@@ -11,6 +11,7 @@ TimelineCanvasWidget::TimelineCanvasWidget(WindowGState &windowState, size_t tim
       commandQueue(CommandQueue(windowState.state)) {
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
+    setMouseTracking(true); // ホバーでリサイズカーソルを出すため
 
     connect(hScrollBar, &QScrollBar::valueChanged, [this](int val) {
         this->scroll.setX(val);

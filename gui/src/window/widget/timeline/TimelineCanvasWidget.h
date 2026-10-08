@@ -30,6 +30,12 @@
 #include "ffi/project/RenderRows.h"
 #include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
+#include "window/widget/timeline/resize.h"
+#include "window/widget/timeline/drag.h"
+#include "window/widget/timeline/context.h"
+#include "window/widget/timeline/draw.h"
+#include "window/widget/timeline/input.h"
+#include "window/widget/timeline/select.h"
 
 #include "esotereel_gui_helper.h"
 
@@ -48,26 +54,6 @@ constexpr float_t SCROLLBAR_SIZE = 12.0;
 constexpr double_t DEFAULT_FRAME_COUNT = 300;
 constexpr double_t DEFAULT_LAYER_LEN = 1;
 
-struct DragNone {};
-struct DragOther {};
-
-struct DragClip {
-    size_t srcLayerIdx;
-    int64_t srcFrame;
-    size_t curLayerIdx;
-    int64_t curFrame;
-    QPointF ghostPos;
-    bool isWrong;
-};
-
-struct DragAreaSel {
-    QPointF start;
-    QPointF current;
-};
-
-struct DragPlayHead {};
-
-using DragState = std::variant<DragNone, DragOther, DragClip, DragAreaSel, DragPlayHead>;
 using TimelineId = esotereel_gui_helper::TimelineId;
 using TimelineTick = esotereel_gui_helper::TimelineTick;
 
@@ -178,7 +164,20 @@ class TimelineCanvasWidget : public QWidget {
     void drawRuler(QPainter &p, const QRect &r) const;
     void drawSelectionRect(QPainter &p, const QRect &r) const;
     void drawDragGhost(const Project &project, QPainter &p, const QRect &r) const;
+    void drawResizeGhost(const Project &project, QPainter &p, const QRect &r) const;
 
+    // clip resize (resize.cpp)
+    std::optional<ClipResizeHit> findClipEdgeAt(const QPoint &local) const;
+    std::set<uint64_t> resizeTargetIds(uint64_t grabbedClipId) const;
+    bool canResizeClips(const Timeline &timeline, const DragClipResize &drag) const;
+    std::optional<DragClipResize> handleClipResizeGrab(const QPoint &local, bool ctrl);
+    void handleClipResizeContinue(const Project &project, const QPoint &local);
+    void handleClipResizeDrop(const Project &project, const QPoint &local);
+
+    // shared between drag.cpp and resize.cpp
+    friend std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId);
+
+    // clip drag (drag.cpp)
     std::optional<DragClip> handleClipDragGrab(const Project &project, const QPoint &local, bool ctrl);
     void handleClipDragContinue(const Project &project, const QPoint &local);
     void handleClipDraggingDrop(const Project &project, const QPoint &local);
@@ -187,34 +186,36 @@ class TimelineCanvasWidget : public QWidget {
     // drawDragGhost(ゴースト描画の色分け)で共有するロジック。
     bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, int32_t layerMoved) const;
 
+    // selection (select.cpp)
     bool handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
     void handleAreaSelEnd(const Project &project);
 
+    // input (input.cpp)
     DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
     void onDragEnd(QMouseEvent *e);
-
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
 
-    void debugProjectLog();
-    void togglePlayback();
-    void addClipAt(const QPoint &local);
-    void toggleComposite(uint64_t clipId);
-    void toggleFolder(uint64_t layerId);
-    void openFolder(uint64_t layerId);
-    bool handleFolderLabelClick(const Project &project, const QPoint &local);
+    // context menu (context.cpp)
     void buildLayerContextMenu(const Project &project, QMenu &menu, const QPoint &local);
     void addLayer(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex);
     void addFolder(std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex);
+    void addClipAt(const QPoint &local);
+    void debugProjectLog();
+    bool handleFolderLabelClick(const Project &project, const QPoint &local);
 
+    // other functions (TimelineCanvasWidget.cpp)
+    void togglePlayback();
+    void toggleComposite(uint64_t clipId);
+    void toggleFolder(uint64_t layerId);
+    void openFolder(uint64_t layerId);
     void requestFrameFetch();
     void processPendingFetch();
     // 再生タイマーのtick毎に呼ばれる。経過時間からplayheadを進める。
     void advancePlaybackFrame();
-
     std::pair<TimelineTick, TimelineTick> getVisibleFrameRange() const noexcept;
 };
 } // namespace esotereel::window

@@ -1,6 +1,7 @@
 #include "TimelineCanvasWidget.h"
 #include "TimelineWidget.h"
 #include "ffi/ClientState.h"
+#include "window/widget/timeline/input.h"
 
 namespace esotereel::window {
 void TimelineCanvasWidget::handleCtrlPlayhead(const QPoint &mousePos) {
@@ -73,6 +74,15 @@ void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
 void TimelineCanvasWidget::mouseMoveEvent(QMouseEvent *e) {
     QWidget::mouseMoveEvent(e);
 
+    // ホバー時にクリップ端でカーソルを変える
+    if (!(e->buttons() & Qt::LeftButton)) {
+        if (this->findClipEdgeAt(e->pos())) {
+            setCursor(Qt::SizeHorCursor);
+        } else {
+            unsetCursor();
+        }
+    }
+
     if (e->buttons() & Qt::LeftButton && std::holds_alternative<DragNone>(this->dragState) &&
         this->firstClickPos.has_value()) {
         this->dragState = this->onDragStarted(e, this->firstClickPos.value());
@@ -95,7 +105,8 @@ void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
     // ドラッグしていないなら１つセレクト
-    if (!std::holds_alternative<DragClip>(this->dragState) && e->button() & Qt::LeftButton) {
+    if (!std::holds_alternative<DragClip>(this->dragState) &&
+        !std::holds_alternative<DragClipResize>(this->dragState) && e->button() & Qt::LeftButton) {
 
         this->handleSelectClip(project, e->pos(), ctrl);
     }
@@ -115,6 +126,12 @@ DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickP
         return DragOther{};
     }
     Project project = projectResult.unwrapOrMove();
+
+    // 0. クリップの端を掴めるか(リサイズ)チェック。移動より優先
+    auto resizeGrab = this->handleClipResizeGrab(firstClickPos, ctrl);
+    if (resizeGrab.has_value()) {
+        return resizeGrab.value();
+    }
 
     // 1. クリップを掴めるかチェック
     auto clipGrabResult = this->handleClipDragGrab(project, firstClickPos, ctrl);
@@ -157,6 +174,9 @@ void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
             } else if constexpr (std::is_same_v<T, DragClip>) {
                 this->handleClipDragContinue(project, e->pos());
                 this->checkEdgeScroll(e->pos(), rect());
+            } else if constexpr (std::is_same_v<T, DragClipResize>) {
+                this->handleClipResizeContinue(project, e->pos());
+                this->checkEdgeScroll(e->pos(), rect());
             }
         },
         this->dragState);
@@ -179,6 +199,8 @@ void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
 
             } else if constexpr (std::is_same_v<T, DragClip>) {
                 this->handleClipDraggingDrop(project, e->pos());
+            } else if constexpr (std::is_same_v<T, DragClipResize>) {
+                this->handleClipResizeDrop(project, e->pos());
             }
         },
         this->dragState);

@@ -86,7 +86,11 @@ impl ClipKind {
             .properties
             .into_iter()
             .map(|p| Self::parse_pending(p, plugin_id))
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(|e| {
+                log::error!("Failed to parse properties in {}: {}", plugin_id, e);
+                e
+            })?;
 
         Ok((kinds, pending))
     }

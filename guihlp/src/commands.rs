@@ -1,21 +1,21 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
+    plugin::NamespacedID,
     project::{
         clip::{ClipBindingValue, ClipData},
-        command::{ClipMoveCtx, CommandRequest},
+        command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
         transform::{ClipTranslate, ClipTranslates},
     },
-    plugin::NamespacedID,
     requests::Request,
     util::result::EsotereelError,
 };
 
-use crate::network::ClientNetworkHandler;
-use crate::state::ClientState;
 use crate::WrapperErrorCode;
+use crate::network::ClientNetworkHandler;
 use crate::slice_from_ptr_or_empty;
+use crate::state::ClientState;
 
 #[derive(Default, Debug)]
 pub struct CommandQueue {
@@ -78,6 +78,29 @@ impl CommandQueue {
         Ok(())
     }
 
+    pub fn req_cmd_clip_resize_mul(
+        &mut self,
+        project: &esotereel_lib::project::Project,
+        timeline_id: TimelineId,
+        clip_ids: &[u64],
+        left_edge: bool,
+        frame_delta: i64,
+    ) -> anyhow::Result<()> {
+        let clip_data = clip_ids
+            .iter()
+            .map(|clip_id| ClipResizeCtx {
+                clip_id: *clip_id,
+                left_edge,
+                frame_delta,
+            })
+            .collect();
+
+        let command = CommandRequest::ClipsResize { clips: clip_data };
+        self.enqueue(timeline_id, command);
+
+        Ok(())
+    }
+
     pub fn req_cmd_add_clip_dummy(
         &mut self,
         state: &ClientState,
@@ -110,7 +133,7 @@ impl CommandQueue {
         let command = CommandRequest::AddClip {
             layer_id,
             position,
-            duration: 10000,
+            duration: 50,
             kind_id,
             properties,
             translates,

@@ -330,6 +330,14 @@ FfiResultVoid req_cmd_clip_move_mul(CommandQueue *ptr_queue,
                                     int64_t duration_added,
                                     intptr_t layer_moved);
 
+FfiResultVoid req_cmd_clip_resize_mul(CommandQueue *ptr_queue,
+                                      const OptionProject *ptr_opt_project,
+                                      TimelineId timeline_id,
+                                      const uint64_t *ptr,
+                                      uintptr_t len,
+                                      bool left_edge,
+                                      int64_t frame_delta);
+
 /// be careful of deadlock
 FfiResultVoid req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
                                      const ClientStateHandle *ptr_state,
