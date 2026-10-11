@@ -5,9 +5,14 @@
 #include "ffi/project/CommandQueue.h"
 #include "ffi/project/Timeline.h"
 
+using ClipId = esotereel_gui_helper::ClipId;
+using TimelineTick = esotereel_gui_helper::TimelineTick;
+using LayerDelta = esotereel_gui_helper::LayerDelta;
+using LayerId = esotereel_gui_helper::LayerId;
+
 namespace esotereel::window {
 
-std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId) {
+std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, ClipId clipId) {
     size_t rowIdx = 0;
     for (const auto &row : rows.rows()) {
         if (row.timeline_id == timelineId && row.node_kind == FfiLayerRowKind::Layer) {
@@ -25,14 +30,14 @@ std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timeline
 // ドラッグ移動量(frameMoved/layerMoved)を1クリップに適用した結果の移動先。
 struct ClipDropTarget {
     size_t targetLayerIdx;
-    uint64_t targetLayerId;
-    int64_t newPosition;
-    int64_t duration;
+    LayerId targetLayerId;
+    TimelineTick newPosition;
+    TimelineTick duration;
 };
 
 // clipIdの移動先を計算する。クリップが見つからない場合はnullopt。
 std::optional<ClipDropTarget> computeDropTarget(const Timeline &timeline, const RenderRows &rows, TimelineId timelineId,
-                                                uint64_t clipId, int64_t frameMoved, int32_t layerMoved) {
+                                                ClipId clipId, TimelineTick frameMoved, LayerDelta layerMoved) {
     auto clipAndLayer = timeline.findClipById(clipId);
     auto clip = std::get<0>(clipAndLayer);
     if (!clip.isValid()) {
@@ -64,12 +69,12 @@ std::optional<ClipDropTarget> computeDropTarget(const Timeline &timeline, const 
 
 // 選択中の全クリップが、指定した移動量の位置に配置可能かどうかを判定する。
 // handleClipDragContinue(ドラッグ中の可否表示)とdrawDragGhost(ゴーストの色分け)で共有。
-bool TimelineCanvasWidget::canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved,
-                                                  int32_t layerMoved) const {
+bool TimelineCanvasWidget::canDropSelectedClipsAt(const Timeline &timeline, TimelineTick frameMoved,
+                                                  LayerDelta layerMoved) const {
     if (!this->cachedRows) {
         return false;
     }
-    for (uint64_t clipId : this->selectedClipIds) {
+    for (ClipId clipId : this->selectedClipIds) {
         auto target = computeDropTarget(timeline, *this->cachedRows, this->timelineId, clipId, frameMoved, layerMoved);
         if (!target) {
             continue;
@@ -125,10 +130,10 @@ void TimelineCanvasWidget::handleClipDragContinue(const Project &project, const 
     drag->curLayerIdx = this->YToRow(mousePos.y());
     drag->ghostPos = mousePos;
 
-    int64_t frameMoved = drag->curFrame - drag->srcFrame;
-    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    TimelineTick frameMoved = drag->curFrame - drag->srcFrame;
+    LayerDelta layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
-    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved, this->selectedClipIds);
 
     drag->isWrong = !canDropSelectedClipsAt(timeline, frameMoved, layerMoved);
 
@@ -145,13 +150,13 @@ void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const 
         return;
     }
 
-    int64_t frameMoved = drag->curFrame - drag->srcFrame;
-    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    TimelineTick frameMoved = drag->curFrame - drag->srcFrame;
+    LayerDelta layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
-    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved, this->selectedClipIds);
     // drag->isWrongでもバックエンドで弾いてるので多分大丈夫
 
-    std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    std::vector<ClipId> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->commandQueue.moveClips(project, this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
 
@@ -170,12 +175,12 @@ void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, co
     TimelineTick frameMoved = drag->curFrame - drag->srcFrame;
     LayerDelta layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
-    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved, this->selectedClipIds);
 
     QColor bgColor = drag->isWrong ? QColor(180, 70, 70, 180) : QColor(70, 130, 180, 180);
     QColor strokeColor = drag->isWrong ? QColor(255, 120, 120) : QColor(150, 200, 255);
 
-    for (uint64_t clipId : this->selectedClipIds) {
+    for (ClipId clipId : this->selectedClipIds) {
         if (!this->cachedRows) {
             continue;
         }
@@ -196,8 +201,8 @@ void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, co
 }
 
 /// ドラッグ位置を決めたあとに、重なっているクリップがあれば、その隣にぴったり付く位置へ補正する処理(スナップ)
-TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, int32_t layerMoved,
-                                                  std::set<uint64_t> checkClips) const {
+TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, LayerDelta layerMoved,
+                                                  std::set<ClipId> checkClips) const {
     if (!this->cachedRows) {
         return frameMoved;
     }
@@ -242,7 +247,7 @@ TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, Time
     if (!best) {
         return frameMoved;
     }
-    const int64_t snapped = frameMoved + *best;
+    const TimelineTick snapped = frameMoved + *best;
     // 補正しても置けない(別のクリップにぶつかる等)なら元の位置のまま
     return this->canDropSelectedClipsAt(timeline, snapped, layerMoved) ? snapped : frameMoved;
 }

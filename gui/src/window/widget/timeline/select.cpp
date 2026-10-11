@@ -1,6 +1,8 @@
 #include "TimelineCanvasWidget.h"
 #include "window/widget/timeline/select.h"
 
+using ClipId = esotereel_gui_helper::ClipId;
+
 namespace esotereel::window {
 // return true if selected
 bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl) {
@@ -16,7 +18,7 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
         return false;
     }
 
-    uint64_t id = clip.id();
+    ClipId id = clip.id();
     if (ctrl) {
         if (this->selectedClipIds.count(id)) {
             this->selectedClipIds.erase(id);

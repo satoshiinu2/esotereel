@@ -4,6 +4,8 @@
 #include "ffi/Requests.h"
 #include "ffi/project/RenderRows.h"
 
+using LayerId = esotereel_gui_helper::LayerId;
+
 #include <QContextMenuEvent>
 #include <QEvent>
 #include <QInputDialog>
@@ -189,7 +191,7 @@ void TimelineCanvasWidget::addFolder(std::optional<LayerFolderId> parentFolderId
 
 void TimelineCanvasWidget::addClipAt(const QPoint &local) {
     int64_t frame = 0;
-    uint64_t layerId = 0;
+    LayerId layerId = 0;
     bool canAdd = false;
 
     // スコープでロック期間を最小化

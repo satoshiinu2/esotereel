@@ -172,19 +172,19 @@ class TimelineCanvasWidget : public QWidget {
     void handleClipResizeDrop(const Project &project, const QPoint &local);
 
     // shared between drag.cpp and resize.cpp
-    friend std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId);
+    friend std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, ClipId clipId);
 
     // clip drag (drag.cpp)
     std::optional<DragClip> handleClipDragGrab(const Project &project, const QPoint &local, bool ctrl);
     void handleClipDragContinue(const Project &project, const QPoint &local);
     void handleClipDraggingDrop(const Project &project, const QPoint &local);
 
-    TimelineTick snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, int32_t layerMoved,
-                                std::set<uint64_t> checkClips) const;
+    TimelineTick snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, LayerDelta layerMoved,
+                                std::set<ClipId> checkClips) const;
     // 選択中の全クリップを、指定した移動量(frameMoved/layerMoved)の位置へ
     // 配置できるかを判定する。handleClipDragContinue(仮置きの可否判定)と
     // drawDragGhost(ゴースト描画の色分け)で共有するロジック。
-    bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, int32_t layerMoved) const;
+    bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, LayerDelta layerMoved) const;
 
     // selection (select.cpp)
     bool handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl);

@@ -5,26 +5,30 @@
 #include "ffi/project/CommandQueue.h"
 #include "ffi/project/Timeline.h"
 
+using ClipId = esotereel_gui_helper::ClipId;
+using TimelineTick = esotereel_gui_helper::TimelineTick;
+using LayerId = esotereel_gui_helper::LayerId;
+
 using esotereel::contains;
 
 namespace esotereel::window {
 
 // drag.cpp 側の定義(static を外して共有)
-std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, uint64_t clipId);
+std::optional<size_t> rowIndexOfClip(const RenderRows &rows, TimelineId timelineId, ClipId clipId);
 
 namespace {
 struct ClipResizeTarget {
     size_t rowIdx;
-    uint64_t layerId;
-    int64_t newPosition;
-    int64_t newDuration; // 表示用に MIN_CLIP_DURATION 以上へ丸め済み
+    LayerId layerId;
+    TimelineTick newPosition;
+    TimelineTick newDuration; // 表示用に MIN_CLIP_DURATION 以上へ丸め済み
     bool valid;          // duration >= MIN
 };
 
 // clipId の端を frameDelta だけ動かした結果。クリップが見つからなければ nullopt。
 std::optional<ClipResizeTarget> computeResizeTarget(const Timeline &timeline, const RenderRows &rows,
-                                                    TimelineId timelineId, uint64_t clipId, ClipResizeEdge edge,
-                                                    int64_t frameDelta) {
+                                                    TimelineId timelineId, ClipId clipId, ClipResizeEdge edge,
+                                                    TimelineTick frameDelta) {
     auto [clip, layerId] = timeline.findClipById(clipId);
     if (!clip.isValid()) {
         return std::nullopt;
@@ -34,8 +38,8 @@ std::optional<ClipResizeTarget> computeResizeTarget(const Timeline &timeline, co
         return std::nullopt;
     }
 
-    int64_t pos = clip.position();
-    int64_t dur = clip.duration();
+    TimelineTick pos = clip.position();
+    TimelineTick dur = clip.duration();
 
     if (edge == ClipResizeEdge::Left) {
         pos += frameDelta;
@@ -92,10 +96,10 @@ bool TimelineCanvasWidget::canResizeClips(const Timeline &timeline, const DragCl
     if (!this->cachedRows) {
         return false;
     }
-    const int64_t delta = drag.curFrame - drag.srcFrame;
+    const TimelineTick delta = drag.curFrame - drag.srcFrame;
     const auto ids = this->resizeTargetIds(drag.grabbedClipId);
 
-    for (uint64_t clipId : ids) {
+    for (ClipId clipId : ids) {
         auto t = computeResizeTarget(timeline, *this->cachedRows, this->timelineId, clipId, drag.edge, delta);
         if (!t || !t->valid) {
             return false;
@@ -144,13 +148,13 @@ void TimelineCanvasWidget::handleClipResizeDrop(const Project &project, const QP
     if (!drag) {
         return;
     }
-    const int64_t delta = drag->curFrame - drag->srcFrame;
+    const TimelineTick delta = drag->curFrame - drag->srcFrame;
     if (drag->isWrong || delta == 0) {
         return;
     }
 
     const auto idSet = this->resizeTargetIds(drag->grabbedClipId);
-    std::vector<uint64_t> ids(idSet.begin(), idSet.end());
+    std::vector<ClipId> ids(idSet.begin(), idSet.end());
 
     this->commandQueue.resizeClips(project, this->timelineId, ids, drag->edge == ClipResizeEdge::Left, delta);
 
@@ -164,14 +168,14 @@ void TimelineCanvasWidget::drawResizeGhost(const Project &project, QPainter &p, 
         return;
     }
     auto timeline = project.timelineOf(this->timelineId);
-    const int64_t delta = drag->curFrame - drag->srcFrame;
+    const TimelineTick delta = drag->curFrame - drag->srcFrame;
 
     QColor bgColor = drag->isWrong ? QColor(180, 70, 70, 180) : QColor(70, 130, 180, 180);
     QColor strokeColor = drag->isWrong ? QColor(255, 120, 120) : QColor(150, 200, 255);
     p.setBrush(bgColor);
     p.setPen(QPen(strokeColor, 1));
 
-    for (uint64_t clipId : this->resizeTargetIds(drag->grabbedClipId)) {
+    for (ClipId clipId : this->resizeTargetIds(drag->grabbedClipId)) {
         auto t = computeResizeTarget(timeline, *this->cachedRows, this->timelineId, clipId, drag->edge, delta);
         if (!t) {
             continue;
