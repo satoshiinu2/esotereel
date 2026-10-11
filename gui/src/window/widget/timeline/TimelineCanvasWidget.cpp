@@ -129,7 +129,7 @@ void TimelineCanvasWidget::updateSnapshot() const {
         if (projectResult.isError()) {
             return;
         }
-        auto project = projectResult.unwrapOrMove();
+        auto project = std::move(projectResult.unwrap());
 
         cachedRows = std::make_unique<RenderRows>(project, timelineId, openCompositeIds, openFolderIds);
     } // <- ここで Project のデストラクタが走り ReadGuard 解放

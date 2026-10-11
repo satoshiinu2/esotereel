@@ -52,16 +52,36 @@ class FieldValue {
     static void freeC(CFieldValue &value);
 
     // Static factory methods
-    static FieldValue fromBool(bool value) { return FieldValue(value); }
-    static FieldValue fromInt(std::int64_t value) { return FieldValue(value); }
-    static FieldValue fromFloat(double value) { return FieldValue(value); }
-    static FieldValue fromEnum(const std::string &value) { return FieldValue(EnumValue{value}); }
-    static FieldValue fromString(const std::string &value) { return FieldValue(value); }
-    static FieldValue fromString(const QString &value) { return FieldValue(value.toStdString()); }
-    static FieldValue fromPath(const PathValue &value) { return FieldValue(value); }
-    static FieldValue fromColor(const RgbaColor &value) { return FieldValue(value); }
-    static FieldValue fromArray(const Array &value) { return FieldValue(value); }
-    static FieldValue fromMap(const Map &value) { return FieldValue(value); }
+    static FieldValue fromBool(bool value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromInt(std::int64_t value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromFloat(double value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromEnum(const std::string &value) {
+        return FieldValue(EnumValue{value});
+    }
+    static FieldValue fromString(const std::string &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromString(const QString &value) {
+        return FieldValue(value.toStdString());
+    }
+    static FieldValue fromPath(const PathValue &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromColor(const RgbaColor &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromArray(const Array &value) {
+        return FieldValue(value);
+    }
+    static FieldValue fromMap(const Map &value) {
+        return FieldValue(value);
+    }
 
     const Variant &variant() const noexcept {
         return value_;
@@ -72,23 +92,78 @@ class FieldValue {
     }
 
     // Type conversion methods
-    bool asBool() const { return std::get<bool>(value_); }
-    std::int64_t asInt() const { return std::get<std::int64_t>(value_); }
-    double asFloat() const { return std::get<double>(value_); }
-    std::string asEnum() const { return std::get<EnumValue>(value_).value; }
-    std::string asString() const {
-        if (std::holds_alternative<std::string>(value_)) {
-            return std::get<std::string>(value_);
-        } else if (std::holds_alternative<EnumValue>(value_)) {
-            return std::get<EnumValue>(value_).value;
+    std::optional<bool> asBool() const {
+        if (const auto *v = std::get_if<bool>(&value_)) {
+            return *v;
         }
-        return "";
+        return std::nullopt;
     }
-    QString asQString() const { return QString::fromStdString(asString()); }
-    PathValue asPath() const { return std::get<PathValue>(value_); }
-    RgbaColor asColor() const { return std::get<RgbaColor>(value_); }
-    Array asArray() const { return std::get<Array>(value_); }
-    Map asMap() const { return std::get<Map>(value_); }
+
+    std::optional<std::int64_t> asInt() const {
+        if (const auto *v = std::get_if<std::int64_t>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<double> asFloat() const {
+        if (const auto *v = std::get_if<double>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::string> asEnum() const {
+        if (const auto *v = std::get_if<EnumValue>(&value_)) {
+            return v->value;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::string> asString() const {
+        if (const auto *v = std::get_if<std::string>(&value_)) {
+            return *v;
+        }
+        if (const auto *v = std::get_if<EnumValue>(&value_)) {
+            return v->value;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<QString> asQString() const {
+        if (auto v = asString()) {
+            return QString::fromStdString(*v);
+        }
+        return std::nullopt;
+    }
+
+    std::optional<PathValue> asPath() const {
+        if (const auto *v = std::get_if<PathValue>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<RgbaColor> asColor() const {
+        if (const auto *v = std::get_if<RgbaColor>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<Array> asArray() const {
+        if (const auto *v = std::get_if<Array>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<Map> asMap() const {
+        if (const auto *v = std::get_if<Map>(&value_)) {
+            return *v;
+        }
+        return std::nullopt;
+    }
 
   private:
     Variant value_;

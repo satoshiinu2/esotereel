@@ -46,7 +46,7 @@ void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString
         qWarning() << "TimelineToolbarWidget: failed to load buttons for target" << target;
         return;
     }
-    const auto buttons = buttonsResult.unwrapOrMove();
+    const auto buttons = std::move(buttonsResult.unwrap());
 
     int insertPos = 0;
     for (const auto &button : buttons) {

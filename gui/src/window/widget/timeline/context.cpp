@@ -1,8 +1,8 @@
+#include "window/widget/timeline/context.h"
 #include "TimelineCanvasWidget.h"
 #include "ffi/ClientState.h"
 #include "ffi/Requests.h"
 #include "ffi/project/RenderRows.h"
-#include "window/widget/timeline/context.h"
 
 #include <QContextMenuEvent>
 #include <QEvent>
@@ -68,7 +68,7 @@ void TimelineCanvasWidget::contextMenuEvent(QContextMenuEvent *e) {
             menu.exec(e->globalPos());
             return;
         }
-        auto project = projectResult.unwrapOrMove();
+        auto project = std::move(projectResult.unwrap());
 
         if (pos.x() < LABEL_WIDTH && pos.y() >= RULER_HEIGHT) {
             this->buildLayerContextMenu(project, menu, pos);
@@ -197,7 +197,7 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
         auto projectResult = windowState.state->getProject();
         if (projectResult.isError())
             return;
-        auto project = projectResult.unwrapOrMove();
+        auto project = std::move(projectResult.unwrap());
         if (!project.isValid())
             return;
 

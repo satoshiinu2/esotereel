@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub type TimelineId = u64;
 pub type LayerId = u64;
+pub type LayerDelta = i64;
 pub type LayerFolderId = u64;
 pub type ClipId = u64;
 pub type ScriptId = u64;

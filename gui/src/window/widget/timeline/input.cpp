@@ -1,7 +1,7 @@
+#include "window/widget/timeline/input.h"
 #include "TimelineCanvasWidget.h"
 #include "TimelineWidget.h"
 #include "ffi/ClientState.h"
-#include "window/widget/timeline/input.h"
 
 namespace esotereel::window {
 void TimelineCanvasWidget::handleCtrlPlayhead(const QPoint &mousePos) {
@@ -60,7 +60,7 @@ void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
             // ドラッグ選択/クリップドラッグは開始しない
             auto projectResult = windowState.state->getProject();
             if (!projectResult.isError()) {
-                auto project = projectResult.unwrapOrMove();
+                auto project = std::move(projectResult.unwrap());
                 if (this->handleFolderLabelClick(project, mousePos)) {
                     return;
                 }
@@ -100,7 +100,7 @@ void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
     if (projectResult.isError()) {
         return; // Handle error appropriately
     }
-    Project project = projectResult.unwrapOrMove();
+    Project project = std::move(projectResult.unwrap());
 
     bool ctrl = e->modifiers() & Qt::ControlModifier;
 
@@ -125,7 +125,7 @@ DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickP
     if (projectResult.isError()) {
         return DragOther{};
     }
-    Project project = projectResult.unwrapOrMove();
+    Project project = std::move(projectResult.unwrap());
 
     // 0. クリップの端を掴めるか(リサイズ)チェック。移動より優先
     auto resizeGrab = this->handleClipResizeGrab(firstClickPos, ctrl);
@@ -158,7 +158,7 @@ void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
     if (projectResult.isError()) {
         return;
     }
-    Project project = projectResult.unwrapOrMove();
+    Project project = std::move(projectResult.unwrap());
 
     std::visit(
         [&](auto &&state) {
@@ -187,7 +187,7 @@ void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
     if (projectResult.isError()) {
         return;
     }
-    Project project = projectResult.unwrapOrMove();
+    Project project = std::move(projectResult.unwrap());
 
     std::visit(
         [&](auto &&state) {

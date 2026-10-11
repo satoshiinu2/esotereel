@@ -309,6 +309,8 @@ using WGpuUtilNewResult = FfiResult<WGpuUtil*>;
 /// out 出力パラメータを廃止し、生成したポインタ自体を戻り値として返す形に変更。
 using OffscreenTargetNewResult = FfiResult<OffscreenTarget*>;
 
+using LayerDelta = int64_t;
+
 using ScriptId = uint64_t;
 
 extern "C" {

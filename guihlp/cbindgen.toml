@@ -19,6 +19,7 @@ include = [
     "TimelineId",
     "ClipId",
     "LayerId",
+    "LayerDelta",
     "LayerFolderId",
     "ScriptId",
     "Clip",

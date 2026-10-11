@@ -83,7 +83,9 @@ void SettingsDialog::loadSettings() {
     if (fieldsResult.isOk()) {
         allFields = fieldsResult.unwrap();
     } else {
-        qWarning() << "Failed to get fields:" << QString::fromStdString(fieldsResult.error());
+        auto err = fieldsResult.getError();
+        assert(err.has_value());
+        qWarning() << "Failed to get fields:" << QString::fromStdString(*err);
     }
 
     fieldsByCategory.clear();
@@ -103,7 +105,9 @@ void SettingsDialog::populateCategories() {
     if (categoriesResult.isOk()) {
         categories = categoriesResult.unwrap();
     } else {
-        qWarning() << "Failed to get categories:" << QString::fromStdString(categoriesResult.error());
+        auto err = categoriesResult.getError();
+        assert(err.has_value());
+        qWarning() << "Failed to get categories:" << QString::fromStdString(*err);
     }
 
     if (categories.isEmpty()) {

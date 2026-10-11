@@ -30,12 +30,8 @@
 #include "ffi/project/RenderRows.h"
 #include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
-#include "window/widget/timeline/resize.h"
 #include "window/widget/timeline/drag.h"
-#include "window/widget/timeline/context.h"
-#include "window/widget/timeline/draw.h"
-#include "window/widget/timeline/input.h"
-#include "window/widget/timeline/select.h"
+#include "window/widget/timeline/resize.h"
 
 #include "esotereel_gui_helper.h"
 
@@ -56,6 +52,7 @@ constexpr double_t DEFAULT_LAYER_LEN = 1;
 
 using TimelineId = esotereel_gui_helper::TimelineId;
 using TimelineTick = esotereel_gui_helper::TimelineTick;
+using LayerDelta = esotereel_gui_helper::LayerDelta;
 
 class TimelineCanvasWidget : public QWidget {
     Q_OBJECT
@@ -181,6 +178,9 @@ class TimelineCanvasWidget : public QWidget {
     std::optional<DragClip> handleClipDragGrab(const Project &project, const QPoint &local, bool ctrl);
     void handleClipDragContinue(const Project &project, const QPoint &local);
     void handleClipDraggingDrop(const Project &project, const QPoint &local);
+
+    TimelineTick snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, int32_t layerMoved,
+                                std::set<uint64_t> checkClips) const;
     // 選択中の全クリップを、指定した移動量(frameMoved/layerMoved)の位置へ
     // 配置できるかを判定する。handleClipDragContinue(仮置きの可否判定)と
     // drawDragGhost(ゴースト描画の色分け)で共有するロジック。

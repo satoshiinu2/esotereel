@@ -10,8 +10,6 @@
 #include <QPushButton>
 #include <QSpinBox>
 
-#include "window/dialog/logfilter/LogFilterDialog.h"
-
 namespace esotereel::window::widget {
 
 using esotereel::FieldValue;
@@ -34,7 +32,12 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
 
     if (field.kindType == SettingsFieldType::Bool) {
         auto *checkBox = new QCheckBox();
-        checkBox->setChecked(currentValue.asBool());
+
+        auto boolValue = currentValue.asBool();
+        // Safe: field.kindType == SettingsFieldType::Bool guarantees the value type matches
+        assert(boolValue.has_value());
+        checkBox->setChecked(boolValue.value());
+
         QObject::connect(checkBox, &QCheckBox::checkStateChanged, checkBox, [binding](Qt::CheckState state) {
             binding.setValue(FieldValue::fromBool(state == Qt::Checked));
         });
@@ -44,7 +47,12 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
     if (field.kindType == SettingsFieldType::Int) {
         auto *spinBox = new QSpinBox();
         spinBox->setRange(0, 1000); // TODO: schemaにmin/maxが乗ったらそちらを使う
-        spinBox->setValue(static_cast<int>(currentValue.asInt()));
+
+        auto intValue = currentValue.asInt();
+        // Safe: field.kindType == SettingsFieldType::Int guarantees the value type matches
+        assert(intValue.has_value());
+        spinBox->setValue(intValue.value());
+
         QObject::connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), spinBox,
                          [binding](int value) { binding.setValue(FieldValue::fromInt(value)); });
         return spinBox;
@@ -53,7 +61,12 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
     if (field.kindType == SettingsFieldType::Float) {
         auto *doubleSpinBox = new QDoubleSpinBox();
         doubleSpinBox->setRange(0.0, 1000.0); // TODO: schemaにmin/maxが乗ったらそちらを使う
-        doubleSpinBox->setValue(currentValue.asFloat());
+
+        auto floatValue = currentValue.asFloat();
+        // Safe: field.kindType == SettingsFieldType::Float guarantees the value type matches
+        assert(floatValue.has_value());
+        doubleSpinBox->setValue(floatValue.value());
+
         QObject::connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), doubleSpinBox,
                          [binding](double value) { binding.setValue(FieldValue::fromFloat(value)); });
         return doubleSpinBox;
@@ -61,25 +74,18 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
 
     if (field.kindType == SettingsFieldType::Enum) {
         auto *comboBox = new QComboBox();
-        const QStringList options = guessEnumOptions(field.key, currentValue.asQString());
+
+        auto qstringValue = currentValue.asQString();
+        // Safe: field.kindType == SettingsFieldType::Enum guarantees the value type matches
+        assert(qstringValue.has_value());
+        const QStringList options = guessEnumOptions(field.key, qstringValue.value());
         comboBox->addItems(options);
-        comboBox->setCurrentText(currentValue.asQString());
+        comboBox->setCurrentText(qstringValue.value());
+
         QObject::connect(comboBox, &QComboBox::currentTextChanged, comboBox, [binding](const QString &text) {
             binding.setValue(FieldValue::fromEnum(text.toStdString()));
         });
         return comboBox;
-    }
-
-    if (field.kindType == SettingsFieldType::Map && field.key == "core:log.filters") {
-        auto *button = new QPushButton("Configure log ID filters...");
-        QObject::connect(button, &QPushButton::clicked, button, [binding, button]() {
-            LogFilterDialog dialog(button);
-            dialog.setFilters(binding.getValue().asMap());
-            if (dialog.exec() == QDialog::Accepted) {
-                binding.setValue(FieldValue::fromMap(dialog.filters()));
-            }
-        });
-        return button;
     }
 
     if (field.kindType == SettingsFieldType::Color) {
@@ -88,7 +94,9 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
             QColor color = Qt::white;
             const FieldValue existing = binding.getValue();
             const auto rgba = existing.asColor();
-            color = QColor::fromRgbF(rgba.r, rgba.g, rgba.b, rgba.a);
+            // Safe: field.kindType == SettingsFieldType::Color guarantees the value type matches
+            assert(rgba.has_value());
+            color = QColor::fromRgbF(rgba->r, rgba->g, rgba->b, rgba->a);
 
             QColorDialog dialog(color, colorButton);
             if (dialog.exec() == QColorDialog::Accepted) {
@@ -103,7 +111,10 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
 
     // String, および未対応種別(FilePath/Array/Map)のフォールバック
     auto *lineEdit = new QLineEdit();
-    lineEdit->setText(currentValue.asQString());
+    auto qstringValue = currentValue.asQString();
+    // Safe: fallback case assumes string type
+    assert(qstringValue.has_value());
+    lineEdit->setText(qstringValue.value());
     QObject::connect(lineEdit, &QLineEdit::textChanged, lineEdit,
                      [binding](const QString &text) { binding.setValue(FieldValue::fromString(text)); });
     return lineEdit;

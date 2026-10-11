@@ -82,7 +82,7 @@ void GpuPreviewWidget::triggerRenderFrame() {
     if (projectResult.isError()) {
         return;
     }
-    auto project = projectResult.unwrapOrMove();
+    auto project = std::move(projectResult.unwrap());
     auto focusedTimelineWidget = windowState->focusedTimeline;
     if (!project.isValid() || !focusedTimelineWidget) {
         return;

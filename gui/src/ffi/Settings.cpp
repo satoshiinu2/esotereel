@@ -29,14 +29,22 @@ void Settings::applyQtLogSettings(ClientState *state) {
 
     auto levelResult = getValue(state, "core:log.level");
     if (levelResult.isOk()) {
-        defaultLevel = levelResult.unwrap().asQString();
+        auto level = levelResult.unwrap().asQString();
+        // Safe: config value exists
+        assert(level.has_value());
+        defaultLevel = level.value();
     }
 
     auto filtersResult = getValue(state, "core:log.filters");
     if (filtersResult.isOk()) {
         const auto filters = filtersResult.unwrap().asMap();
-        for (const auto &[target, value] : filters) {
-            targetLevels.insert(QString::fromStdString(target), QString::fromStdString(value.asString()));
+        // Safe: config value exists
+        assert(filters.has_value());
+        for (const auto &[target, value] : *filters) {
+            auto str = value.asString();
+            // Safe: map values are strings
+            assert(str.has_value());
+            targetLevels.insert(QString::fromStdString(target), QString::fromStdString(str.value()));
         }
     }
 
@@ -99,7 +107,9 @@ Result<QString> Settings::getValueString(ClientState *state, const QString &key)
         }
         return Result<QString>::err("Value is not a string");
     }
-    return Result<QString>::err(res.error());
+    auto err = res.getError();
+    assert(err.has_value());
+    return Result<QString>::err(*err);
 }
 
 Result<void> Settings::setValue(ClientState *state, const QString &key, const QString &value) {

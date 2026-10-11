@@ -49,7 +49,7 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
         if (projectResult.isError()) {
             return FieldValue{};
         }
-        Project project = projectResult.unwrapOrMove();
+        Project project = std::move(projectResult.unwrap());
         Timeline timeline = project.timelineOf(timelineId);
         auto [clip, layerId] = timeline.findClipById(clipIds[0]);
 
@@ -86,7 +86,7 @@ void ClipPropertiesPanel::rebuild() {
     if (projectResult.isError()) {
         return;
     }
-    Project project = projectResult.unwrapOrMove();
+    Project project = std::move(projectResult.unwrap());
     Timeline timeline = project.timelineOf(timelineId);
 
     std::vector<Clip> clips;
@@ -97,7 +97,9 @@ void ClipPropertiesPanel::rebuild() {
 
     auto fieldsResult = getCommonFields(state, clips);
     if (!fieldsResult.isOk()) {
-        qWarning() << "Failed to get common clip fields:" << QString::fromStdString(fieldsResult.error());
+        auto err = fieldsResult.getError();
+        assert(err.has_value());
+        qWarning() << "Failed to get common clip fields:" << QString::fromStdString(*err);
         return;
     }
     const QVector<ClipPropertySchema> fields = fieldsResult.unwrap();

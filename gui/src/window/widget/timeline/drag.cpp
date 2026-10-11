@@ -1,5 +1,6 @@
 #include "TimelineCanvasWidget.h"
 #include "Utils.h"
+#include "ffi/Settings.h"
 #include "ffi/project/Clip.h"
 #include "ffi/project/CommandQueue.h"
 #include "ffi/project/Timeline.h"
@@ -127,6 +128,8 @@ void TimelineCanvasWidget::handleClipDragContinue(const Project &project, const 
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
     int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
+
     drag->isWrong = !canDropSelectedClipsAt(timeline, frameMoved, layerMoved);
 
     update();
@@ -145,6 +148,9 @@ void TimelineCanvasWidget::handleClipDraggingDrop(const Project &project, const 
     int64_t frameMoved = drag->curFrame - drag->srcFrame;
     int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
 
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
+    // drag->isWrongでもバックエンドで弾いてるので多分大丈夫
+
     std::vector<uint64_t> exclude_vec(this->selectedClipIds.begin(), this->selectedClipIds.end());
 
     this->commandQueue.moveClips(project, this->timelineId, exclude_vec, frameMoved, 0, layerMoved);
@@ -161,8 +167,10 @@ void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, co
         return;
     }
 
-    int64_t frameMoved = drag->curFrame - drag->srcFrame;
-    int32_t layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+    TimelineTick frameMoved = drag->curFrame - drag->srcFrame;
+    LayerDelta layerMoved = drag->curLayerIdx - drag->srcLayerIdx;
+
+    frameMoved = this->snapFrameMoved(timeline, frameMoved, layerMoved);
 
     QColor bgColor = drag->isWrong ? QColor(180, 70, 70, 180) : QColor(70, 130, 180, 180);
     QColor strokeColor = drag->isWrong ? QColor(255, 120, 120) : QColor(150, 200, 255);
@@ -185,5 +193,57 @@ void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, co
         p.setPen(QPen(strokeColor, 1));
         p.drawRoundedRect(ghostRect, CLIP_ROUND_RADIUS, CLIP_ROUND_RADIUS);
     }
+}
+
+/// ドラッグ位置を決めたあとに、重なっているクリップがあれば、その隣にぴったり付く位置へ補正する処理(スナップ)
+TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, int32_t layerMoved,
+                                                  std::set<uint64_t> checkClips) const {
+    if (!this->cachedRows) {
+        return frameMoved;
+    }
+    const auto &rows = *this->cachedRows;
+    int snap_threshold_px = Settings::getValue(windowState.state, "std::snap_threshold_px")
+                                .map([](auto v) { return v.asInt(); })
+                                .flatten()
+                                .value_or(12);
+    const TimelineTick threshold = XToFrame(snap_threshold_px);
+
+    std::optional<TimelineTick> best;
+    for (ClipId clipId : checkClips) {
+        auto target = computeDropTarget(timeline, rows, this->timelineId, clipId, frameMoved, layerMoved);
+        if (!target) {
+            continue;
+        }
+        const TimelineTick start = target->newPosition;
+        const TimelineTick end = start + target->duration;
+        const auto &row = rows.rows()[target->targetLayerIdx];
+
+        for (const auto &other : rows.clipsFor(row)) {
+            if (contains(checkClips, other.clip_id)) {
+                continue; // 一緒に動くクリップは無視
+            }
+            const TimelineTick os = other.abs_frame;
+            const TimelineTick oe = os + other.duration;
+            if (start >= oe || end <= os) {
+                continue; // 重なっていない
+            }
+            const TimelineTick toLeft = os - end;    // 負: 相手の左隣に付ける
+            const TimelineTick toRight = oe - start; // 正: 相手の右隣に付ける
+            const TimelineTick adj = (-toLeft <= toRight) ? toLeft : toRight;
+            if (std::abs(adj) > threshold) {
+                continue; // 深く重なっている場合は補正しない
+            }
+            if (!best || std::abs(adj) < std::abs(*best)) {
+                best = adj;
+            }
+        }
+    }
+
+    if (!best) {
+        return frameMoved;
+    }
+    const int64_t snapped = frameMoved + *best;
+    // 補正しても置けない(別のクリップにぶつかる等)なら元の位置のまま
+    return this->canDropSelectedClipsAt(timeline, snapped, layerMoved) ? snapped : frameMoved;
 }
 } // namespace esotereel::window

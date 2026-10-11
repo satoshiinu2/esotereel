@@ -1,9 +1,9 @@
+#include "window/widget/timeline/draw.h"
 #include "TimelineCanvasWidget.h"
 #include "Utils.h"
 #include "ffi/ClientState.h"
 #include "ffi/project/LayerFolder.h"
 #include "ffi/project/RenderRows.h"
-#include "window/widget/timeline/draw.h"
 
 using esotereel::contains;
 
@@ -180,7 +180,7 @@ void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
         this->drawPlayhead(this->playhead, p, r);
         return;
     }
-    auto project = projectResult.unwrapOrMove();
+    auto project = std::move(projectResult.unwrap());
     if (project.isValid()) {
         // レイヤーラベルと区切り線
         this->drawLayers(project, p, r);

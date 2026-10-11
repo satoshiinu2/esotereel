@@ -8,7 +8,9 @@ pub use esotereel_lib::project::LayerFolder;
 pub use esotereel_lib::project::Project;
 pub use esotereel_lib::project::Timeline;
 pub use esotereel_lib::project::clip::Clip;
-pub use esotereel_lib::project::ids::{ClipId, LayerFolderId, LayerId, ScriptId, TimelineId};
+pub use esotereel_lib::project::ids::{
+    ClipId, LayerDelta, LayerFolderId, LayerId, ScriptId, TimelineId,
+};
 use log::error;
 
 use crate::responces::on_responce_recveve;
@@ -20,8 +22,8 @@ pub mod state;
 
 pub mod commands;
 pub mod logger;
-pub mod settings;
 pub mod render;
+pub mod settings;
 
 thread_local! {
     #[deprecated(note = "use FfiResult")]

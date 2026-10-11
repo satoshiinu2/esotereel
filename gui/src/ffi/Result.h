@@ -4,9 +4,25 @@
 #include "ffi/Option.h"
 #include "ffi/StringView.h"
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <variant>
+
+namespace {
+class ResultErrorHolder {
+  public:
+    explicit ResultErrorHolder(std::string msg = {}) : msg(std::move(msg)) {}
+
+    operator std::string() const {
+        return msg;
+    }
+
+  private:
+    std::string msg;
+};
+
+} // namespace
 
 namespace esotereel {
 template <typename T> using FfiArray = esotereel_gui_helper::FfiArray<T>;
@@ -20,7 +36,7 @@ template <typename T> class Result {
         using Converted = decltype(converter(std::declval<const Raw &>()));
 
         if (!raw.is_ok) {
-            value_ = OwnedString::intoStdString(raw.value.err);
+            value_ = ResultErrorHolder{OwnedString::intoStdString(raw.value.err)};
             return;
         }
 
@@ -42,7 +58,7 @@ template <typename T> class Result {
         using Converted = decltype(converter(std::declval<const Raw &>()));
 
         if (!raw.is_ok) {
-            value_ = OwnedString::intoStdString(raw.value.err);
+            value_ = ResultErrorHolder{OwnedString::intoStdString(raw.value.err)};
             return;
         }
 
@@ -58,7 +74,7 @@ template <typename T> class Result {
         using Converted = decltype(converter(std::declval<const Raw &>()));
 
         if (!raw.is_ok) {
-            value_ = OwnedString::intoStdString(raw.value.err);
+            value_ = ResultErrorHolder{OwnedString::intoStdString(raw.value.err)};
             return;
         }
 
@@ -69,7 +85,7 @@ template <typename T> class Result {
         if (raw.is_ok) {
             value_ = raw.value.ok;
         } else {
-            value_ = OwnedString::intoStdString(raw.value.err);
+            value_ = ResultErrorHolder{OwnedString::intoStdString(raw.value.err)};
         }
     }
 
@@ -78,7 +94,7 @@ template <typename T> class Result {
     }
 
     static Result err(std::string error) {
-        return Result(std::move(error));
+        return Result(ResultErrorHolder{std::move(error)});
     }
 
     bool isOk() const noexcept {
@@ -86,15 +102,44 @@ template <typename T> class Result {
     }
 
     bool isError() const noexcept {
-        return std::holds_alternative<std::string>(value_);
+        return std::holds_alternative<ResultErrorHolder>(value_);
     }
 
+    /// None の場合は例外
     T &unwrap() {
+        if (isError()) {
+            auto err = getError();
+            assert(err.has_value());
+            throw std::runtime_error(*err);
+        }
         return std::get<T>(value_);
     }
 
+    /// None の場合は例外
     const T &unwrap() const {
+        if (isError()) {
+            auto err = getError();
+            assert(err.has_value());
+            throw std::runtime_error(*err);
+        }
         return std::get<T>(value_);
+    }
+
+    // ref-qualifierとかあるんや
+    /// None の場合は fallback
+    T unwrapOr(T fallback) const & {
+        if (isOk()) {
+            return std::get<T>(value_);
+        }
+        return fallback;
+    }
+
+    /// None の場合は fallback
+    T unwrapOr(T fallback) && {
+        if (isOk()) {
+            return std::move(std::get<T>(value_));
+        }
+        return fallback;
     }
 
     // Compatibility method
@@ -102,61 +147,38 @@ template <typename T> class Result {
         return std::move(unwrap());
     }
 
-    const std::string &error() const {
-        return std::get<std::string>(value_);
+    std::optional<std::string> getError() const {
+        if (isOk()) {
+            return std::nullopt;
+        }
+        return std::get<ResultErrorHolder>(value_);
+    }
+
+    template <typename F> auto map(F f) const -> Result<decltype(f(std::declval<const T &>()))> {
+        using U = decltype(f(std::declval<const T &>()));
+        if (isOk()) {
+            return Result<U>::ok(f(std::get<T>(value_)));
+        }
+        auto err = getError();
+        assert(err.has_value());
+        return Result<U>::err(*err);
+    }
+
+    // Flatten Result<std::optional<T>> to std::optional<T>
+    template <typename U = T, typename std::enable_if_t<std::is_same_v<U, std::optional<typename U::value_type>>, int> = 0>
+    U flatten() const {
+        if (isOk()) {
+            return std::get<T>(value_);
+        }
+        return std::nullopt;
     }
 
   private:
     explicit Result(T value) : value_(std::move(value)) {}
 
-    explicit Result(std::string error) : value_(std::move(error)) {}
+    explicit Result(std::string error) : value_(ResultErrorHolder{std::move(error)}) {}
 
-    std::variant<T, std::string> value_;
-};
-
-class ResultVoid {
-  public:
-    explicit ResultVoid(FfiResultVoid raw) {
-        if (raw.is_ok) {
-            ok_ = true;
-        } else {
-            error_ = OwnedString::intoStdString(raw.err);
-            ok_ = false;
-        }
-    }
-
-    static ResultVoid ok() {
-        return ResultVoid();
-    }
-
-    static ResultVoid err(std::string error) {
-        return ResultVoid(std::move(error));
-    }
-
-    bool is_ok() const noexcept {
-        return ok_;
-    }
-
-    bool is_err() const noexcept {
-        return !ok_;
-    }
-
-    // Compatibility aliases
-    bool isError() const noexcept {
-        return is_err();
-    }
-
-    const std::string &error() const {
-        return error_;
-    }
-
-  private:
-    ResultVoid() : ok_(true) {}
-
-    explicit ResultVoid(std::string error) : ok_(false), error_(std::move(error)) {}
-
-    bool ok_;
-    std::string error_;
+    std::variant<T, ResultErrorHolder> value_;
 };
 
 // Template specialization for Result<void>
@@ -164,10 +186,9 @@ template <> class Result<void> {
   public:
     explicit Result(FfiResultVoid raw) {
         if (raw.is_ok) {
-            ok_ = true;
+            error_ = std::nullopt;
         } else {
             error_ = OwnedString::intoStdString(raw.err);
-            ok_ = false;
         }
     }
 
@@ -179,36 +200,30 @@ template <> class Result<void> {
         return Result(std::move(error));
     }
 
-    bool is_ok() const noexcept {
-        return ok_;
+    bool isOk() const noexcept {
+        return !error_.has_value();
     }
 
-    bool is_err() const noexcept {
-        return !ok_;
-    }
-
-    // Compatibility aliases
     bool isError() const noexcept {
-        return is_err();
+        return error_.has_value();
     }
 
     // No-op unwrap for void compatibility
     void unwrap() const {
-        if (is_err()) {
-            throw std::runtime_error(error_);
+        if (isError()) {
+            throw std::runtime_error(error_.value());
         }
     }
 
-    const std::string &error() const {
+    std::optional<std::string> getError() const {
         return error_;
     }
 
   private:
-    Result() : ok_(true) {}
+    Result() : error_(std::nullopt) {}
 
-    explicit Result(std::string error) : ok_(false), error_(std::move(error)) {}
+    explicit Result(std::string error) : error_(std::move(error)) {}
 
-    bool ok_;
-    std::string error_;
+    std::optional<std::string> error_;
 };
 } // namespace esotereel
