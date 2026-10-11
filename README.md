@@ -13,7 +13,6 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ## TODO
 
 ### High Priority
-- Undo/Redo functionality
 - Project save/load
 - Export functionality (FFmpeg integration)
 - Error handling UI
@@ -23,7 +22,7 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 - Network conflict handling
 - Plugin security
 - LOD clip view
-- full API for Requests/Responces and Commands 
+- full plugin API for Requests/Responces and Commands 
 
 ### Low Priority
 - Scripting on editor
@@ -31,9 +30,6 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 ### Code TODOs
 - `ClipTranslates::Keyframe` implementation (lib/src/project/transform.rs:31)
-- Settings loading (lib/src/plugin/settings/mod.rs:124)
 - Timeline toolbar button icons (gui/src/window/widget/timeline/TimelineToolbarWidget.cpp:56)
-- Deprecated API replacements (guihlp/src/lib.rs)
-- FFI boundary Result/Option/Array redesign (especially nested types)
 
 See [Open Questions](docs/open-questions.md) for detailed specifications.
