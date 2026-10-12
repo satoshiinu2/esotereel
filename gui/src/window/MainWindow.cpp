@@ -53,7 +53,8 @@ void MainWindow::setupWidgets(WidgetManager &widgetManager) {
     widgetManager.createWidget<GpuPreviewWidget>("Preview", ads::TopDockWidgetArea, &windowState);
 
     // Timeline widget
-    this->timelineWidget = widgetManager.createWidget<TimelineWidget>("Timeline", ads::BottomDockWidgetArea, windowState, 0);
+    this->timelineWidget =
+        widgetManager.createWidget<TimelineWidget>("Timeline", ads::BottomDockWidgetArea, windowState, 0);
 
 #if SHOW_DEBUG_STREAMS
     // Debug Streams widget (hidden by default)
@@ -64,7 +65,8 @@ void MainWindow::setupWidgets(WidgetManager &widgetManager) {
     // Clip Properties panel (requires CommandQueue)
     this->commandQueue = new esotereel::CommandQueue(windowState.state);
     this->clipPropertiesPanel = new ClipPropertiesPanel(windowState.state, *this->commandQueue);
-    widgetManager.createDock(clipPropertiesPanel, "Clip Properties", ads::RightDockWidgetArea, widgetManager.getDock("Preview"));
+    widgetManager.createDock(clipPropertiesPanel, "Clip Properties", ads::RightDockWidgetArea,
+                             widgetManager.getDock("Preview"));
 
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;
@@ -111,6 +113,7 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
     QTimer::singleShot(0, this, [this]() {
         timelineWidget->canvas->markRowsDirty();
         timelineWidget->canvas->update();
+        clipPropertiesPanel->refreshChangedFields();
     });
 }
 

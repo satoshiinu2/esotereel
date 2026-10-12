@@ -5,15 +5,20 @@
 #include "window/dialog/property/CollapsibleSection.h"
 #include "window/dialog/property/FieldControlFactory.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMap>
+#include <QSpinBox>
 #include <QVBoxLayout>
 
 namespace esotereel::window {
 
 ClipPropertiesPanel::ClipPropertiesPanel(ClientState *state, esotereel::CommandQueue &commandQueue, QWidget *parent)
-    : QWidget(parent), state(state), commandQueue_(commandQueue) {
+    : QWidget(parent), state(state), commandQueue(commandQueue) {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
@@ -65,18 +70,25 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
     };
     binding.setValue = [this, key](const FieldValue &value) {
         for (const auto &clipId : clipIds) {
-            setValue(commandQueue_, timelineId, clipId, key, ClipPropertyValue::fromStatic(value));
+            setValue(commandQueue, timelineId, clipId, key, ClipPropertyValue::fromStatic(value));
         }
+        commandQueue.sendAll();
+        pendingUpdates.insert(key);
     };
 
     QWidget *control = widget::FieldControlFactory::createControl(field, binding);
     rowLayout->addWidget(control);
+
+    // コントロールを登録
+    fieldControls[key] = control;
 
     return row;
 }
 
 void ClipPropertiesPanel::rebuild() {
     topTabs->clear();
+    fieldControls.clear();
+    pendingUpdates.clear();
 
     if (clipIds.empty()) {
         return;
@@ -140,6 +152,69 @@ void ClipPropertiesPanel::rebuild() {
             topTabs->addTab(page, topIt.key());
         }
     }
+}
+
+void ClipPropertiesPanel::refreshChangedFields() {
+    if (clipIds.empty() || pendingUpdates.empty()) {
+        return;
+    }
+
+    auto projectResult = state->getProject();
+    if (projectResult.isError()) {
+        return;
+    }
+    Project project = std::move(projectResult.unwrap());
+    Timeline timeline = project.timelineOf(timelineId);
+    auto [clip, layerId] = timeline.findClipById(clipIds[0]);
+
+    for (const QString &key : pendingUpdates) {
+        auto result = getValue(clip, key);
+        if (!result.isOk()) {
+            continue;
+        }
+        auto opt = result.unwrap();
+        if (!opt.has_value() || !opt->isStatic()) {
+            continue;
+        }
+
+        FieldValue value = opt->asStatic();
+        auto it = fieldControls.find(key);
+        if (it == fieldControls.end()) {
+            continue;
+        }
+
+        QWidget *control = it->second;
+
+        // コントロールのタイプに応じて値を設定
+        if (auto *spinBox = qobject_cast<QSpinBox*>(control)) {
+            auto intValue = value.asInt();
+            if (intValue.has_value()) {
+                spinBox->setValue(intValue.value());
+            }
+        } else if (auto *doubleSpinBox = qobject_cast<QDoubleSpinBox*>(control)) {
+            auto floatValue = value.asFloat();
+            if (floatValue.has_value()) {
+                doubleSpinBox->setValue(floatValue.value());
+            }
+        } else if (auto *checkBox = qobject_cast<QCheckBox*>(control)) {
+            auto boolValue = value.asBool();
+            if (boolValue.has_value()) {
+                checkBox->setChecked(boolValue.value());
+            }
+        } else if (auto *comboBox = qobject_cast<QComboBox*>(control)) {
+            auto qstringValue = value.asQString();
+            if (qstringValue.has_value()) {
+                comboBox->setCurrentText(qstringValue.value());
+            }
+        } else if (auto *lineEdit = qobject_cast<QLineEdit*>(control)) {
+            auto qstringValue = value.asQString();
+            if (qstringValue.has_value()) {
+                lineEdit->setText(qstringValue.value());
+            }
+        }
+    }
+
+    pendingUpdates.clear();
 }
 
 } // namespace esotereel::window
