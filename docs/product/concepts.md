@@ -89,6 +89,7 @@
 **Responsibility**:
 - 位置、持続時間の管理
 - 種類（kind_id）、プロパティ、変換の保持
+- サイズ変更（position、duration、source_offsetの更新）
 
 **Owned Data**:
 - `id: ClipId`
@@ -102,11 +103,11 @@
 
 **Created By**: Timeline::new_clip_in
 
-**Modified By**: ClipsMoveコマンド
+**Modified By**: ClipsMoveコマンド、ClipsResizeコマンド
 
 **Used By**: Layer、Timeline、レンダリング
 
-**Lifecycle**: ユーザー操作で追加、削除、移動
+**Lifecycle**: ユーザー操作で追加、削除、移動、リサイズ
 
 ---
 

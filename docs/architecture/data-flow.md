@@ -217,7 +217,64 @@ Result: Clips Moved to New Position/Layer
 
 ---
 
-### 4. ビデオストリーム初期化フロー
+### 5. クリップリサイズフロー
+
+```
+User Action (ClipsResize)
+    ↓
+GUI: ドラッグ操作（クリップの端）
+    ↓
+GUI State: 選択クリップ、ドラッグ位置
+    ↓
+GUI Processing:
+  - ドラッグ開始検知
+  - リサイズ方向判定（左端/右端）
+  - フレームデルタ計算
+  - Vec<ClipResizeCtx> 作成
+    ↓
+C++ FFI: Command Request Creation (via CommandQueue)
+    ↓
+Rust FFI: Request::Command { command: CommandRequest::ClipsResize { ... }, timeline_id }` シリアライズ
+    ↓
+Network: TCP Send
+    ↓
+Core: Request Handler
+    ↓
+Domain Logic:
+  - command_to_history() - 現在状態の記録
+  - handle_command_action() - コマンド実行
+  - clip_resize_core() - クリップリサイズ処理
+  - 重なり判定: `Timeline::can_place_clip_at()` でリサイズ後の重なりをチェック
+  - 重なっている場合は何もしない
+  - Clipのposition, durationを直接更新
+  - source_offsetを更新（必要な場合）
+- **State Mutation**:
+  - `Timeline.clips`: {clip_id: updated_clip}
+  - `Layer.clips`: 変更なし（同一レイヤー内）
+  - `Timeline.changes`: clips_upserted 更新
+  - `Timeline.chunk_index`: None (invalidated)
+    ↓
+Dirty Notification: notify_dirty()
+    ↓
+Change Sync:
+  - Project::drain_changes() → ChangeSet
+  - Response::UpdateClip { timeline_id, clips: [(new_layer_id, updated_clip), ...] }
+    ↓
+Network: TCP Send
+    ↓
+GUI: Response Handler
+    ↓
+C++: Timeline::upsert_clip_from_network() for each clip
+  - 全レイヤーから古いclip_id参照を削除
+  - 新しいレイヤーに新しい参照を追加
+  - Timeline.clipsにClip実体を更新
+  - ChunkIndex無効化
+    ↓
+GUI State: Timeline UI Updated
+
+---
+
+### 6. ビデオストリーム初期化フロー
 
 ```
 User Action (InitStream)
