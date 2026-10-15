@@ -34,3 +34,4 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 See [Open Questions](docs/open-questions.md) for detailed specifications.
 See [Documentation Style Guide](docs/style-guide.md) for documentation standards.
+See [AGENTS.md](AGENTS.md) for AI agent behavior guidelines.
