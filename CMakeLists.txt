@@ -146,7 +146,6 @@ add_custom_target(rust_gui_helper ALL DEPENDS ${GUI_HLP_OUTPUTS})
 # サーバー側は必要なときだけ単体でビルドできるように分離 (ALL を外す)
 add_custom_target(rust_core DEPENDS ${CORE_BIN})
 
-
 # Clangのエラー回避
 string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
@@ -163,9 +162,31 @@ target_link_libraries(esotereel_gui PRIVATE
     ${GUI_HLP_LINK_LIB}
 )
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(esotereel_gui PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-    target_link_options(esotereel_gui PRIVATE -fsanitize=address)
+# windows向けの依存関係の解決
+if(WIN32)
+    add_custom_command(TARGET esotereel_gui POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+            "$<TARGET_FILE:qtadvanceddocking-qt6>"
+            "$<TARGET_FILE_DIR:esotereel_gui>"
+        VERBATIM
+        COMMENT "Deploying Qt Advanced Docking System"
+    )
+endif()
+
+# デバッガー
+if(MSVC)
+    target_compile_options(esotereel_gui PRIVATE
+        "$<$<CONFIG:Debug>:/fsanitize=address>"
+    )
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(esotereel_gui PRIVATE
+        "$<$<CONFIG:Debug>:-fsanitize=address>"
+        "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+    )
+
+    target_link_options(esotereel_gui PRIVATE
+        "$<$<CONFIG:Debug>:-fsanitize=address>"
+    )
 endif()
 
 # translate 
@@ -197,3 +218,27 @@ Index:
 )
 
 file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/.clangd" "${CLANGD_CONTENT}")
+
+# windows向けの依存関係の解決
+if(WIN32)
+    find_program(ESOTEREEL_POWERSHELL
+        NAMES pwsh powershell
+        REQUIRED
+    )
+
+    # Rust DLL を先にビルドしてから GUI をビルドする
+    add_dependencies(esotereel_gui rust_gui_helper)
+
+    # 開発用の実行環境をまとめて準備する
+    add_custom_target(setup_windows_dev ALL
+        COMMAND "${ESOTEREEL_POWERSHELL}"
+            -NoProfile
+            -ExecutionPolicy Bypass
+            -File "${PROJECT_SOURCE_DIR}/scripts/setup-windows-dev.ps1"
+            -Configuration "$<CONFIG>"
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        VERBATIM
+    )
+
+    add_dependencies(setup_windows_dev esotereel_gui)
+endif()
