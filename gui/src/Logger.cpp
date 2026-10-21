@@ -17,7 +17,9 @@ namespace {
 
 thread_local bool isRustLog = false;
 thread_local size_t rustLogLevel = 0;
-thread_local QString rustLogTarget;
+/// スタック上の一時ポインタ
+/// qtLogCallback -> qCritical/qWarning などは同一スレッド内で同期的に呼ばれるため、安全
+thread_local const QString *rustLogTargetPtr = nullptr;
 QReadWriteLock logSettingsLock;
 size_t defaultQtLogLevel = 3;
 QHash<QString, size_t> qtTargetLogLevels;
@@ -116,7 +118,7 @@ void qtMessageHandler(QtMsgType type, const QMessageLogContext &context, const Q
     threadName.replace('\n', ' ');
 
     const QString level = isRustLog ? rustLevelName(rustLogLevel) : levelName(type);
-    const QString category = isRustLog ? rustLogTarget
+    const QString category = isRustLog ? (rustLogTargetPtr ? *rustLogTargetPtr : QString())
                                        : (context.category && *context.category ? QString::fromUtf8(context.category)
                                                                                 : QStringLiteral("default"));
 
@@ -150,12 +152,12 @@ struct RustLogScope {
     RustLogScope(size_t level, const QString &target) {
         isRustLog = true;
         rustLogLevel = level;
-        rustLogTarget = target;
+        rustLogTargetPtr = &target;  // qtLogCallback 内のローカル target を参照。同期利用のみ。
     }
 
     ~RustLogScope() {
         isRustLog = false;
-        rustLogTarget.clear();
+        rustLogTargetPtr = nullptr;  // 対象のローカル変数が破棄される前にポインタを無効化
     }
 };
 

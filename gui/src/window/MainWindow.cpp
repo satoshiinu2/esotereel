@@ -6,7 +6,9 @@
 #include "ffi/Requests.h"
 #include "ffi/project/CommandQueue.h"
 #include "widget/clip_property/ClipPropertiesPanel.h"
+#ifdef ESOTEREEL_ENABLE_GPU_PREVIEW
 #include "widget/preview/GpuPreviewWidget.h"
+#endif
 #include "widget/timeline/TimelineCanvasWidget.h"
 #include "widget/timeline/TimelineWidget.h"
 #include <DockManager.h>
@@ -50,7 +52,14 @@ void MainWindow::setupDockManager() {
 
 void MainWindow::setupWidgets(WidgetManager &widgetManager) {
     // Preview widget
+#ifdef ESOTEREEL_ENABLE_GPU_PREVIEW
     widgetManager.createWidget<GpuPreviewWidget>("Preview", ads::TopDockWidgetArea, &windowState);
+#else
+    auto *previewPlaceholder = new QLabel(
+        tr("GPU preview is disabled.\nConfigure with -DESOTEREEL_ENABLE_GPU_PREVIEW=ON to enable it."));
+    previewPlaceholder->setAlignment(Qt::AlignCenter);
+    widgetManager.createDock(previewPlaceholder, "Preview", ads::TopDockWidgetArea);
+#endif
 
     // Timeline widget
     this->timelineWidget =

@@ -6,12 +6,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(QT_NO_PRIVATE_MODULE_WARNING ON CACHE BOOL "" FORCE)
 
-# cの設定
+# cmakeの設定
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
+
+option(ESOTEREEL_ENABLE_GPU_PREVIEW
+    "Enable the GPU preview widget"
+    ON
+)
 
 # Allow setting Qt6 path via environment variable
 if(NOT Qt6_DIR)
@@ -151,6 +156,14 @@ string(REPLACE "-mno-direct-extern-access" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS
 
 # 実行ファイル
 file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS gui/src/*.cpp gui/src/*.h)
+if(NOT ESOTEREEL_ENABLE_GPU_PREVIEW)
+    list(REMOVE_ITEM SRC_FILES
+        "${CMAKE_SOURCE_DIR}/gui/src/window/widget/preview/GpuPreviewWidget.cpp"
+        "${CMAKE_SOURCE_DIR}/gui/src/window/widget/preview/GpuPreviewWidget.h"
+        "${CMAKE_SOURCE_DIR}/gui/src/window/widget/preview/GpuRenderWorker.cpp"
+        "${CMAKE_SOURCE_DIR}/gui/src/window/widget/preview/GpuRenderWorker.h"
+    )
+endif()
 add_executable(esotereel_gui ${SRC_FILES})
 
 # ライブラリリンク
@@ -162,9 +175,16 @@ target_link_libraries(esotereel_gui PRIVATE
     ${GUI_HLP_LINK_LIB}
 )
 
+# フラグ設定
+if(ESOTEREEL_ENABLE_GPU_PREVIEW)
+    target_compile_definitions(esotereel_gui PRIVATE
+        ESOTEREEL_ENABLE_GPU_PREVIEW
+    )
+endif()
+
 # windows向けの依存関係の解決
 if(WIN32)
-    add_custom_command(TARGET esotereel_gui POST_BUILD
+    add_custom_command(TARGET esotereel_gui POST_BUILD  
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "$<TARGET_FILE:qtadvanceddocking-qt6>"
             "$<TARGET_FILE_DIR:esotereel_gui>"
@@ -174,20 +194,20 @@ if(WIN32)
 endif()
 
 # デバッガー
-if(MSVC)
-    target_compile_options(esotereel_gui PRIVATE
-        "$<$<CONFIG:Debug>:/fsanitize=address>"
-    )
-elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(esotereel_gui PRIVATE
-        "$<$<CONFIG:Debug>:-fsanitize=address>"
-        "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
-    )
+# if(MSVC)
+#     target_compile_options(esotereel_gui PRIVATE
+#         "$<$<CONFIG:Debug>:/fsanitize=address>"
+#     )
+# elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+#     target_compile_options(esotereel_gui PRIVATE
+#         "$<$<CONFIG:Debug>:-fsanitize=address>"
+#         "$<$<CONFIG:Debug>:-fno-omit-frame-pointer>"
+#     )
 
-    target_link_options(esotereel_gui PRIVATE
-        "$<$<CONFIG:Debug>:-fsanitize=address>"
-    )
-endif()
+#     target_link_options(esotereel_gui PRIVATE
+#         "$<$<CONFIG:Debug>:-fsanitize=address>"
+#     )
+# endif()
 
 # translate 
 qt_add_translations(esotereel_gui

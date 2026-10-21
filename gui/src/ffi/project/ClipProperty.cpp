@@ -25,6 +25,10 @@ Result<QVector<ClipPropertySchema>> getCommonFields(ClientState *state, const st
         return Result<QVector<ClipPropertySchema>>::ok(QVector<ClipPropertySchema>());
     }
 
+    if (clips.empty()) {
+        return Result<QVector<ClipPropertySchema>>::ok(QVector<ClipPropertySchema>());
+    }
+
     // Convert Clip wrapper pointers to raw Clip pointers using operator const RawClip*()
     std::vector<const esotereel_gui_helper::Clip *> raw_clips;
     for (const auto &clip : clips) {
@@ -39,7 +43,7 @@ Result<QVector<ClipPropertySchema>> getCommonFields(ClientState *state, const st
 Result<QStringList> getCategories(ClientState *state, const Clip &clip) {
     auto raw = esotereel_gui_helper::clip_get_categories(*state, clip);
     return Result<QStringList>(raw,
-                               [](const RawOwnedString &owned) { return esotereel::OwnedString::toQString(owned); });
+                               [](const RawOwnedString &owned) { return esotereel::OwnedString::intoQString(owned); });
 }
 
 Result<std::optional<ClipPropertyValue>> getValue(const Clip &clip, const QString &key) {

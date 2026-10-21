@@ -38,7 +38,7 @@ void Settings::applyQtLogSettings(ClientState *state) {
     auto filtersResult = getValue(state, "core:log.filters");
     if (filtersResult.isOk()) {
         const auto filters = filtersResult.unwrap().asMap();
-        // Safe: config value exists
+        // Safe: map values are strings
         assert(filters.has_value());
         for (const auto &[target, value] : *filters) {
             auto str = value.asString();
@@ -129,6 +129,7 @@ Result<QStringList> Settings::getCategories(ClientState *state) {
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
     return Result<QStringList>(
-        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::toQString(owned); });
+        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::intoQString(owned); });
 }
+
 } // namespace esotereel

@@ -48,7 +48,7 @@ TimelineTick Clip::duration() const noexcept {
 //         [&](auto &&arg) {
 //             using T = std::decay_t<decltype(arg)>;
 
-//             if constexpr (std::is_same_v<T, FieldValue>) {
+//             if (std::is_same_v<T, FieldValue>) {
 //                 result.tag = CClipBindingValueTag::Static;
 //                 result.data.static_value = arg.toC();
 //             }
@@ -104,25 +104,6 @@ Result<QStringList> Clip::getCategories(ClientState *network) const {
 
     // Use the new Result constructor that handles FfiResult<FfiArray<T>>
     return Result<QStringList>(
-        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::toQString(owned); });
+        result, [](const esotereel_gui_helper::FfiOwnedString &owned) { return OwnedString::intoQString(owned); });
 }
-
-Result<void> Clip::setPropertyValue(CommandQueue &commandQueue, TimelineId timelineId, const QString &key,
-                                    const ClipPropertyValue &value) const {
-    QByteArray keyUtf8 = key.toUtf8();
-    RawStringView keyView = StringView::fromQUtf8String(keyUtf8);
-
-    CClipBindingValue cValue = value.toC();
-
-    auto result = esotereel_gui_helper::clip_set_property_value(commandQueue, timelineId, this->id(), keyView, cValue);
-
-    ClipPropertyValue::freeC(cValue);
-
-    if (!result.is_ok) {
-        return Result<void>::err(OwnedString::intoStdString(result.err));
-    }
-
-    return Result<void>::ok();
-}
-
 } // namespace esotereel
