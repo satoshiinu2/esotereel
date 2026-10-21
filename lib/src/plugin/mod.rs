@@ -125,7 +125,8 @@ impl Plugin {
 
         let avaliable_functions = script
             .as_ref()
-            .map_or_default(|s| s.available_functions.clone());
+            .map(|s| s.available_functions.clone())
+            .unwrap_or_default();
 
         Ok(Self {
             manifest,
