@@ -25,7 +25,7 @@ impl Directories {
     }
 
     pub fn data_dir(&self) -> anyhow::Result<PathBuf> {
-        if let Some(working_dir) = self.working_dir.clone() {
+        if let Some(working_dir) = self.working_dir.as_ref() {
             Ok(working_dir.join("data"))
         } else {
             let proj_dirs = self.root()?;
@@ -35,7 +35,7 @@ impl Directories {
     }
 
     pub fn config_dir(&self) -> anyhow::Result<PathBuf> {
-        if let Some(working_dir) = self.working_dir.clone() {
+        if let Some(working_dir) = self.working_dir.as_ref() {
             Ok(working_dir.join("config"))
         } else {
             let proj_dirs = self.root()?;
@@ -45,7 +45,7 @@ impl Directories {
     }
 
     pub fn cache_dir(&self) -> anyhow::Result<PathBuf> {
-        if let Some(working_dir) = self.working_dir.clone() {
+        if let Some(working_dir) = self.working_dir.as_ref() {
             Ok(working_dir.join("cache"))
         } else {
             let proj_dirs = self.root()?;
@@ -55,8 +55,8 @@ impl Directories {
     }
 
     pub fn std_plugins_dir(&self) -> anyhow::Result<PathBuf> {
-        if let Some(std_plugin_dir) = self.std_plugin_dir.clone() {
-            Ok(std_plugin_dir)
+        if let Some(std_plugin_dir) = self.std_plugin_dir.as_ref() {
+            Ok(std_plugin_dir.clone())
         } else {
             let install_dirs = self.install_dir()?;
 
