@@ -209,8 +209,8 @@ endif()
 # translate 
 qt_add_translations(esotereel_gui
     TS_FILES
-        esotereel_ja.ts  
-        esotereel_en.ts  
+        gui/lang/esotereel_ja.ts  
+        gui/lang/esotereel_en.ts  
 )
 
 # .clangd ファイルの動的生成設定
