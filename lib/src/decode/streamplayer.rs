@@ -116,6 +116,11 @@ impl StreamPlayer {
         })
     }
 
+    /// メタデータで指定されたデコード画像の解像度。現在は元動画と同じサイズ。
+    pub fn dimensions(&self) -> (u32, u32) {
+        (self.target_width, self.target_height)
+    }
+
     /// サーバーから届いたパケット（バイナリ）をデコードしてフレームを返す
     pub fn process_packet(
         &mut self,

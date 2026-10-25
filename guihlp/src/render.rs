@@ -1,8 +1,9 @@
 use esotereel_lib::{
     project::camera::CameraInfo,
     project::ids::TimelineId,
-    render::{RenderContext, render_frame_offscreen},
+    render::video::request::request_stream_packets_for_time,
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
+    render::{RenderContext, render_frame_offscreen},
     util::result::EsotereelError,
 };
 
@@ -52,6 +53,17 @@ pub fn render_frame_offscreen_ffi(
 
     render_frame_offscreen(wgpuutil, offscreen, &ctx)
         .map_err(|msg| EsotereelError::RenderError(msg))?;
+
+    // A paused preview must also initialize/fetch media; timeline input events are not required.
+    for request in request_stream_packets_for_time(
+        timeline,
+        &state.stream_state_map,
+        &state.stream_players,
+        current_frame..current_frame.saturating_add(60),
+        &state.media_fetch_cache,
+    ) {
+        state.network.send(&request);
+    }
 
     let bytes = offscreen
         .readback(&wgpuutil.device)

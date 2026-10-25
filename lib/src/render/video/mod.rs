@@ -37,6 +37,13 @@ impl MediaFetchCache {
         all
     }
 
+    pub fn snapshot(&self) -> Vec<(String, Range<f64>)> {
+        self.needs
+            .iter()
+            .flat_map(|entry| entry.value().clone())
+            .collect()
+    }
+
     pub fn record_init_request(&self, path: String) {
         self.init_requests.insert(path, ());
     }
@@ -48,7 +55,7 @@ impl MediaFetchCache {
     }
 }
 pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderContext) {
-    for (path, range) in ctx.media_fetch_cache.take_all() {
+    for (path, range) in ctx.media_fetch_cache.snapshot() {
         if let Some(resource_id_ref) = ctx.path_to_stream.get(&path) {
             if let StreamState::Loaded(resource_id) = *resource_id_ref {
                 if let Some(player) = ctx.streams.get(&resource_id) {

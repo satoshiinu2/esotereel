@@ -1,4 +1,5 @@
 fn render_clip_video(ctx, props) {
-    let tex = ctx.get_texture(props["std:source"], 0.0);
-    ctx.render_video(tex, 0.0, 0.0, 1.0, 1.0);
+    ctx.set_transform(mat4_trs(props["std:position"], props["std:rotation"], props["std:scale"]));
+    let tex = ctx.get_texture(props["std:source"], ctx.media_time());
+    ctx.render_video(tex);
 }

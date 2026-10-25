@@ -4,7 +4,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use glam::Mat4;
+use glam::{EulerRot, Mat4, Quat, Vec3};
 
 use crate::{
     StreamState,
@@ -149,6 +149,30 @@ impl PluginRenderContext {
         }
     }
 
+    pub fn set_transform(&mut self, transform: Mat4) {
+        self.base_transform = transform;
+    }
+
+    pub fn apply_transform(&mut self, transform: Mat4) {
+        self.base_transform *= transform;
+    }
+
+    /// Render at the source resolution, centered on the transform origin.
+    pub fn render_video_native(&mut self, texture_id: i64) {
+        let Ok(resource_id) = u32::try_from(texture_id) else {
+            return;
+        };
+        let dimensions = self
+            .streams
+            .get(&resource_id)
+            .map(|player| player.dimensions());
+        let Some((width, height)) = dimensions else {
+            return;
+        };
+        let (width, height) = (width as f64, height as f64);
+        self.render_video(texture_id, -width / 2.0, -height / 2.0, width, height);
+    }
+
     pub fn render_video(&mut self, texture_id: i64, x: f64, y: f64, width: f64, height: f64) {
         if texture_id < 0 {
             return;
@@ -157,39 +181,72 @@ impl PluginRenderContext {
             .lock()
             .expect("mutex poisoned")
             .push(VertexBatch {
-                vertices: Vertex::rect(
-                    x as f32,
-                    y as f32,
-                    width as f32,
-                    height as f32,
-                    [1.0, 1.0, 1.0, 1.0],
-                )
-                .to_vec(),
+                vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
                 texture_id: texture_id as u32,
-                transform: self.base_transform,
+                transform: self.base_transform
+                    * Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0))
+                    * Mat4::from_scale(Vec3::new(width as f32, height as f32, 1.0)),
             });
     }
 
     pub fn into_parts(self) -> (Vec<VertexBatch>, Vec<String>) {
-        // idc this code wtf
+        // Rhai may retain a cloned context; drain shared output without requiring unique ownership.
         (
-            Arc::try_unwrap(self.batches)
-                .map(|m| m.into_inner().unwrap_or_default())
-                .unwrap_or_default(),
-            Arc::try_unwrap(self.requested_paths)
-                .map(|m| m.into_inner().unwrap_or_default())
-                .unwrap_or_default(),
+            std::mem::take(&mut *self.batches.lock().expect("mutex poisoned")),
+            std::mem::take(&mut *self.requested_paths.lock().expect("mutex poisoned")),
         )
     }
 }
 
+fn transform_matrix(
+    position: rhai::Array,
+    rotation: rhai::Array,
+    scale: rhai::Array,
+) -> Result<Mat4, Box<rhai::EvalAltResult>> {
+    fn vector(values: rhai::Array) -> Result<Vec3, Box<rhai::EvalAltResult>> {
+        if values.len() != 3 {
+            return Err("transform vectors must contain three numbers".into());
+        }
+        let mut result = [0.0; 3];
+        for (out, value) in result.iter_mut().zip(values) {
+            let number = value
+                .clone()
+                .try_cast::<f64>()
+                .or_else(|| value.try_cast::<i64>().map(|v| v as f64))
+                .ok_or_else(|| {
+                    Box::<rhai::EvalAltResult>::from("transform vectors must contain numbers")
+                })?;
+            *out = number as f32;
+            if !out.is_finite() {
+                return Err("transform values must be finite".into());
+            }
+        }
+        Ok(Vec3::from_array(result))
+    }
+    let position = vector(position)?;
+    let rotation = vector(rotation)? * (std::f32::consts::PI / 180.0);
+    let scale = vector(scale)?;
+    Ok(Mat4::from_scale_rotation_translation(
+        scale,
+        Quat::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z),
+        position,
+    ))
+}
+
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
-/// クライアント/サーバー用の関数を登録
-pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
-    type NetworkHandlerT<T: HostState> = <T as HostState>::NetworkHandler;
-
+pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
+    engine.register_type_with_name::<Mat4>("Mat4");
+    engine.register_fn("mat4_trs", transform_matrix);
+    engine.register_fn(
+        "set_transform",
+        |ctx: &mut PluginRenderContext, matrix: Mat4| ctx.set_transform(matrix),
+    );
+    engine.register_fn(
+        "apply_transform",
+        |ctx: &mut PluginRenderContext, matrix: Mat4| ctx.apply_transform(matrix),
+    );
 
     engine.register_fn(
         "get_texture",
@@ -204,6 +261,9 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
         },
     );
 
+    engine.register_fn("render_video", |ctx: &mut PluginRenderContext, tex: i64| {
+        ctx.render_video_native(tex)
+    });
     engine.register_fn(
         "render_video",
         |ctx: &mut PluginRenderContext, tex: i64, x: f64, y: f64, w: f64, h: f64| {
@@ -214,6 +274,12 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
     engine.register_fn("media_time", |ctx: &mut PluginRenderContext| {
         ctx.media_time()
     });
+}
+
+/// クライアント/サーバー用の関数を登録
+pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
+    type NetworkHandlerT<T: HostState> = <T as HostState>::NetworkHandler;
+    register_render_api(engine);
 
     engine.register_type_with_name::<PluginActionContext<NetworkHandlerT<T>>>("ActionContext");
     engine.register_type_with_name::<PluginNetworkContext<Request>>("NetworkContext");
@@ -264,4 +330,118 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
                 });
         },
     );
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::plugin::{Plugin, script::bridge::field_values_to_rhai_map};
+    use crate::project::clip::ClipBindingValue;
+
+    #[test]
+    fn standard_video_script_uses_source_resolution_and_transform_scale() {
+        let plugin = Plugin::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../plugins/std"
+        )))
+        .unwrap();
+        let schemas = crate::project::clip::ClipKind::resolve_properties(
+            &plugin.clip_kinds,
+            plugin.pending_properties,
+        )
+        .unwrap();
+        let fields = &schemas[&crate::plugin::NamespacedID::new("std", "video").unwrap()];
+        assert!(
+            !fields
+                .iter()
+                .any(|field| matches!(field.key.local_id(), "width" | "height"))
+        );
+        let mut props = ClipBindingValue::default_properties(fields);
+        props.insert(
+            crate::plugin::NamespacedID::new("std", "source").unwrap(),
+            ClipBindingValue::Static(crate::plugin::property::value::FieldValue::String(
+                "test.mp4".into(),
+            )),
+        );
+        let cache = Arc::new(MediaFetchCache::default());
+        let context = PluginRenderContext::new(
+            1,
+            2.0,
+            Mat4::IDENTITY,
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+            cache,
+        );
+        let mut engine = rhai::Engine::new();
+        register_render_api(&mut engine);
+        let script = plugin.script.unwrap();
+        script
+            .call::<()>(
+                &engine,
+                "render_clip_video",
+                (context.clone(), field_values_to_rhai_map(&props)),
+            )
+            .unwrap();
+        let (_, paths) = context.clone().into_parts();
+        assert_eq!(paths, vec!["test.mp4"]);
+        // Supply a decoded frame at the playhead; the script must request 2s, not 0s.
+        let mut player =
+            StreamPlayer::new_from_metadata(ffmpeg_next::codec::Id::H264, 32, 24, 1.0 / 30.0, &[])
+                .unwrap();
+        player.frames.insert(
+            ordered_float::OrderedFloat(2.0),
+            ffmpeg_next::util::frame::video::Video::new(ffmpeg_next::format::Pixel::RGBA, 32, 24),
+        );
+        context
+            .path_to_stream
+            .insert("test.mp4".into(), StreamState::Loaded(7));
+        context.streams.insert(7, player);
+        for factor in [1.0, 0.5, 2.0] {
+            props.insert(
+                crate::plugin::NamespacedID::new("std", "scale").unwrap(),
+                ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Array(
+                    [factor, factor, 1.0]
+                        .into_iter()
+                        .map(crate::plugin::property::value::FieldValue::Float)
+                        .collect(),
+                )),
+            );
+            script
+                .call::<()>(
+                    &engine,
+                    "render_clip_video",
+                    (context.clone(), field_values_to_rhai_map(&props)),
+                )
+                .unwrap();
+            let (batches, _) = context.clone().into_parts();
+            assert_eq!(batches.len(), 1);
+            let model = batches[0].transform;
+            assert_eq!(
+                model.transform_point3(Vec3::ZERO),
+                Vec3::new(-16.0 * factor as f32, -12.0 * factor as f32, 0.0)
+            );
+            assert_eq!(
+                model.transform_point3(Vec3::new(1.0, 1.0, 0.0)),
+                Vec3::new(16.0 * factor as f32, 12.0 * factor as f32, 0.0)
+            );
+        }
+    }
+
+    #[test]
+    fn transform_uses_degrees_and_rejects_invalid_vectors() {
+        fn array(v: &[f64]) -> rhai::Array {
+            v.iter().map(|v| rhai::Dynamic::from(*v)).collect()
+        }
+        let matrix = transform_matrix(
+            array(&[10.0, 20.0, 0.0]),
+            array(&[0.0, 0.0, 90.0]),
+            array(&[2.0, 3.0, 1.0]),
+        )
+        .unwrap();
+        assert!((matrix.transform_point3(Vec3::X) - Vec3::new(10.0, 22.0, 0.0)).length() < 0.0001);
+        assert!(transform_matrix(array(&[0.0]), array(&[0.0; 3]), array(&[1.0; 3])).is_err());
+        assert!(
+            transform_matrix(array(&[f64::NAN; 3]), array(&[0.0; 3]), array(&[1.0; 3])).is_err()
+        );
+    }
 }

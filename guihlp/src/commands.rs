@@ -6,7 +6,7 @@ use esotereel_lib::{
         clip::{ClipBindingValue, ClipData},
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
-        transform::{ClipTranslate, ClipTranslates},
+        transform::ClipTranslates,
     },
     requests::Request,
     util::result::EsotereelError,
@@ -113,11 +113,7 @@ impl CommandQueue {
             media_offset: 0.0,
         };
 
-        let translates = ClipTranslates::Normal(ClipTranslate {
-            position: [-100.0, -100.0, 0.0],
-            rotation: [0.0, 0.0, 0.0],
-            scale: [400.0, 300.0, 1.0],
-        });
+        let translates = ClipTranslates::None;
 
         let kind_id = NamespacedID::parse("std:video").unwrap();
 

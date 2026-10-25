@@ -1,5 +1,6 @@
 #include "FieldControlFactory.h"
 
+#include <algorithm>
 #include <QCheckBox>
 #include <QColor>
 #include <QColorDialog>
@@ -7,6 +8,7 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QSpinBox>
 
@@ -60,7 +62,7 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
 
     if (field.kindType == SettingsFieldType::Float) {
         auto *doubleSpinBox = new QDoubleSpinBox();
-        doubleSpinBox->setRange(0.0, 1000.0); // TODO: schemaにmin/maxが乗ったらそちらを使う
+        doubleSpinBox->setRange(-1.0e9, 1.0e9); // TODO: use schema min/max when exposed by FFI
 
         auto floatValue = currentValue.asFloat();
         // Safe: field.kindType == SettingsFieldType::Float guarantees the value type matches
@@ -109,7 +111,41 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         return colorButton;
     }
 
-    // String, および未対応種別(FilePath/Array/Map)のフォールバック
+    if (field.kindType == SettingsFieldType::Array) {
+        const auto values = currentValue.asArray();
+        if (!values || !std::all_of(values->begin(), values->end(), [](const FieldValue &value) {
+                return value.asFloat().has_value() || value.asInt().has_value();
+            })) {
+            auto *unsupported = new QLineEdit(QObject::tr("Unsupported array"));
+            unsupported->setEnabled(false);
+            return unsupported;
+        }
+        auto *container = new QWidget();
+        auto *layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+        for (size_t index = 0; index < values->size(); ++index) {
+            auto *spinBox = new QDoubleSpinBox(container);
+            spinBox->setRange(-1.0e9, 1.0e9);
+            const auto &value = (*values)[index];
+            const bool isInteger = value.asInt().has_value();
+            spinBox->setDecimals(isInteger ? 0 : 3);
+            spinBox->setValue(isInteger ? static_cast<double>(*value.asInt()) : *value.asFloat());
+            layout->addWidget(spinBox);
+            QObject::connect(spinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), spinBox,
+                             [binding, index, isInteger](double number) {
+                                 auto latest = binding.getValue().asArray();
+                                 if (!latest || index >= latest->size())
+                                     return;
+                                 (*latest)[index] = isInteger
+                                     ? FieldValue::fromInt(static_cast<std::int64_t>(number))
+                                     : FieldValue::fromFloat(number);
+                                 binding.setValue(FieldValue::fromArray(*latest));
+                             });
+        }
+        return container;
+    }
+
+    // String, および未対応種別(FilePath/Map)のフォールバック
     auto *lineEdit = new QLineEdit();
     auto qstringValue = currentValue.asQString();
     // Safe: fallback case assumes string type

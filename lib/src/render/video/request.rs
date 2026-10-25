@@ -27,7 +27,11 @@ pub fn request_stream_packets_for_time(
 ) -> Vec<Request> {
     use std::collections::HashMap;
     let mut needs_by_resource: HashMap<ResourceId, Vec<Range<f64>>> = HashMap::new();
-    let mut init_requests = Vec::new();
+    let mut init_requests: Vec<Request> = plugin_cache
+        .take_init_requests()
+        .into_iter()
+        .map(|path| Request::InitStream { path })
+        .collect();
 
     for (path, range) in plugin_cache.take_all() {
         match path_to_stream.get(&path).map(|r| *r) {
@@ -134,5 +138,29 @@ fn assess_buffer(player: &StreamPlayer, range: &Range<f64>) -> BufferNeed {
         BufferNeed::NeedMore { fetch_from: end }
     } else {
         BufferNeed::Sufficient
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn texture_inspection_does_not_consume_requests_and_init_is_sent_once() {
+        let cache = MediaFetchCache::default();
+        cache.record(1, "test.mp4".into(), 2.0..3.0);
+        cache.record_init_request("test.mp4".into());
+        assert_eq!(cache.snapshot().len(), 1);
+        let states = DashMap::new();
+        states.insert("test.mp4".into(), StreamState::Loading);
+        let players = DashMap::new();
+        let timeline = Timeline::new_empty(1, 60.0);
+        let requests = request_stream_packets_for_time(&timeline, &states, &players, 0..60, &cache);
+        assert_eq!(requests.len(), 1);
+        assert!(matches!(&requests[0], Request::InitStream { path } if path == "test.mp4"));
+        assert!(cache.take_all().is_empty());
+        assert!(
+            request_stream_packets_for_time(&timeline, &states, &players, 0..60, &cache).is_empty()
+        );
     }
 }

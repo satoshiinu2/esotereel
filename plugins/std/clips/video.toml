@@ -2,9 +2,10 @@
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
+properties = ["std:transform", "std:video"]
 
 [[properties]]
-target = ["std:video"]
+name = ["std:video"]
 
 [[properties.fields]]
 key = "source"

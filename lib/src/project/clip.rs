@@ -70,6 +70,7 @@ impl Clip {
 
 #[derive(Debug, Clone)]
 pub struct ClipKind {
+    pub properties: Vec<NamespacedID>,
     pub render_script: String,
     pub tags: HashSet<String>,
 }

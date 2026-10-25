@@ -34,6 +34,7 @@ pub struct RenderContext<'a> {
     pub current_frame: TimelineTick,
 }
 
+#[derive(Debug)]
 pub struct RenderBatch {
     pub vertices: Vec<Vertex>,
     pub texture_bind_group: wgpu::BindGroup,
@@ -57,11 +58,9 @@ pub fn render_frame_offscreen(
 
     let view_projection_matrix = proj_matrix * view_matrix;
 
-    // 各レイヤーのビデオフレームを確認し、GPUテクスチャを更新する
-    update_timline_clips_texture(util, ctx);
-
-    // 頂点作成
+    // スクリプトで必要なフレームを記録してから、テクスチャを更新する。
     let vertices = build_vertices(ctx);
+    update_timline_clips_texture(util, ctx);
 
     let batches: Vec<RenderBatch> = if !vertices.is_empty() {
         vertices

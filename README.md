@@ -32,6 +32,7 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 - `ClipTranslates::Keyframe` implementation (lib/src/project/transform.rs:31)
 - Timeline toolbar button icons (gui/src/window/widget/timeline/TimelineToolbarWidget.cpp:56)
 
+See [Clip Properties](docs/architecture/clip-properties.md) for shared property definitions and video transforms.
 See [Open Questions](docs/open-questions.md) for detailed specifications.
 See [Documentation Style Guide](docs/style-guide.md) for documentation standards.
 See [AGENTS.md](AGENTS.md) for AI agent behavior guidelines.
