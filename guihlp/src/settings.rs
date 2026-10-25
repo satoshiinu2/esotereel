@@ -1,16 +1,11 @@
 use std::collections::HashSet;
 
-use esotereel_lib::{
-    plugin::{
-        NamespacedID,
-        property::{PropertySchema, value::FieldTypeKind},
-    },
+use esotereel_lib::plugin::{
+    NamespacedID,
+    property::{PropertySchema, value::FieldTypeKind},
 };
 
-use crate::ffi::{
-    field_value::CFieldValue,
-    stringview::FfiOwnedString,
-};
+use crate::ffi::{field_value::CFieldValue, stringview::FfiOwnedString};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -37,6 +32,26 @@ pub struct FfiPropertySchema {
 }
 
 impl FfiPropertySchema {
+    pub fn from_clip_fields(fields: &[PropertySchema]) -> anyhow::Result<Vec<Self>> {
+        Ok(PropertySchema::leaf_fields(fields)?
+            .into_iter()
+            .map(|(path, field)| Self::from_clip_leaf(&path, &field))
+            .collect())
+    }
+
+    pub fn from_clip_leaf(
+        path: &esotereel_lib::plugin::property::PropertyPath,
+        field: &PropertySchema,
+    ) -> Self {
+        let mut schema = Self::from_schema(field);
+        // Transfer ownership of the replacement key; all other ABI fields are unchanged.
+        unsafe {
+            schema.key.free();
+        }
+        schema.key = FfiOwnedString::from_string(path.to_string());
+        schema
+    }
+
     pub fn from_schema(schema: &PropertySchema) -> Self {
         let kind_type = match &schema.kind {
             FieldTypeKind::Bool => SettingsFieldType::Bool,
@@ -47,7 +62,7 @@ impl FfiPropertySchema {
             FieldTypeKind::FilePath { .. } => SettingsFieldType::FilePath,
             FieldTypeKind::Color => SettingsFieldType::Color,
             FieldTypeKind::Array { .. } => SettingsFieldType::Array,
-            FieldTypeKind::Map { .. } => SettingsFieldType::Map,
+            FieldTypeKind::Map { .. } | FieldTypeKind::Group { .. } => SettingsFieldType::Map,
         };
 
         let category_str = schema.category.join(" > ");
@@ -96,9 +111,7 @@ pub fn set_value(
     Ok(())
 }
 
-pub fn get_categories(
-    settings: &esotereel_lib::plugin::settings::SettingsStore,
-) -> Vec<String> {
+pub fn get_categories(settings: &esotereel_lib::plugin::settings::SettingsStore) -> Vec<String> {
     let mut categories = HashSet::new();
     for field in settings.schema.fields() {
         for cat in &field.category {

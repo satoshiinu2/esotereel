@@ -13,7 +13,7 @@ namespace esotereel::window {
 
 // クリップ選択時に出す、画像のようなタブ+折りたたみセクションのプロパティパネル。
 // SettingsDialogと同じFieldControlFactoryでコントロールを生成するが、
-// レイアウトはリストではなく category を " > " で分割した階層(タブ > タブ > 折りたたみセクション)を組む。
+// Rust側のグループ階層を、トップのタブと再帰的な折りたたみセクションとして表示する。
 class ClipPropertiesPanel : public QWidget {
     Q_OBJECT
 

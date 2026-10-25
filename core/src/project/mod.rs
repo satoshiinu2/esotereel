@@ -1,3 +1,4 @@
+use esotereel_lib::plugin::property::PropertyPath;
 use std::collections::HashMap;
 
 use anyhow::Ok;
@@ -141,15 +142,16 @@ pub(crate) fn clip_resize_core(
 
     // source_offset (placeholder)
     // TODO: いろいろ検討
-    let key = NamespacedID::new("std", "source_offset").unwrap();
+    let key = PropertyPath::parse("std:video/media/source_offset")?;
     for ctx in resized_clips {
         if let Some(off) = ctx.new_source_offset {
             let v = ClipBindingValue::Static(FieldValue::Int(off));
-            timeline
+            let clip = timeline
                 .get_clip_mut(ctx.clip_id)
-                .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?
-                .set_property_value(key.clone(), v.clone())?;
-            timeline.touch_property_changed(ctx.clip_id, key.clone(), v);
+                .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
+            clip.set_property_path(&key, v)?;
+            let root_value = clip.get_property_value(key.root()).unwrap().clone();
+            timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
         }
     }
     Ok(())

@@ -1,23 +1,24 @@
 [[properties]]
 name = ["std:transform"]
+label = "Transform"
 
 [[properties.fields]]
 key = "position"
 label = "Position"
-category = ["Transform"]
+category = []
 kind = { type = "array", item_kind = { type = "float", step = 1.0 } }
 default = [0.0, 0.0, 0.0]
 
 [[properties.fields]]
 key = "rotation"
 label = "Rotation"
-category = ["Transform"]
+category = []
 kind = { type = "array", item_kind = { type = "float", step = 1.0 } }
 default = [0.0, 0.0, 0.0]
 
 [[properties.fields]]
 key = "scale"
 label = "Scale"
-category = ["Transform"]
+category = []
 kind = { type = "array", item_kind = { type = "float", step = 0.01 } }
 default = [1.0, 1.0, 1.0]

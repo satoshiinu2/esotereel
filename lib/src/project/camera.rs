@@ -114,10 +114,16 @@ mod preview_tests {
         let kind = NamespacedID::new("std", "video").unwrap();
         let mut properties =
             ClipBindingValue::default_properties(loader.get_clip_properties(&kind).unwrap());
-        properties.insert(
-            NamespacedID::new("std", "source").unwrap(),
-            ClipBindingValue::Static(FieldValue::String("fixture.mp4".into())),
-        );
+        let ClipBindingValue::Static(FieldValue::Map(video)) = properties
+            .get_mut(&NamespacedID::new("std", "video").unwrap())
+            .unwrap()
+        else {
+            panic!("video group")
+        };
+        let Some(FieldValue::Map(media)) = video.get_mut("media") else {
+            panic!("media group")
+        };
+        media.insert("source".into(), FieldValue::String("fixture.mp4".into()));
         let mut ids = IdGenerator::default();
         let mut timeline = Timeline::new_empty(1, 60.0);
         let layer = timeline.insert_layer(&mut ids, "Video".into(), None, None);
@@ -264,8 +270,8 @@ mod preview_tests {
             let mut timeline = ctx.timeline.clone();
             let clip = timeline.get_clip_mut(0).unwrap();
             clip.duration = 600;
-            clip.properties.insert(
-                NamespacedID::new("std", "scale").unwrap(),
+            clip.set_property_path(
+                &crate::plugin::property::PropertyPath::parse("std:video/transform/scale").unwrap(),
                 ClipBindingValue::Static(FieldValue::Array(
                     [
                         32.0 / decoded.width() as f64,
@@ -276,7 +282,8 @@ mod preview_tests {
                     .map(FieldValue::Float)
                     .collect(),
                 )),
-            );
+            )
+            .unwrap();
             let context = RenderContext {
                 timeline: &timeline,
                 current_frame: 300,

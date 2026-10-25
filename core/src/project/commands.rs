@@ -1,5 +1,8 @@
 use esotereel_lib::{
-    plugin::{NamespacedID, property::value::FieldValue},
+    plugin::{
+        NamespacedID,
+        property::{PropertyPath, value::FieldValue},
+    },
     project::{
         Project,
         clip::ClipBindingValue,
@@ -48,7 +51,7 @@ pub fn command_to_history(
                 .timeline_mut(timeline_id)
                 .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
-            let source_offset_key = NamespacedID::new("std", "source_offset").unwrap();
+            let source_offset_key = PropertyPath::parse("std:video/media/source_offset")?;
 
             let entries: anyhow::Result<Vec<_>> = clips
                 .into_iter()
@@ -57,13 +60,12 @@ pub fn command_to_history(
                         .get_clip(ctx.clip_id)
                         .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
 
-                    let old_source_offset = clip
-                        .get_property_value(&source_offset_key)
-                        .and_then(|v| v.in_frame_of())
-                        .and_then(|v| match v {
-                            FieldValue::Int(i) => Some(*i),
-                            _ => None,
-                        });
+                    let old_source_offset =
+                        clip.get_property_path(&source_offset_key)
+                            .and_then(|v| match v {
+                                FieldValue::Int(i) => Some(*i),
+                                _ => None,
+                            });
 
                     let new_position = if ctx.left_edge {
                         clip.position + ctx.frame_delta
@@ -158,11 +160,12 @@ pub fn command_to_history(
                 .get_clip(clip_id)
                 .ok_or(EsotereelError::ClipNotFound(clip_id))?;
 
-            // 古い値を取得、存在しない場合はInt(0)をデフォルトとして使用
+            // Capture the addressed leaf, so undo never overwrites sibling members.
             let old_value = clip
-                .get_property_value(&key)
+                .get_property_path(&key)
                 .cloned()
-                .unwrap_or_else(|| ClipBindingValue::Static(FieldValue::Int(0)));
+                .map(ClipBindingValue::Static)
+                .ok_or_else(|| anyhow::anyhow!("property path `{key}` not found"))?;
 
             CommandHistory::SetClipPropertyValue {
                 clip_id,
@@ -261,8 +264,9 @@ pub fn execute_command(
                 .get_clip_mut(*clip_id)
                 .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
 
-            clip.set_property_value(key.clone(), value.clone())?;
-            timeline.touch_property_changed(*clip_id, key.clone(), value.clone());
+            clip.set_property_path(key, value.clone())?;
+            let root_value = clip.get_property_value(key.root()).unwrap().clone();
+            timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
         }
     };
     Ok(())
@@ -374,8 +378,9 @@ pub fn execute_command_undo(
                 .ok_or(EsotereelError::ClipNotFound(clip_id))?;
 
             // 古い値を設定して通知
-            clip.set_property_value(key.clone(), old_value.clone())?;
-            timeline.touch_property_changed(clip_id, key.clone(), old_value.clone());
+            clip.set_property_path(&key, old_value.clone())?;
+            let root_value = clip.get_property_value(key.root()).unwrap().clone();
+            timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
         }
     }
     Ok(())
@@ -625,5 +630,93 @@ mod tests {
             .unwrap();
         assert_eq!(clip.position, 200);
         assert_eq!(clip.duration, 80);
+    }
+    #[test]
+    fn nested_property_edits_preserve_siblings_and_undo_redo() {
+        let mut project = Project::new();
+        let timeline_id = project.insert_timeline(60.0);
+        let layer_id = *project
+            .timeline_ref(timeline_id)
+            .unwrap()
+            .iter_layers()
+            .next()
+            .unwrap()
+            .0;
+        let root = NamespacedID::new("test", "text").unwrap();
+        let properties = HashMap::from([(
+            root.clone(),
+            ClipBindingValue::Static(FieldValue::Map(std::collections::BTreeMap::from([
+                ("content".into(), FieldValue::String("Old".into())),
+                ("font_size".into(), FieldValue::Float(24.0)),
+            ]))),
+        )]);
+        let clip_id = project
+            .new_clip_in_timeline(
+                timeline_id,
+                layer_id,
+                0,
+                60,
+                NamespacedID::new("test", "clip").unwrap(),
+                properties,
+                ClipTranslates::None,
+            )
+            .unwrap();
+        let path = PropertyPath::parse("test:text/content").unwrap();
+        let request = CommandRequest::SetClipPropertyValue {
+            clip_id,
+            key: path.clone(),
+            value: ClipBindingValue::Static(FieldValue::String("New".into())),
+        };
+        let wire = esotereel_lib::requests::Request::Command {
+            commands: std::collections::VecDeque::from([(timeline_id, request)]),
+        };
+        let bytes = rkyv::to_bytes::<_, 1024>(&wire).unwrap();
+        let decoded = rkyv::from_bytes::<esotereel_lib::requests::Request>(&bytes).unwrap();
+        let esotereel_lib::requests::Request::Command { mut commands } = decoded else {
+            panic!("command")
+        };
+        let (_, request) = commands.pop_front().unwrap();
+        let mut history = command_to_history(&mut project, timeline_id, request).unwrap();
+        execute_command(&mut project, timeline_id, &mut history).unwrap();
+        // A second editor changes a sibling after the first history entry was captured.
+        project
+            .timeline_mut(timeline_id)
+            .unwrap()
+            .get_clip_mut(clip_id)
+            .unwrap()
+            .set_property_path(
+                &PropertyPath::parse("test:text/font_size").unwrap(),
+                ClipBindingValue::Static(FieldValue::Float(36.0)),
+            )
+            .unwrap();
+        execute_command_undo(&mut project, timeline_id, history.clone()).unwrap();
+        let clip = project
+            .timeline_ref(timeline_id)
+            .unwrap()
+            .get_clip(clip_id)
+            .unwrap();
+        assert_eq!(
+            clip.get_property_path(&path),
+            Some(&FieldValue::String("Old".into()))
+        );
+        assert_eq!(
+            clip.get_property_path(&PropertyPath::parse("test:text/font_size").unwrap()),
+            Some(&FieldValue::Float(36.0))
+        );
+        execute_command(&mut project, timeline_id, &mut history).unwrap();
+        let clip = project
+            .timeline_ref(timeline_id)
+            .unwrap()
+            .get_clip(clip_id)
+            .unwrap();
+        assert_eq!(
+            clip.get_property_path(&path),
+            Some(&FieldValue::String("New".into()))
+        );
+        assert_eq!(
+            clip.get_property_path(&PropertyPath::parse("test:text/font_size").unwrap()),
+            Some(&FieldValue::Float(36.0))
+        );
+        assert!(PropertyPath::parse("test:text//content").is_err());
     }
 }

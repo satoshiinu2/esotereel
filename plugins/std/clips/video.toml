@@ -2,20 +2,18 @@
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
-properties = ["std:transform", "std:video"]
+properties = ["std:video"]
 
 [[properties]]
 name = ["std:video"]
+label = "Video"
 
 [[properties.fields]]
-key = "source"
-label = "Source"
-category = ["Media"]
-kind = { type = "string" }
+key = "media"
+label = "Media"
+kind = { type = "group", reference = "std:media" }
 
 [[properties.fields]]
-key = "source_offset"
-label = "Source Offset"
-category = ["Media"]
-kind = { type = "int" }
-default = 0
+key = "transform"
+label = "Transform"
+kind = { type = "group", reference = "std:transform" }

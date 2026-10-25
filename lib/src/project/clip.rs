@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     plugin::{
         NamespacedID,
-        property::{PropertySchema, value::FieldValue},
+        property::{PropertyPath, PropertySchema, value::FieldValue},
     },
     project::{
         TimelineTick,
@@ -56,6 +56,44 @@ impl Clip {
 
     pub fn get_property_value(&self, key: &NamespacedID) -> Option<&ClipBindingValue> {
         self.properties.get(key)
+    }
+
+    pub fn get_property_path(&self, path: &PropertyPath) -> Option<&FieldValue> {
+        let mut value = self.properties.get(path.root())?.in_frame_of()?;
+        for member in path.members() {
+            let FieldValue::Map(values) = value else {
+                return None;
+            };
+            value = values.get(member)?;
+        }
+        Some(value)
+    }
+
+    pub fn set_property_path(
+        &mut self,
+        path: &PropertyPath,
+        value: ClipBindingValue,
+    ) -> anyhow::Result<()> {
+        if path.members().is_empty() {
+            return self.set_property_value(path.root().clone(), value);
+        }
+        let target = self
+            .properties
+            .get_mut(path.root())
+            .ok_or_else(|| anyhow::anyhow!("property group `{}` not found", path.root()))?;
+        let ClipBindingValue::Static(target_value) = target;
+        let mut current = target_value;
+        for member in path.members() {
+            let FieldValue::Map(values) = current else {
+                anyhow::bail!("property path `{path}` traverses a non-group");
+            };
+            current = values
+                .get_mut(member)
+                .ok_or_else(|| anyhow::anyhow!("property path `{path}` not found"))?;
+        }
+        let ClipBindingValue::Static(value) = value;
+        *current = value;
+        Ok(())
     }
 
     pub fn set_property_value(

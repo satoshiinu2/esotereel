@@ -40,6 +40,10 @@ pub enum FieldTypeKind {
     Array {
         item_kind: Box<FieldTypeKind>,
     },
+    Group {
+        reference: crate::plugin::NamespacedID,
+        fields: Vec<super::PropertySchema>,
+    },
     Map {
         value_kind: Box<FieldTypeKind>,
         known_keys: Option<Vec<String>>,
@@ -47,7 +51,14 @@ pub enum FieldTypeKind {
 }
 
 #[derive(
-    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
+    Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
 )]
 #[archive_attr(
     derive(CheckBytes),
@@ -249,6 +260,25 @@ impl FieldTypeKind {
                 Ok(FieldValue::Map(result))
             }
 
+            (FieldTypeKind::Group { fields, .. }, toml::Value::Table(table)) => {
+                for key in table.keys() {
+                    if !fields.iter().any(|field| field.key.local_id() == key) {
+                        return Err(ConvertError::InvalidOption(format!(
+                            "unknown group member `{key}`"
+                        )));
+                    }
+                }
+                let mut values = BTreeMap::new();
+                for field in fields {
+                    let value = match table.get(field.key.local_id()) {
+                        Some(value) => field.kind.parse_toml_to(value)?,
+                        None => field.default.clone(),
+                    };
+                    values.insert(field.key.local_id().to_owned(), value);
+                }
+                Ok(FieldValue::Map(values))
+            }
+
             // --- 型不一致 ---
             (expected_kind, actual_val) => Err(ConvertError::TypeMismatch {
                 expected: match expected_kind {
@@ -260,7 +290,7 @@ impl FieldTypeKind {
                     FieldTypeKind::FilePath { .. } => "String or Array of Strings",
                     FieldTypeKind::Color => "String (Hex/Color)",
                     FieldTypeKind::Array { .. } => "Array",
-                    FieldTypeKind::Map { .. } => "Table",
+                    FieldTypeKind::Map { .. } | FieldTypeKind::Group { .. } => "Table",
                 },
                 got: actual_val.type_str().to_string(),
             }),

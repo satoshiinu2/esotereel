@@ -28,6 +28,7 @@ struct PropertyRaw {
     name: Vec<String>,
     #[serde(default)]
     fields: Vec<PropertySchemaRaw>,
+    label: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -72,7 +73,9 @@ impl Target {
 pub struct PendingProperty {
     pub names: Vec<NamespacedID>,
     pub targets: Vec<Target>,
-    pub fields: Vec<PropertySchema>,
+    pub fields: Vec<PropertySchemaRaw>,
+    pub plugin_id: String,
+    pub label: Option<String>,
 }
 
 impl ClipKind {
@@ -158,31 +161,95 @@ impl ClipKind {
                 NamespacedID::new(owner, local)
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let fields = prop
-            .fields
-            .into_iter()
-            .map(|f| PropertySchema::parse_one(f, plugin_id))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        PropertySchema::validate_properties(&fields)?;
         Ok(PendingProperty {
             names,
             targets,
-            fields,
+            fields: prop.fields,
+            plugin_id: plugin_id.to_owned(),
+            label: prop.label,
         })
     }
 
-    /// All named references pass through this boundary, including cross-plugin references.
-    /// TODO: apply the host's permission policy here once plugin permissions are implemented.
+    /// All references pass through this boundary. Future permission checks belong here.
     fn resolve_property_reference<'a>(
-        kind: &NamespacedID,
+        requester: &NamespacedID,
         property: &NamespacedID,
         definitions: &HashMap<NamespacedID, &'a PendingProperty>,
     ) -> anyhow::Result<&'a PendingProperty> {
         definitions
             .get(property)
             .copied()
-            .with_context(|| format!("property `{property}` referenced by `{kind}` not found"))
+            .with_context(|| format!("property `{property}` referenced by `{requester}` not found"))
+    }
+
+    fn resolve_group(
+        requester: &NamespacedID,
+        reference: &NamespacedID,
+        definitions: &HashMap<NamespacedID, &PendingProperty>,
+        stack: &mut Vec<NamespacedID>,
+    ) -> anyhow::Result<PropertySchema> {
+        anyhow::ensure!(
+            !stack.contains(reference),
+            "cyclic property reference: {} -> {reference}",
+            stack
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" -> ")
+        );
+        anyhow::ensure!(
+            stack.len() < 32,
+            "property nesting exceeds 32 groups at `{reference}`"
+        );
+        let definition = Self::resolve_property_reference(requester, reference, definitions)?;
+        stack.push(reference.clone());
+        let fields = Self::resolve_fields(definition, reference, definitions, stack)?;
+        stack.pop();
+        let group = PropertySchema::group(
+            reference.clone(),
+            definition
+                .label
+                .clone()
+                .unwrap_or_else(|| reference.local_id().to_owned()),
+            reference.clone(),
+            fields,
+        );
+        PropertySchema::validate_properties(std::slice::from_ref(&group))?;
+        Ok(group)
+    }
+
+    fn resolve_fields(
+        definition: &PendingProperty,
+        requester: &NamespacedID,
+        definitions: &HashMap<NamespacedID, &PendingProperty>,
+        stack: &mut Vec<NamespacedID>,
+    ) -> anyhow::Result<Vec<PropertySchema>> {
+        let mut fields = Vec::new();
+        for raw in &definition.fields {
+            if raw.kind.get("type").and_then(toml::Value::as_str) == Some("group") {
+                let reference = raw
+                    .kind
+                    .get("reference")
+                    .and_then(toml::Value::as_str)
+                    .context("group kind requires a namespaced `reference`")?;
+                let reference = parse_id(reference)?;
+                let mut group = Self::resolve_group(requester, &reference, definitions, stack)?;
+                group.key = NamespacedID::new(&definition.plugin_id, &raw.key)?;
+                group.label = raw.label.clone();
+                group.category = raw.category.clone();
+                if let Some(value) = &raw.default {
+                    group.default = group.kind.parse_toml_to(value)?;
+                }
+                fields.push(group);
+            } else {
+                fields.push(PropertySchema::parse_one(
+                    raw.clone(),
+                    &definition.plugin_id,
+                )?);
+            }
+        }
+        PropertySchema::validate_properties(&fields)?;
+        Ok(fields)
     }
 
     pub fn resolve_properties(
@@ -201,6 +268,10 @@ impl ClipKind {
                 );
             }
         }
+        // Validate unused definitions too, so broken references never depend on usage order.
+        for reference in definitions.keys() {
+            Self::resolve_group(reference, reference, &definitions, &mut Vec::new())?;
+        }
         for (id, kind) in kinds {
             let mut seen = HashSet::new();
             for reference in &kind.properties {
@@ -208,11 +279,8 @@ impl ClipKind {
                     seen.insert(reference),
                     "duplicate property reference `{reference}` in `{id}`"
                 );
-                let definition = Self::resolve_property_reference(id, reference, &definitions)?;
-                index
-                    .entry(id.clone())
-                    .or_default()
-                    .extend(definition.fields.clone());
+                let group = Self::resolve_group(id, reference, &definitions, &mut Vec::new())?;
+                index.entry(id.clone()).or_default().push(group);
             }
         }
 
@@ -245,7 +313,8 @@ impl ClipKind {
             };
 
             for id in matched {
-                index.entry(id).or_default().extend(p.fields.clone());
+                let fields = Self::resolve_fields(p, &id, &definitions, &mut Vec::new())?;
+                index.entry(id).or_default().extend(fields);
             }
         }
 
@@ -255,6 +324,13 @@ impl ClipKind {
 
         Ok(index)
     }
+}
+
+fn parse_id(text: &str) -> anyhow::Result<NamespacedID> {
+    let (owner, local) = text
+        .split_once(':')
+        .context("reference must be namespaced")?;
+    NamespacedID::new(owner, local)
 }
 
 #[cfg(test)]
@@ -297,14 +373,14 @@ kind = { type = "string" }
             index[&NamespacedID::new("std", "video").unwrap()][0]
                 .key
                 .full(),
-            "std:source"
+            "std:video"
         );
         let index = resolve(&[("other", KIND), ("std", DEFINITION)]).unwrap();
         assert_eq!(
             index[&NamespacedID::new("other", "video").unwrap()][0]
                 .key
                 .full(),
-            "std:source"
+            "std:video"
         );
     }
 
@@ -328,17 +404,15 @@ kind = { type = "string" }
             "properties = [\"std:video\", \"std:video\"]",
         );
         assert!(resolve(&[("std", &duplicate), ("std", DEFINITION)]).is_err());
-        let collision = DEFINITION.replace("name = [\"std:video\"]", "name = [\"std:another\"]");
-        let two = KIND.replace(
-            "properties = [\"std:video\"]",
-            "properties = [\"std:video\", \"std:another\"]",
+        let duplicate_field = format!(
+            r#"{DEFINITION}
+[[properties.fields]]
+key = "source"
+label = "Duplicate"
+kind = {{ type = "string" }}
+"#
         );
-        assert!(
-            resolve(&[("std", &two), ("std", DEFINITION), ("std", &collision)])
-                .unwrap_err()
-                .to_string()
-                .contains("duplicate property key")
-        );
+        assert!(resolve(&[("std", KIND), ("std", &duplicate_field)]).is_err());
     }
 
     #[test]
@@ -350,6 +424,149 @@ kind = { type = "string" }
                 .unwrap()
                 .len(),
             1
+        );
+    }
+    #[test]
+    fn nested_references_keep_identity_defaults_and_independent_instances() {
+        let text = r#"
+[[properties]]
+name = ["text:style"]
+label = "Style"
+[[properties.fields]]
+key = "font_size"
+label = "Font Size"
+kind = { type = "float", step = 1.0 }
+default = 24.0
+[[properties]]
+name = ["text:text"]
+label = "Text"
+[[properties.fields]]
+key = "content"
+label = "Content"
+kind = { type = "string" }
+[[properties.fields]]
+key = "style"
+label = "Style"
+kind = { type = "group", reference = "text:style" }
+"#;
+        let telop = r#"
+[[kinds]]
+id = "telop"
+render_script = "render"
+properties = ["generator:telop"]
+[[properties]]
+name = ["generator:telop"]
+label = "Telop"
+[[properties.fields]]
+key = "caption"
+label = "Caption"
+kind = { type = "group", reference = "text:text" }
+default = { content = "Caption", style = { font_size = 36.0 } }
+[[properties.fields]]
+key = "header"
+label = "Header"
+kind = { type = "group", reference = "text:text" }
+default = { content = "Header" }
+"#;
+        let resolved = resolve(&[("generator", telop), ("text", text)]).unwrap();
+        let schema = &resolved[&NamespacedID::new("generator", "telop").unwrap()];
+        let crate::plugin::property::value::FieldTypeKind::Group { fields, .. } = &schema[0].kind
+        else {
+            panic!("group")
+        };
+        let crate::plugin::property::value::FieldTypeKind::Group { reference, .. } =
+            &fields[0].kind
+        else {
+            panic!("nested group")
+        };
+        assert_eq!(reference.full(), "text:text");
+        let leaves = PropertySchema::leaf_fields(schema).unwrap();
+        assert_eq!(
+            leaves
+                .iter()
+                .map(|(p, _)| p.to_string())
+                .collect::<Vec<_>>(),
+            [
+                "generator:telop/caption/content",
+                "generator:telop/caption/style/font_size",
+                "generator:telop/header/content",
+                "generator:telop/header/style/font_size"
+            ]
+        );
+        use crate::plugin::property::value::FieldValue;
+        assert_eq!(leaves[1].1.default, FieldValue::Float(36.0));
+        assert_eq!(leaves[3].1.default, FieldValue::Float(24.0));
+        assert_eq!(leaves[1].1.category, ["Telop", "Caption", "Style"]);
+        let defaults = crate::project::clip::ClipBindingValue::default_properties(schema);
+        let mut clip = crate::project::Clip::new(
+            1,
+            0,
+            60,
+            NamespacedID::new("generator", "telop").unwrap(),
+            defaults,
+            crate::project::transform::ClipTranslates::None,
+        );
+        let caption =
+            crate::plugin::property::PropertyPath::parse("generator:telop/caption/content")
+                .unwrap();
+        clip.set_property_path(
+            &caption,
+            crate::project::clip::ClipBindingValue::Static(FieldValue::String("Changed".into())),
+        )
+        .unwrap();
+        assert_eq!(
+            clip.get_property_path(
+                &crate::plugin::property::PropertyPath::parse("generator:telop/header/content")
+                    .unwrap()
+            ),
+            Some(&FieldValue::String("Header".into()))
+        );
+        let props = crate::plugin::script::bridge::field_values_to_rhai_map(&clip.properties);
+        let mut scope = rhai::Scope::new();
+        scope.push("props", props);
+        let value = rhai::Engine::new()
+            .eval_with_scope::<String>(&mut scope, r#"props["generator:telop"].caption.content"#)
+            .unwrap();
+        assert_eq!(value, "Changed");
+        let bytes = rkyv::to_bytes::<_, 1024>(&clip).unwrap();
+        let decoded = rkyv::from_bytes::<crate::project::Clip>(&bytes).unwrap();
+        assert_eq!(
+            decoded.get_property_path(&caption),
+            Some(&FieldValue::String("Changed".into()))
+        );
+
+        let unknown_default = telop.replace("content = \"Caption\"", "unknown = \"Caption\"");
+        assert!(resolve(&[("generator", &unknown_default), ("text", text)]).is_err());
+    }
+
+    #[test]
+    fn rejects_cycles_and_missing_nested_references_even_when_unused() {
+        let cyclic = r#"
+[[properties]]
+name = ["test:a"]
+[[properties.fields]]
+key = "b"
+label = "B"
+kind = { type = "group", reference = "test:b" }
+[[properties]]
+name = ["test:b"]
+[[properties.fields]]
+key = "a"
+label = "A"
+kind = { type = "group", reference = "test:a" }
+"#;
+        assert!(
+            resolve(&[("test", cyclic)])
+                .unwrap_err()
+                .to_string()
+                .contains("cyclic property reference")
+        );
+        let missing = cyclic.replace("reference = \"test:a\"", "reference = \"test:missing\"");
+        assert!(
+            resolve(&[("test", &missing)])
+                .unwrap_err()
+                .to_string()
+                .contains("not found")
         );
     }
 }

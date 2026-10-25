@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::plugin::property::{FieldTypeKind, value::FieldValue};
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertySchemaRaw {
     pub key: String,
     #[serde(default)]
@@ -142,6 +142,12 @@ impl FieldTypeKind {
             FieldTypeKind::Array { .. } => FieldValue::Array(Vec::new()),
 
             FieldTypeKind::Map { .. } => FieldValue::Map(BTreeMap::new()),
+            FieldTypeKind::Group { fields, .. } => FieldValue::Map(
+                fields
+                    .iter()
+                    .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
+                    .collect(),
+            ),
         };
         Ok(value)
     }

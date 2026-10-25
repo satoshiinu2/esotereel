@@ -1,0 +1,16 @@
+[[properties]]
+name = ["std:media"]
+label = "Media"
+
+[[properties.fields]]
+key = "source"
+label = "Source"
+category = []
+kind = { type = "string" }
+
+[[properties.fields]]
+key = "source_offset"
+label = "Source Offset"
+category = []
+kind = { type = "int" }
+default = 0

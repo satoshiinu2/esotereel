@@ -13,6 +13,8 @@
 #include <QLineEdit>
 #include <QMap>
 #include <QSpinBox>
+#include <QSignalBlocker>
+#include <functional>
 #include <QVBoxLayout>
 
 namespace esotereel::window {
@@ -46,13 +48,13 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
     const QString key = field.key;
 
     widget::FieldBinding binding;
-    binding.getValue = [this, key]() -> FieldValue {
+    binding.getValue = [this, key, defaultValue = field.defaultValue]() -> FieldValue {
         if (clipIds.empty()) {
-            return FieldValue{};
+            return defaultValue;
         }
         auto projectResult = state->getProject();
         if (projectResult.isError()) {
-            return FieldValue{};
+            return defaultValue;
         }
         Project project = std::move(projectResult.unwrap());
         Timeline timeline = project.timelineOf(timelineId);
@@ -66,7 +68,7 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
             }
             // TODO(Keyframes): opt->isKeyframes() の場合は現在のプレイヘッド位置の値を評価して返す
         }
-        return FieldValue{}; // フォールバック。field.defaultValueを使う形に調整してください
+        return defaultValue;
     };
     binding.setValue = [this, key](const FieldValue &value) {
         for (const auto &clipId : clipIds) {
@@ -121,36 +123,50 @@ void ClipPropertiesPanel::rebuild() {
 
     qDebug() << "[ClipPropertiesPanel] fields =" << fields.size();
 
-    // category は "動画 > ベーシック > 位置とサイズ" のように " > " 区切りで
-    // タブ > タブ > 折りたたみセクション の3階層に対応させる。
-    // 第1階層(タブ) -> 第2階層(タブ) -> 第3階層(セクション名) -> フィールド一覧
-    QMap<QString, QMap<QString, QVector<ClipPropertySchema>>> tree;
-    for (const auto &field : fields) {
-        const QStringList parts = field.category.split("/");
-        const QString top = parts.value(0, "General");
-        const QString section = parts.value(1, "General");
-        tree[top][section].append(field);
-
-        qDebug() << "field:" << field.key << "category:" << field.category;
-    }
-
-    for (auto topIt = tree.constBegin(); topIt != tree.constEnd(); ++topIt) {
-        qDebug() << "top:" << topIt.key();
-
-        for (auto sectionIt = topIt.value().constBegin(); sectionIt != topIt.value().constEnd(); ++sectionIt) {
-            auto *page = new QWidget();
-            auto *pageLayout = new QVBoxLayout(page);
-
-            auto *section = new widget::CollapsibleSection(sectionIt.key());
-            for (const auto &field : sectionIt.value()) {
-                section->contentLayout()->addWidget(buildRow(field));
+    // Rust projects typed groups into leaf fields with an ordered category path.
+    // Keep that order and support arbitrary nesting instead of a fixed tab depth.
+    const auto categoryPath = [](const ClipPropertySchema &field) {
+        return field.category.split(" > ", Qt::SkipEmptyParts);
+    };
+    std::function<void(QVBoxLayout *, const QVector<ClipPropertySchema> &, qsizetype)> appendFields;
+    appendFields = [&](QVBoxLayout *layout, const QVector<ClipPropertySchema> &items, qsizetype depth) {
+        QStringList groups;
+        for (const auto &field : items) {
+            const auto path = categoryPath(field);
+            if (path.size() <= depth) {
+                layout->addWidget(buildRow(field));
+                continue;
             }
-            pageLayout->addWidget(section);
-            qDebug() << "    section:" << sectionIt.key() << "fields:" << sectionIt.value().size();
-            pageLayout->addStretch();
-
-            topTabs->addTab(page, topIt.key());
+            const QString name = path[depth];
+            if (groups.contains(name))
+                continue;
+            groups.append(name);
+            QVector<ClipPropertySchema> children;
+            for (const auto &candidate : items) {
+                if (categoryPath(candidate).value(depth) == name)
+                    children.append(candidate);
+            }
+            auto *section = new widget::CollapsibleSection(name);
+            appendFields(section->contentLayout(), children, depth + 1);
+            layout->addWidget(section);
         }
+    };
+    QStringList roots;
+    for (const auto &field : fields) {
+        const QString root = categoryPath(field).value(0, "General");
+        if (roots.contains(root))
+            continue;
+        roots.append(root);
+        QVector<ClipPropertySchema> children;
+        for (const auto &candidate : fields) {
+            if (categoryPath(candidate).value(0, "General") == root)
+                children.append(candidate);
+        }
+        auto *page = new QWidget();
+        auto *layout = new QVBoxLayout(page);
+        appendFields(layout, children, 1);
+        layout->addStretch();
+        topTabs->addTab(page, root);
     }
 }
 
@@ -184,6 +200,7 @@ void ClipPropertiesPanel::refreshChangedFields() {
         }
 
         QWidget *control = it->second;
+        const QSignalBlocker blocker(control);
 
         // コントロールのタイプに応じて値を設定
         if (auto *spinBox = qobject_cast<QSpinBox*>(control)) {
@@ -210,6 +227,16 @@ void ClipPropertiesPanel::refreshChangedFields() {
             auto qstringValue = value.asQString();
             if (qstringValue.has_value()) {
                 lineEdit->setText(qstringValue.value());
+            }
+        } else if (const auto values = value.asArray()) {
+            const auto components = control->findChildren<QDoubleSpinBox *>(QString(), Qt::FindDirectChildrenOnly);
+            for (qsizetype index = 0; index < components.size() && index < static_cast<qsizetype>(values->size()); ++index) {
+                const QSignalBlocker componentBlocker(components[index]);
+                const auto &component = (*values)[index];
+                if (auto number = component.asFloat())
+                    components[index]->setValue(*number);
+                else if (auto number = component.asInt())
+                    components[index]->setValue(static_cast<double>(*number));
             }
         }
     }

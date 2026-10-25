@@ -1,21 +1,18 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-};
+use std::{borrow::Cow, collections::HashSet};
 
 use anyhow::Context;
 
-use crate::{
-    plugin::{
-        NamespacedID,
-        property::{
-            parse::PropertySchemaRaw,
-            value::{FieldTypeKind, FieldValue},
-        },
+use crate::plugin::{
+    NamespacedID,
+    property::{
+        parse::PropertySchemaRaw,
+        value::{FieldTypeKind, FieldValue},
     },
 };
 
 pub mod parse;
+pub mod path;
+pub use path::PropertyPath;
 pub mod value;
 
 #[derive(Debug, serde::Deserialize)]
@@ -24,7 +21,7 @@ struct SchemaFile {
     fields: Vec<PropertySchemaRaw>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PropertySchema {
     pub key: NamespacedID,
     pub category: Vec<String>,
@@ -34,6 +31,80 @@ pub struct PropertySchema {
 }
 
 impl PropertySchema {
+    pub fn group(
+        key: NamespacedID,
+        label: String,
+        reference: NamespacedID,
+        fields: Vec<Self>,
+    ) -> Self {
+        let default = FieldValue::Map(
+            fields
+                .iter()
+                .map(|f| (f.key.local_id().to_owned(), f.default.clone()))
+                .collect(),
+        );
+        Self {
+            key,
+            category: Vec::new(),
+            label,
+            kind: FieldTypeKind::Group { reference, fields },
+            default,
+        }
+    }
+
+    /// Flatten only the editor projection. The schema and stored values remain trees.
+    pub fn leaf_fields(fields: &[Self]) -> anyhow::Result<Vec<(PropertyPath, Self)>> {
+        fn visit(
+            field: &PropertySchema,
+            path: PropertyPath,
+            groups: &[String],
+            default: &FieldValue,
+            out: &mut Vec<(PropertyPath, PropertySchema)>,
+        ) -> anyhow::Result<()> {
+            if let FieldTypeKind::Group { fields, .. } = &field.kind {
+                let mut groups = groups.to_vec();
+                groups.push(field.label.clone());
+                groups.extend(field.category.iter().cloned());
+                for child in fields {
+                    let effective = match default {
+                        FieldValue::Map(values) => {
+                            values.get(child.key.local_id()).unwrap_or(&child.default)
+                        }
+                        _ => &child.default,
+                    };
+                    visit(
+                        child,
+                        path.child(child.key.local_id())?,
+                        &groups,
+                        effective,
+                        out,
+                    )?;
+                }
+            } else {
+                let mut leaf = field.clone();
+                leaf.default = default.clone();
+                leaf.category = groups
+                    .iter()
+                    .cloned()
+                    .chain(field.category.iter().cloned())
+                    .collect();
+                out.push((path, leaf));
+            }
+            Ok(())
+        }
+        let mut out = Vec::new();
+        for field in fields {
+            visit(
+                field,
+                field.key.clone().into(),
+                &[],
+                &field.default,
+                &mut out,
+            )?;
+        }
+        Ok(out)
+    }
+
     pub fn parse_toml(text: &str, plugin_id: &str) -> anyhow::Result<Vec<PropertySchema>> {
         let parsed: SchemaFile = toml::from_str(text).map_err(|e| {
             anyhow::anyhow!(
@@ -99,6 +170,17 @@ impl PropertySchema {
         match kind {
             FieldTypeKind::Enum { options } if options.is_empty() => {
                 anyhow::bail!("Enum kind for key `{key}` has no options")
+            }
+            FieldTypeKind::Group { fields, .. } => {
+                let mut names = HashSet::new();
+                for field in fields {
+                    anyhow::ensure!(
+                        names.insert(field.key.local_id()),
+                        "duplicate group member `{}`",
+                        field.key.local_id()
+                    );
+                }
+                Self::validate_properties(fields)
             }
             FieldTypeKind::Array { item_kind } => Self::validate_kind(key, item_kind)
                 .with_context(|| format!("invalid Array item_kind for key `{key}`")),

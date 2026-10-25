@@ -356,12 +356,35 @@ mod render_tests {
                 .iter()
                 .any(|field| matches!(field.key.local_id(), "width" | "height"))
         );
+        let leaves = crate::plugin::property::PropertySchema::leaf_fields(fields).unwrap();
+        assert_eq!(
+            leaves
+                .iter()
+                .map(|(path, _)| path.to_string())
+                .collect::<Vec<_>>(),
+            [
+                "std:video/media/source",
+                "std:video/media/source_offset",
+                "std:video/transform/position",
+                "std:video/transform/rotation",
+                "std:video/transform/scale",
+            ]
+        );
         let mut props = ClipBindingValue::default_properties(fields);
-        props.insert(
-            crate::plugin::NamespacedID::new("std", "source").unwrap(),
-            ClipBindingValue::Static(crate::plugin::property::value::FieldValue::String(
-                "test.mp4".into(),
-            )),
+        let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(video)) =
+            props
+                .get_mut(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+                .unwrap()
+        else {
+            panic!("video group")
+        };
+        let Some(crate::plugin::property::value::FieldValue::Map(media)) = video.get_mut("media")
+        else {
+            panic!("media group")
+        };
+        media.insert(
+            "source".into(),
+            crate::plugin::property::value::FieldValue::String("test.mp4".into()),
         );
         let cache = Arc::new(MediaFetchCache::default());
         let context = PluginRenderContext::new(
@@ -397,14 +420,26 @@ mod render_tests {
             .insert("test.mp4".into(), StreamState::Loaded(7));
         context.streams.insert(7, player);
         for factor in [1.0, 0.5, 2.0] {
-            props.insert(
-                crate::plugin::NamespacedID::new("std", "scale").unwrap(),
-                ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Array(
+            let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(video)) =
+                props
+                    .get_mut(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+                    .unwrap()
+            else {
+                panic!("video group")
+            };
+            let Some(crate::plugin::property::value::FieldValue::Map(transform)) =
+                video.get_mut("transform")
+            else {
+                panic!("transform group")
+            };
+            transform.insert(
+                "scale".into(),
+                crate::plugin::property::value::FieldValue::Array(
                     [factor, factor, 1.0]
                         .into_iter()
                         .map(crate::plugin::property::value::FieldValue::Float)
                         .collect(),
-                )),
+                ),
             );
             script
                 .call::<()>(

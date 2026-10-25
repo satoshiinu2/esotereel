@@ -11,23 +11,106 @@
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
-properties = ["std:transform", "std:video"]
+properties = ["std:video"]
 
 [[properties]]
 name = ["std:video"]
 
 [[properties.fields]]
-key = "source"
-label = "Source"
-category = ["Media"]
-kind = { type = "string" }
+key = "media"
+label = "Media"
+kind = { type = "group", reference = "std:media" }
+
+[[properties.fields]]
+key = "transform"
+label = "Transform"
+kind = { type = "group", reference = "std:transform" }
 ```
 
-`name` は定義名の配列で、複数名を指定した場合は同じフィールド群の別名になる。
-定義名は自プラグインの名前空間に限定する。フィールドのキーも定義元の名前空間に属する。
-参照先が未定義、定義名や参照が重複、合成後のフィールドキーが重複した場合はエラーにする。
-フィールドの並びは種別の `properties` の順、その後に各定義の `fields` の順となる。
-既存の `target` 方式は互換性のため残すが、同じ定義で `name` と併用できない。
+`properties = ["std:video"]` は Video グループをルートに配置し、その下に Media と Transform を置く。
+Media の定義は `clips/media.toml`、Transform の定義は `clips/transform.toml` に分離する。
+これらの定義は他のクリップ種別からも参照できる。
+`name` は定義名の配列で、複数名は同じ定義の別名となる。
+定義名は自プラグインの名前空間に限定する。参照元の定義 ID は解決後もスキーマに保持する。
+
+グループ内のキーはローカル名で扱う。異なるグループには同じキーを配置できるが、
+同じグループ内の重複は拒否する。未定義参照、参照の循環、32グループを超える深さも拒否する。
+未使用の定義も読み込み時に検証する。
+並びは種別の `properties` の順、その後に各定義の `fields` の順となる。
+既存の `target` 方式は従来通りフラットな拡張として残すが、同じ定義で `name` と併用できない。
+
+### 入れ子の定義参照
+
+次の例は将来のテロップ生成プラグインで使える定義例であり、テロップ描画機能そのものは未実装である。
+`text:text` はテキストクリップ側にも同じ名前で定義できる。
+
+```toml
+# text プラグイン側の clips/text.toml
+[[properties]]
+name = ["text:text"]
+label = "Text"
+
+[[properties.fields]]
+key = "content"
+label = "Content"
+kind = { type = "string" }
+
+# generator プラグイン側の clips/telop.toml
+[[kinds]]
+id = "telop"
+render_script = "render_telop"
+properties = ["generator:telop"]
+
+[[properties]]
+name = ["generator:telop"]
+label = "Telop"
+
+[[properties.fields]]
+key = "caption"
+label = "Caption"
+kind = { type = "group", reference = "text:text" }
+default = { content = "Caption" }
+
+[[properties.fields]]
+key = "header"
+label = "Header"
+kind = { type = "group", reference = "text:text" }
+default = { content = "Header" }
+```
+
+`caption` と `header` は同じ定義を参照するが、値はそれぞれ独立する。
+参照先のグループにも `type = "group"` の項目を定義できる。
+参照ごとの `default` は指定したメンバーを上書きし、未指定メンバーには定義元の初期値を使う。
+未定義メンバーや型が異なる初期値は拒否する。
+
+Rhai は `props["generator:telop"].caption.content` のようにアクセスする。
+生成処理を実装する際は、この値を生成先のテキストプロパティへ渡せる。
+別クリップの現在値を追従する動的バインディングは未実装であり、定義参照とは区別する。
+将来は `ClipId` と `PropertyPath` を値の参照先として使い、参照の評価・循環検査を別途行う。
+
+### 保存・編集・GUI
+
+スキーマは `FieldTypeKind::Group { reference, fields }` のツリーとして保持し、
+値は `FieldValue::Map` を使って同じ階層で保存する。
+ルートの ID は名前空間付き、グループ内のメンバーはローカル名となる。
+例: `std:video` → `transform` → `scale`、`generator:telop` → `caption` → `content`。
+
+編集対象は型付き `PropertyPath` で指定する。文字列表現は `std:video/transform/scale` や
+`generator:telop/caption/content`。ラベルや表示カテゴリを変更してもパスは変わらない。
+コマンドは末端の値だけを更新し、Undo/Redo もその末端に限定するため、兄弟の値を上書きしない。
+受信側への通知では更新後のルートグループを送る。
+
+C ABI の引数とスキーマ構造体は変更せず、GUI用にのみ末端項目へ展開する。
+GUI はルートグループのタブと再帰的な折りたたみセクションを表示する。
+複数クリップの共通項目は、グループ全体ではなく末端のパスと型で判定する。
+同じ `std:transform` を参照していても、`std:video/transform/scale` と
+`std:text/transform/scale` のようにパスが異なる項目は一括編集の対象にならない。
+
+旧プロパティ値の自動移行は未実装。以前の `std:video/source` や `std:transform/scale` は、
+それぞれ `std:video/media/source`、`std:video/transform/scale` に変わる。
+標準動画スクリプトは今回の階層構造を前提とする。
+通信コマンドのキー型は `NamespacedID` から `PropertyPath` に変わるため、クライアントとサーバーは
+同じ版を使う必要がある。
 
 ## 2. 他プラグインからの参照
 
@@ -42,7 +125,7 @@ kind = { type = "string" }
 
 ## 3. 動画サイズと変換
 
-動画の元解像度を基準とし、表示サイズは `std:transform` の `std:scale` だけで調整する。
+動画の元解像度を基準とし、表示サイズは `std:video` → `transform` → `scale` だけで調整する。
 `std:width` と `std:height` は使用しない。`std:transform` は別ファイルの `transform.toml` に定義する。
 
 例えば元動画が 544 × 408 の場合、`scale = [1.0, 1.0, 1.0]` で 544 × 408、
@@ -51,9 +134,9 @@ X・Y を同じ倍率にすれば元動画の縦横比を維持する。
 
 | フィールド | 内容 | 既定値 |
 | --- | --- | --- |
-| `std:position` | XYZ 位置 | `[0.0, 0.0, 0.0]` |
-| `std:rotation` | XYZ 回転、度単位 | `[0.0, 0.0, 0.0]` |
-| `std:scale` | 元解像度に対する XYZ 拡縮倍率 | `[1.0, 1.0, 1.0]` |
+| `std:video/transform/position` | XYZ 位置 | `[0.0, 0.0, 0.0]` |
+| `std:video/transform/rotation` | XYZ 回転、度単位 | `[0.0, 0.0, 0.0]` |
+| `std:video/transform/scale` | 元解像度に対する XYZ 拡縮倍率 | `[1.0, 1.0, 1.0]` |
 
 GUI は数値配列を各成分の数値欄として編集する。数値欄は暫定的に ±1,000,000,000 の範囲を持つ。
 スキーマの min/max/step を FFI 経由で編集UIに反映する処理は未実装である。
@@ -71,12 +154,12 @@ Rhai の `mat4_trs(position, rotation, scale)` は `Mat4` を生成する。
 最終変換は既存シェーダーで `P × V × M × vertex` として計算する。
 従来の `clip.translates` は初期の基底行列として読むが、標準動画スクリプトは
 `set_transform` で置き換える。旧サイズと元解像度の二重適用を防ぎ、
-既存クリップも `std:transform` のプロパティを基準に描画する。
+`std:video/transform` のプロパティを基準に描画する。
 新規クリップ追加時には旧変換を設定しない。以前の `std:width` / `std:height` の値が
-既存クリップに残っていても描画には使わず、元解像度と `std:scale` を基準にする。
+既存クリップに残っていても描画には使わず、元解像度と `std:video/transform/scale` を基準にする。
 元解像度の取得方法を変更する場合も、プレビュー用の縮小デコードと表示サイズを混同しないこと。
 
-動画取得時刻は `ctx.media_time()` を使う。`std:source_offset` は既存の定義を維持しているが、
+動画取得時刻は `ctx.media_time()` を使う。`std:video/media/source_offset` は定義を維持しているが、
 描画時刻への反映は未実装である。
 
 ## 4. 動画取得と描画

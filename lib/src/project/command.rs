@@ -1,3 +1,4 @@
+use crate::plugin::property::PropertyPath;
 use std::collections::HashMap;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
@@ -85,7 +86,7 @@ pub enum CommandRequest {
     },
     SetClipPropertyValue {
         clip_id: ClipId,
-        key: NamespacedID,
+        key: PropertyPath,
         value: ClipBindingValue,
     },
 }
@@ -124,7 +125,7 @@ pub enum CommandHistory {
     },
     SetClipPropertyValue {
         clip_id: ClipId,
-        key: NamespacedID,
+        key: PropertyPath,
         old_value: ClipBindingValue,
         new_value: ClipBindingValue,
     },
