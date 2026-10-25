@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 }
 
 void startInternalServer() {
-    addr = "0.0.0.0:12345";
+    addr = "127.0.0.1:12345";
     QString stdPluginDir = qEnvironmentVariable("ESOTEREEL_PLUGIN_DIR");
     QString workingDir = qEnvironmentVariable("ESOTEREEL_WORKING_DIR");
 

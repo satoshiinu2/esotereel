@@ -13,10 +13,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-option(ESOTEREEL_ENABLE_GPU_PREVIEW
-    "Enable the GPU preview widget"
-    ON
-)
+set(ESOTEREEL_ENABLE_GPU_PREVIEW ON)
 
 # Allow setting Qt6 path via environment variable
 if(NOT Qt6_DIR)

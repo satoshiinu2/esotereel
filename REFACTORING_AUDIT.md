@@ -43,8 +43,9 @@ No safety-critical or data corruption issues were found, but addressing the iden
 ## 3. Refactoring Candidates
 
 ### ID: RF-001
+
 - **Priority**: P2
-- **Location**: 
+- **Location**:
   - `core/src/network.rs` lines 198-207 (`serialize_response` for Response)
   - `guihlp/src/network.rs` lines 104-111 (`serialize_response` for Request)
 - **Current Implementation**: Fixed-size rkyv `AllocSerializer::<1024>` buffer for serialization.
@@ -57,9 +58,10 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: High
 
 ### ID: RF-002
+
 - **Priority**: P3
 - **Location**: `core/src/lib.rs` lines 71-77 (`on_project_event` function)
-- **Current Implementation**: 
+- **Current Implementation**:
   ```rust
   let mut changes = project.drain_changes();
   if changes.is_empty() {
@@ -77,6 +79,7 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: High
 
 ### ID: RF-003
+
 - **Priority**: P2
 - **Location**: `core/src/lib.rs` function `dispatch_changeset` (lines 92-278)
 - **Current Implementation**: Sends multiple separate network messages for each change type (clip properties, clips, layers, outline, etc.) within a single dirty-signal handling cycle.
@@ -89,8 +92,9 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: Medium (depends on feasibility of batching without breaking existing protocol).
 
 ### ID: RF-004
+
 - **Priority**: P3
-- **Location**: `gui/src/main.cpp` line 75 (`addr = "0.0.0.0:12345";`)
+- **Location**: `gui/src/main.cpp` line 75 (`addr = "127.0.0.1:12345";`)
 - **Current Implementation**: Hardcoded server listen address and port.
 - **Problem**: Prevents running multiple instances simultaneously (port conflict) and lacks configurability for different network interfaces.
 - **Recommendation**: Make address and port configurable via environment variable (e.g., `ESOTEREEL_SERVER_ADDR`) or command-line argument, with a fallback to the current hardcoded value.
@@ -101,8 +105,9 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: High
 
 ### ID: RF-005
+
 - **Priority**: P3
-- **Location**: 
+- **Location**:
   - `gui/src/main.cpp` (`startInternalServer` function)
   - `guihlp/src/ffi/internalserver.rs` (`internal_server_start`)
 - **Current Implementation**: GUI launches the core server as a background thread.
@@ -115,6 +120,7 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: Medium
 
 ### ID: RF-006
+
 - **Priority**: P3
 - **Location**: `core/src/requests.rs` lines 174-215 (`FetchClipsInRange` handler) and `core/src/network.rs` `update_client_view` method
 - **Current Implementation**: On each `FetchClipsInRange` request, server updates client's view to exactly the requested range.
@@ -124,11 +130,12 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Regression Risk**: Low (if implemented as an optimization that does not break existing behavior).
 - **Needed Tests**: Unit tests verifying view update logic; integration test confirming scrubbing still works correctly.
 - **Dependencies**: None.
-- **Confidence": Medium
+- \*\*Confidence": Medium
 
 ### ID: RF-007
+
 - **Priority**: P2
-- **Location**: 
+- **Location**:
   - `core/src/network.rs` lines 209-214 (`send`), 216-221 (`send_all`), 223-241 (`send_to_many`)
   - `guihlp/src/network.rs` lines 113-118 (`send`), 120-? (similar)
 - **Current Implementation**: On serialization error, functions log an error but do not propagate the error or take corrective action; message is silently dropped.
@@ -141,7 +148,8 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Confidence**: High
 
 ### ID: RF-008
-- **Priority": P3
+
+- \*\*Priority": P3
 - **Location**: Throughout codebase where `expect("mutex poisoned")` is used (e.g., `core/src/network.rs` line 22, `core/src/lib.rs` line 63, etc.)
 - **Current Implementation**: Use of `expect` to unwrap mutex lock results, causing a panic on poisoned mutex.
 - **Problem**: Mutex poisoning (rare) would panic and bring down the thread.
@@ -150,10 +158,11 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Regression Risk**: Low (if handling does not change success path).
 - **Needed Tests**: None (hard to test poisoning; rely on code review).
 - **Dependencies**: None.
-- **Confidence": High
+- \*\*Confidence": High
 
 ### ID: RF-009
-- **Priority": P3
+
+- \*\*Priority": P3
 - **Location**: `core/src/network.rs` field `client_views: RwLock<HashMap<u32, HashMap<TimelineId, Range<i64>>>` (line 23)
 - **Current Implementation**: Unbounded storage of client view ranges.
 - **Problem**: Theoretically, a client could accumulate many timeline entries over time (if it frequently queries different timelines without bound), leading to memory growth.
@@ -162,10 +171,11 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Regression Risk**: Low (if implemented as an optimization that preserves current behavior for typical use).
 - **Needed Tests**: Unit tests verifying view limit logic.
 - **Dependencies**: None.
-- **Confidence": Medium
+- \*\*Confidence": Medium
 
 ### ID: RF-010
-- **Priority": P1
+
+- \*\*Priority": P1
 - **Location**: Entire codebase (no visible unit tests in core, lib, guihlp directories).
 - **Current Implementation**: Lack of automated unit tests.
 - **Problem**: Makes refactoring risky and hinders verification of correctness.
@@ -179,7 +189,7 @@ No safety-critical or data corruption issues were found, but addressing the iden
 - **Regression Risk**: Low (adding tests does not affect production code).
 - **Needed Tests**: As described.
 - **Dependencies**: Requires test framework (e.g., `pytest` for Rust? Actually Rust has built-in `#[test]`; ensure `dev-dependencies` include any needed mocks).
-- **Confidence": High
+- \*\*Confidence": High
 
 ## 4. Implementation Sequence
 
