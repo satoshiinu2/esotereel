@@ -13,6 +13,7 @@ cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ## TODO
 
 ### High Priority
+- in core/src/project/commands.rs: make anything instead of hardcode source_offset
 - Project save/load
 - Export functionality (FFmpeg integration)
 - Error handling UI
