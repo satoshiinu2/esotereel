@@ -6,7 +6,6 @@ use esotereel_lib::{
 };
 
 use crate::{
-    WrapperErrorCode,
     commands::CommandQueue,
     ffi::{
         result::FfiResultVoid,

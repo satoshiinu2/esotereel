@@ -2,7 +2,6 @@
 #include "Clip.h"
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
-#include "ffi/WrapperResult.h"
 #include <cstdint>
 
 namespace esotereel {

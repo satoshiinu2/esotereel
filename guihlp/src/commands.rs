@@ -11,7 +11,6 @@ use esotereel_lib::{
     util::result::EsotereelError,
 };
 
-use crate::WrapperErrorCode;
 use crate::network::ClientNetworkHandler;
 use crate::slice_from_ptr_or_empty;
 use crate::state::ClientState;

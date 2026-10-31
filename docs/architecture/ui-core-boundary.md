@@ -250,6 +250,28 @@ Esotereelでは、GUI（Qt/C++）とCore（Rust）がTCP/IPネットワークを
 - **C++ Processing**: `Timeline::merge_fetched_clips()`
 - **GUI State Update**: タイムラインUI更新
 
+`NetworkState::remove_client_view(client_id)` は、切断したクライアントの表示範囲記録をまとめて
+削除するためのクリーンアップ処理であり、保持する。現状のネットワーク切断処理から呼び出す経路は
+未接続のため、切断時の呼び出し統合は別途必要である。
+
+---
+
+## FFI のエラーと任意結果
+
+失敗しうる FFI 関数は、値を返す場合は `FfiResult<T>`、値を返さない場合は `FfiResultVoid` を返す。
+成功時は結果値、失敗時は所有権付きのエラーメッセージを返し、C++ 側の `esotereel::Result<T>`
+がこれを受け取る。Rust 側で捕捉した panic もエラーとして返す。
+この方式では thread-local のエラーコードや直前のエラーメッセージ取得に依存しない。
+
+検索結果が存在しないことと、処理自体の失敗は区別する。
+例えば `timeline_find_clip_by_id()` は、検索に成功して該当クリップがない場合は
+`FfiResult<FfiOption<Clip>>` の `Ok(None)` を返し、無効な引数などの失敗は `Err` として返す。
+`render_rows_build()` と行・クリップ配列の取得関数も結果型を使い、失敗時は C++ 側で
+エラーをログに出して不完全な行データを利用しない。
+
+失敗しないことを前提とした既存の FFI 関数は引き続き単純な値やポインターを返す。
+すべての FFI 関数が一律に結果型へ変換されたわけではない。
+
 ---
 
 ## 責務の分離
@@ -264,6 +286,7 @@ Esotereelでは、GUI（Qt/C++）とCore（Rust）がTCP/IPネットワークを
 ### Bridge Layerの責務
 - C++ ↔ Rust のデータ変換
 - FFI関数の提供
+- 失敗しうる FFI 関数のエラーを `FfiResult` / `FfiResultVoid` で伝達
 - ネットワーククライアントの管理
 - シリアライゼーション/デシリアライゼーション
 - **しない**: ビジネスロジック、UIロジック

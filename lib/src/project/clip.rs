@@ -8,7 +8,7 @@ use crate::{
     },
     project::{
         TimelineTick,
-        ids::{ClipId, ScriptId, TimelineId},
+        ids::{ClipId, TimelineId},
     },
 };
 
@@ -183,66 +183,6 @@ impl CompositionRef {
 )]
 #[archive_attr(derive(CheckBytes))]
 pub struct ScriptParams(pub BTreeMap<String, String>);
-
-#[derive(
-    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde:: Deserialize, Debug, Clone,
-)]
-#[archive_attr(derive(CheckBytes))]
-#[deprecated]
-pub enum ClipData {
-    Dummy,
-    Video {
-        path: String,
-        media_offset: f64,
-    },
-    Audio {
-        path: String,
-        media_offset: f64,
-    },
-    Composite {
-        source: CompositionRef,
-    },
-    Area2D {
-        source: CompositionRef,
-    },
-    Area3D {
-        source: CompositionRef,
-    },
-    /// スクリプトが生成した構造の出力先Timeline。
-    /// 初回評価前はNone、評価後にTimelineIdが入る。
-    Script {
-        script_id: ScriptId,
-        params: ScriptParams,
-        generated: Option<TimelineId>,
-    },
-}
-
-impl ClipData {
-    pub fn get_media_seconds(
-        global_tps: f64,
-        clip_position: i64,
-        current_frame: i64,
-        media_offset: f64,
-    ) -> f64 {
-        let relative_frame = current_frame - clip_position;
-        if relative_frame < 0 {
-            return media_offset;
-        }
-        (relative_frame as f64 / global_tps) + media_offset
-    }
-
-    /// このClipが下位Timelineを参照している場合、そのidを返す。
-    /// Composite/Area2D/Area3D/Script(生成済み)すべてで共通に使える。
-    pub fn nested_timeline_id(&self) -> Option<TimelineId> {
-        match self {
-            ClipData::Composite { source }
-            | ClipData::Area2D { source }
-            | ClipData::Area3D { source } => Some(source.timeline_id()),
-            ClipData::Script { generated, .. } => *generated,
-            _ => None,
-        }
-    }
-}
 
 impl PartialEq for Clip {
     fn eq(&self, other: &Self) -> bool {

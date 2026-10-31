@@ -59,10 +59,12 @@ pub unsafe extern "C" fn req_fetch_frame(
     visible_range_start: TimelineTick,
     visible_range_end: TimelineTick,
 ) -> FfiResultVoid {
+    // Keep the C ABI parameter while media requests are driven by the fetch cache.
+    let _ = current_frame;
+
     fn inner(
         ptr_state: *const ClientStateHandle,
         timeline_id: TimelineId,
-        current_frame: TimelineTick,
         visible_range_start: TimelineTick,
         visible_range_end: TimelineTick,
     ) -> anyhow::Result<()> {
@@ -81,18 +83,13 @@ pub unsafe extern "C" fn req_fetch_frame(
             .ok_or_else(|| anyhow::anyhow!("project not found"))?;
 
         let req = {
-            let timeline = project
+            project
                 .timeline_ref(timeline_id)
                 .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
 
-            let lookahead = 60;
-            let frame_range = current_frame..current_frame + lookahead;
-
             request_stream_packets_for_time(
-                timeline,
                 &state_guard.stream_state_map,
                 &state_guard.stream_players,
-                frame_range,
                 &state_guard.media_fetch_cache,
             )
         };
@@ -117,7 +114,6 @@ pub unsafe extern "C" fn req_fetch_frame(
         inner(
             ptr_state,
             timeline_id,
-            current_frame,
             visible_range_start,
             visible_range_end,
         )

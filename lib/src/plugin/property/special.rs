@@ -184,7 +184,7 @@ impl Scale {
     }
 
     fn schema() -> anyhow::Result<PropertySchema> {
-        vector_field(Self::key(), "Scale", 1.0, [1.0, 1.0, 1.0])
+        vector_field(Self::key(), "Scale", 1.0, [100.0, 100.0, 1.0])
     }
 
     fn read(fields: &BTreeMap<String, FieldValue>) -> anyhow::Result<[f32; 3]> {
@@ -325,4 +325,21 @@ fn read_rhai_vector(fields: &Map, key: &str) -> Result<[f32; 3], Box<rhai::EvalA
         }
     }
     Ok(vector)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transform_scale_defaults_to_temporary_preview_size() {
+        assert_eq!(
+            Scale::schema().unwrap().default,
+            FieldValue::Array(vec![
+                FieldValue::Float(100.0),
+                FieldValue::Float(100.0),
+                FieldValue::Float(1.0),
+            ])
+        );
+    }
 }

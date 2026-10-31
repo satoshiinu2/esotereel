@@ -1,15 +1,11 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::OnceLock,
 };
 
 use log::warn;
 
-use crate::{
-    HostRole, plugin::registry::PluginDefinitionRegistry, plugin::script::api::register_fn_for,
-    util::result::EsotereelError,
-};
+use crate::{plugin::registry::PluginDefinitionRegistry, util::result::EsotereelError};
 
 pub mod api;
 pub mod bridge;

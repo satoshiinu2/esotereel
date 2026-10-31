@@ -6,7 +6,7 @@ use esotereel_lib::project::{
     layer_outline::OutlineNode,
 };
 
-use crate::{WrapperErrorCode, slice_from_ptr_or_empty};
+use crate::{ffi::result::FfiResultVoid, slice_from_ptr_or_empty};
 
 #[repr(C)]
 pub struct ClipRenderInfo {
@@ -61,9 +61,11 @@ pub unsafe extern "C" fn render_rows_build(
     open_folder_ids_ptr: *const u64,
     open_folder_ids_len: usize,
     out: *mut *mut RenderRowsResult,
-) -> WrapperErrorCode {
+) -> FfiResultVoid {
     if project.is_null() || timeline.is_null() || out.is_null() {
-        return WrapperErrorCode::NullPtr;
+        return FfiResultVoid::err(anyhow::anyhow!(
+            "render_rows_build received a null required pointer"
+        ));
     }
     let project = unsafe { &*project };
     let timeline = unsafe { &*timeline };
@@ -87,7 +89,7 @@ pub unsafe extern "C" fn render_rows_build(
                 clips: Vec::new(),
             }))
         };
-        return WrapperErrorCode::Ok;
+        return FfiResultVoid::ok();
     };
 
     let mut layer_rows = Vec::new();
@@ -125,7 +127,7 @@ pub unsafe extern "C" fn render_rows_build(
     }
 
     unsafe { *out = Box::into_raw(Box::new(RenderRowsResult { rows, clips })) };
-    WrapperErrorCode::Ok
+    FfiResultVoid::ok()
 }
 
 #[unsafe(no_mangle)]
@@ -140,16 +142,18 @@ pub unsafe extern "C" fn render_rows_get_rows(
     ptr: *const RenderRowsResult,
     out_ptr: *mut *const FfiLayerRow,
     out_len: *mut usize,
-) -> WrapperErrorCode {
-    if ptr.is_null() {
-        return WrapperErrorCode::null_ptr();
+) -> FfiResultVoid {
+    if ptr.is_null() || out_ptr.is_null() || out_len.is_null() {
+        return FfiResultVoid::err(anyhow::anyhow!(
+            "render_rows_get_rows received a null required pointer"
+        ));
     }
     let result = unsafe { &*ptr };
     unsafe {
         *out_ptr = result.rows.as_ptr();
         *out_len = result.rows.len();
     }
-    WrapperErrorCode::Ok
+    FfiResultVoid::ok()
 }
 
 #[unsafe(no_mangle)]
@@ -157,16 +161,18 @@ pub unsafe extern "C" fn render_rows_get_clips(
     ptr: *const RenderRowsResult,
     out_ptr: *mut *const ClipRenderInfo,
     out_len: *mut usize,
-) -> WrapperErrorCode {
-    if ptr.is_null() {
-        return WrapperErrorCode::null_ptr();
+) -> FfiResultVoid {
+    if ptr.is_null() || out_ptr.is_null() || out_len.is_null() {
+        return FfiResultVoid::err(anyhow::anyhow!(
+            "render_rows_get_clips received a null required pointer"
+        ));
     }
     let result = unsafe { &*ptr };
     unsafe {
         *out_ptr = result.clips.as_ptr();
         *out_len = result.clips.len();
     }
-    WrapperErrorCode::Ok
+    FfiResultVoid::ok()
 }
 
 fn build_layer_rows(

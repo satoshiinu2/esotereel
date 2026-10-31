@@ -3,33 +3,48 @@ use esotereel_lib::project::{
     ids::{ClipId, LayerFolderId, LayerId},
     layer_outline::LayerFolder,
 };
+use crate::ffi::{
+    option::FfiOption,
+    result::FfiResult,
+};
 
-use crate::{WrapperErrorCode, slice_from_ptr_or_empty};
+use crate::slice_from_ptr_or_empty;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn timeline_find_clip_by_id(
     ptr: *const Timeline,
     clip_id: ClipId,
-    out_clip: *mut *const Clip,
     out_layer_id: *mut LayerId,
-) -> WrapperErrorCode {
-    if ptr.is_null() || out_clip.is_null() {
-        return WrapperErrorCode::null_ptr();
+) -> FfiResult<FfiOption<*const Clip>> {
+    fn inner(
+        ptr: *const Timeline,
+        clip_id: ClipId,
+        out_layer_id: *mut LayerId,
+    ) -> anyhow::Result<Option<*const Clip>> {
+        if ptr.is_null() {
+            anyhow::bail!("timeline_find_clip_by_id received a null timeline pointer");
+        }
+
+        let timeline = unsafe { &*ptr };
+
+        let Some((clip, layer_id)) = timeline.get_clip_and_layer(clip_id) else {
+            return Ok(None);
+        };
+
+        unsafe {
+            if !out_layer_id.is_null() {
+                *out_layer_id = layer_id;
+            }
+        };
+        Ok(Some(clip))
     }
 
-    let timeline = unsafe { &(*ptr) };
-
-    let Some((clip, layer_id)) = timeline.get_clip_and_layer(clip_id) else {
-        return WrapperErrorCode::not_found(Some("clip not found"));
-    };
-
-    unsafe {
-        *out_clip = clip;
-        if !out_layer_id.is_null() {
-            *out_layer_id = layer_id;
-        }
-    };
-    WrapperErrorCode::ok()
+    FfiResult::from_panic_result_result_option(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            inner(ptr, clip_id, out_layer_id)
+        })),
+        FfiOption::from_option,
+    )
 }
 
 #[unsafe(no_mangle)]

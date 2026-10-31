@@ -3,7 +3,6 @@
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/StringView.h"
-#include "ffi/WrapperResult.h"
 #include <QString>
 
 namespace esotereel {

@@ -15,8 +15,6 @@ use crate::state::ClientState;
 
 type ClientSender = mpsc::UnboundedSender<AlignedVec>;
 
-pub type OnConnectedFn = extern "C" fn();
-
 pub struct ClientNetworkHandler {
     tx: RwLock<Option<ClientSender>>,
 }

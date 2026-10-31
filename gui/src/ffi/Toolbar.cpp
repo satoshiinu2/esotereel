@@ -1,7 +1,6 @@
 #include "Toolbar.h"
 #include "ClientState.h"
 #include "StringView.h"
-#include "WrapperResult.h"
 #include "Array.h"
 
 #include "esotereel_gui_helper.h"

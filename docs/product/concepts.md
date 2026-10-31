@@ -110,34 +110,6 @@
 
 ---
 
-### ClipData
-**Definition**: Clipの実データ（種類ごとの異なる構造）
-
-**Responsibility**:
-- メディア種類ごとのデータ保持
-- ネストされたTimeline参照
-
-**Owned Data**: 種類ごとに異なる
-- `Dummy`: データなし
-- `Video`: path, media_offset
-- `Audio`: path, media_offset
-- `Composite`: source (CompositionRef)
-- `Area2D`: source (CompositionRef)
-- `Area3D`: source (CompositionRef)
-- `Script`: script_id, params, generated (Option<TimelineId>)
-
-**References**: Timeline（CompositionRef経由）
-
-**Created By**: クリップ作成時
-
-**Modified By**: スクリプト評価（generatedの更新）
-
-**Used By**: Clip、レンダリング
-
-**Lifecycle**: Clipと同期
-
----
-
 ### LayerOutline
 **Definition**: レイヤー/フォルダーの階層構造と表示順序
 
@@ -216,22 +188,18 @@
 ---
 
 ### CompositionRef
-**Definition**: クリップからTimelineへの参照
+**Definition**: Composition Clip から Timeline を参照する型
 
 **Responsibility**:
-- ネストされたTimelineの参照種類を区別
+- `Mirror` は Timeline を共有し、`Independent` は Composition Clip 専用の Timeline を参照する
 
 **Owned Data**: なし（enum variant）
 
 **References**: TimelineId
 
-**Created By**: Clip作成時
-
-**Modified By**: make_independent時
-
-**Used By**: ClipData、レンダリング
-
-**Lifecycle**: Clipと同期
+`Clip` 自体は `kind_id` と `properties` を保持し、Composition Clip との関連付けおよびネスト
+Timeline のレンダリングは別途実装が必要。
+`Project::make_independent()` は参照先 Timeline の独立コピーを作成する。
 
 ---
 

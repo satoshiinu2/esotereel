@@ -1,4 +1,3 @@
-use crate::WrapperErrorCode;
 use crate::ffi::result::FfiResultVoid;
 use crate::ffi::state::ClientStateHandle;
 use crate::ffi::stringview::FfiStringView;

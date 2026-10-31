@@ -3,7 +3,6 @@
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
-#include "ffi/WrapperResult.h"
 
 namespace esotereel {
 bool InternalServer::start(ClientState &network, QString addr,

@@ -2,6 +2,9 @@
 #include "Project.h"
 #include "Timeline.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/Result.h"
+#include <QDebug>
+#include <QString>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -24,15 +27,29 @@ RenderRows::RenderRows(const Project &project, const TimelineId &timeline_id, co
         return;
     }
 
-    auto err = render_rows_build(project_ptr, timeline, openIds.data(), openIds.size(), openFolderIds.data(),
-                                 openFolderIds.size(), &ptr);
-    if (err != esotereel_gui_helper::WrapperErrorCode::Ok || !ptr) {
+    Result<void> build_result(render_rows_build(project_ptr, timeline, openIds.data(), openIds.size(),
+                                                openFolderIds.data(), openFolderIds.size(), &ptr));
+    if (!build_result.isOk() || !ptr) {
+        if (build_result.isError()) {
+            qWarning() << "Failed to build render rows:"
+                       << QString::fromStdString(build_result.getError().value_or("unknown error"));
+        }
         ptr = nullptr;
         return;
     }
 
-    render_rows_get_rows(ptr, &rowsPtr, &rowsLen);
-    render_rows_get_clips(ptr, &clipsPtr, &clipsLen);
+    Result<void> rows_result(render_rows_get_rows(ptr, &rowsPtr, &rowsLen));
+    Result<void> clips_result(render_rows_get_clips(ptr, &clipsPtr, &clipsLen));
+    if (!rows_result.isOk() || !clips_result.isOk()) {
+        const auto error = rows_result.isError() ? rows_result.getError() : clips_result.getError();
+        qWarning() << "Failed to read render rows:" << QString::fromStdString(error.value_or("unknown error"));
+        render_rows_free(ptr);
+        ptr = nullptr;
+        rowsPtr = nullptr;
+        rowsLen = 0;
+        clipsPtr = nullptr;
+        clipsLen = 0;
+    }
 }
 
 RenderRows::~RenderRows() {

@@ -2,7 +2,6 @@
 #include "ffi/Array.h"
 #include "ffi/ClientState.h"
 #include "ffi/Result.h"
-#include "ffi/WrapperResult.h"
 #include "ffi/project/Timeline.h"
 #include <QScopeGuard>
 

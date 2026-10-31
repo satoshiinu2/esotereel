@@ -56,10 +56,8 @@ pub fn render_frame_offscreen_ffi(
 
     // A paused preview must also initialize/fetch media; timeline input events are not required.
     for request in request_stream_packets_for_time(
-        timeline,
         &state.stream_state_map,
         &state.stream_players,
-        current_frame..current_frame.saturating_add(60),
         &state.media_fetch_cache,
     ) {
         state.network.send(&request);

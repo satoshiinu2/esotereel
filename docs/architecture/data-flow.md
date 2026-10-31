@@ -64,7 +64,6 @@ GUI Processing:
   - Select layer_id
   - Determine kind_id (Plugin ClipKind)
   - Build properties map (via ClipProperty FFI)
-  - Build properties
     ↓
 C++ FFI: Command Request Creation (via CommandQueue)
     ↓
@@ -217,7 +216,7 @@ Result: Clips Moved to New Position/Layer
 
 ---
 
-### 5. クリップリサイズフロー
+### 4. クリップリサイズフロー
 
 ```
 User Action (ClipsResize)
@@ -274,7 +273,7 @@ GUI State: Timeline UI Updated
 
 ---
 
-### 6. ビデオストリーム初期化フロー
+### 5. ビデオストリーム初期化フロー
 
 ```
 User Action (InitStream)
@@ -346,7 +345,37 @@ Result: Video Stream Ready for Playback
 
 ---
 
-### 5. 範囲クリップ取得フロー
+### 6. ビデオフレーム取得とプレビュー描画
+
+```
+RenderContext / Rhai script
+    ↓
+PluginRenderContext::get_video_texture()
+    - 動画パスと現在のメディア時刻を MediaFetchCache に記録
+    - StreamPlayer にフレームがあればテクスチャ更新に使用
+    ↓
+GUI helper: request_stream_packets_for_time()
+    - MediaFetchCache に記録された要求を ResourceId ごとに集約
+    - 未初期化パスには InitStream を要求
+    - ロード済みなら StreamPlayer のフレームバッファを評価
+    - バッファ済み区間を除いた不足範囲だけ FetchStreamData を要求
+    ↓
+Core: FetchStreamData
+    - VideoStreamer が要求範囲をデコードし、StreamData と StreamDataEnd を返す
+    ↓
+GUI helper: StreamPlayer
+    - パケットからフレームをデコードして時間順バッファへ格納
+    - 次の描画で必要なフレームをテクスチャに反映
+```
+
+取得要求は再生中だけでなく、停止中のオフスクリーンプレビュー後にも処理する。
+したがって、タイムライン範囲の取得要求だけに依存せず、描画時に実際に必要となったメディア時刻から
+動画初期化・パケット取得を行う。取得要求は `MediaFetchCache` の記録から生成し、
+バッファに連続して存在する部分は再取得しない。フェッチ中の同一リソースへの要求は完了後まで待機する。
+
+---
+
+### 7. 範囲クリップ取得フロー
 
 ```
 User Action (FetchClipsInRange)
@@ -418,7 +447,7 @@ Result: Visible Clips Displayed
 
 ---
 
-### 6. レイヤー/フォルダー追加フロー
+### 8. レイヤー/フォルダー追加フロー
 
 ```
 User Action (AddLayer/AddFolder)

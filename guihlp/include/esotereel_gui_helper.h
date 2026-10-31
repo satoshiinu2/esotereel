@@ -50,14 +50,6 @@ enum class SettingsFieldType {
   Map,
 };
 
-enum class WrapperErrorCode {
-  Ok = 0,
-  NullPtr = 1,
-  NotFound = 2,
-  Error = 3,
-  Panic = 4,
-};
-
 enum class FfiLayerRowKind {
   Layer,
   Folder,
@@ -315,8 +307,6 @@ using ScriptId = uint64_t;
 
 extern "C" {
 
-const char *get_last_err_msg();
-
 CommandQueue *command_queue_new();
 
 FfiResultVoid command_queue_drop(CommandQueue *ptr);
@@ -418,23 +408,23 @@ FfiResultVoid clip_set_property_value(CommandQueue *ptr_queue,
                                       FfiStringView key,
                                       CClipBindingValue value);
 
-WrapperErrorCode render_rows_build(const Option<Project> *project,
-                                   const Timeline *timeline,
-                                   const uint64_t *open_ids_ptr,
-                                   uintptr_t open_ids_len,
-                                   const uint64_t *open_folder_ids_ptr,
-                                   uintptr_t open_folder_ids_len,
-                                   RenderRowsResult **out);
+FfiResultVoid render_rows_build(const Option<Project> *project,
+                                const Timeline *timeline,
+                                const uint64_t *open_ids_ptr,
+                                uintptr_t open_ids_len,
+                                const uint64_t *open_folder_ids_ptr,
+                                uintptr_t open_folder_ids_len,
+                                RenderRowsResult **out);
 
 void render_rows_free(RenderRowsResult *ptr);
 
-WrapperErrorCode render_rows_get_rows(const RenderRowsResult *ptr,
-                                      const FfiLayerRow **out_ptr,
-                                      uintptr_t *out_len);
+FfiResultVoid render_rows_get_rows(const RenderRowsResult *ptr,
+                                   const FfiLayerRow **out_ptr,
+                                   uintptr_t *out_len);
 
-WrapperErrorCode render_rows_get_clips(const RenderRowsResult *ptr,
-                                       const ClipRenderInfo **out_ptr,
-                                       uintptr_t *out_len);
+FfiResultVoid render_rows_get_clips(const RenderRowsResult *ptr,
+                                    const ClipRenderInfo **out_ptr,
+                                    uintptr_t *out_len);
 
 FfiResult<const Clip*> layer_find_clip_at_frame(const Layer *layer_ptr,
                                                 const Timeline *timeline_ptr,
@@ -454,10 +444,9 @@ FfiResult<const Clip*> layer_get_clip_at_position(const Layer *layer_ptr,
                                                   const Timeline *timeline_ptr,
                                                   int64_t position);
 
-WrapperErrorCode timeline_find_clip_by_id(const Timeline *ptr,
-                                          ClipId clip_id,
-                                          const Clip **out_clip,
-                                          LayerId *out_layer_id);
+FfiResult<FfiOption<const Clip*>> timeline_find_clip_by_id(const Timeline *ptr,
+                                                           ClipId clip_id,
+                                                           LayerId *out_layer_id);
 
 bool timeline_can_place_clip_at(const Timeline *ptr,
                                 uint64_t layer_id,

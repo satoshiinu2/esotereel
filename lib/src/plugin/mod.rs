@@ -10,7 +10,6 @@ use regex::Regex;
 use rkyv::{Archive, CheckBytes, bytecheck};
 
 use crate::{
-    HostRole,
     dirs::Directories,
     plugin::{
         clip::{ClipKindStore, PendingProperty},
@@ -137,11 +136,6 @@ impl Plugin {
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
 
-        let avaliable_functions = script
-            .as_ref()
-            .map(|s| s.available_functions.clone())
-            .unwrap_or_default();
-
         Ok(Self {
             manifest,
             setting_schemas,
@@ -198,7 +192,6 @@ impl Plugin {
         } else {
             Vec::new()
         };
-        // let toolbar_buttons = Self::namespaced_toolbar_buttons(&manifest.id, toolbar_buttons);
 
         Ok(toolbar_buttons)
     }
@@ -268,16 +261,6 @@ impl Plugin {
         }
 
         Ok((all_kinds, all_pending))
-    }
-
-    fn namespaced_toolbar_buttons(
-        plugin_id: &str,
-        mut buttons: Vec<crate::plugin::toolbar::ToolbarButtonSpec>,
-    ) -> Vec<crate::plugin::toolbar::ToolbarButtonSpec> {
-        for b in &mut buttons {
-            // b.id = NamespacedID::new(plugin_id, &b.id).expect("invalid toolbar button id");
-        }
-        buttons
     }
 }
 

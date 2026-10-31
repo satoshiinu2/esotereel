@@ -6,7 +6,7 @@ use ordered_float::OrderedFloat;
 use crate::{
     StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
-    project::{Timeline, TimelineTick, ids::ResourceId},
+    project::ids::ResourceId,
     render::video::MediaFetchCache,
     requests::Request,
 };
@@ -14,15 +14,11 @@ use crate::{
 enum BufferNeed {
     Sufficient,                   // 十分
     NeedMore { fetch_from: f64 }, // 不足、この位置から取得が必要
-    Stale,                        // 古い（シーク後などバッファが現在位置より前）
 }
 
-pub const BUFFER_LOOKAHEAD_THRESHOLD: f64 = 1.0; // バッファの先読み量
 pub fn request_stream_packets_for_time(
-    timeline: &Timeline,
     path_to_stream: &DashMap<String, StreamState>,
     players: &DashMap<ResourceId, StreamPlayer>,
-    frame_range: Range<TimelineTick>,
     plugin_cache: &MediaFetchCache,
 ) -> Vec<Request> {
     use std::collections::HashMap;
@@ -84,7 +80,13 @@ fn collect_request_for_resource(
     // 本当に足りていない窓だけを抜き出してまとめて送る
     let mut ranges: Vec<Range<f64>> = needed_ranges
         .into_iter()
-        .filter(|r| !matches!(assess_buffer(&player, r), BufferNeed::Sufficient))
+        .filter_map(|range| match assess_buffer(&player, &range) {
+            BufferNeed::Sufficient => None,
+            BufferNeed::NeedMore { fetch_from } => {
+                let start = fetch_from.max(range.start);
+                (start < range.end).then_some(start..range.end)
+            }
+        })
         .collect();
 
     if ranges.is_empty() {
@@ -154,13 +156,36 @@ mod tests {
         let states = DashMap::new();
         states.insert("test.mp4".into(), StreamState::Loading);
         let players = DashMap::new();
-        let timeline = Timeline::new_empty(1, 60.0);
-        let requests = request_stream_packets_for_time(&timeline, &states, &players, 0..60, &cache);
+        let requests = request_stream_packets_for_time(&states, &players, &cache);
         assert_eq!(requests.len(), 1);
         assert!(matches!(&requests[0], Request::InitStream { path } if path == "test.mp4"));
         assert!(cache.take_all().is_empty());
-        assert!(
-            request_stream_packets_for_time(&timeline, &states, &players, 0..60, &cache).is_empty()
-        );
+        assert!(request_stream_packets_for_time(&states, &players, &cache).is_empty());
+    }
+
+    #[test]
+    fn requests_only_the_unbuffered_tail_of_a_needed_range() {
+        let players = DashMap::new();
+        let mut player =
+            StreamPlayer::new_from_metadata(ffmpeg_next::codec::Id::H264, 32, 24, 1.0 / 30.0, &[])
+                .unwrap();
+        let frame =
+            ffmpeg_next::util::frame::video::Video::new(ffmpeg_next::format::Pixel::RGBA, 32, 24);
+        player.frames.insert(OrderedFloat(2.0), frame.clone());
+        player.frames.insert(OrderedFloat(2.1), frame);
+        players.insert(7, player);
+
+        let states = DashMap::new();
+        states.insert("test.mp4".into(), StreamState::Loaded(7));
+        let cache = MediaFetchCache::default();
+        cache.record(1, "test.mp4".into(), 2.0..3.0);
+
+        let requests = request_stream_packets_for_time(&states, &players, &cache);
+        assert_eq!(requests.len(), 1);
+        assert!(matches!(
+            &requests[0],
+            Request::FetchStreamData { resource_id: 7, ranges }
+                if ranges == &vec![2.1..3.0]
+        ));
     }
 }

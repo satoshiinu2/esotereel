@@ -6,7 +6,8 @@
 #include "esotereel_gui_helper.h"
 #include "ffi/Requests.h"
 #include "ffi/Result.h"
-#include "ffi/WrapperResult.h"
+#include <QDebug>
+#include <QString>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -35,14 +36,20 @@ LayerFolder Timeline::folderById(LayerFolderId folder_id) const noexcept {
 }
 
 std::tuple<Clip, LayerId> Timeline::findClipById(ClipId id) const noexcept {
-    const esotereel_gui_helper::Clip *raw_clip = nullptr;
     uint64_t layerId = 0;
 
-    auto result = esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &raw_clip, &layerId);
-    if (!checkWrapperResult(result)) {
+    Result<std::optional<const esotereel_gui_helper::Clip *>> result(
+        esotereel_gui_helper::timeline_find_clip_by_id(raw_ptr, id, &layerId),
+        [](const esotereel_gui_helper::Clip *clip) { return clip; });
+    if (!result.isOk()) {
+        qWarning() << "Failed to find clip:" << QString::fromStdString(result.getError().value_or("unknown error"));
         return std::make_tuple(Clip::Empty(), 0);
     }
-    return std::make_tuple(Clip(raw_clip), layerId);
+    const auto &raw_clip = result.unwrap();
+    if (!raw_clip) {
+        return std::make_tuple(Clip::Empty(), 0);
+    }
+    return std::make_tuple(Clip(*raw_clip), layerId);
 }
 
 bool Timeline::canPlaceClipAt(uint64_t layer_id, int64_t position, int64_t duration,
