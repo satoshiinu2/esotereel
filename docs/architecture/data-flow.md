@@ -64,7 +64,7 @@ GUI Processing:
   - Select layer_id
   - Determine kind_id (Plugin ClipKind)
   - Build properties map (via ClipProperty FFI)
-  - Build translates
+  - Build properties
     ↓
 C++ FFI: Command Request Creation (via CommandQueue)
     ↓

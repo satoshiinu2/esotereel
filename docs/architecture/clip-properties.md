@@ -5,6 +5,7 @@
 `clips/` 直下の TOML ファイルにクリップ種別とプロパティ定義を配置する。
 同じファイルへの同居と、プロパティ定義だけの別ファイルの両方に対応する。
 全プラグインの読み込み後に参照を解決するため、ファイルの読み込み順には依存しない。
+コアが管理する標準プロパティは `special` kind で参照する。
 
 ```toml
 [[kinds]]
@@ -19,17 +20,17 @@ name = ["std:video"]
 [[properties.fields]]
 key = "media"
 label = "Media"
-kind = { type = "group", reference = "std:media" }
+kind = { type = "special", reference = "core:media" }
 
 [[properties.fields]]
 key = "transform"
 label = "Transform"
-kind = { type = "group", reference = "std:transform" }
+kind = { type = "special", reference = "core:transform" }
 ```
 
 `properties = ["std:video"]` は Video グループをルートに配置し、その下に Media と Transform を置く。
-Media の定義は `clips/media.toml`、Transform の定義は `clips/transform.toml` に分離する。
-これらの定義は他のクリップ種別からも参照できる。
+`core:media` と `core:transform` はコア組み込みの特別なプロパティ定義で、個別の TOML ファイルは持たない。
+`special` はコアで登録された参照だけを受け付け、解決後のスキーマにも special kind を保持する。
 `name` は定義名の配列で、複数名は同じ定義の別名となる。
 定義名は自プラグインの名前空間に限定する。参照元の定義 ID は解決後もスキーマに保持する。
 
@@ -90,7 +91,8 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 
 ### 保存・編集・GUI
 
-スキーマは `FieldTypeKind::Group { reference, fields }` のツリーとして保持し、
+スキーマは `FieldTypeKind::Group { reference, fields }` と
+`FieldTypeKind::Special { reference, fields }` のツリーとして保持し、
 値は `FieldValue::Map` を使って同じ階層で保存する。
 ルートの ID は名前空間付き、グループ内のメンバーはローカル名となる。
 例: `std:video` → `transform` → `scale`、`generator:telop` → `caption` → `content`。
@@ -103,7 +105,7 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 C ABI の引数とスキーマ構造体は変更せず、GUI用にのみ末端項目へ展開する。
 GUI はルートグループのタブと再帰的な折りたたみセクションを表示する。
 複数クリップの共通項目は、グループ全体ではなく末端のパスと型で判定する。
-同じ `std:transform` を参照していても、`std:video/transform/scale` と
+同じ `core:transform` を参照していても、`std:video/transform/scale` と
 `std:text/transform/scale` のようにパスが異なる項目は一括編集の対象にならない。
 
 旧プロパティ値の自動移行は未実装。以前の `std:video/source` や `std:transform/scale` は、
@@ -125,42 +127,45 @@ GUI はルートグループのタブと再帰的な折りたたみセクショ�
 
 ## 3. 動画サイズと変換
 
-動画の元解像度を基準とし、表示サイズは `std:video` → `transform` → `scale` だけで調整する。
-`std:width` と `std:height` は使用しない。`std:transform` は別ファイルの `transform.toml` に定義する。
+表示サイズは `std:video` → `transform` → `scale` にピクセル単位で指定する。
+`std:width` と `std:height` は使用しない。Transform の特別な定義は `core:transform` が提供する。
 
-例えば元動画が 544 × 408 の場合、`scale = [1.0, 1.0, 1.0]` で 544 × 408、
-`[0.5, 0.5, 1.0]` で 272 × 204、`[2.0, 2.0, 1.0]` で 1088 × 816 として描画する。
-X・Y を同じ倍率にすれば元動画の縦横比を維持する。
+例えば `scale = [544.0, 408.0, 1.0]` は 544 × 408 ピクセルで描画する。
+`[272.0, 204.0, 1.0]` なら 272 × 204 ピクセルとなる。X・Y は倍率ではなく幅・高さであり、
+元動画と異なる縦横比も指定できる。動画サイズに合わせた初期値の自動設定は未実装で、
+現状の既定値は `[1.0, 1.0, 1.0]`。
 
 | フィールド | 内容 | 既定値 |
 | --- | --- | --- |
 | `std:video/transform/position` | XYZ 位置 | `[0.0, 0.0, 0.0]` |
 | `std:video/transform/rotation` | XYZ 回転、度単位 | `[0.0, 0.0, 0.0]` |
-| `std:video/transform/scale` | 元解像度に対する XYZ 拡縮倍率 | `[1.0, 1.0, 1.0]` |
+| `std:video/transform/scale` | 描画幅・高さ（ピクセル）と Z スケール | `[1.0, 1.0, 1.0]` |
 
 GUI は数値配列を各成分の数値欄として編集する。数値欄は暫定的に ±1,000,000,000 の範囲を持つ。
 スキーマの min/max/step を FFI 経由で編集UIに反映する処理は未実装である。
 
-Rhai の `mat4_trs(position, rotation, scale)` は `Mat4` を生成する。
-各ベクトルは有限な数値を3個含む必要がある。回転順は `EulerRot::XYZ`。
+Rhai の `props["std:video"].transform.as_mat4()` は Transform 型の値から
+`Mat4` を生成する。各ベクトルは有限な数値を3個含む必要があり、回転順は `EulerRot::XYZ`。
 `ctx.set_transform(matrix)` はモデル行列を置き換える。
 `ctx.apply_transform(matrix)` は現在のモデル行列の右側に行列を合成する。
 
-標準動画スクリプトは `ctx.render_video(texture_id)` を呼び出す。Rust 側はストリームの
-メタデータにある解像度を基準サイズとして、動画の中心を原点に合わせて描画する。
+標準動画スクリプトは `ctx.render_video(texture_id, transform)` を呼び出し、Transform special
+property から得た行列を明示的に描画へ渡す。Rust 側は動画の中心を原点にした
+単位矩形を描画し、メタデータでストリームが利用可能なことを確認する。
 デコードフレームを取得できるまでは描画をスキップする。
-動画の矩形は単位サイズで保持し、モデル行列は `T × R × S × 元解像度への変換` とする。
+動画の矩形は中心を原点とした単位サイズで保持し、モデル行列は `T × R × S` とする。
 引数で矩形を指定する既存の `ctx.render_video(texture_id, x, y, width, height)` も維持する。
 最終変換は既存シェーダーで `P × V × M × vertex` として計算する。
-従来の `clip.translates` は初期の基底行列として読むが、標準動画スクリプトは
-`set_transform` で置き換える。旧サイズと元解像度の二重適用を防ぎ、
-`std:video/transform` のプロパティを基準に描画する。
-新規クリップ追加時には旧変換を設定しない。以前の `std:width` / `std:height` の値が
-既存クリップに残っていても描画には使わず、元解像度と `std:video/transform/scale` を基準にする。
-元解像度の取得方法を変更する場合も、プレビュー用の縮小デコードと表示サイズを混同しないこと。
+クリップ変換はプロパティとして管理し、標準動画プラグインは
+`std:video/transform` special property の行列を `render_video` へ明示的に渡す。
+他のプラグインも `set_transform` または `apply_transform` を利用できる。
+以前の `std:width` / `std:height` の値が
+既存クリップに残っていても描画には使わず、`std:video/transform/scale` の寸法を基準にする。
 
-動画取得時刻は `ctx.media_time()` を使う。`std:video/media/source_offset` は定義を維持しているが、
-描画時刻への反映は未実装である。
+標準動画スクリプトは `ctx.get_video_texture()` を使う。動画ソース、取得時刻、変換行列は
+Rust 側の型付きプロパティビューで処理し、`(クリップ内の経過 tick +
+std:video/media/source_offset) / ticks_per_second` を取得時刻とする。
+プロパティのパス・型変換は Rust 内で集約し、GUI は引き続き TOML スキーマから生成する。
 
 ## 4. 動画取得と描画
 
@@ -177,8 +182,7 @@ Rhai の `mat4_trs(position, rotation, scale)` は `Mat4` を生成する。
 
 ## 6. 描画の検証
 
-通常のテストでは、等倍・半分・2倍の表示サイズと、旧変換を持つ動画でも元解像度が基準になり、
-頂点がカメラの描画範囲に投影されることを確認する。
+通常のテストでは、指定したピクセル寸法で描画され、頂点がカメラの描画範囲に投影されることを確認する。
 GPU を使う検証は次のコマンドで明示的に実行する。テクスチャ転送から描画、
 画素の読み戻しまでを通し、赤・緑の動画領域と背景色を確認する。
 

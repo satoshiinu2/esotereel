@@ -88,12 +88,7 @@ mod preview_tests {
             NamespacedID, PluginLoader, property::value::FieldValue,
             script::api::register_render_api,
         },
-        project::{
-            Timeline,
-            clip::ClipBindingValue,
-            ids::IdGenerator,
-            transform::{ClipTranslate, ClipTranslates},
-        },
+        project::{Timeline, clip::ClipBindingValue, ids::IdGenerator},
         render::{
             RenderContext, render_frame_offscreen,
             video::{MediaFetchCache, builder::build_vertices},
@@ -124,23 +119,22 @@ mod preview_tests {
             panic!("media group")
         };
         media.insert("source".into(), FieldValue::String("fixture.mp4".into()));
+        let Some(FieldValue::Map(transform)) = video.get_mut("transform") else {
+            panic!("transform group")
+        };
+        transform.insert(
+            "scale".into(),
+            FieldValue::Array(vec![
+                FieldValue::Float(32.0),
+                FieldValue::Float(24.0),
+                FieldValue::Float(1.0),
+            ]),
+        );
         let mut ids = IdGenerator::default();
         let mut timeline = Timeline::new_empty(1, 60.0);
         let layer = timeline.insert_layer(&mut ids, "Video".into(), None, None);
         timeline
-            .new_clip_in(
-                layer,
-                &mut ids,
-                0,
-                60,
-                kind,
-                properties,
-                ClipTranslates::Normal(ClipTranslate {
-                    position: [-100.0, -100.0, 0.0],
-                    rotation: [0.0; 3],
-                    scale: [400.0, 300.0, 1.0],
-                }),
-            )
+            .new_clip_in(layer, &mut ids, 0, 60, kind, properties)
             .unwrap();
         let mut frame =
             ffmpeg_next::util::frame::video::Video::new(ffmpeg_next::format::Pixel::RGBA, 32, 24);

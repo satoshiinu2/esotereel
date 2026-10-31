@@ -25,7 +25,6 @@
    - `duration`: メディア長さ（TimelineTick）
    - `kind_id`: NamespacedID（プラグイン定義）
    - `properties`: プロパティマップ
-   - `translates`: 変換パラメータ
 5. GUIがC++ FFIを呼び出し
 6. Rust FFIが `Request::Command { command: CommandRequest::AddClip { ... }, timeline_id }` をシリアライズ
 7. `ClientNetworkHandler::send()` でTCP送信

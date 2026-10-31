@@ -226,14 +226,28 @@ impl ClipKind {
     ) -> anyhow::Result<Vec<PropertySchema>> {
         let mut fields = Vec::new();
         for raw in &definition.fields {
-            if raw.kind.get("type").and_then(toml::Value::as_str) == Some("group") {
+            let kind_type = raw.kind.get("type").and_then(toml::Value::as_str);
+            if matches!(kind_type, Some("group" | "special")) {
                 let reference = raw
                     .kind
                     .get("reference")
                     .and_then(toml::Value::as_str)
-                    .context("group kind requires a namespaced `reference`")?;
+                    .context("group and special kinds require a namespaced `reference`")?;
                 let reference = parse_id(reference)?;
-                let mut group = Self::resolve_group(requester, &reference, definitions, stack)?;
+                let mut group = if kind_type == Some("group") {
+                    Self::resolve_group(requester, &reference, definitions, stack)?
+                } else {
+                    anyhow::ensure!(
+                        raw.key == reference.local_id(),
+                        "special field key `{}` must match its reference `{reference}`",
+                        raw.key
+                    );
+                    let (label, fields) = crate::plugin::property::special::resolve(&reference)?
+                        .with_context(|| {
+                            format!("unknown special property reference `{reference}`")
+                        })?;
+                    PropertySchema::special(reference.clone(), label, reference.clone(), fields)
+                };
                 group.key = NamespacedID::new(&definition.plugin_id, &raw.key)?;
                 group.label = raw.label.clone();
                 group.category = raw.category.clone();
@@ -504,7 +518,6 @@ default = { content = "Header" }
             60,
             NamespacedID::new("generator", "telop").unwrap(),
             defaults,
-            crate::project::transform::ClipTranslates::None,
         );
         let caption =
             crate::plugin::property::PropertyPath::parse("generator:telop/caption/content")

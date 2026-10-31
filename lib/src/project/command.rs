@@ -9,7 +9,6 @@ use crate::{
         TimelineTick,
         clip::ClipBindingValue,
         ids::{ClipId, LayerFolderId, LayerId},
-        transform::ClipTranslates,
     },
 };
 
@@ -71,8 +70,6 @@ pub enum CommandRequest {
 
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
-
-        translates: ClipTranslates,
     },
     AddLayer {
         parent_folder_id: Option<LayerFolderId>,
@@ -108,8 +105,6 @@ pub enum CommandHistory {
 
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
-
-        translates: ClipTranslates,
     },
     AddLayer {
         layer_id: Option<LayerId>,

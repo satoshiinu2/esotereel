@@ -3,10 +3,9 @@ use std::collections::VecDeque;
 use esotereel_lib::{
     plugin::NamespacedID,
     project::{
-        clip::{ClipBindingValue, ClipData},
+        clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
-        transform::ClipTranslates,
     },
     requests::Request,
     util::result::EsotereelError,
@@ -108,13 +107,6 @@ impl CommandQueue {
         position: i64,
         layer_id: LayerId,
     ) -> anyhow::Result<()> {
-        let _clip_data = ClipData::Video {
-            path: "/home/satoshiinu/Videos/3.mp4".to_string(),
-            media_offset: 0.0,
-        };
-
-        let translates = ClipTranslates::None;
-
         let kind_id = NamespacedID::parse("std:video").unwrap();
 
         let loader = state.plugin_loader.read().expect("mutex poisoned");
@@ -132,7 +124,6 @@ impl CommandQueue {
             duration: 50,
             kind_id,
             properties,
-            translates,
         };
 
         self.enqueue(timeline_id, command);

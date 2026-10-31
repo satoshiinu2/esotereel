@@ -1,7 +1,7 @@
 use esotereel_lib::{
     plugin::{
         NamespacedID,
-        property::{PropertyPath, value::FieldValue},
+        property::{special::Media, value::FieldValue},
     },
     project::{
         Project,
@@ -51,14 +51,13 @@ pub fn command_to_history(
                 .timeline_mut(timeline_id)
                 .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
 
-            let source_offset_key = PropertyPath::parse("std:video/media/source_offset")?;
-
             let entries: anyhow::Result<Vec<_>> = clips
                 .into_iter()
                 .map(|ctx| -> anyhow::Result<ClipResizeHistoryCtx> {
                     let clip = timeline
                         .get_clip(ctx.clip_id)
                         .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
+                    let source_offset_key = Media::source_offset_path(&clip.kind_id)?;
 
                     let old_source_offset =
                         clip.get_property_path(&source_offset_key)
@@ -105,7 +104,6 @@ pub fn command_to_history(
             duration,
             kind_id,
             properties,
-            translates,
         } => {
             // AddClipではIDが確定していないので、履歴にはIDを含めない
             // 実際のIDは実行時に確定する
@@ -116,7 +114,6 @@ pub fn command_to_history(
                 duration,
                 kind_id,
                 properties,
-                translates,
             }
         }
         CommandRequest::AddLayer {
@@ -198,7 +195,6 @@ pub fn execute_command(
             duration,
             kind_id,
             properties,
-            translates,
         } => {
             let actual_clip_id = clip_add_core(
                 project,
@@ -208,7 +204,6 @@ pub fn execute_command(
                 *duration,
                 kind_id.clone(),
                 properties.clone(),
-                translates.clone(),
                 *clip_id,
             )?;
             // 履歴のIDを実際のIDで更新
@@ -324,7 +319,6 @@ pub fn execute_command_undo(
             duration: _,
             kind_id: _,
             properties: _,
-            translates: _,
         } => {
             // クリップ追加のundoは、クリップを削除する
             let timeline = project
@@ -392,7 +386,7 @@ mod tests {
 
     use super::*;
     use crate::project::history::{HistoryStack, redo_command, undo_command};
-    use esotereel_lib::{plugin::NamespacedID, project::transform::ClipTranslates};
+    use esotereel_lib::plugin::{NamespacedID, property::PropertyPath};
 
     #[test]
     fn move_history_keeps_duration_on_undo_redo() {
@@ -414,7 +408,6 @@ mod tests {
                 30,
                 kind_id.clone(),
                 HashMap::new(),
-                ClipTranslates::None,
             )
             .unwrap();
 
@@ -490,7 +483,6 @@ mod tests {
                 30,
                 kind_id.clone(),
                 HashMap::new(),
-                ClipTranslates::None,
             )
             .unwrap();
 
@@ -588,7 +580,6 @@ mod tests {
             duration: 30,
             kind_id: kind_id.clone(),
             properties: HashMap::new(),
-            translates: ClipTranslates::None,
         };
 
         let mut add_history = add_command.clone();
@@ -658,7 +649,6 @@ mod tests {
                 60,
                 NamespacedID::new("test", "clip").unwrap(),
                 properties,
-                ClipTranslates::None,
             )
             .unwrap();
         let path = PropertyPath::parse("test:text/content").unwrap();

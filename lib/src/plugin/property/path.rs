@@ -33,15 +33,18 @@ impl PropertyPath {
         }
         Ok(path)
     }
+
     pub fn child(&self, member: &str) -> anyhow::Result<Self> {
         NamespacedID::new("member", member)?;
         let mut result = self.clone();
         result.members.push(member.to_owned());
         Ok(result)
     }
+
     pub fn root(&self) -> &NamespacedID {
         &self.root
     }
+
     pub fn members(&self) -> &[String] {
         &self.members
     }

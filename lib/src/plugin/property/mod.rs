@@ -13,6 +13,7 @@ use crate::plugin::{
 pub mod parse;
 pub mod path;
 pub use path::PropertyPath;
+pub mod special;
 pub mod value;
 
 #[derive(Debug, serde::Deserialize)]
@@ -52,6 +53,27 @@ impl PropertySchema {
         }
     }
 
+    pub fn special(
+        key: NamespacedID,
+        label: String,
+        reference: NamespacedID,
+        fields: Vec<Self>,
+    ) -> Self {
+        let default = FieldValue::Map(
+            fields
+                .iter()
+                .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
+                .collect(),
+        );
+        Self {
+            key,
+            category: Vec::new(),
+            label,
+            kind: FieldTypeKind::Special { reference, fields },
+            default,
+        }
+    }
+
     /// Flatten only the editor projection. The schema and stored values remain trees.
     pub fn leaf_fields(fields: &[Self]) -> anyhow::Result<Vec<(PropertyPath, Self)>> {
         fn visit(
@@ -61,7 +83,9 @@ impl PropertySchema {
             default: &FieldValue,
             out: &mut Vec<(PropertyPath, PropertySchema)>,
         ) -> anyhow::Result<()> {
-            if let FieldTypeKind::Group { fields, .. } = &field.kind {
+            if let FieldTypeKind::Group { fields, .. } | FieldTypeKind::Special { fields, .. } =
+                &field.kind
+            {
                 let mut groups = groups.to_vec();
                 groups.push(field.label.clone());
                 groups.extend(field.category.iter().cloned());
@@ -171,7 +195,7 @@ impl PropertySchema {
             FieldTypeKind::Enum { options } if options.is_empty() => {
                 anyhow::bail!("Enum kind for key `{key}` has no options")
             }
-            FieldTypeKind::Group { fields, .. } => {
+            FieldTypeKind::Group { fields, .. } | FieldTypeKind::Special { fields, .. } => {
                 let mut names = HashSet::new();
                 for field in fields {
                     anyhow::ensure!(

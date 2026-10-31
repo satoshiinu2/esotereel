@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::{
     plugin::script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
-    project::Clip,
+    project::{Clip, video_clip::VideoClipProperties},
     render::{RenderContext, vertex::Vertex},
 };
-use glam::{EulerRot, Mat4, Quat, Vec3};
+use glam::Mat4;
 
 pub struct VertexBatch {
     pub vertices: Vec<Vertex>,
@@ -39,27 +39,48 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         };
         // drop(loader);
 
-        let media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
-        let base_transform = clip
-            .translates
-            .get_translate_at()
-            .map(|t| {
-                Mat4::from_scale_rotation_translation(
-                    Vec3::from_array(t.scale),
-                    Quat::from_euler(EulerRot::XYZ, t.rotation[0], t.rotation[1], t.rotation[2]),
-                    Vec3::from_array(t.position),
-                )
-            })
-            .unwrap_or(Mat4::IDENTITY);
-
-        let render_ctx = PluginRenderContext::new(
+        let video_properties = if VideoClipProperties::is_video_kind(&clip.kind_id) {
+            match VideoClipProperties::from_clip(clip) {
+                Ok(properties) => Some(properties),
+                Err(error) => {
+                    log::warn!(
+                        "failed to read properties for video clip {}: {error}",
+                        clip.id
+                    );
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
+        let media_time = match video_properties.as_ref() {
+            Some(properties) => match properties.media_time_seconds(
+                clip.position,
+                ctx.current_frame,
+                ctx.timeline.tps,
+            ) {
+                Ok(media_time) => media_time,
+                Err(error) => {
+                    log::warn!(
+                        "failed to compute media time for video clip {}: {error}",
+                        clip.id
+                    );
+                    continue;
+                }
+            },
+            None => compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame),
+        };
+        let mut render_ctx = PluginRenderContext::new(
             clip.id,
             media_time,
-            base_transform,
+            Mat4::IDENTITY,
             Arc::clone(ctx.path_to_stream),
             Arc::clone(ctx.streams),
             Arc::clone(ctx.media_fetch_cache),
         );
+        if let Some(properties) = video_properties {
+            render_ctx.set_video_source(properties.media.source);
+        }
         let props_dynamic = field_values_to_rhai_map(&clip.properties);
 
         // TODO: call with state.call_script() instead of directly calling the loader

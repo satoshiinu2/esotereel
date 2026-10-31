@@ -13,7 +13,6 @@ use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
-use crate::project::transform::ClipTranslates;
 use crate::util::result::{EsotereelError, EsotereelResult};
 
 /// Composite/Script/Mirrorの入れ子実行を無限ループさせないための上限。
@@ -248,7 +247,6 @@ impl Timeline {
         duration: TimelineTick,
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
-        translates: ClipTranslates,
     ) -> EsotereelResult<ClipId> {
         // 重複チェック(既存 try_insert 相当)
         {
@@ -269,7 +267,7 @@ impl Timeline {
         }
 
         let clip_id = ids.next_clip_id();
-        let clip = Clip::new(clip_id, position, duration, kind_id, properties, translates);
+        let clip = Clip::new(clip_id, position, duration, kind_id, properties);
 
         let layer = self
             .layers
@@ -466,8 +464,7 @@ impl Timeline {
         value: ClipBindingValue,
     ) {
         self.invalidate_index();
-        self.changes
-            .mark_clip_property_changed(clip_id, key, value);
+        self.changes.mark_clip_property_changed(clip_id, key, value);
     }
 
     pub(crate) fn touch_removed(&mut self, clip: &Clip, layer_id: LayerId) {

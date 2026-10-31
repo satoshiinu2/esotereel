@@ -4,12 +4,13 @@ use std::{
 };
 
 use dashmap::DashMap;
-use glam::{EulerRot, Mat4, Quat, Vec3};
+use glam::{Mat4, Vec3};
 
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
     network::NetworkHandler,
+    plugin::property::special::{Transform, TransformValues},
     project::{
         Project,
         ids::{ClipId, ResourceId, TimelineId},
@@ -87,6 +88,7 @@ pub struct PluginRenderContext {
     clip_id: ClipId,
     media_time: f64,
     base_transform: Mat4,
+    video_source: Option<String>,
 
     batches: Arc<Mutex<Vec<VertexBatch>>>,
     /// 未ロードで申告されたpath
@@ -110,6 +112,7 @@ impl PluginRenderContext {
             clip_id,
             media_time,
             base_transform,
+            video_source: None,
             batches: Arc::new(Mutex::new(Vec::new())),
             requested_paths: Arc::new(Mutex::new(Vec::new())),
             path_to_stream,
@@ -120,6 +123,10 @@ impl PluginRenderContext {
 
     pub fn media_time(&self) -> f64 {
         self.media_time
+    }
+
+    pub fn set_video_source(&mut self, source: String) {
+        self.video_source = Some(source);
     }
 
     pub fn get_texture(&mut self, path: &str, start_seconds: f64, lookahead_seconds: f64) -> i64 {
@@ -157,20 +164,31 @@ impl PluginRenderContext {
         self.base_transform *= transform;
     }
 
-    /// Render at the source resolution, centered on the transform origin.
-    pub fn render_video_native(&mut self, texture_id: i64) {
+    pub fn render_video_with_transform(&mut self, texture_id: i64, transform: Mat4) {
         let Ok(resource_id) = u32::try_from(texture_id) else {
             return;
         };
-        let dimensions = self
+        let has_dimensions = self
             .streams
             .get(&resource_id)
-            .map(|player| player.dimensions());
-        let Some((width, height)) = dimensions else {
+            .map(|player| player.dimensions())
+            .is_some_and(|(width, height)| width > 0 && height > 0);
+        if !has_dimensions {
             return;
-        };
-        let (width, height) = (width as f64, height as f64);
-        self.render_video(texture_id, -width / 2.0, -height / 2.0, width, height);
+        }
+        if texture_id < 0 {
+            return;
+        }
+        self.batches
+            .lock()
+            .expect("mutex poisoned")
+            .push(VertexBatch {
+                vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
+                texture_id: resource_id,
+                transform: self.base_transform
+                    * transform
+                    * Mat4::from_translation(Vec3::new(-0.5, -0.5, 0.0)),
+            });
     }
 
     pub fn render_video(&mut self, texture_id: i64, x: f64, y: f64, width: f64, height: f64) {
@@ -223,14 +241,12 @@ fn transform_matrix(
         }
         Ok(Vec3::from_array(result))
     }
-    let position = vector(position)?;
-    let rotation = vector(rotation)? * (std::f32::consts::PI / 180.0);
-    let scale = vector(scale)?;
-    Ok(Mat4::from_scale_rotation_translation(
-        scale,
-        Quat::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z),
-        position,
-    ))
+    Ok(TransformValues {
+        position: vector(position)?.to_array(),
+        rotation: vector(rotation)?.to_array(),
+        scale: vector(scale)?.to_array(),
+    }
+    .matrix())
 }
 
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
@@ -239,6 +255,9 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
     engine.register_fn("mat4_trs", transform_matrix);
+    engine.register_fn("as_mat4", |fields: rhai::Map| {
+        Transform::from_rhai_map(&fields).map(TransformValues::matrix)
+    });
     engine.register_fn(
         "set_transform",
         |ctx: &mut PluginRenderContext, matrix: Mat4| ctx.set_transform(matrix),
@@ -260,10 +279,23 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
             ctx.get_texture(path, start, DEFAULT_LOOKAHEAD_SECONDS)
         },
     );
+    engine.register_fn(
+        "get_video_texture",
+        |ctx: &mut PluginRenderContext| -> Result<i64, Box<rhai::EvalAltResult>> {
+            let source = ctx
+                .video_source
+                .clone()
+                .ok_or_else(|| Box::<rhai::EvalAltResult>::from("video source is not set"))?;
+            Ok(ctx.get_texture(&source, ctx.media_time(), DEFAULT_LOOKAHEAD_SECONDS))
+        },
+    );
 
-    engine.register_fn("render_video", |ctx: &mut PluginRenderContext, tex: i64| {
-        ctx.render_video_native(tex)
-    });
+    engine.register_fn(
+        "render_video",
+        |ctx: &mut PluginRenderContext, tex: i64, transform: Mat4| {
+            ctx.render_video_with_transform(tex, transform)
+        },
+    );
     engine.register_fn(
         "render_video",
         |ctx: &mut PluginRenderContext, tex: i64, x: f64, y: f64, w: f64, h: f64| {
@@ -337,9 +369,10 @@ mod render_tests {
     use super::*;
     use crate::plugin::{Plugin, script::bridge::field_values_to_rhai_map};
     use crate::project::clip::ClipBindingValue;
+    use crate::project::video_clip::VideoClipProperties;
 
     #[test]
-    fn standard_video_script_uses_source_resolution_and_transform_scale() {
+    fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
         let plugin = Plugin::load(std::path::Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../plugins/std"
@@ -351,6 +384,42 @@ mod render_tests {
         )
         .unwrap();
         let fields = &schemas[&crate::plugin::NamespacedID::new("std", "video").unwrap()];
+        let [
+            crate::plugin::property::PropertySchema {
+                kind:
+                    crate::plugin::property::value::FieldTypeKind::Group {
+                        fields: video_fields,
+                        ..
+                    },
+                ..
+            },
+        ] = fields.as_slice()
+        else {
+            panic!("video property root")
+        };
+        let [
+            crate::plugin::property::PropertySchema {
+                kind:
+                    crate::plugin::property::value::FieldTypeKind::Special {
+                        reference: media_reference,
+                        ..
+                    },
+                ..
+            },
+            crate::plugin::property::PropertySchema {
+                kind:
+                    crate::plugin::property::value::FieldTypeKind::Special {
+                        reference: transform_reference,
+                        ..
+                    },
+                ..
+            },
+        ] = video_fields.as_slice()
+        else {
+            panic!("video schema must use core special properties")
+        };
+        assert_eq!(media_reference.full(), "core:media");
+        assert_eq!(transform_reference.full(), "core:transform");
         assert!(
             !fields
                 .iter()
@@ -387,14 +456,17 @@ mod render_tests {
             crate::plugin::property::value::FieldValue::String("test.mp4".into()),
         );
         let cache = Arc::new(MediaFetchCache::default());
-        let context = PluginRenderContext::new(
+        let path_to_stream = Arc::new(DashMap::new());
+        let streams = Arc::new(DashMap::new());
+        let mut context = PluginRenderContext::new(
             1,
             2.0,
             Mat4::IDENTITY,
-            Arc::new(DashMap::new()),
-            Arc::new(DashMap::new()),
-            cache,
+            Arc::clone(&path_to_stream),
+            Arc::clone(&streams),
+            Arc::clone(&cache),
         );
+        context.set_video_source("test.mp4".into());
         let mut engine = rhai::Engine::new();
         register_render_api(&mut engine);
         let script = plugin.script.unwrap();
@@ -415,10 +487,8 @@ mod render_tests {
             ordered_float::OrderedFloat(2.0),
             ffmpeg_next::util::frame::video::Video::new(ffmpeg_next::format::Pixel::RGBA, 32, 24),
         );
-        context
-            .path_to_stream
-            .insert("test.mp4".into(), StreamState::Loaded(7));
-        context.streams.insert(7, player);
+        path_to_stream.insert("test.mp4".into(), StreamState::Loaded(7));
+        streams.insert(7, player);
         for factor in [1.0, 0.5, 2.0] {
             let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(video)) =
                 props
@@ -435,12 +505,25 @@ mod render_tests {
             transform.insert(
                 "scale".into(),
                 crate::plugin::property::value::FieldValue::Array(
-                    [factor, factor, 1.0]
+                    [32.0 * factor, 24.0 * factor, 1.0]
                         .into_iter()
                         .map(crate::plugin::property::value::FieldValue::Float)
                         .collect(),
                 ),
             );
+            let video_properties = VideoClipProperties::from_value(
+                &crate::plugin::property::value::FieldValue::Map(video.clone()),
+            )
+            .unwrap();
+            let mut context = PluginRenderContext::new(
+                1,
+                2.0,
+                Mat4::IDENTITY,
+                Arc::clone(&path_to_stream),
+                Arc::clone(&streams),
+                Arc::clone(&cache),
+            );
+            context.set_video_source(video_properties.media.source);
             script
                 .call::<()>(
                     &engine,

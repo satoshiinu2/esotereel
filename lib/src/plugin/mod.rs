@@ -609,7 +609,6 @@ mod archive_tests {
         project::{
             clip::{ArchivedClipBindingValue, ClipBindingValue},
             command::{ArchivedCommandRequest, CommandRequest},
-            transform::ClipTranslates,
         },
         requests::{ArchivedRequest, Request},
     };
@@ -650,7 +649,6 @@ mod archive_tests {
                         duration: 60,
                         kind_id: NamespacedID::new("std", "video").unwrap(),
                         properties,
-                        translates: ClipTranslates::None,
                     },
                 )]),
             };

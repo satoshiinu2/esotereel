@@ -71,7 +71,7 @@ Esotereelでは、GUI（Qt/C++）とCore（Rust）がTCP/IPネットワークを
 - **GUI Processing**:
   - ファイルパス取得
   - 位置計算（ドロップ位置）
-  - パラメータ構築（layer_id, position, duration, kind_id, properties, translates）
+  - パラメータ構築（layer_id, position, duration, kind_id, properties）
 
 #### Request
 - **C++ FFI**: `send_command()` または同等のFFI呼び出し

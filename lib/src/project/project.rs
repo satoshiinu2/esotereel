@@ -5,7 +5,6 @@ use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
-use crate::project::transform::ClipTranslates;
 use crate::util::result::EsotereelError;
 
 #[derive(Debug, Default)]
@@ -81,7 +80,6 @@ impl Project {
         duration: i64,
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
-        translates: ClipTranslates,
     ) -> anyhow::Result<ClipId> {
         let timeline = self
             .timelines
@@ -95,7 +93,6 @@ impl Project {
             duration,
             kind_id,
             properties,
-            translates,
         )
     }
 

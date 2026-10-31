@@ -9,7 +9,6 @@ use crate::{
     project::{
         TimelineTick,
         ids::{ClipId, ScriptId, TimelineId},
-        transform::ClipTranslates,
     },
 };
 
@@ -24,7 +23,6 @@ pub struct Clip {
 
     pub kind_id: NamespacedID,
     pub properties: HashMap<NamespacedID, ClipBindingValue>,
-    pub translates: ClipTranslates,
 }
 
 impl Clip {
@@ -34,7 +32,6 @@ impl Clip {
         duration: TimelineTick,
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
-        translates: ClipTranslates,
     ) -> Self {
         Self {
             id,
@@ -42,7 +39,6 @@ impl Clip {
             duration,
             kind_id,
             properties,
-            translates,
         }
     }
 

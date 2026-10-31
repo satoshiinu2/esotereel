@@ -1,15 +1,16 @@
-use esotereel_lib::plugin::property::PropertyPath;
 use std::collections::HashMap;
 
 use anyhow::Ok;
 use esotereel_lib::{
-    plugin::{NamespacedID, property::value::FieldValue},
+    plugin::{
+        NamespacedID,
+        property::{special::Media, value::FieldValue},
+    },
     project::{
         Clip, Project, TimelineTick,
         clip::ClipBindingValue,
         command::{ClipMoveHistoryCtx, ClipResizeHistoryCtx},
         ids::{ClipId, LayerId, TimelineId},
-        transform::ClipTranslates,
     },
     util::result::EsotereelError,
 };
@@ -140,15 +141,13 @@ pub(crate) fn clip_resize_core(
         timeline.place_clip(layer_id, clip)?;
     }
 
-    // source_offset (placeholder)
-    // TODO: いろいろ検討
-    let key = PropertyPath::parse("std:video/media/source_offset")?;
     for ctx in resized_clips {
         if let Some(off) = ctx.new_source_offset {
             let v = ClipBindingValue::Static(FieldValue::Int(off));
             let clip = timeline
                 .get_clip_mut(ctx.clip_id)
                 .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
+            let key = Media::source_offset_path(&clip.kind_id)?;
             clip.set_property_path(&key, v)?;
             let root_value = clip.get_property_value(key.root()).unwrap().clone();
             timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
@@ -165,7 +164,6 @@ pub(crate) fn clip_add_core(
     duration: TimelineTick,
     kind_id: NamespacedID,
     properties: HashMap<NamespacedID, ClipBindingValue>,
-    translates: ClipTranslates,
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
     if let Some(existing) = preferred_clip_id {
@@ -173,9 +171,7 @@ pub(crate) fn clip_add_core(
         let timeline = project
             .timeline_mut(timeline_id)
             .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
-        let clip = Clip::new(
-            existing, position, duration, kind_id, properties, translates,
-        );
+        let clip = Clip::new(existing, position, duration, kind_id, properties);
         timeline.place_clip(layer_id, clip)?;
         return Ok(existing);
     }
@@ -187,7 +183,6 @@ pub(crate) fn clip_add_core(
         duration,
         kind_id,
         properties,
-        translates,
     )?;
 
     Ok(clip_id)

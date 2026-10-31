@@ -88,7 +88,7 @@
 
 **Responsibility**:
 - 位置、持続時間の管理
-- 種類（kind_id）、プロパティ、変換の保持
+- 種類（kind_id）とプロパティの保持
 - サイズ変更（position、duration、source_offsetの更新）
 
 **Owned Data**:
@@ -97,7 +97,6 @@
 - `duration: TimelineTick`
 - `kind_id: NamespacedID`
 - `properties: BTreeMap<String, PropertyValue>`
-- `translates: ClipTranslates`
 
 **References**: なし（データは自己完結）
 
@@ -245,7 +244,7 @@
 
 **Owned Data**: 種類ごとに異なる
 - `ClipsMove`: Vec<ClipMoveCtx>
-- `AddClip`: layer_id, position, duration, kind_id, properties, translates
+- `AddClip`: layer_id, position, duration, kind_id, properties
 - `AddLayer`: parent_folder_id, insert_index, name
 - `AddFolder`: parent_folder_id, insert_index, name
 

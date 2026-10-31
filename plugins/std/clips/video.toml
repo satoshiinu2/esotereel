@@ -11,9 +11,9 @@ label = "Video"
 [[properties.fields]]
 key = "media"
 label = "Media"
-kind = { type = "group", reference = "std:media" }
+kind = { type = "special", reference = "core:media" }
 
 [[properties.fields]]
 key = "transform"
 label = "Transform"
-kind = { type = "group", reference = "std:transform" }
+kind = { type = "special", reference = "core:transform" }

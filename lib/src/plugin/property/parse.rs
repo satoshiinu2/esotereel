@@ -148,6 +148,12 @@ impl FieldTypeKind {
                     .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
                     .collect(),
             ),
+            FieldTypeKind::Special { fields, .. } => FieldValue::Map(
+                fields
+                    .iter()
+                    .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
+                    .collect(),
+            ),
         };
         Ok(value)
     }
