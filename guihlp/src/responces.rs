@@ -62,6 +62,10 @@ pub(super) fn on_responce_recveve(
 
             let mut state_guard = state.lock().expect("mutex poisoned");
             state_guard.project = project_arc;
+            // プロジェクトが再初期化されたため、タイムラインごとの最後の
+            // FetchClipsInRange 送信記録をクリアする（新しいプロジェクトでの
+            // 重複送信抑制が誤って働かないようにする）
+            state_guard.last_clips_fetch.clear();
 
             let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(state_guard);
@@ -296,6 +300,10 @@ pub(super) fn on_responce_recveve(
                 state
                     .stream_state_map
                     .insert(path.as_ref().to_owned(), StreamState::Loaded(*resource_id));
+                // 新しいストリームプレイヤーが割り当てられたため、過去の
+                // FetchStreamData 送信記録をクリアする（別メディアの同じ
+                // resource_id に旧記録が誤って効かないようにする）
+                state.last_stream_fetch.remove(resource_id);
             }
 
             log::info!(
