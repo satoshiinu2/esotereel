@@ -122,8 +122,11 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
                 }
 
                 // 同じメディアプロパティから source 文字列も取得し、ビデオソースとして設定する。
+                // 空文字列の場合はソース未設定とみなし、ビデオをレンダリングしない。
                 if let Some(FieldValue::String(source)) = media_map.get(source_member_key) {
-                    video_source = Some(source.clone());
+                    if !source.is_empty() {
+                        video_source = Some(source.clone());
+                    }
                 }
             }
         }

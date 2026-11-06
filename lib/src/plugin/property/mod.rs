@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::plugin::{
     NamespacedID,
+    clip::component::ComponentHook,
     property::{
         parse::PropertySchemaRaw,
         value::{FieldTypeKind, FieldValue},
