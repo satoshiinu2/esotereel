@@ -110,7 +110,7 @@ mod preview_tests {
         let mut properties =
             ClipBindingValue::default_properties(loader.get_clip_properties(&kind).unwrap());
         // コンポーネントが提供するプロパティはフラットなキーで配置される:
-        // std:video:source, std:video:media, std:video:transform など
+        // std:video:media, std:video:transform など
         let media_value = properties
             .get_mut(&NamespacedID::new("std", "video:media").unwrap())
             .unwrap();

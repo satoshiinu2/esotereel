@@ -63,6 +63,8 @@ impl CommandQueue {
 
                 Some(ClipMoveCtx {
                     clip_id: *clip_id,
+                    base_position: clip.position,
+                    base_duration: clip.duration,
                     new_position: clip.position + position_moved,
                     new_duration: clip.duration + duration_added,
                     new_layer_id,
@@ -84,12 +86,30 @@ impl CommandQueue {
         left_edge: bool,
         frame_delta: i64,
     ) -> anyhow::Result<()> {
+        let timeline = project
+            .timeline_ref(timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+
         let clip_data = clip_ids
             .iter()
-            .map(|clip_id| ClipResizeCtx {
-                clip_id: *clip_id,
-                left_edge,
-                frame_delta,
+            .filter_map(|clip_id| {
+                let (clip, _) = timeline.get_clip_and_layer(*clip_id)?;
+                let (new_position, new_duration) = if left_edge {
+                    (
+                        clip.position + frame_delta,
+                        clip.duration - frame_delta,
+                    )
+                } else {
+                    (clip.position, clip.duration + frame_delta)
+                };
+                Some(ClipResizeCtx {
+                    clip_id: *clip_id,
+                    left_edge,
+                    base_position: clip.position,
+                    base_duration: clip.duration,
+                    new_position,
+                    new_duration,
+                })
             })
             .collect();
 

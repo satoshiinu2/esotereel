@@ -343,10 +343,9 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_fn(
         "get_video_texture",
         |ctx: &mut PluginRenderContext| -> Result<i64, Box<rhai::EvalAltResult>> {
-            let source = ctx
-                .video_source
-                .clone()
-                .ok_or_else(|| Box::<rhai::EvalAltResult>::from("video source is not set"))?;
+            let Some(source) = ctx.video_source.clone() else {
+                return Ok(-1);
+            };
             Ok(ctx.get_texture(&source, ctx.media_time(), DEFAULT_LOOKAHEAD_SECONDS))
         },
     );
@@ -445,10 +444,6 @@ mod render_tests {
             .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
             .unwrap();
         let fields = &component.properties;
-        let source = fields
-            .iter()
-            .find(|f| f.key.local_id() == "video:source")
-            .unwrap();
         let media = fields
             .iter()
             .find(|f| f.key.local_id() == "video:media")
@@ -457,7 +452,6 @@ mod render_tests {
             .iter()
             .find(|f| f.key.local_id() == "video:transform")
             .unwrap();
-        assert!(matches!(source.kind, crate::plugin::property::value::FieldTypeKind::String));
         let crate::plugin::property::value::FieldTypeKind::Map { .. } = &media.kind
         else {
             panic!("media property must be a map")
@@ -477,20 +471,10 @@ mod render_tests {
                 .iter()
                 .map(|(path, _)| path.to_string())
                 .collect::<Vec<_>>(),
-            ["std:video:source", "std:video:media", "std:video:transform"]
+            ["std:video:media", "std:video:transform"]
         );
         let mut props = ClipBindingValue::default_properties(fields);
-        // コンポーネントのプロパティはフラットなキー（std:video:source, std:video:media, std:video:transform）で配置される。
-        let source_value = props
-            .get_mut(&crate::plugin::NamespacedID::new("std", "video:source").unwrap())
-            .unwrap();
-        let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::String(s)) =
-            source_value
-        else {
-            panic!("source property must be a string")
-        };
-        *s = "test.mp4".into();
-
+        // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。
         // transform デフォルト値をセット（as_mat4 は position/rotation/scale を全て要求する）
         let transform_value = props
             .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
