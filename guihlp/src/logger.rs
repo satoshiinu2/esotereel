@@ -4,7 +4,11 @@ use std::{
     sync::{LazyLock, OnceLock, RwLock},
 };
 
-pub type LogOutCStrFn = extern "C" fn(level: usize, target: crate::ffi::stringview::FfiStringView, msg: crate::ffi::stringview::FfiStringView);
+pub type LogOutCStrFn = extern "C" fn(
+    level: usize,
+    target: crate::ffi::stringview::FfiStringView,
+    msg: crate::ffi::stringview::FfiStringView,
+);
 
 pub(crate) static LOG_C_CALLBACK: OnceLock<LogOutCStrFn> = OnceLock::new();
 
@@ -91,8 +95,17 @@ pub fn set_log_level(target: &str, level: CLogLevel) {
 
 impl Log for GuiLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        let target_filter = self.filters.read().ok().and_then(|g| g.get(metadata.target()).copied());
-        let default_level = self.default_level.read().ok().map(|g| *g).unwrap_or(LevelFilter::Info);
+        let target_filter = self
+            .filters
+            .read()
+            .ok()
+            .and_then(|g| g.get(metadata.target()).copied());
+        let default_level = self
+            .default_level
+            .read()
+            .ok()
+            .map(|g| *g)
+            .unwrap_or(LevelFilter::Info);
         let filter = target_filter.unwrap_or(default_level);
 
         metadata.level() <= filter

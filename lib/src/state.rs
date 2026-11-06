@@ -2,12 +2,12 @@ use std::sync::{Arc, RwLock};
 
 use dashmap::DashMap;
 
-use crate::util::result::LockExt;
 use crate::dirs::Directories;
 use crate::network::NetworkHandler;
 use crate::plugin::script::api::register_fn_for;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
+use crate::util::result::LockExt;
 use crate::{HostRole, StreamState};
 
 pub struct CommonState {

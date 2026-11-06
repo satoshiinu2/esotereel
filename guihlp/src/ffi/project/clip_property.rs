@@ -120,7 +120,9 @@ pub unsafe extern "C" fn clip_get_all_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let clip = unsafe { &*ptr_clip };
 
         let plugin_loader = state.plugin_loader.read_or_err()?;
@@ -156,7 +158,9 @@ pub unsafe extern "C" fn clip_get_common_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let clips = unsafe { std::slice::from_raw_parts(ptr_clips, num_clips) };
 
@@ -221,7 +225,9 @@ pub unsafe extern "C" fn clip_get_categories(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let clip = unsafe { &*ptr };
 
         let plugin_loader = state.plugin_loader.read_or_err()?;

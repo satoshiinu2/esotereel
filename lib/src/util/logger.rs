@@ -23,8 +23,17 @@ static LOGGER: LazyLock<QtLogger> = LazyLock::new(|| QtLogger {
 
 impl Log for QtLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        let target_filter = self.filters.read().ok().and_then(|g| g.get(metadata.target()).copied());
-        let default_level = self.default_level.read().ok().map(|g| *g).unwrap_or(LevelFilter::Info);
+        let target_filter = self
+            .filters
+            .read()
+            .ok()
+            .and_then(|g| g.get(metadata.target()).copied());
+        let default_level = self
+            .default_level
+            .read()
+            .ok()
+            .map(|g| *g)
+            .unwrap_or(LevelFilter::Info);
         metadata.level() <= target_filter.unwrap_or(default_level)
     }
 

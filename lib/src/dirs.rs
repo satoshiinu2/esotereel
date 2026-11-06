@@ -86,7 +86,10 @@ impl Directories {
         #[cfg(target_os = "macos")]
         {
             // Contents/MacOS/exe -> Contents/Resources/
-            Ok(exe_dir.parent().context("exe_dir has no parent directory")?.join("Resources"))
+            Ok(exe_dir
+                .parent()
+                .context("exe_dir has no parent directory")?
+                .join("Resources"))
         }
 
         #[cfg(target_os = "windows")]

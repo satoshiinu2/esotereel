@@ -1,9 +1,9 @@
 // project/change.rs (新規)
+use crate::plugin::NamespacedID;
 use crate::project::{
     clip::ClipBindingValue,
     ids::{ClipId, LayerFolderId, LayerId},
 };
-use crate::plugin::NamespacedID;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy)]

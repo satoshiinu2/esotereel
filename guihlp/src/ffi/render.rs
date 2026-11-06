@@ -49,7 +49,9 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let offscreen = unsafe { &*ptr_offscreen };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        let state_guard = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         crate::render::render_frame_offscreen_ffi(
             wgpuutil,

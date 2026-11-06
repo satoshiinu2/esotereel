@@ -260,7 +260,8 @@ pub fn execute_command(
                 .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
 
             clip.set_property_path(key, value.clone())?;
-            let root_value = clip.get_property_value(key.root())
+            let root_value = clip
+                .get_property_value(key.root())
                 .ok_or(EsotereelError::AccessError(format!(
                     "root value not found for key: {}",
                     key.root()
@@ -378,7 +379,8 @@ pub fn execute_command_undo(
 
             // 古い値を設定して通知
             clip.set_property_path(&key, old_value.clone())?;
-            let root_value = clip.get_property_value(key.root())
+            let root_value = clip
+                .get_property_value(key.root())
                 .ok_or(EsotereelError::AccessError(format!(
                     "root value not found for key: {}",
                     key.root()

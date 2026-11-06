@@ -50,7 +50,9 @@ pub unsafe extern "C" fn command_queue_send_all(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = &state.network;
 
         catch_unwind(AssertUnwindSafe(|| {
@@ -158,13 +160,7 @@ pub unsafe extern "C" fn req_cmd_clip_resize_mul(
         let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
 
         let queue = unsafe { &mut *ptr_queue };
-        queue.req_cmd_clip_resize_mul(
-            project,
-            timeline_id,
-            clip_ids,
-            left_edge,
-            frame_delta,
-        )?;
+        queue.req_cmd_clip_resize_mul(project, timeline_id, clip_ids, left_edge, frame_delta)?;
 
         Ok(())
     }
@@ -206,7 +202,9 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let queue = unsafe { &mut *ptr_queue };
         queue.req_cmd_add_clip_dummy(&state_guard, timeline_id, position, layer_id)?;
