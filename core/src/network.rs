@@ -74,7 +74,10 @@ impl ServerNetworkHandler {
             let (tx, mut rx) = mpsc::unbounded_channel::<AlignedVec>();
 
             // CLIENTSに登録
-            let mut guard = self.clients.write().unwrap();
+            let Ok(mut guard) = self.clients.write() else {
+                log::warn!("network: clients write lock poisoned, skipping client");
+                continue;
+            };
             guard.insert(client_id, tx);
 
             let instance = Arc::clone(&self);

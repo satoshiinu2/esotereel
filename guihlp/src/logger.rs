@@ -60,11 +60,19 @@ pub fn level_filter_from_name(name: &str) -> Option<LevelFilter> {
 }
 
 pub fn set_default_log_level(level: LevelFilter) {
-    *LOGGER.default_level.write().unwrap() = level;
+    if let Ok(mut guard) = LOGGER.default_level.write() {
+        *guard = level;
+    } else {
+        log::warn!("gui logger: default_level write lock poisoned");
+    }
 }
 
 pub fn replace_log_filters(filters: HashMap<String, LevelFilter>) {
-    *LOGGER.filters.write().unwrap() = filters;
+    if let Ok(mut guard) = LOGGER.filters.write() {
+        *guard = filters;
+    } else {
+        log::warn!("gui logger: filters write lock poisoned");
+    }
 }
 
 pub fn init_rust_logger(callback: LogOutCStrFn) {
@@ -74,17 +82,18 @@ pub fn init_rust_logger(callback: LogOutCStrFn) {
 }
 
 pub fn set_log_level(target: &str, level: CLogLevel) {
-    LOGGER
-        .filters
-        .write()
-        .unwrap()
-        .insert(target.to_string(), level.into());
+    if let Ok(mut guard) = LOGGER.filters.write() {
+        guard.insert(target.to_string(), level.into());
+    } else {
+        log::warn!("gui logger: filters write lock poisoned");
+    }
 }
 
 impl Log for GuiLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        let target_filter = self.filters.read().unwrap().get(metadata.target()).copied();
-        let filter = target_filter.unwrap_or(*self.default_level.read().unwrap());
+        let target_filter = self.filters.read().ok().and_then(|g| g.get(metadata.target()).copied());
+        let default_level = self.default_level.read().ok().map(|g| *g).unwrap_or(LevelFilter::Info);
+        let filter = target_filter.unwrap_or(default_level);
 
         metadata.level() <= filter
     }
