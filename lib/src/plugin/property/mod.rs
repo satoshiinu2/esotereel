@@ -83,9 +83,7 @@ impl PropertySchema {
             default: &FieldValue,
             out: &mut Vec<(PropertyPath, PropertySchema)>,
         ) -> anyhow::Result<()> {
-            if let FieldTypeKind::Group { fields, .. } | FieldTypeKind::Special { fields, .. } =
-                &field.kind
-            {
+            if let FieldTypeKind::Group { fields, .. } = &field.kind {
                 let mut groups = groups.to_vec();
                 groups.push(field.label.clone());
                 groups.extend(field.category.iter().cloned());

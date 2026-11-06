@@ -13,6 +13,7 @@ pub(super) struct ToolbarButtonRaw {
     #[serde(default)]
     pub(super) icon: Option<String>,
     pub(super) action: toml::Value,
+    pub(super) script: String,
 }
 
 impl ToolbarAction {

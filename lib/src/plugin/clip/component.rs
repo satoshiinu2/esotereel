@@ -1,14 +1,15 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 use anyhow::Context;
-use rhai::{Dynamic, Engine, Map};
+use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 use crate::plugin::{NamespacedID, PluginLoader};
 use crate::plugin::property::{
-    parse::PropertySchemaRaw, value::FieldTypeKind, value::FieldValue, PropertySchema,
+    parse::PropertySchemaRaw, value::FieldValue, PropertySchema,
 };
+use crate::plugin::script::api::PluginRenderContext;
 use crate::plugin::script::bridge::field_values_to_rhai_map;
 use crate::project::clip::ClipBindingValue;
 
@@ -52,12 +53,40 @@ impl ComponentCapability {
             ComponentCapability::Custom(s) => s.clone(),
         }
     }
+
+    /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
+    ///
+    /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
+    /// `Custom` の場合は None（従来の hooks 仕組みは廃止）。
+    pub fn standard_fn(&self) -> Option<&'static str> {
+        match self {
+            ComponentCapability::FrameProvider => Some("render_frame"),
+            ComponentCapability::AudioProvider => Some("render_audio"),
+            ComponentCapability::Transformable => Some("get_transform"),
+            ComponentCapability::TimelinePositionable => Some("get_timeline_position"),
+            ComponentCapability::Prefetchable => Some("prefetch"),
+            ComponentCapability::Keyframeable => Some("get_keyframes"),
+            ComponentCapability::Custom(_) => None,
+        }
+    }
+
+    /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
+    pub fn hook_timing(&self) -> ComponentHook {
+        match self {
+            ComponentCapability::Prefetchable => ComponentHook::Prefetch,
+            ComponentCapability::FrameProvider => ComponentHook::Evaluate,
+            ComponentCapability::AudioProvider => ComponentHook::Evaluate,
+            ComponentCapability::Transformable => ComponentHook::Process,
+            ComponentCapability::TimelinePositionable => ComponentHook::Process,
+            ComponentCapability::Keyframeable => ComponentHook::Process,
+            ComponentCapability::Custom(_) => ComponentHook::Evaluate,
+        }
+    }
 }
 
 /// コンポーネントが実行する処理のタイミング（フック）。
 ///
-/// 読み込み時に解決され、Runtime では Execution Scheduler が実行する。
-/// 固定の必須メソッドではなく、必要なものだけを登録できる。
+/// スケジューラ内部で実行順序を決定するために使用する。
 /// `BTreeMap` のキーとして使うため `Ord` も実装している（宣言順 = 実行順）。
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ComponentHook {
@@ -83,8 +112,6 @@ pub struct ComponentDefinition {
     /// Capability 経由でのアクセスが基本のため、ここでは単なる参照として保持する。
     pub kind: NamespacedID,
     pub capabilities: HashSet<ComponentCapability>,
-    /// フック名 → スクリプト関数名（Rhai / Native の実装エントリポイント）。
-    pub hooks: BTreeMap<ComponentHook, String>,
     pub editor: Option<String>,
     /// このコンポーネント専用の Rhai スクリプトファイルパス（プラグインディレクトリからの相対パス）。
     /// プラグイン共通の script.rhai ではなく、コンポーネントごとに個別のスクリプトを持つ。
@@ -244,14 +271,6 @@ impl FromStr for ComponentCapability {
     }
 }
 
-impl FromStr for ComponentHook {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_component_hook(s)
-    }
-}
-
 pub fn parse_component_capability(s: &str) -> anyhow::Result<ComponentCapability> {
     Ok(match s {
         "frame-provider" => ComponentCapability::FrameProvider,
@@ -261,17 +280,6 @@ pub fn parse_component_capability(s: &str) -> anyhow::Result<ComponentCapability
         "prefetchable" => ComponentCapability::Prefetchable,
         "keyframeable" => ComponentCapability::Keyframeable,
         other => ComponentCapability::Custom(other.to_string()),
-    })
-}
-
-pub fn parse_component_hook(s: &str) -> anyhow::Result<ComponentHook> {
-    Ok(match s {
-        "prepare" => ComponentHook::Prepare,
-        "prefetch" => ComponentHook::Prefetch,
-        "evaluate" => ComponentHook::Evaluate,
-        "process" => ComponentHook::Process,
-        "finalize" => ComponentHook::Finalize,
-        other => anyhow::bail!("unknown component hook `{other}`"),
     })
 }
 
@@ -292,8 +300,6 @@ pub(crate) struct ComponentDefinitionRaw {
     pub kind: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
-    #[serde(default)]
-    pub hooks: BTreeMap<String, String>,
     #[serde(default)]
     pub children: Vec<String>,
     #[serde(default)]
@@ -316,13 +322,6 @@ impl ComponentDefinitionRaw {
                 format!("invalid component capability `{cap}` in `{}`", id.full())
             })?);
         }
-        let mut hooks = BTreeMap::new();
-        for (hook_name, func_name) in &self.hooks {
-            let hook = parse_component_hook(hook_name).with_context(|| {
-                format!("unknown component hook `{hook_name}` in `{}`", id.full())
-            })?;
-            hooks.insert(hook, func_name.clone());
-        }
         let mut children = Vec::new();
         for child in &self.children {
             children.push(resolve_namespaced(child, plugin_id).with_context(|| {
@@ -338,7 +337,6 @@ impl ComponentDefinitionRaw {
             name: self.name,
             kind,
             capabilities,
-            hooks,
             editor: self.editor,
             script: self.script,
             properties,
@@ -373,10 +371,12 @@ pub fn parse_component_definitions(
     Ok(map)
 }
 
-/// コンポーネントのフックを順に実行するスケジューラ。
+/// コンポーネントの能力を順に実行するスケジューラ。
 ///
-/// ComponentDefinition に登録されたフック（prepare / prefetch / evaluate / process / finalize）
-/// を、プラグインの Rhai / Native スクリプトとして呼び出す。
+/// ComponentDefinition に登録された能力（frame-provider, prefetchable など）を、
+/// プラグインの Rhai スクリプトの標準関数として呼び出す。
+/// 各能力は標準関数名（render_frame, prefetch など）とフックタイミングを持ち、
+/// フックタイミング順に実行される。
 #[derive(Debug, Default)]
 pub struct Scheduler;
 
@@ -385,16 +385,17 @@ impl Scheduler {
         Self::default()
     }
 
-    /// `definition` の各コンポーネントについて、登録済みフックを宣言順に実行する。
+    /// `definition` の各コンポーネントについて、能力に基づく標準関数をフックタイミング順に実行する。
     pub fn run_clip(
         &self,
         engine: &Engine,
         loader: &PluginLoader,
         instance: &ClipInstance,
         definition: &RuntimeDefinition,
+        ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
         for component in &definition.components {
-            self.run_component(engine, loader, instance, component)?;
+            self.run_component(engine, loader, instance, component, ctx)?;
         }
         Ok(())
     }
@@ -405,7 +406,13 @@ impl Scheduler {
         loader: &PluginLoader,
         instance: &ClipInstance,
         component: &ComponentDefinition,
+        ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
+        // スクリプトがないコンポーネントはスキップ（GUI 専用定義など）。
+        let Some(script) = loader.get_component_script(&component.id) else {
+            return Ok(());
+        };
+
         // コンポーネントが宣言したプロパティだけを抽出して渡す（カプセル化）。
         let component_prop_keys: HashSet<NamespacedID> = component
             .properties
@@ -420,18 +427,22 @@ impl Scheduler {
             .collect();
         let props = field_values_to_rhai_map(&component_props);
         let props_dynamic = Dynamic::from_map(props);
-        for (hook, fn_name) in &component.hooks {
-            let script = loader
-                .get_component_script(&component.id)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("script for component `{}` not found", component.id.full())
-                })?;
-            // rhai::FuncArgs はタプルを要求するため、単一引数も 1 要素タプルで渡す。
+
+        // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
+        let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
+        for cap in &component.capabilities {
+            if let Some(fn_name) = cap.standard_fn() {
+                calls.push((cap.hook_timing(), fn_name));
+            }
+        }
+        calls.sort_by_key(|(hook, _)| hook.clone());
+
+        for (_, fn_name) in calls {
             script
-                .call::<Dynamic>(engine, fn_name, (props_dynamic.clone(),))
+                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props_dynamic.clone()))
                 .with_context(|| {
                     format!(
-                        "hook `{hook:?}` (`{fn_name}`) of component `{}` failed",
+                        "capability function `{fn_name}` of component `{}` failed",
                         component.id.full()
                     )
                 })?;
@@ -443,6 +454,7 @@ impl Scheduler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::property::value::FieldTypeKind;
 
     fn make_def(id_local: &str) -> ComponentDefinition {
         ComponentDefinition {
@@ -450,10 +462,6 @@ mod tests {
             name: id_local.to_string(),
             kind: NamespacedID::new("std", "transform").unwrap(),
             capabilities: HashSet::from([ComponentCapability::Transformable]),
-            hooks: BTreeMap::from([(
-                ComponentHook::Evaluate,
-                "eval_transform".to_string(),
-            )]),
             editor: Some("transform".to_string()),
             script: None,
             properties: Vec::new(),
@@ -487,10 +495,6 @@ mod tests {
                 ComponentCapability::FrameProvider,
                 ComponentCapability::Prefetchable,
             ]),
-            hooks: BTreeMap::from([(
-                ComponentHook::Evaluate,
-                "render_video".to_string(),
-            )]),
             editor: Some("video".to_string()),
             script: None,
             properties: Vec::new(),
@@ -540,7 +544,6 @@ id = "video"
 name = "Video"
 kind = "media-provider"
 capabilities = ["frame-provider", "prefetchable"]
-hooks = { evaluate = "render_clip_video" }
 editor = "video"
 children = ["video-transform"]
 
@@ -549,7 +552,6 @@ id = "video-transform"
 name = "Transform"
 kind = "transform"
 capabilities = ["transformable"]
-hooks = { evaluate = "eval_transform" }
 editor = "transform"
 "#;
         let map = parse_component_definitions(text, "std").unwrap();
@@ -562,8 +564,8 @@ editor = "transform"
         assert!(video.capabilities.contains(&ComponentCapability::FrameProvider));
         assert!(video.capabilities.contains(&ComponentCapability::Prefetchable));
         assert_eq!(
-            video.hooks.get(&ComponentHook::Evaluate),
-            Some(&"render_clip_video".to_string())
+            video.capabilities.iter().find(|c| matches!(c, ComponentCapability::FrameProvider)).map(|_| "render_frame"),
+            Some("render_frame")
         );
         assert_eq!(video.editor.as_deref(), Some("video"));
         assert_eq!(
@@ -586,7 +588,6 @@ id = "video"
 name = "Video"
 kind = "media-provider"
 capabilities = ["frame-provider"]
-hooks = { evaluate = "evaluate" }
 properties = [
   { key = "source", label = "Source", kind = { type = "string" } },
   { key = "volume", label = "Volume", kind = { type = "float", min = 0.0, max = 1.0, step = 0.1 }, default = 1.0 },
@@ -606,18 +607,6 @@ properties = [
         let volume = video.properties.iter().find(|p| p.key.full() == "std:volume").unwrap();
         assert_eq!(volume.label, "Volume");
         assert_eq!(volume.default, FieldValue::Float(1.0));
-    }
-
-    #[test]
-    fn unknown_hook_is_rejected() {
-        let text = r#"
-[[components]]
-id = "bad"
-name = "Bad"
-kind = "transform"
-hooks = { frobnicate = "fn" }
-"#;
-        assert!(parse_component_definitions(text, "std").is_err());
     }
 
     #[test]
@@ -656,6 +645,26 @@ capabilities = ["my-custom-cap"]
     }
 
     #[test]
+    fn capability_standard_fn_mappings() {
+        assert_eq!(
+            ComponentCapability::FrameProvider.standard_fn(),
+            Some("render_frame")
+        );
+        assert_eq!(
+            ComponentCapability::Prefetchable.standard_fn(),
+            Some("prefetch")
+        );
+        assert_eq!(
+            ComponentCapability::Transformable.standard_fn(),
+            Some("get_transform")
+        );
+        assert_eq!(
+            ComponentCapability::Custom("foo".to_string()).standard_fn(),
+            None
+        );
+    }
+
+    #[test]
     fn resolve_definition_flattens_hierarchy_depth_first() {
         let mut registry = ComponentRegistry::default();
         let video = ComponentDefinition {
@@ -663,7 +672,6 @@ capabilities = ["my-custom-cap"]
             name: "Video".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: HashSet::from([ComponentCapability::FrameProvider]),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -677,7 +685,6 @@ capabilities = ["my-custom-cap"]
             name: "Decoder".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: HashSet::from([ComponentCapability::FrameProvider]),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -688,7 +695,6 @@ capabilities = ["my-custom-cap"]
             name: "FrameBuffer".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -699,7 +705,6 @@ capabilities = ["my-custom-cap"]
             name: "Transform".to_string(),
             kind: NamespacedID::new("std", "transform").unwrap(),
             capabilities: HashSet::from([ComponentCapability::Transformable]),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -740,7 +745,6 @@ capabilities = ["my-custom-cap"]
             name: "A".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -751,7 +755,6 @@ capabilities = ["my-custom-cap"]
             name: "B".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -776,7 +779,6 @@ capabilities = ["my-custom-cap"]
             name: "Root".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -805,7 +807,6 @@ capabilities = ["my-custom-cap"]
             name: "Video".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: HashSet::from([ComponentCapability::FrameProvider]),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: vec![
@@ -853,7 +854,6 @@ capabilities = ["my-custom-cap"]
             name: "A".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: vec![PropertySchema {
@@ -870,7 +870,6 @@ capabilities = ["my-custom-cap"]
             name: "B".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: HashSet::new(),
-            hooks: BTreeMap::new(),
             editor: None,
             script: None,
             properties: vec![PropertySchema {
@@ -905,7 +904,6 @@ id = "video"
 name = "Video"
 kind = "media-provider"
 capabilities = ["frame-provider"]
-hooks = { evaluate = "evaluate" }
 "#;
         let map = parse_component_definitions(text, "std").unwrap();
         let video = map
@@ -915,14 +913,14 @@ hooks = { evaluate = "evaluate" }
     }
 
     #[test]
-    fn hook_execution_order_is_declaration_order() {
-        // BTreeMap は Ord に従って走査され、ComponentHook の宣言順 =
-        // prepare / prefetch / evaluate / process / finalize になる。
-        let mut hooks = BTreeMap::new();
-        hooks.insert(ComponentHook::Finalize, "finalize".to_string());
-        hooks.insert(ComponentHook::Prepare, "prepare".to_string());
-        hooks.insert(ComponentHook::Evaluate, "evaluate".to_string());
-        let order: Vec<_> = hooks.keys().cloned().collect();
+    fn hook_execution_order_is_capability_timing_order() {
+        // ComponentHook の Ord に従い、Prefetch < Evaluate < Process の順で実行される。
+        let mut hooks = Vec::new();
+        hooks.push((ComponentHook::Finalize, "finalize"));
+        hooks.push((ComponentHook::Prepare, "prepare"));
+        hooks.push((ComponentHook::Evaluate, "evaluate"));
+        hooks.sort_by_key(|(hook, _)| hook.clone());
+        let order: Vec<_> = hooks.iter().map(|(h, _)| h.clone()).collect();
         assert_eq!(
             order,
             vec![
@@ -934,12 +932,12 @@ hooks = { evaluate = "evaluate" }
     }
 
     #[test]
-    fn scheduler_runs_rhai_hook_via_loaded_plugin() {
+    fn scheduler_runs_rhai_capability_function_via_loaded_plugin() {
         use std::{env, fs};
 
         let dir = env::temp_dir().join("esotereel_scheduler_test");
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(dir.join("clips")).unwrap();
+        fs::create_dir_all(dir.join("components")).unwrap();
 
         fs::write(
             dir.join("manifest.toml"),
@@ -950,19 +948,18 @@ version = "0.1.0"
         )
         .unwrap();
         fs::write(
-            dir.join("clips").join("video.rhai"),
-            "fn evaluate(props) { return \"called\"; }\n",
+            dir.join("components").join("video.rhai"),
+            "fn render_frame(ctx, props) { return \"called\"; }\n",
         )
         .unwrap();
         fs::write(
-            dir.join("clips").join("video.toml"),
+            dir.join("components").join("video.toml"),
             r#"[[components]]
 id = "video"
 name = "Video"
 kind = "media-provider"
 capabilities = ["frame-provider"]
-hooks = { evaluate = "evaluate" }
-script = "clips/video.rhai"
+script = "video.rhai"
 "#,
         )
         .unwrap();
@@ -986,17 +983,28 @@ script = "clips/video.rhai"
                 name: "Video".to_string(),
                 kind: NamespacedID::new("sched-test", "media-provider").unwrap(),
                 capabilities: HashSet::from([ComponentCapability::FrameProvider]),
-                hooks: BTreeMap::from([(ComponentHook::Evaluate, "evaluate".to_string())]),
                 editor: None,
-                script: Some("clips/video.rhai".to_string()),
+                script: Some("video.rhai".to_string()),
                 properties: Vec::new(),
                 children: Vec::new(),
             }],
         };
 
+        use crate::render::video::MediaFetchCache;
+        use dashmap::DashMap;
+        use std::sync::Arc;
+        use glam::Mat4;
+        let mut ctx = PluginRenderContext::new(
+            0,
+            0.0,
+            Mat4::IDENTITY,
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+            Arc::new(MediaFetchCache::default()),
+        );
         let scheduler = Scheduler::new();
-        let result = scheduler.run_clip(&engine, &loader, &instance, &def);
-        assert!(result.is_ok(), "scheduler should run the Rhai hook: {result:?}");
+        let result = scheduler.run_clip(&engine, &loader, &instance, &def, &mut ctx);
+        assert!(result.is_ok(), "scheduler should run the Rhai capability function: {result:?}");
 
         let _ = fs::remove_dir_all(&dir);
     }

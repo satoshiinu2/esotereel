@@ -118,10 +118,19 @@ void ClipPropertiesPanel::rebuild() {
     }
     const QVector<ClipPropertySchema> fields = fieldsResult.unwrap();
 
+    // Map型（special参照など）はGUIエディタ未実装のためスキップする。
+    // 将来、専用エディタを実装したらここでフィルタリングを解除する。
+    QVector<ClipPropertySchema> editableFields;
+    for (const auto &field : fields) {
+        if (field.kindType != esotereel_gui_helper::SettingsFieldType::Map) {
+            editableFields.append(field);
+        }
+    }
+
     qDebug() << "[ClipPropertiesPanel] rebuild:"
              << "timelineId =" << timelineId << "clipIds count =" << clipIds.size();
 
-    qDebug() << "[ClipPropertiesPanel] fields =" << fields.size();
+    qDebug() << "[ClipPropertiesPanel] fields =" << editableFields.size();
 
     // Rust projects typed groups into leaf fields with an ordered category path.
     // Keep that order and support arbitrary nesting instead of a fixed tab depth.
@@ -152,13 +161,13 @@ void ClipPropertiesPanel::rebuild() {
         }
     };
     QStringList roots;
-    for (const auto &field : fields) {
+    for (const auto &field : editableFields) {
         const QString root = categoryPath(field).value(0, "General");
         if (roots.contains(root))
             continue;
         roots.append(root);
         QVector<ClipPropertySchema> children;
-        for (const auto &candidate : fields) {
+        for (const auto &candidate : editableFields) {
             if (categoryPath(candidate).value(0, "General") == root)
                 children.append(candidate);
         }

@@ -5,9 +5,8 @@ use crate::{
     project::clip::ClipKind,
 };
 
+pub mod component;
 pub mod parse;
-
-pub use parse::{PendingProperty, Target};
 
 /// 複数プラグインから合成した「どんなClipKindが存在しうるか」の一覧。
 /// ToolbarRegistry / SchemaRegistry と対になる。

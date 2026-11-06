@@ -12,7 +12,13 @@ use rkyv::{Archive, CheckBytes, bytecheck};
 use crate::{
     dirs::Directories,
     plugin::{
-        clip::{ClipKindStore, PendingProperty},
+        clip::{
+            ClipKindStore,
+            component::{
+                ComponentCapability, ComponentDefinition, ComponentRegistry, RuntimeDefinition,
+                parse_component_definitions,
+            },
+        },
         property::PropertySchema,
         script::CompiledScript,
         toolbar::ToolbarButtonSpec,
@@ -38,7 +44,7 @@ pub struct NamespacedID {
 }
 
 static ID_VALIDATION_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._-]+$").unwrap());
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_.:-]+$").unwrap());
 
 impl NamespacedID {
     pub fn new(plugin_id: &str, local_id: &str) -> anyhow::Result<Self> {
@@ -119,8 +125,10 @@ pub struct Plugin {
     pub manifest: PluginManifest,
     pub setting_schemas: Vec<PropertySchema>,
     pub clip_kinds: HashMap<NamespacedID, ClipKind>,
-    pub pending_properties: Vec<PendingProperty>,
+    pub component_definitions: HashMap<NamespacedID, ComponentDefinition>,
+    pub component_scripts: HashMap<NamespacedID, CompiledScript>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
+    pub toolbar_button_scripts: HashMap<NamespacedID, CompiledScript>,
     pub script: Option<CompiledScript>,
     pub dir: PathBuf,
 }
@@ -131,17 +139,28 @@ impl Plugin {
         let manifest = Self::load_manifest(&dir.join("manifest.toml"))?;
 
         let setting_schemas = Self::load_settings(&manifest, &dir.join("settings.toml"))?;
-        let (clip_kinds, pending_properties) =
-            Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
+        let clip_kinds = Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
+        let (component_definitions, mut component_scripts) =
+            Self::load_components(&manifest, &dir.join("components"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
+        let mut toolbar_button_scripts = HashMap::new();
+        for button in &toolbar_buttons {
+            let path = dir.join(&button.script);
+            if path.exists() {
+                let compiled = CompiledScript::compile(dir, &path)?;
+                toolbar_button_scripts.insert(button.id.clone(), compiled);
+            }
+        }
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
 
         Ok(Self {
             manifest,
             setting_schemas,
             clip_kinds,
-            pending_properties,
+            component_definitions,
+            component_scripts,
             toolbar_buttons,
+            toolbar_button_scripts,
             script,
             dir: dir.to_path_buf(),
         })
@@ -213,15 +232,13 @@ impl Plugin {
         }
     }
 
-    /// clips/ 配下の全TOMLからkindsとpending propertiesを集める。
-    /// この時点ではpropertiesはまだ適用しない(他ファイル/他プラグインのkindsに
-    /// 依存しうるため、解決はPluginLoader::rebuild_indicesまで遅延させる)。
+    /// clips/ 配下の全TOMLからkindsを集める。
     fn load_clip_kinds(
         manifest: &PluginManifest,
         clips_dir: &Path,
-    ) -> anyhow::Result<(HashMap<NamespacedID, ClipKind>, Vec<PendingProperty>)> {
+    ) -> anyhow::Result<HashMap<NamespacedID, ClipKind>> {
         if !clips_dir.exists() {
-            return Ok((HashMap::new(), Vec::new()));
+            return Ok(HashMap::new());
         }
 
         let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(clips_dir)
@@ -231,16 +248,14 @@ impl Plugin {
             .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
             .collect();
 
-        // OS依存の走査順に結果が左右されないよう固定順にしておく
         toml_paths.sort();
 
         let mut all_kinds = HashMap::new();
-        let mut all_pending = Vec::new();
         for path in toml_paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
-            let (kinds, pending) =
-                ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
+            let kinds = ClipKind::parse_toml(&text, &manifest.id)
+                .with_context(|| {
                     format!(
                         "failed parse clip kinds in `{}` for plugin `{}`",
                         path.display(),
@@ -257,10 +272,70 @@ impl Plugin {
                     );
                 }
             }
-            all_pending.extend(pending);
         }
 
-        Ok((all_kinds, all_pending))
+        Ok(all_kinds)
+    }
+
+    /// components/ 配下の全TOMLからコンポーネント定義とそのスクリプトを集める。
+    fn load_components(
+        manifest: &PluginManifest,
+        components_dir: &Path,
+    ) -> anyhow::Result<(
+        HashMap<NamespacedID, ComponentDefinition>,
+        HashMap<NamespacedID, CompiledScript>,
+    )> {
+        if !components_dir.exists() {
+            return Ok((HashMap::new(), HashMap::new()));
+        }
+
+        let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(components_dir)
+            .with_context(|| {
+                format!(
+                    "failed to read components directory {}",
+                    components_dir.display()
+                )
+            })?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .collect();
+
+        toml_paths.sort();
+
+        let mut all_components = HashMap::new();
+        let mut all_scripts = HashMap::new();
+        for path in toml_paths {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("failed to read component file at {}", path.display()))?;
+            let components = parse_component_definitions(&text, &manifest.id)
+                .with_context(|| {
+                    format!(
+                        "failed parse components in `{}` for plugin `{}`",
+                        path.display(),
+                        manifest.id
+                    )
+                })?;
+
+            for (id, def) in &components {
+                if all_components.insert(id.clone(), def.clone()).is_some() {
+                    anyhow::bail!(
+                        "duplicate component definition id `{}` across files in `{}`",
+                        id,
+                        manifest.id
+                    );
+                }
+                if let Some(script_path) = &def.script {
+                    let script_path = components_dir.join(script_path);
+                    if script_path.exists() {
+                        let compiled = CompiledScript::compile(components_dir, &script_path)?;
+                        all_scripts.insert(id.clone(), compiled);
+                    }
+                }
+            }
+        }
+
+        Ok((all_components, all_scripts))
     }
 }
 
@@ -280,10 +355,12 @@ pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
     is_loaded: bool,
     clip_kinds: ClipKindStore,
+    component_registry: ComponentRegistry,
 
     // インデックスで検索コストを最小化
-    clip_properties_index: HashMap<NamespacedID, Vec<PropertySchema>>,
     scripts_index: HashMap<String, CompiledScript>,
+    component_scripts_index: HashMap<NamespacedID, CompiledScript>,
+    toolbar_button_scripts_index: HashMap<NamespacedID, CompiledScript>,
     schemas_index: Vec<PropertySchema>,
     toolbars_index: Vec<(String, ToolbarButtonSpec)>,
 }
@@ -294,8 +371,10 @@ impl PluginLoader {
             plugins: Vec::new(),
             is_loaded: false,
             clip_kinds: ClipKindStore::new(),
-            clip_properties_index: HashMap::new(),
+            component_registry: ComponentRegistry::default(),
             scripts_index: HashMap::new(),
+            component_scripts_index: HashMap::new(),
+            toolbar_button_scripts_index: HashMap::new(),
             schemas_index: Vec::new(),
             toolbars_index: Vec::new(),
         }
@@ -430,14 +509,16 @@ impl PluginLoader {
     }
 
     /// 全プラグインのclip_kindsをマージし、その後で全プラグインの
-    /// pending_propertiesを解決・適用する。他プラグインのkindを対象にする
-    /// プロパティ拡張もここで初めて解決できるため、必ずこの順序で行う。
+    /// 全プラグインのkindsとcomponent_definitionsをマージし、インデックスを再構築する。
     fn rebuild_indices(&mut self) -> anyhow::Result<()> {
         self.scripts_index.clear();
+        self.component_scripts_index.clear();
+        self.toolbar_button_scripts_index.clear();
         self.schemas_index.clear();
         self.toolbars_index.clear();
+        self.component_registry = ComponentRegistry::default();
 
-        // 1段階目: 全プラグインのkindsをマージ(まだpropertyは未適用の状態)
+        // 1段階目: 全プラグインのkindsをマージ
         let mut merged_kinds: HashMap<NamespacedID, ClipKind> = HashMap::new();
         for plugin in &self.plugins {
             for (id, kind) in &plugin.clip_kinds {
@@ -447,14 +528,19 @@ impl PluginLoader {
             }
         }
 
-        // 全プラグインのpending propertiesを、出揃ったkinds全体に対して解決・適用
-        let all_pending: Vec<PendingProperty> = self
-            .plugins
-            .iter()
-            .flat_map(|p| p.pending_properties.iter().cloned())
-            .collect();
-        self.clip_properties_index = ClipKind::resolve_properties(&merged_kinds, all_pending)
-            .context("failed to resolve property extensions")?;
+        // 全プラグインのcomponent_definitionsをComponent Registry に登録する。
+        // id 衝突があればエラーとし、どのプラグインがどのコンポーネントを
+        // 所有するかを明確にする。
+        let mut merged_components: HashMap<NamespacedID, ComponentDefinition> = HashMap::new();
+        for plugin in &self.plugins {
+            for (id, def) in &plugin.component_definitions {
+                if merged_components.insert(id.clone(), def.clone()).is_some() {
+                    anyhow::bail!("duplicate component definition id `{}` across plugins", id);
+                }
+            }
+        }
+        self.component_registry
+            .merge_component_definitions(merged_components)?;
 
         let mut clip_kinds = ClipKindStore::new();
         clip_kinds
@@ -463,10 +549,18 @@ impl PluginLoader {
         self.clip_kinds = clip_kinds;
 
         for plugin in &self.plugins {
-            // scripts index
+            // scripts index (プラグイン共通 script.rhai)
             if let Some(script) = plugin.script.as_ref() {
                 self.scripts_index
                     .insert(plugin.manifest.id.clone(), script.clone());
+            }
+            // コンポーネントごとの個別スクリプト
+            for (id, script) in &plugin.component_scripts {
+                self.component_scripts_index.insert(id.clone(), script.clone());
+            }
+            // ツールバーボタンごとの個別スクリプト
+            for (id, script) in &plugin.toolbar_button_scripts {
+                self.toolbar_button_scripts_index.insert(id.clone(), script.clone());
             }
 
             // schemas index
@@ -482,9 +576,8 @@ impl PluginLoader {
         }
 
         log::info!(
-            "Plugin indices rebuilt: clip_kinds={}, properties={}, scripts={}, schemas={}, toolbars={}",
-            self.clip_properties_index.len(),
-            self.clip_properties_index.len(),
+            "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}",
+            self.clip_kinds.registry.iter().count(),
             self.scripts_index.len(),
             self.schemas_index.len(),
             self.toolbars_index.len()
@@ -552,8 +645,33 @@ impl PluginLoader {
         self.clip_kinds.get(id)
     }
 
+    /// 指定 id のクリップ（ルートコンポーネント）のプロパティスキーマを返す。
+    /// プロパティはクリップ側ではなく、ルートコンポーネントが提供する。
     pub fn get_clip_properties(&self, id: &NamespacedID) -> Option<&[PropertySchema]> {
-        self.clip_properties_index.get(id).map(|v| v.as_slice())
+        self.component_registry
+            .get(id)
+            .map(|c| c.properties.as_slice())
+    }
+
+    /// 指定 id の ComponentDefinition を返す。
+    pub fn get_component(&self, id: &NamespacedID) -> Option<&ComponentDefinition> {
+        self.component_registry.get(id)
+    }
+
+    /// ルートコンポーネント id から階層を解決し、フラットな RuntimeDefinition を返す。
+    pub fn resolve_component_definition(
+        &self,
+        root_id: &NamespacedID,
+    ) -> anyhow::Result<RuntimeDefinition> {
+        self.component_registry.resolve_definition(root_id)
+    }
+
+    /// 指定 Capability を提供する ComponentDefinition をすべて返す。
+    pub fn get_components_by_capability(
+        &self,
+        capability: &ComponentCapability,
+    ) -> Vec<&ComponentDefinition> {
+        self.component_registry.by_capability(capability)
     }
 
     pub fn get_settings_schemas(&self) -> &[PropertySchema] {
@@ -566,6 +684,16 @@ impl PluginLoader {
 
     pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
         self.scripts_index.get(plugin_id)
+    }
+
+    /// コンポーネントごとの個別スクリプトを返す。
+    pub fn get_component_script(&self, id: &NamespacedID) -> Option<&CompiledScript> {
+        self.component_scripts_index.get(id)
+    }
+
+    /// ツールバーボタンごとの個別スクリプトを返す。
+    pub fn get_toolbar_button_script(&self, id: &NamespacedID) -> Option<&CompiledScript> {
+        self.toolbar_button_scripts_index.get(id)
     }
 
     pub fn call_script<R: Clone + Send + Sync + 'static>(

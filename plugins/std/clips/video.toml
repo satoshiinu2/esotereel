@@ -2,18 +2,3 @@
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
-properties = ["std:video"]
-
-[[properties]]
-name = ["std:video"]
-label = "Video"
-
-[[properties.fields]]
-key = "media"
-label = "Media"
-kind = { type = "special", reference = "core:media" }
-
-[[properties.fields]]
-key = "transform"
-label = "Transform"
-kind = { type = "special", reference = "core:transform" }

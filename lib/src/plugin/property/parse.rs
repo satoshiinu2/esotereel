@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
 
-use crate::plugin::property::{FieldTypeKind, value::FieldValue};
+use crate::plugin::{NamespacedID, property::{FieldTypeKind, value::FieldValue}};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertySchemaRaw {
@@ -93,6 +93,19 @@ impl FieldTypeKind {
                 FieldTypeKind::Map {
                     value_kind: Box::new(value_kind),
                     known_keys,
+                }
+            }
+
+            "special" => {
+                let reference = table
+                    .get("reference")
+                    .and_then(|t| t.as_str())
+                    .context("Special `kind` is missing `reference`")?;
+                let reference = NamespacedID::parse(reference)
+                    .with_context(|| format!("invalid special reference `{reference}`"))?;
+                FieldTypeKind::Special {
+                    reference,
+                    fields: Vec::new(),
                 }
             }
 

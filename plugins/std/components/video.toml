@@ -1,0 +1,20 @@
+[[components]]
+id = "video"
+name = "Video"
+kind = "media-provider"
+capabilities = ["frame-provider", "prefetchable"]
+editor = "video"
+script = "video.rhai"
+children = ["video-transform"]
+properties = [
+  { key = "video:source", label = "Source", kind = { type = "string" } },
+  { key = "video:media", label = "Media", kind = { type = "special", reference = "core:media" } },
+  { key = "video:transform", label = "Transform", kind = { type = "special", reference = "core:transform" } },
+]
+
+[[components]]
+id = "video-transform"
+name = "Transform"
+kind = "transform"
+capabilities = ["transformable"]
+editor = "transform"

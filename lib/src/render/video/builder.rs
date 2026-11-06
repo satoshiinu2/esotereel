@@ -1,8 +1,15 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    plugin::script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
-    project::{Clip, video_clip::VideoClipProperties},
+    plugin::{
+        clip::component::{ClipInstance, Scheduler},
+        NamespacedID,
+        property::special::Media,
+        property::value::FieldValue,
+        script::api::PluginRenderContext,
+    },
+    project::Clip,
     render::{RenderContext, vertex::Vertex},
 };
 use glam::Mat4;
@@ -28,48 +35,51 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        let plugin_id = clip.kind_id.plugin_id();
-
         let loader = ctx.plugin_loader.read().expect("mutex poisoned");
-        let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
-            continue;
-        };
-        let Some(script) = loader.get_script(plugin_id) else {
-            continue;
-        };
-        // drop(loader);
 
-        let video_properties = if VideoClipProperties::is_video_kind(&clip.kind_id) {
-            match VideoClipProperties::from_clip(clip) {
-                Ok(properties) => Some(properties),
-                Err(error) => {
-                    log::warn!(
-                        "failed to read properties for video clip {}: {error}",
-                        clip.id
-                    );
-                    continue;
+        // clip → kind → components: 能力ベースのレンダリングをスケジューラで実行。
+        // 従来の script.rhai + kind.render_script 経由ではなく、コンポーネントが
+        // 宣言する能力（frame-provider, prefetchable, transformable など）に基づき、
+        // 各標準関数（render_frame, prefetch, get_transform …）をフックタイミング順に呼び出す。
+        let Ok(runtime_def) = loader.resolve_component_definition(&clip.kind_id) else {
+            log::warn!(
+                "no component definition for clip kind {}, skipping render",
+                clip.kind_id.full()
+            );
+            continue;
+        };
+
+        // コンポーネントが提供するプロパティからメディア時間とビデオソースを取得。
+        // VideoClipProperties 型は介在させず、プロパティマップから直接読む。
+        let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
+        let mut video_source: Option<String> = None;
+
+        if let Ok(media_key) = NamespacedID::new("std", "video:media") {
+            if let Some(media_value) =
+                clip.properties.get(&media_key).and_then(|v| v.in_frame_of())
+            {
+                if let Ok(media_values) = Media::read(media_value) {
+                    let relative_frame = ctx.current_frame.saturating_sub(clip.position);
+                    let seconds =
+                        (relative_frame as f64 + media_values.source_offset as f64)
+                            / ctx.timeline.tps;
+                    if seconds.is_finite() {
+                        media_time = seconds;
+                    }
                 }
             }
-        } else {
-            None
-        };
-        let media_time = match video_properties.as_ref() {
-            Some(properties) => match properties.media_time_seconds(
-                clip.position,
-                ctx.current_frame,
-                ctx.timeline.tps,
-            ) {
-                Ok(media_time) => media_time,
-                Err(error) => {
-                    log::warn!(
-                        "failed to compute media time for video clip {}: {error}",
-                        clip.id
-                    );
-                    continue;
-                }
-            },
-            None => compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame),
-        };
+        }
+
+        if let Ok(source_key) = NamespacedID::new("std", "video:source") {
+            if let Some(FieldValue::String(source)) = clip
+                .properties
+                .get(&source_key)
+                .and_then(|v| v.in_frame_of().cloned())
+            {
+                video_source = Some(source);
+            }
+        }
+
         let mut render_ctx = PluginRenderContext::new(
             clip.id,
             media_time,
@@ -78,23 +88,21 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             Arc::clone(ctx.streams),
             Arc::clone(ctx.media_fetch_cache),
         );
-        if let Some(properties) = video_properties {
-            render_ctx.set_video_source(properties.media.source);
-        }
-        let props_dynamic = field_values_to_rhai_map(&clip.properties);
 
-        // TODO: call with state.call_script() instead of directly calling the loader
-        let call_result: Result<(), _> = loader.call_script::<()>(
-            ctx.script_engine,
-            plugin_id,
-            &kind.render_script,
-            (render_ctx.clone(), props_dynamic),
-        );
-        if let Err(e) = call_result {
+        if let Some(source) = video_source {
+            render_ctx.set_video_source(source);
+        }
+
+        let instance = ClipInstance {
+            kind_id: clip.kind_id.clone(),
+            properties: clip.properties.clone(),
+            state: HashMap::new(),
+        };
+        let scheduler = Scheduler::new();
+        if let Err(e) = scheduler.run_clip(ctx.script_engine, &*loader, &instance, &runtime_def, &mut render_ctx) {
             log::warn!(
-                "plugin render script `{}` failed: {}",
-                clip.kind_id.full(),
-                e
+                "component scheduler failed for clip {}: {e}",
+                clip.id
             );
         }
 
