@@ -4,13 +4,12 @@ use std::{
 };
 
 use dashmap::DashMap;
-use glam::{Mat4, Vec3};
+use glam::{EulerRot, Mat4, Quat, Vec3};
 
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
     network::NetworkHandler,
-    plugin::property::special::{Transform, TransformValues},
     project::{
         Project,
         ids::{ClipId, ResourceId, TimelineId},
@@ -249,14 +248,76 @@ fn transform_matrix(
     .matrix())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransformValues {
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
+    pub scale: [f32; 3],
+}
+
+impl TransformValues {
+    pub fn matrix(self) -> Mat4 {
+        let rotation = Vec3::from_array(self.rotation) * (std::f32::consts::PI / 180.0);
+        Mat4::from_scale_rotation_translation(
+            Vec3::from_array(self.scale),
+            Quat::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z),
+            Vec3::from_array(self.position),
+        )
+    }
+}
+
+fn read_rhai_vector(
+    fields: &rhai::Map,
+    key: &str,
+) -> Result<[f32; 3], Box<rhai::EvalAltResult>> {
+    let values = fields
+        .get(key)
+        .cloned()
+        .and_then(rhai::Dynamic::try_cast::<rhai::Array>)
+        .ok_or_else(|| {
+            Box::<rhai::EvalAltResult>::from(format!("transform property `{key}` must be an array"))
+        })?;
+    if values.len() != 3 {
+        return Err(
+            format!("transform property `{key}` must contain exactly three numbers").into(),
+        );
+    }
+
+    let mut vector = [0.0; 3];
+    for (output, value) in vector.iter_mut().zip(values) {
+        let number = value
+            .clone()
+            .try_cast::<f64>()
+            .or_else(|| value.try_cast::<i64>().map(|v| v as f64))
+            .ok_or_else(|| {
+                Box::<rhai::EvalAltResult>::from(format!(
+                    "transform property `{key}` must contain numbers"
+                ))
+            })?;
+        *output = number as f32;
+        if !number.is_finite() || !output.is_finite() {
+            return Err(format!("transform property `{key}` must contain finite numbers").into());
+        }
+    }
+    Ok(vector)
+}
+
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
     engine.register_fn("mat4_trs", transform_matrix);
-    engine.register_fn("as_mat4", |fields: rhai::Map| {
-        Transform::from_rhai_map(&fields).map(TransformValues::matrix)
+    engine.register_fn("as_mat4", |fields: rhai::Map| -> Result<Mat4, Box<rhai::EvalAltResult>> {
+        let position = read_rhai_vector(&fields, "position")?;
+        let rotation = read_rhai_vector(&fields, "rotation")?;
+        let scale = read_rhai_vector(&fields, "scale")?;
+        Ok(TransformValues {
+            position,
+            rotation,
+            scale,
+        }
+        .matrix())
     });
     engine.register_fn(
         "set_transform",
@@ -397,22 +458,14 @@ mod render_tests {
             .find(|f| f.key.local_id() == "video:transform")
             .unwrap();
         assert!(matches!(source.kind, crate::plugin::property::value::FieldTypeKind::String));
-        let crate::plugin::property::value::FieldTypeKind::Special {
-            reference: media_reference,
-            ..
-        } = &media.kind
+        let crate::plugin::property::value::FieldTypeKind::Map { .. } = &media.kind
         else {
-            panic!("media property must be special")
+            panic!("media property must be a map")
         };
-        let crate::plugin::property::value::FieldTypeKind::Special {
-            reference: transform_reference,
-            ..
-        } = &transform.kind
+        let crate::plugin::property::value::FieldTypeKind::Map { .. } = &transform.kind
         else {
-            panic!("transform property must be special")
+            panic!("transform property must be a map")
         };
-        assert_eq!(media_reference.full(), "core:media");
-        assert_eq!(transform_reference.full(), "core:transform");
         assert!(
             !fields
                 .iter()

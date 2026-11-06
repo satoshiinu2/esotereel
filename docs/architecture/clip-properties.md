@@ -5,40 +5,38 @@
 `clips/` 直下の TOML ファイルにクリップ種別とプロパティ定義を配置する。
 同じファイルへの同居と、プロパティ定義だけの別ファイルの両方に対応する。
 全プラグインの読み込み後に参照を解決するため、ファイルの読み込み順には依存しない。
-コアが管理する標準プロパティは `special` kind で参照する。
+プロパティはコンポーネントが宣言する能力（`ComponentCapability`）から参照し、
+プロパティID（`std:video:media` など）をコード中にハードコードしてはならない。
 
 ```toml
-[[kinds]]
+[[components]]
 id = "video"
-render_script = "render_clip_video"
-tags = ["media"]
-properties = ["std:video"]
-
-[[properties]]
-name = ["std:video"]
-
-[[properties.fields]]
-key = "media"
-label = "Media"
-kind = { type = "special", reference = "core:media" }
-
-[[properties.fields]]
-key = "transform"
-label = "Transform"
-kind = { type = "special", reference = "core:transform" }
+name = "Video"
+kind = "media-provider"
+capabilities = ["frame-provider", "prefetchable"]
+editor = "video"
+script = "video.rhai"
+children = ["video-transform"]
+properties = [
+  { key = "video:source", label = "Source", kind = { type = "string" } },
+  { key = "video:media", label = "Media", kind = { type = "map", value_kind = { type = "string" }, known_keys = ["source", "source_offset"] }, capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" } },
+  { key = "video:transform", label = "Transform", kind = { type = "map", value_kind = { type = "float", step = 0.1 }, known_keys = ["position", "rotation", "scale"] }, capability = "transformable" },
+]
 ```
 
-`properties = ["std:video"]` は Video グループをルートに配置し、その下に Media と Transform を置く。
-`core:media` と `core:transform` はコア組み込みの特別なプロパティ定義で、個別の TOML ファイルは持たない。
-`special` はコアで登録された参照だけを受け付け、解決後のスキーマにも special kind を保持する。
-`name` は定義名の配列で、複数名は同じ定義の別名となる。
-定義名は自プラグインの名前空間に限定する。参照元の定義 ID は解決後もスキーマに保持する。
+`capability` フィールドは、このプロパティがどのコンポーネント能力に紐付くかを示す。
+レンダラー等は `FrameProvider` 能力を持つプロパティからメディア情報を、
+`Transformable` 能力を持つプロパティから変換情報を逆引きする。
+
+マップ型プロパティのメンバー（`source`, `source_offset` 等）もまた、`member_capabilities`
+で能力を紐付けられる。レンダラーはハードコードされたメンバキー文字列ではなく、
+`member_capabilities` から能力ベースでメンバキーを逆引きする。これによりプラグインは
+任意のメンバー名を宣言できる。
 
 グループ内のキーはローカル名で扱う。異なるグループには同じキーを配置できるが、
 同じグループ内の重複は拒否する。未定義参照、参照の循環、32グループを超える深さも拒否する。
 未使用の定義も読み込み時に検証する。
 並びは種別の `properties` の順、その後に各定義の `fields` の順となる。
-既存の `target` 方式は従来通りフラットな拡張として残すが、同じ定義で `name` と併用できない。
 
 ### 入れ子の定義参照
 
@@ -92,10 +90,10 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 ### 保存・編集・GUI
 
 スキーマは `FieldTypeKind::Group { reference, fields }` と
-`FieldTypeKind::Special { reference, fields }` のツリーとして保持し、
+`FieldTypeKind::Map { value_kind, known_keys }` のツリーとして保持し、
 値は `FieldValue::Map` を使って同じ階層で保存する。
 ルートの ID は名前空間付き、グループ内のメンバーはローカル名となる。
-例: `std:video` → `transform` → `scale`、`generator:telop` → `caption` → `content`。
+例: `std:video` → `media` → `source_offset`、`std:video` → `transform` → `scale`。
 
 編集対象は型付き `PropertyPath` で指定する。文字列表現は `std:video/transform/scale` や
 `generator:telop/caption/content`。ラベルや表示カテゴリを変更してもパスは変わらない。
@@ -105,7 +103,7 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 C ABI の引数とスキーマ構造体は変更せず、GUI用にのみ末端項目へ展開する。
 GUI はルートグループのタブと再帰的な折りたたみセクションを表示する。
 複数クリップの共通項目は、グループ全体ではなく末端のパスと型で判定する。
-同じ `core:transform` を参照していても、`std:video/transform/scale` と
+同じ `transformable` 能力を持つプロパティでも、`std:video/transform/scale` と
 `std:text/transform/scale` のようにパスが異なる項目は一括編集の対象にならない。
 
 旧プロパティ値の自動移行は未実装。以前の `std:video/source` や `std:transform/scale` は、
@@ -128,7 +126,8 @@ GUI はルートグループのタブと再帰的な折りたたみセクショ�
 ## 3. 動画サイズと変換
 
 表示サイズは `std:video` → `transform` → `scale` にピクセル単位で指定する。
-`std:width` と `std:height` は使用しない。Transform の特別な定義は `core:transform` が提供する。
+`std:width` と `std:height` は使用しない。Transform プロパティは `video:transform` に
+`capability = "transformable"` を付けて宣言する。
 
 `scale` の X・Y は倍率ではなく描画幅・高さ（ピクセル単位）を表し、表示サイズはこの値だけで決まる。
 元動画の解像度は表示サイズに自動反映しないため、元動画と異なる縦横比も指定できる。
@@ -150,15 +149,15 @@ Rhai の `props["std:video"].transform.as_mat4()` は Transform 型の値から
 `ctx.set_transform(matrix)` はモデル行列を置き換える。
 `ctx.apply_transform(matrix)` は現在のモデル行列の右側に行列を合成する。
 
-標準動画スクリプトは `ctx.render_video(texture_id, transform)` を呼び出し、Transform special
-property から得た行列を明示的に描画へ渡す。Rust 側は動画の中心を原点にした
+標準動画スクリプトは `ctx.render_video(texture_id, transform)` を呼び出し、Transform
+プロパティから得た行列を明示的に描画へ渡す。Rust 側は動画の中心を原点にした
 単位矩形を描画し、メタデータでストリームが利用可能なことを確認する。
 デコードフレームを取得できるまでは描画をスキップする。
 動画の矩形は中心を原点とした単位サイズで保持し、モデル行列は `T × R × S` とする。
 引数で矩形を指定する既存の `ctx.render_video(texture_id, x, y, width, height)` も維持する。
 最終変換は既存シェーダーで `P × V × M × vertex` として計算する。
 クリップ変換はプロパティとして管理し、標準動画プラグインは
-`std:video/transform` special property の行列を `render_video` へ明示的に渡す。
+`video:transform` プロパティ（`capability = "transformable"`）の行列を `render_video` へ明示的に渡す。
 他のプラグインも `set_transform` または `apply_transform` を利用できる。
 以前の `std:width` / `std:height` の値が
 既存クリップに残っていても描画には使わず、`std:video/transform/scale` の寸法を基準にする。

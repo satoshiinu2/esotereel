@@ -44,10 +44,6 @@ pub enum FieldTypeKind {
         reference: crate::plugin::NamespacedID,
         fields: Vec<super::PropertySchema>,
     },
-    Special {
-        reference: crate::plugin::NamespacedID,
-        fields: Vec<super::PropertySchema>,
-    },
     Map {
         value_kind: Box<FieldTypeKind>,
         known_keys: Option<Vec<String>>,
@@ -265,7 +261,7 @@ impl FieldTypeKind {
             }
 
             (
-                FieldTypeKind::Group { fields, .. } | FieldTypeKind::Special { fields, .. },
+                FieldTypeKind::Group { fields, .. },
                 toml::Value::Table(table),
             ) => {
                 for key in table.keys() {
@@ -297,9 +293,7 @@ impl FieldTypeKind {
                     FieldTypeKind::FilePath { .. } => "String or Array of Strings",
                     FieldTypeKind::Color => "String (Hex/Color)",
                     FieldTypeKind::Array { .. } => "Array",
-                    FieldTypeKind::Map { .. }
-                    | FieldTypeKind::Group { .. }
-                    | FieldTypeKind::Special { .. } => "Table",
+                    FieldTypeKind::Map { .. } | FieldTypeKind::Group { .. } => "Table",
                 },
                 got: actual_val.type_str().to_string(),
             }),

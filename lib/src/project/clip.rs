@@ -250,6 +250,8 @@ mod tests {
                 step: 0.1,
             },
             default: FieldValue::Float(0.5),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
         }];
         let defaults = ClipBindingValue::default_properties(&schema);
         assert_eq!(defaults.len(), 1);
@@ -281,6 +283,8 @@ mod tests {
                             step: 1.0,
                         },
                         default: FieldValue::Float(10.0),
+                        capability: None,
+                        member_capabilities: BTreeMap::new(),
                     }],
                 ),
             ]),

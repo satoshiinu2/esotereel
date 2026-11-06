@@ -146,7 +146,7 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
     }
 
     if (field.kindType == SettingsFieldType::Map) {
-        // Map型（special参照など）は簡易表示のみ。編集UIは将来の実装に残す。
+        // Map型は簡易表示のみ。編集UIは将来の実装に残す。
         auto *lineEdit = new QLineEdit();
         lineEdit->setEnabled(false);
         if (auto mapValue = currentValue.asMap()) {

@@ -1,7 +1,7 @@
 use esotereel_lib::{
-    plugin::{
-        NamespacedID,
-        property::{special::Media, value::FieldValue},
+    plugin::property::{
+        value::FieldValue,
+        PropertyPath,
     },
     project::{
         Project,
@@ -57,7 +57,9 @@ pub fn command_to_history(
                     let clip = timeline
                         .get_clip(ctx.clip_id)
                         .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
-                    let source_offset_key = Media::source_offset_path(&clip.kind_id)?;
+                    let source_offset_key = PropertyPath::from(clip.kind_id.clone())
+                        .child("source")?
+                        .child("source_offset")?;
 
                     let old_source_offset =
                         clip.get_property_path(&source_offset_key)
@@ -260,8 +262,9 @@ pub fn execute_command(
                 .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
 
             clip.set_property_path(key, value.clone())?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
+            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
+                timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
+            }
         }
     };
     Ok(())
@@ -373,8 +376,9 @@ pub fn execute_command_undo(
 
             // 古い値を設定して通知
             clip.set_property_path(&key, old_value.clone())?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
+            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
+                timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
+            }
         }
     }
     Ok(())

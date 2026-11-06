@@ -4,7 +4,10 @@ use anyhow::Ok;
 use esotereel_lib::{
     plugin::{
         NamespacedID,
-        property::{special::Media, value::FieldValue},
+        property::{
+            value::FieldValue,
+            PropertyPath,
+        },
     },
     project::{
         Clip, Project, TimelineTick,
@@ -147,10 +150,13 @@ pub(crate) fn clip_resize_core(
             let clip = timeline
                 .get_clip_mut(ctx.clip_id)
                 .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
-            let key = Media::source_offset_path(&clip.kind_id)?;
+            let key = PropertyPath::from(clip.kind_id.clone())
+                .child("source")?
+                .child("source_offset")?;
             clip.set_property_path(&key, v)?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
+            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
+                timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
+            }
         }
     }
     Ok(())

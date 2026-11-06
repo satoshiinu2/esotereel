@@ -1,88 +1,16 @@
-use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::Context;
 use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 use crate::plugin::{NamespacedID, PluginLoader};
-use crate::plugin::property::{
-    parse::PropertySchemaRaw, value::FieldValue, PropertySchema,
+pub use crate::plugin::property::{
+    parse::PropertySchemaRaw, value::FieldValue, ComponentCapability, PropertySchema,
 };
 use crate::plugin::script::api::PluginRenderContext;
 use crate::plugin::script::bridge::field_values_to_rhai_map;
 use crate::project::clip::ClipBindingValue;
-
-/// コンポーネントが何を提供できるか（能力）。
-///
-/// 本体はこの能力を参照して、Preview・GUI・Timeline・Scheduler などの各システムと
-/// 連携する。個々の実装を知らなくても、能力さえ合致すれば利用可能。
-///
-/// 文字列表現（TOML/API 側）は小文字の kebab-case を用いる
-/// （例: `frame-provider`, `prefetchable`）。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum ComponentCapability {
-    /// 時刻に対応する映像フレームを供給する。
-    FrameProvider,
-    /// 音声データを供給する。
-    AudioProvider,
-    /// 位置・回転・拡大縮小を提供する。
-    Transformable,
-    /// タイムライン上での位置・長さ編集を提供する。
-    TimelinePositionable,
-    /// データの先読みを提供する。
-    Prefetchable,
-    /// キーフレーム編集を提供する。
-    Keyframeable,
-    /// プラグイン独自の能力。
-    Custom(String),
-}
-
-impl ComponentCapability {
-    /// 小文字の kebab-case 文字列表現を返す（API / TOML 向け）。
-    pub fn as_str(&self) -> String {
-        match self {
-            ComponentCapability::FrameProvider => "frame-provider".to_string(),
-            ComponentCapability::AudioProvider => "audio-provider".to_string(),
-            ComponentCapability::Transformable => "transformable".to_string(),
-            ComponentCapability::TimelinePositionable => {
-                "timeline-positionable".to_string()
-            }
-            ComponentCapability::Prefetchable => "prefetchable".to_string(),
-            ComponentCapability::Keyframeable => "keyframeable".to_string(),
-            ComponentCapability::Custom(s) => s.clone(),
-        }
-    }
-
-    /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
-    ///
-    /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
-    /// `Custom` の場合は None（従来の hooks 仕組みは廃止）。
-    pub fn standard_fn(&self) -> Option<&'static str> {
-        match self {
-            ComponentCapability::FrameProvider => Some("render_frame"),
-            ComponentCapability::AudioProvider => Some("render_audio"),
-            ComponentCapability::Transformable => Some("get_transform"),
-            ComponentCapability::TimelinePositionable => Some("get_timeline_position"),
-            ComponentCapability::Prefetchable => Some("prefetch"),
-            ComponentCapability::Keyframeable => Some("get_keyframes"),
-            ComponentCapability::Custom(_) => None,
-        }
-    }
-
-    /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
-    pub fn hook_timing(&self) -> ComponentHook {
-        match self {
-            ComponentCapability::Prefetchable => ComponentHook::Prefetch,
-            ComponentCapability::FrameProvider => ComponentHook::Evaluate,
-            ComponentCapability::AudioProvider => ComponentHook::Evaluate,
-            ComponentCapability::Transformable => ComponentHook::Process,
-            ComponentCapability::TimelinePositionable => ComponentHook::Process,
-            ComponentCapability::Keyframeable => ComponentHook::Process,
-            ComponentCapability::Custom(_) => ComponentHook::Evaluate,
-        }
-    }
-}
 
 /// コンポーネントが実行する処理のタイミング（フック）。
 ///
@@ -263,26 +191,6 @@ impl ComponentRegistry {
     }
 }
 
-impl FromStr for ComponentCapability {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_component_capability(s)
-    }
-}
-
-pub fn parse_component_capability(s: &str) -> anyhow::Result<ComponentCapability> {
-    Ok(match s {
-        "frame-provider" => ComponentCapability::FrameProvider,
-        "audio-provider" => ComponentCapability::AudioProvider,
-        "transformable" => ComponentCapability::Transformable,
-        "timeline-positionable" => ComponentCapability::TimelinePositionable,
-        "prefetchable" => ComponentCapability::Prefetchable,
-        "keyframeable" => ComponentCapability::Keyframeable,
-        other => ComponentCapability::Custom(other.to_string()),
-    })
-}
-
 /// `plugin:local` 形式、またはプラグイン下のローカル ID を NamespacedID に解決する。
 fn resolve_namespaced(value: &str, plugin_id: &str) -> anyhow::Result<NamespacedID> {
     if value.contains(':') {
@@ -318,7 +226,7 @@ impl ComponentDefinitionRaw {
             .with_context(|| format!("invalid component kind `{}`", self.kind))?;
         let mut capabilities = HashSet::new();
         for cap in &self.capabilities {
-            capabilities.insert(parse_component_capability(cap).with_context(|| {
+            capabilities.insert(cap.parse().with_context(|| {
                 format!("invalid component capability `{cap}` in `{}`", id.full())
             })?);
         }
@@ -816,6 +724,8 @@ capabilities = ["my-custom-cap"]
                     label: "Source".to_string(),
                     kind: FieldTypeKind::String,
                     default: FieldValue::String("default.mp4".to_string()),
+                    capability: None,
+                    member_capabilities: BTreeMap::new(),
                 },
                 PropertySchema {
                     key: NamespacedID::new("std", "volume").unwrap(),
@@ -827,6 +737,8 @@ capabilities = ["my-custom-cap"]
                         step: 0.1,
                     },
                     default: FieldValue::Float(1.0),
+                    capability: None,
+                    member_capabilities: BTreeMap::new(),
                 },
             ],
             children: Vec::new(),
@@ -862,6 +774,8 @@ capabilities = ["my-custom-cap"]
                 label: "Prop A".to_string(),
                 kind: FieldTypeKind::String,
                 default: FieldValue::String("a".to_string()),
+                capability: None,
+                member_capabilities: BTreeMap::new(),
             }],
             children: Vec::new(),
         };
@@ -878,6 +792,8 @@ capabilities = ["my-custom-cap"]
                 label: "Prop B".to_string(),
                 kind: FieldTypeKind::Int { min: None, max: None },
                 default: FieldValue::Int(42),
+                capability: None,
+                member_capabilities: BTreeMap::new(),
             }],
             children: Vec::new(),
         };

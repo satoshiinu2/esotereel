@@ -118,7 +118,7 @@ void ClipPropertiesPanel::rebuild() {
     }
     const QVector<ClipPropertySchema> fields = fieldsResult.unwrap();
 
-    // Map型（special参照など）はGUIエディタ未実装のためスキップする。
+    // Map型はGUIエディタ未実装のためスキップする。
     // 将来、専用エディタを実装したらここでフィルタリングを解除する。
     QVector<ClipPropertySchema> editableFields;
     for (const auto &field : fields) {

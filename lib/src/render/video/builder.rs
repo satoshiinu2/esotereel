@@ -4,9 +4,10 @@ use std::sync::Arc;
 use crate::{
     plugin::{
         clip::component::{ClipInstance, Scheduler},
-        NamespacedID,
-        property::special::Media,
-        property::value::FieldValue,
+        property::{
+            value::FieldValue,
+            ComponentCapability,
+        },
         script::api::PluginRenderContext,
     },
     project::Clip,
@@ -35,7 +36,13 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        let loader = ctx.plugin_loader.read().expect("mutex poisoned");
+        let loader = match ctx.plugin_loader.read() {
+            Ok(loader) => loader,
+            Err(e) => {
+                log::warn!("plugin lock is poisoned: {e}",);
+                continue;
+            }
+        };
 
         // clip → kind → components: 能力ベースのレンダリングをスケジューラで実行。
         // 従来の script.rhai + kind.render_script 経由ではなく、コンポーネントが
@@ -49,34 +56,75 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        // コンポーネントが提供するプロパティからメディア時間とビデオソースを取得。
-        // VideoClipProperties 型は介在させず、プロパティマップから直接読む。
+        // コンポーネントが宣言する能力から、どのプロパティを参照すべきかを解決する。
+        // プロパティID（std:video:media など）をコード中にハードコードせず、
+        // コンポーネント定義の `capability` フィールドから逆引きする。
+        let media_property_key = runtime_def
+            .components
+            .iter()
+            .find(|c| c.id == clip.kind_id)
+            .and_then(|c| {
+                c.properties
+                    .iter()
+                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
+                    .map(|p| p.key.clone())
+            });
+
+        // メンバキー（"source", "source_offset" 等）もハードコードせず、
+        // プロパティ定義の `member_capabilities` から能力ベースで解決する。
+        // 未宣言の場合は既定のメンバー名にフォールバックする。
+        let media_component_def = runtime_def
+            .components
+            .iter()
+            .find(|c| c.id == clip.kind_id);
+        let source_member_key = media_component_def
+            .and_then(|c| {
+                c.properties.iter().find(|p| {
+                    p.capability == Some(ComponentCapability::FrameProvider)
+                }).and_then(|p| {
+                    p.member_capabilities.iter()
+                        .find(|(_, cap)| **cap == ComponentCapability::MediaSource)
+                        .map(|(key, _)| key.as_str())
+                })
+            })
+            .unwrap_or("source");
+        let offset_member_key = media_component_def
+            .and_then(|c| {
+                c.properties.iter().find(|p| {
+                    p.capability == Some(ComponentCapability::FrameProvider)
+                }).and_then(|p| {
+                    p.member_capabilities.iter()
+                        .find(|(_, cap)| **cap == ComponentCapability::MediaOffsetProvider)
+                        .map(|(key, _)| key.as_str())
+                })
+            })
+            .unwrap_or("source_offset");
+
         let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
         let mut video_source: Option<String> = None;
 
-        if let Ok(media_key) = NamespacedID::new("std", "video:media") {
-            if let Some(media_value) =
-                clip.properties.get(&media_key).and_then(|v| v.in_frame_of())
+        if let Some(media_key) = media_property_key {
+            if let Some(FieldValue::Map(media_map)) =
+                clip.properties.get(&media_key).and_then(|v| v.in_frame_of().cloned())
             {
-                if let Ok(media_values) = Media::read(media_value) {
-                    let relative_frame = ctx.current_frame.saturating_sub(clip.position);
-                    let seconds =
-                        (relative_frame as f64 + media_values.source_offset as f64)
-                            / ctx.timeline.tps;
-                    if seconds.is_finite() {
-                        media_time = seconds;
-                    }
+                let source_offset = media_map
+                    .get(offset_member_key)
+                    .and_then(|v| match v {
+                        FieldValue::Int(i) => Some(*i as f64),
+                        FieldValue::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .unwrap_or(0.0);
+                let relative_frame = ctx.current_frame.saturating_sub(clip.position);
+                let seconds = (relative_frame as f64 + source_offset) / ctx.timeline.tps;
+                if seconds.is_finite() {
+                    media_time = seconds;
                 }
-            }
-        }
 
-        if let Ok(source_key) = NamespacedID::new("std", "video:source") {
-            if let Some(FieldValue::String(source)) = clip
-                .properties
-                .get(&source_key)
-                .and_then(|v| v.in_frame_of().cloned())
-            {
-                video_source = Some(source);
+                // 同じメディアプロパティから source 文字列も取得し、ビデオソースとして設定する。
+                if let Some(FieldValue::String(source)) = media_map.get(source_member_key) {
+                    video_source = Some(source.clone());
+                }
             }
         }
 

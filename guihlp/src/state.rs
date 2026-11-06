@@ -64,6 +64,8 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
             label: "Default Log Level".to_owned(),
             kind: level_kind.clone(),
             default: FieldValue::Enum("Info".to_owned()),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
         },
         PropertySchema {
             key: NamespacedID::new("core", "log.filters")?,
@@ -74,6 +76,8 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
                 known_keys: None,
             },
             default: FieldValue::Map(BTreeMap::new()),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
         },
     ])
 }
