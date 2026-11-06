@@ -99,7 +99,7 @@ pub fn on_request_receive(
             for (timeline_id, command) in commands.iter() {
                 let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
 
-                info!("request: {:?}", command);
+                log::info!("request: {:?}", command);
 
                 let command_history = command_to_history(project, *timeline_id, command)?;
                 let mut histories = state_guard.histories.lock().expect("mutex poisoned");
@@ -113,7 +113,7 @@ pub fn on_request_receive(
                     history,
                 )?;
 
-                info!("history: {:?}", command_history);
+                log::info!("history: {:?}", command_history);
             }
 
             drop(project_guard);
@@ -139,7 +139,7 @@ pub fn on_request_receive(
 
             state.network.send(client_id, &res);
 
-            log::info!(
+            log::debug!(target: "server_stream_packet",
                 "Sent StreamMetadata for resource_id: {} ({})",
                 resource_id,
                 path
@@ -149,7 +149,7 @@ pub fn on_request_receive(
             resource_id,
             ranges,
         } => {
-            log::info!(
+            log::debug!(target: "server_stream_packet",
                 "Received FetchStreamData request for resource_id: {} ranges: {:?}",
                 resource_id,
                 ranges

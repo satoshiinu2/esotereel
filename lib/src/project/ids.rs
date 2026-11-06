@@ -3,6 +3,7 @@ use rkyv::{
 };
 use serde::{Deserialize, Serialize};
 
+// FFIを単純にするためにニュータイプパターンは使わない
 pub type TimelineId = u64;
 pub type LayerId = u64;
 pub type LayerDelta = i64;

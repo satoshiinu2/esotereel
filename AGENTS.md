@@ -99,6 +99,34 @@
 - 最小限の範囲にとどめる
 - 可能な限り事前に相談する
 
+## 9. プロパティ参照とエラー処理の規約
+
+### プロパティIDのハードコード禁止
+
+プロパティ関連のID（コンポーネント種別ID、プロパティキー、NamespacedIDなど）をコード中にリテラルでハードコードしてはならない。参照はコンポーネントが宣言する能力（`ComponentCapability`）から解決すること。
+
+- 違反例: `builder.rs` で `known_id("std:video:media")` のように特定プラグインのプロパティIDを直接指定する
+- 正しい例: コンポーネント定義から `capability == FrameProvider` を持つプロパティを逆引きし、そのキーで値を参照する
+- 発見したハードコードは `lib/src/plugin/property/well_known.rs` に定数を追加して置き換え、issueとして報告すること
+
+### パニックの使用制限
+
+本番コード（テストコードを除く）では `panic!`、`expect()`、`unwrap()` を多用しない。IDが見つからない、プロパティが存在しないなどのケースは、アプリをクラッシュさせずエラーとして適切に処理すること。
+
+- `Result` / `Option` を使った適切なエラー伝播を行う
+- `unwrap_or_default()`、`if let`、`match` などで値の不在を許容する
+- ミューテックスポイズンなどの回復不能な状態のみ `expect()` を許容
+
+### 能力ベースプロパティ参照
+
+`ComponentCapability`（`frame-provider`, `transformable` 等）は `lib/src/plugin/property/mod.rs` に定義され、`PropertySchema.capability` でプロパティと紐付けられる。レンダラー等は能力からプロパティキーを解決し、ハードコードされたIDに依存しない。
+
+## 10. Rustのimportとalias
+
+- 可能な場合は完全修飾パスを繰り返さず、`use`でimportして参照する
+- 特別な理由がない限り、importにaliasを付けない
+- 同名の型やtraitが衝突する場合など、明確な理由がある場合はaliasを許容する（例: `rkyv::Serialize` と `serde::Serialize`）
+
 ---
 *最終更新: 2026-10-15*
 *このファイルはプロジェクトの進化に合わせて更新されるべきです*

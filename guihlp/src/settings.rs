@@ -62,9 +62,7 @@ impl FfiPropertySchema {
             FieldTypeKind::FilePath { .. } => SettingsFieldType::FilePath,
             FieldTypeKind::Color => SettingsFieldType::Color,
             FieldTypeKind::Array { .. } => SettingsFieldType::Array,
-            FieldTypeKind::Map { .. }
-            | FieldTypeKind::Group { .. }
-            | FieldTypeKind::Special { .. } => SettingsFieldType::Map,
+            FieldTypeKind::Map { .. } | FieldTypeKind::Group { .. } => SettingsFieldType::Map,
         };
 
         let category_str = schema.category.join(" > ");

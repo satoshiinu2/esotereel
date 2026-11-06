@@ -1,7 +1,7 @@
 use esotereel_lib::{
-    plugin::{
-        NamespacedID,
-        property::{special::Media, value::FieldValue},
+    plugin::property::{
+        value::FieldValue,
+        PropertyPath,
     },
     project::{
         Project,
@@ -33,6 +33,14 @@ pub fn command_to_history(
                         .get_clip_and_layer(ctx.clip_id)
                         .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
 
+                    // ステールネス検出：クライアントが認識しているベース値とサーバー現在値を比較
+                    if clip.position != ctx.base_position || clip.duration != ctx.base_duration {
+                        anyhow::bail!(
+                            "stale move request for clip {}: client base ({}, {}) != server current ({}, {})",
+                            ctx.clip_id, ctx.base_position, ctx.base_duration, clip.position, clip.duration
+                        );
+                    }
+
                     Ok(ClipMoveHistoryCtx {
                         clip_id: ctx.clip_id,
                         old_position: clip.position,
@@ -57,42 +65,27 @@ pub fn command_to_history(
                     let clip = timeline
                         .get_clip(ctx.clip_id)
                         .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
-                    let source_offset_key = Media::source_offset_path(&clip.kind_id)?;
 
-                    let old_source_offset =
-                        clip.get_property_path(&source_offset_key)
-                            .and_then(|v| match v {
-                                FieldValue::Int(i) => Some(*i),
-                                _ => None,
-                            });
+                    // ステールネス検出：クライアントが認識しているベース値とサーバー現在値を比較
+                    if clip.position != ctx.base_position || clip.duration != ctx.base_duration {
+                        anyhow::bail!(
+                            "stale resize request for clip {}: client base ({}, {}) != server current ({}, {})",
+                            ctx.clip_id, ctx.base_position, ctx.base_duration, clip.position, clip.duration
+                        );
+                    }
 
-                    let new_position = if ctx.left_edge {
-                        clip.position + ctx.frame_delta
-                    } else {
-                        clip.position
-                    };
-
-                    let new_duration = if ctx.left_edge {
-                        clip.duration - ctx.frame_delta
-                    } else {
-                        clip.duration + ctx.frame_delta
-                    };
-
-                    let new_source_offset = if ctx.left_edge {
-                        old_source_offset.map(|o| o + ctx.frame_delta)
-                    } else {
-                        old_source_offset
-                    };
+                    let position_delta = ctx.new_position - clip.position;
+                    let duration_delta = ctx.new_duration - clip.duration;
 
                     Ok(ClipResizeHistoryCtx {
                         clip_id: ctx.clip_id,
                         left_edge: ctx.left_edge,
                         old_position: clip.position,
                         old_duration: clip.duration,
-                        old_source_offset,
-                        new_position,
-                        new_duration,
-                        new_source_offset,
+                        new_position: ctx.new_position,
+                        new_duration: ctx.new_duration,
+                        position_delta,
+                        duration_delta,
                     })
                 })
                 .collect();
@@ -260,8 +253,9 @@ pub fn execute_command(
                 .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
 
             clip.set_property_path(key, value.clone())?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
+            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
+                timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
+            }
         }
     };
     Ok(())
@@ -300,10 +294,10 @@ pub fn execute_command_undo(
                     left_edge: ctx.left_edge,
                     old_position: ctx.new_position,
                     old_duration: ctx.new_duration,
-                    old_source_offset: ctx.new_source_offset,
                     new_position: ctx.old_position,
                     new_duration: ctx.old_duration,
-                    new_source_offset: ctx.old_source_offset,
+                    position_delta: -ctx.position_delta,
+                    duration_delta: -ctx.duration_delta,
                 })
                 .collect();
 
@@ -373,8 +367,9 @@ pub fn execute_command_undo(
 
             // 古い値を設定して通知
             clip.set_property_path(&key, old_value.clone())?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
+            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
+                timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
+            }
         }
     }
     Ok(())

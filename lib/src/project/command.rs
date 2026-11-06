@@ -16,6 +16,10 @@ use crate::{
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipMoveCtx {
     pub clip_id: ClipId,
+    /// クライアントが認識している現在位置（ステールネス検出用）
+    pub base_position: TimelineTick,
+    /// クライアントが認識している現在長さ（ステールネス検出用）
+    pub base_duration: TimelineTick,
     pub new_position: TimelineTick,
     pub new_duration: TimelineTick,
     pub new_layer_id: LayerId,
@@ -38,7 +42,12 @@ pub struct ClipMoveHistoryCtx {
 pub struct ClipResizeCtx {
     pub clip_id: ClipId,
     pub left_edge: bool,
-    pub frame_delta: TimelineTick,
+    /// クライアントが認識している現在位置（ステールネス検出用）
+    pub base_position: TimelineTick,
+    /// クライアントが認識している現在長さ（ステールネス検出用）
+    pub base_duration: TimelineTick,
+    pub new_position: TimelineTick,
+    pub new_duration: TimelineTick,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
@@ -48,10 +57,12 @@ pub struct ClipResizeHistoryCtx {
     pub left_edge: bool,
     pub old_position: TimelineTick,
     pub old_duration: TimelineTick,
-    pub old_source_offset: Option<TimelineTick>,
     pub new_position: TimelineTick,
     pub new_duration: TimelineTick,
-    pub new_source_offset: Option<TimelineTick>,
+    /// サーバーが計算した位置変化量（リモート適用・競合検出用）
+    pub position_delta: TimelineTick,
+    /// サーバーが計算した長さ変化量（リモート適用・競合検出用）
+    pub duration_delta: TimelineTick,
 }
 
 #[derive(Archive, Deserialize, Serialize, Debug)]

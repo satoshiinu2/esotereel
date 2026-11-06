@@ -4,7 +4,6 @@ use anyhow::Ok;
 use esotereel_lib::{
     plugin::{
         NamespacedID,
-        property::{special::Media, value::FieldValue},
     },
     project::{
         Clip, Project, TimelineTick,
@@ -141,18 +140,7 @@ pub(crate) fn clip_resize_core(
         timeline.place_clip(layer_id, clip)?;
     }
 
-    for ctx in resized_clips {
-        if let Some(off) = ctx.new_source_offset {
-            let v = ClipBindingValue::Static(FieldValue::Int(off));
-            let clip = timeline
-                .get_clip_mut(ctx.clip_id)
-                .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
-            let key = Media::source_offset_path(&clip.kind_id)?;
-            clip.set_property_path(&key, v)?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
-        }
-    }
+    // source_offset はコンポーネント側で自己管理するため、コアでは書き込まない。
     Ok(())
 }
 

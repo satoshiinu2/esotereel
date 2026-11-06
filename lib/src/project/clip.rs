@@ -104,7 +104,6 @@ impl Clip {
 
 #[derive(Debug, Clone)]
 pub struct ClipKind {
-    pub properties: Vec<NamespacedID>,
     pub render_script: String,
     pub tags: HashSet<String>,
 }
@@ -197,3 +196,113 @@ impl PartialEq for ArchivedClip {
     }
 }
 impl Eq for ArchivedClip {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::property::value::FieldTypeKind;
+
+    #[test]
+    fn clip_position_get_set() {
+        let clip: Clip = Clip::new(
+            1u64,
+            0,
+            60,
+            NamespacedID::new("std", "video").unwrap(),
+            HashMap::new(),
+        );
+        assert_eq!(clip.position(), 0);
+
+        let mut clip = clip;
+        clip.set_position(120);
+        assert_eq!(clip.position(), 120);
+    }
+
+    #[test]
+    fn clip_set_and_get_property_value() {
+        let mut clip = Clip::new(
+            1u64,
+            0,
+            60,
+            NamespacedID::new("std", "video").unwrap(),
+            HashMap::new(),
+        );
+        clip.set_property_value(
+            NamespacedID::new("std", "source").unwrap(),
+            ClipBindingValue::Static(FieldValue::String("clip.mp4".to_string())),
+        )
+        .unwrap();
+        assert!(matches!(
+            clip.get_property_value(&NamespacedID::new("std", "source").unwrap()),
+            Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "clip.mp4"
+        ));
+    }
+
+    #[test]
+    fn clip_default_properties_from_schema() {
+        let schema = vec![PropertySchema {
+            key: NamespacedID::new("std", "volume").unwrap(),
+            category: vec![],
+            label: "Volume".to_string(),
+            kind: FieldTypeKind::Float {
+                min: Some(0.0),
+                max: Some(1.0),
+                step: 0.1,
+            },
+            default: FieldValue::Float(0.5),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
+        }];
+        let defaults = ClipBindingValue::default_properties(&schema);
+        assert_eq!(defaults.len(), 1);
+        assert!(matches!(
+            defaults.get(&NamespacedID::new("std", "volume").unwrap()),
+            Some(ClipBindingValue::Static(FieldValue::Float(v))) if *v == 0.5
+        ));
+    }
+
+    #[test]
+    fn clip_get_set_property_path() {
+        let mut clip = Clip::new(
+            1u64,
+            0,
+            60,
+            NamespacedID::new("std", "video").unwrap(),
+            ClipBindingValue::default_properties(&[
+                PropertySchema::group(
+                    NamespacedID::new("std", "transform").unwrap(),
+                    "Transform".to_string(),
+                    NamespacedID::new("std", "transform-ref").unwrap(),
+                    vec![PropertySchema {
+                        key: NamespacedID::new("std", "x").unwrap(),
+                        category: vec![],
+                        label: "X".to_string(),
+                        kind: FieldTypeKind::Float {
+                            min: None,
+                            max: None,
+                            step: 1.0,
+                        },
+                        default: FieldValue::Float(10.0),
+                        capability: None,
+                        member_capabilities: BTreeMap::new(),
+                    }],
+                ),
+            ]),
+        );
+        let path = PropertyPath::parse("std:transform/x").unwrap();
+        assert_eq!(
+            clip.get_property_path(&path),
+            Some(&FieldValue::Float(10.0))
+        );
+
+        clip.set_property_path(
+            &path,
+            ClipBindingValue::Static(FieldValue::Float(99.0)),
+        )
+        .unwrap();
+        assert_eq!(
+            clip.get_property_path(&path),
+            Some(&FieldValue::Float(99.0))
+        );
+    }
+}
