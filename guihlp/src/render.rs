@@ -4,7 +4,7 @@ use esotereel_lib::{
     render::video::request::request_stream_packets_for_time,
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
     render::{RenderContext, render_frame_offscreen},
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::ffi::array::FfiArray;
@@ -26,7 +26,7 @@ pub fn render_frame_offscreen_ffi(
     timeline_id: TimelineId,
     current_frame: i64,
 ) -> anyhow::Result<FrameRenderResult> {
-    let project_guard = state.project.read().expect("mutex poisoned");
+    let project_guard = state.project.read_or_err()?;
 
     let project = match project_guard.as_ref() {
         Some(arc) => Ok(arc),

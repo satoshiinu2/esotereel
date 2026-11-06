@@ -18,6 +18,7 @@ use esotereel_lib::{
     project::ids::{ResourceId, TimelineId},
     render::video::MediaFetchCache,
     state::{CommonState, HostState},
+    util::result::LockExt,
 };
 
 use crate::{GuiCallbacks, network::ClientNetworkHandler};
@@ -182,7 +183,7 @@ impl HostState for ClientState {
 
     fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
         let (schemas, toolbar_buttons) = {
-            let loader = self.plugin_loader.read().expect("mutex poisoned");
+            let loader = self.plugin_loader.read_or_err()?;
             (
                 loader.get_settings_schemas().to_vec(),
                 loader.get_toolbar_buttons().to_vec(),

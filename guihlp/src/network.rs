@@ -130,11 +130,10 @@ impl ClientNetworkHandler {
     }
 
     fn on_connected(&self, state: &Arc<Mutex<ClientState>>) {
-        let fn_ptr = state
-            .lock()
-            .expect("mutex poisoned")
-            .gui_callbacks
-            .on_connected;
+        let Ok(state) = state.lock() else {
+            return;
+        };
+        let fn_ptr = state.gui_callbacks.on_connected;
         (fn_ptr)()
     }
 }

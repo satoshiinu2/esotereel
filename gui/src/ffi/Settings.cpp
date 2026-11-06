@@ -30,21 +30,27 @@ void Settings::applyQtLogSettings(ClientState *state) {
     auto levelResult = getValue(state, "core:log.level");
     if (levelResult.isOk()) {
         auto level = levelResult.unwrap().asQString();
-        // Safe: config value exists
-        assert(level.has_value());
-        defaultLevel = level.value();
+        if (level.has_value()) {
+            defaultLevel = level.value();
+        } else {
+            qWarning() << "Settings: expected QString value for core:log.level but got different type";
+        }
     }
 
     auto filtersResult = getValue(state, "core:log.filters");
     if (filtersResult.isOk()) {
         const auto filters = filtersResult.unwrap().asMap();
-        // Safe: map values are strings
-        assert(filters.has_value());
-        for (const auto &[target, value] : *filters) {
-            auto str = value.asString();
-            // Safe: map values are strings
-            assert(str.has_value());
-            targetLevels.insert(QString::fromStdString(target), QString::fromStdString(str.value()));
+        if (filters.has_value()) {
+            for (const auto &[target, value] : *filters) {
+                auto str = value.asString();
+                if (str.has_value()) {
+                    targetLevels.insert(QString::fromStdString(target), QString::fromStdString(str.value()));
+                } else {
+                    qWarning() << "Settings: expected QString map value for log filter" << QString::fromStdString(target) << "but got different type";
+                }
+            }
+        } else {
+            qWarning() << "Settings: expected Map value for core:log.filters but got different type";
         }
     }
 

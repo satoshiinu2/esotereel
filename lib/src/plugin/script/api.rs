@@ -64,7 +64,13 @@ impl<N: NetworkHandler> PluginActionContext<N> {
     }
 
     pub fn take_packets(&self) -> Vec<Request> {
-        std::mem::take(&mut *self.packets.lock().expect("mutex poisoned"))
+        match self.packets.lock() {
+            Ok(mut guard) => std::mem::take(&mut *guard),
+            Err(_) => {
+                log::warn!("packets lock poisoned");
+                Vec::new()
+            }
+        }
     }
 }
 
@@ -149,8 +155,8 @@ impl PluginRenderContext {
                     .insert(path.to_string(), StreamState::Loading);
                 self.requested_paths
                     .lock()
-                    .expect("mutex poisoned")
-                    .push(path.to_string());
+                    .map(|mut g| g.push(path.to_string()))
+                    .unwrap_or_else(|_| log::warn!("requested_paths lock poisoned"));
                 -1
             }
         }
@@ -179,40 +185,49 @@ impl PluginRenderContext {
         if texture_id < 0 {
             return;
         }
-        self.batches
-            .lock()
-            .expect("mutex poisoned")
-            .push(VertexBatch {
+        if let Ok(mut guard) = self.batches.lock() {
+            guard.push(VertexBatch {
                 vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
                 texture_id: resource_id,
                 transform: self.base_transform
                     * transform
                     * Mat4::from_translation(Vec3::new(-0.5, -0.5, 0.0)),
             });
+        } else {
+            log::warn!("batches lock poisoned");
+        }
     }
 
     pub fn render_video(&mut self, texture_id: i64, x: f64, y: f64, width: f64, height: f64) {
         if texture_id < 0 {
             return;
         }
-        self.batches
-            .lock()
-            .expect("mutex poisoned")
-            .push(VertexBatch {
+        if let Ok(mut guard) = self.batches.lock() {
+            guard.push(VertexBatch {
                 vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
                 texture_id: texture_id as u32,
                 transform: self.base_transform
                     * Mat4::from_translation(Vec3::new(x as f32, y as f32, 0.0))
                     * Mat4::from_scale(Vec3::new(width as f32, height as f32, 1.0)),
             });
+        } else {
+            log::warn!("batches lock poisoned");
+        }
     }
 
     pub fn into_parts(self) -> (Vec<VertexBatch>, Vec<String>) {
         // Rhai may retain a cloned context; drain shared output without requiring unique ownership.
-        (
-            std::mem::take(&mut *self.batches.lock().expect("mutex poisoned")),
-            std::mem::take(&mut *self.requested_paths.lock().expect("mutex poisoned")),
-        )
+        let batches = self
+            .batches
+            .lock()
+            .map(|mut g| std::mem::take(&mut *g))
+            .unwrap_or_default();
+        let paths = self
+            .requested_paths
+            .lock()
+            .map(|mut g| std::mem::take(&mut *g))
+            .unwrap_or_default();
+        (batches, paths)
     }
 }
 
@@ -324,42 +339,46 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
 
     // NetworkContextのメソッド（オーバーロード）
     engine.register_fn("undo", |net: &mut PluginNetworkContext<Request>| {
-        net.packets
-            .lock()
-            .expect("mutex poisoned")
-            .push(Request::Undo {
+        if let Ok(mut guard) = net.packets.lock() {
+            guard.push(Request::Undo {
                 timeline_id: net.timeline_id,
             });
+        } else {
+            log::warn!("packets lock poisoned");
+        }
     });
     engine.register_fn(
         "undo",
         |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
-            net.packets
-                .lock()
-                .expect("mutex poisoned")
-                .push(Request::Undo {
+            if let Ok(mut guard) = net.packets.lock() {
+                guard.push(Request::Undo {
                     timeline_id: timeline_id as u64,
                 });
+            } else {
+                log::warn!("packets lock poisoned");
+            }
         },
     );
 
     engine.register_fn("redo", |net: &mut PluginNetworkContext<Request>| {
-        net.packets
-            .lock()
-            .expect("mutex poisoned")
-            .push(Request::Redo {
+        if let Ok(mut guard) = net.packets.lock() {
+            guard.push(Request::Redo {
                 timeline_id: net.timeline_id,
             });
+        } else {
+            log::warn!("packets lock poisoned");
+        }
     });
     engine.register_fn(
         "redo",
         |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
-            net.packets
-                .lock()
-                .expect("mutex poisoned")
-                .push(Request::Redo {
+            if let Ok(mut guard) = net.packets.lock() {
+                guard.push(Request::Redo {
                     timeline_id: timeline_id as u64,
                 });
+            } else {
+                log::warn!("packets lock poisoned");
+            }
         },
     );
 }

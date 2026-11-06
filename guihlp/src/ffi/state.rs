@@ -1,5 +1,5 @@
 use esotereel_lib::{
-    dirs::Directories, project::Project, state::HostState, util::result::EsotereelError,
+    dirs::Directories, project::Project, state::HostState, util::result::{EsotereelError, LockExt},
 };
 
 use crate::{
@@ -95,7 +95,13 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                 let runtime =
                     tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
                 runtime.block_on(async {
-                    let mut state = state.lock().expect("mutex poisoned");
+                    let mut state = match state.lock() {
+                        Ok(guard) => guard,
+                        Err(e) => {
+                            log::error!("state lock poisoned: {e}");
+                            return;
+                        }
+                    };
                     state.boot_strap().await;
                 });
             }));
@@ -127,7 +133,7 @@ pub extern "C" fn client_state_network_run(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_clone = Arc::clone(&state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = Arc::clone(&state.network);
 
         let addr_str = addr.as_str()?;
@@ -202,8 +208,8 @@ pub unsafe extern "C" fn client_state_project_lock_read(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock().expect("mutex poisoned");
-        let project_guard = state_guard.project.read().expect("mutex poisoned");
+        let state_guard = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let project_guard = state_guard.project.read_or_err()?;
 
         let project_ptr: *const Option<Project> = &*project_guard;
 
@@ -291,7 +297,7 @@ pub unsafe extern "C" fn client_state_log_directories_info(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         state.dir.log_info();
 

@@ -9,7 +9,7 @@ use esotereel_lib::{
     },
     project::ids::TimelineId,
     requests::Request,
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::ffi::{
@@ -69,7 +69,7 @@ pub unsafe extern "C" fn toolbar_get_buttons(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let target_str = target.as_str()?;
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let ids = state.toolbar.get_layout(target_str);
         let buttons: Vec<FfiToolbarButton> = ids
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn toolbar_set_layout(
             .collect::<Result<Vec<NamespacedID>, _>>()
             .map_err(|e| anyhow::anyhow!("Failed to parse NamespacedID: {}", e))?;
 
-        let mut state = state.lock().expect("mutex poisoned");
+        let mut state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         state.toolbar.set_layout(target_str.to_string(), ids);
 
@@ -153,7 +153,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let button_id = NamespacedID::parse(button_id.as_str()?)?;
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let button = state
             .toolbar
@@ -183,8 +183,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
         state
             .common
             .plugin_loader
-            .read()
-            .expect("lock poisoned")
+            .read_or_err()?
             .call_script::<()>(
                 &state.common.script_engine,
                 button_id.plugin_id(),

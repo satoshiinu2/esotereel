@@ -30,7 +30,10 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
 
         let plugin_id = clip.kind_id.plugin_id();
 
-        let loader = ctx.plugin_loader.read().expect("mutex poisoned");
+        let Ok(loader) = ctx.plugin_loader.read() else {
+            log::warn!("plugin_loader lock poisoned, skipping clip");
+            continue;
+        };
         let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
             continue;
         };

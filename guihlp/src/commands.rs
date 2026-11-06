@@ -8,7 +8,7 @@ use esotereel_lib::{
         ids::{LayerFolderId, LayerId, TimelineId},
     },
     requests::Request,
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::network::ClientNetworkHandler;
@@ -108,7 +108,7 @@ impl CommandQueue {
     ) -> anyhow::Result<()> {
         let kind_id = NamespacedID::parse("std:video").unwrap();
 
-        let loader = state.plugin_loader.read().expect("mutex poisoned");
+        let loader = state.plugin_loader.read_or_err()?;
 
         let property_schema = loader
             .get_clip_properties(&kind_id)

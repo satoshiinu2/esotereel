@@ -11,7 +11,7 @@ use esotereel_lib::{
         command::CommandRequest,
         ids::{ClipId, TimelineId},
     },
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::{
@@ -120,10 +120,10 @@ pub unsafe extern "C" fn clip_get_all_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let clip = unsafe { &*ptr_clip };
 
-        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+        let plugin_loader = state.plugin_loader.read_or_err()?;
         let schema = plugin_loader
             .get_clip_properties(&clip.kind_id)
             .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
@@ -156,7 +156,7 @@ pub unsafe extern "C" fn clip_get_common_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let clips = unsafe { std::slice::from_raw_parts(ptr_clips, num_clips) };
 
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn clip_get_common_fields(
             return Ok(FfiArray::from_vec(vec![]));
         }
 
-        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+        let plugin_loader = state.plugin_loader.read_or_err()?;
 
         // First clip's schema as base
         let first_clip = unsafe { &*clips[0] };
@@ -221,10 +221,10 @@ pub unsafe extern "C" fn clip_get_categories(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state.lock().map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let clip = unsafe { &*ptr };
 
-        let plugin_loader = state.plugin_loader.read().expect("mutex poisoned");
+        let plugin_loader = state.plugin_loader.read_or_err()?;
         let schema = plugin_loader
             .get_clip_properties(&clip.kind_id)
             .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
