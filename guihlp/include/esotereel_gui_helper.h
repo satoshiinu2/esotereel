@@ -108,12 +108,12 @@ using TimelineId = uint64_t;
 
 using LayerId = uint64_t;
 
-using LayerFolderId = uint64_t;
-
 struct FfiStringView {
   const uint8_t *ptr;
   uintptr_t len;
 };
+
+using LayerFolderId = uint64_t;
 
 struct FfiOwnedStringArray {
   FfiOwnedString *ptr;
@@ -336,6 +336,13 @@ FfiResultVoid req_cmd_add_clip_dummy(CommandQueue *ptr_queue,
                                      TimelineId timeline_id,
                                      int64_t position,
                                      LayerId layer_id);
+
+FfiResultVoid req_cmd_add_clip_with_source(CommandQueue *ptr_queue,
+                                           const ClientStateHandle *ptr_state,
+                                           TimelineId timeline_id,
+                                           int64_t position,
+                                           LayerId layer_id,
+                                           FfiStringView source_path);
 
 FfiResultVoid req_cmd_add_layer(CommandQueue *ptr_queue,
                                 TimelineId timeline_id,

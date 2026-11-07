@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
-    plugin::NamespacedID,
+    plugin::{NamespacedID, property::value::FieldValue},
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
@@ -136,6 +136,50 @@ impl CommandQueue {
 
         let properties = ClipBindingValue::default_properties(property_schema);
         drop(loader);
+
+        let command = CommandRequest::AddClip {
+            layer_id,
+            position,
+            duration: 50,
+            kind_id,
+            properties,
+        };
+
+        self.enqueue(timeline_id, command);
+
+        Ok(())
+    }
+
+    pub fn req_cmd_add_clip_with_source(
+        &mut self,
+        state: &ClientState,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+        source_path: &str,
+    ) -> anyhow::Result<()> {
+        // TODO: configure with settings
+        let kind_id = NamespacedID::parse("std:video").unwrap();
+
+        let loader = state.plugin_loader.read().expect("mutex poisoned");
+
+        let property_schema = loader
+            .get_clip_properties(&kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
+
+        let mut properties = ClipBindingValue::default_properties(property_schema);
+        drop(loader);
+
+        // ドロップされたファイルパスを video:media/source に設定する。
+        let media_key = NamespacedID::parse("std:video:media")?;
+        if let Some(ClipBindingValue::Static(FieldValue::Map(media_map))) =
+            properties.get_mut(&media_key)
+        {
+            media_map.insert(
+                "source".to_string(),
+                FieldValue::String(source_path.to_string()),
+            );
+        }
 
         let command = CommandRequest::AddClip {
             layer_id,

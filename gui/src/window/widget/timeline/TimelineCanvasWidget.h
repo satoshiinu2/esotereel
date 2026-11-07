@@ -13,6 +13,10 @@
 
 #include <QBrush>
 #include <QColor>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QLine>
@@ -31,6 +35,7 @@
 #include "ffi/project/Timeline.h"
 #include "window/MainWindow.h"
 #include "window/widget/timeline/drag.h"
+#include "window/widget/timeline/drop.h"
 #include "window/widget/timeline/resize.h"
 
 #include "esotereel_gui_helper.h"
@@ -124,6 +129,14 @@ class TimelineCanvasWidget : public QWidget {
     void contextMenuEvent(QContextMenuEvent *e) override;
     void keyPressEvent(QKeyEvent *e) override;
     bool event(QEvent *e) override;
+
+    // ドラッグドロップ（外部ファイル→タイムライン）
+    void dragEnterEvent(QDragEnterEvent *e) override;
+    void dragMoveEvent(QDragMoveEvent *e) override;
+    void dragLeaveEvent(QDragLeaveEvent *e) override;
+    void dropEvent(QDropEvent *e) override;
+
+    friend bool esotereel::window::handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event);
 
   private:
     // objects
