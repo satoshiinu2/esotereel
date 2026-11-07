@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::Ok;
 use esotereel_lib::{
     plugin::{
         NamespacedID,
+        property::{value::FieldValue, PropertyPath},
     },
     project::{
         Clip, Project, TimelineTick,
@@ -137,10 +137,29 @@ pub(crate) fn clip_resize_core(
     for (layer_id, ctx, mut clip) in extracted {
         clip.set_position(ctx.new_position);
         clip.duration = ctx.new_duration;
+
+        // 左エッジ変更時は source_offset を位置変化分だけシフトする。
+        // 左端を右に動かすと source 側からのオフセットも同じだけ進む。
+        if ctx.left_edge && ctx.position_delta != 0 {
+            match PropertyPath::parse("std:video:media/source_offset") {
+                Ok(path) => {
+                    if let Some(FieldValue::String(current_offset)) = clip.get_property_path(&path) {
+                        if let Ok(current) = current_offset.parse::<i64>() {
+                            let new_offset = current + ctx.position_delta;
+                            let _ = clip.set_property_path(
+                                &path,
+                                ClipBindingValue::Static(FieldValue::String(new_offset.to_string())),
+                            );
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+
         timeline.place_clip(layer_id, clip)?;
     }
 
-    // source_offset はコンポーネント側で自己管理するため、コアでは書き込まない。
     Ok(())
 }
 
