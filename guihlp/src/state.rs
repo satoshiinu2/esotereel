@@ -16,8 +16,8 @@ use esotereel_lib::{
     },
     prebootstrap::PreBootstrapSettings,
     project::{
-        ids::{ResourceId, TimelineId},
         MediaSec, TimelineTick,
+        ids::{ResourceId, TimelineId},
     },
     render::video::MediaFetchCache,
     state::{CommonState, HostState},

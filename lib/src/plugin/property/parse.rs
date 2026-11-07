@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 
 use crate::plugin::property::{FieldTypeKind, value::FieldValue};
+use crate::plugin::NamespacedID;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertySchemaRaw {
@@ -21,6 +22,9 @@ pub struct PropertySchemaRaw {
     /// メンバーレベルの参照をハードコード文字列ではなく能力で解決するために使用する。
     #[serde(default)]
     pub member_capabilities: BTreeMap<String, String>,
+    /// Group 型プロパティの子フィールド定義。
+    #[serde(default)]
+    pub fields: Option<Vec<PropertySchemaRaw>>,
 }
 
 impl FieldTypeKind {
@@ -101,6 +105,18 @@ impl FieldTypeKind {
                 FieldTypeKind::Map {
                     value_kind: Box::new(value_kind),
                     known_keys,
+                }
+            }
+
+            "group" => {
+                let reference_str = table
+                    .get("reference")
+                    .and_then(|t| t.as_str())
+                    .context("Group `kind` is missing a string `reference` field")?;
+                let reference = NamespacedID::parse(reference_str)?;
+                FieldTypeKind::Group {
+                    reference,
+                    fields: Vec::new(),
                 }
             }
 

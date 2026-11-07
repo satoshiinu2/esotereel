@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
-    plugin::{NamespacedID, property::value::FieldValue},
+    plugin::{NamespacedID, property::{ComponentCapability, value::FieldValue}},
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
@@ -158,7 +158,6 @@ impl CommandQueue {
         layer_id: LayerId,
         source_path: &str,
     ) -> anyhow::Result<()> {
-        // TODO: configure with settings
         let kind_id = NamespacedID::parse("std:video").unwrap();
 
         let loader = state.plugin_loader.read().expect("mutex poisoned");
@@ -167,18 +166,25 @@ impl CommandQueue {
             .get_clip_properties(&kind_id)
             .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
 
+        // ドロップターゲットメンバーを能力から逆引き（loaderをdropする前に取得）。
+        let drop_target = property_schema
+            .iter()
+            .find_map(|prop| {
+                prop.member_capabilities.iter()
+                    .find(|(_, cap)| **cap == ComponentCapability::Droppable)
+                    .map(|(member, _)| (prop.key.clone(), member.clone()))
+            });
+
         let mut properties = ClipBindingValue::default_properties(property_schema);
         drop(loader);
 
-        // ドロップされたファイルパスを video:media/source に設定する。
-        let media_key = NamespacedID::parse("std:video:media")?;
-        if let Some(ClipBindingValue::Static(FieldValue::Map(media_map))) =
-            properties.get_mut(&media_key)
+        let (prop_key, member_key) =
+            drop_target.ok_or_else(|| anyhow::anyhow!("no drop-target property found"))?;
+
+        if let Some(ClipBindingValue::Static(FieldValue::Map(map))) =
+            properties.get_mut(&prop_key)
         {
-            media_map.insert(
-                "source".to_string(),
-                FieldValue::String(source_path.to_string()),
-            );
+            map.insert(member_key, FieldValue::String(source_path.to_string()));
         }
 
         let command = CommandRequest::AddClip {

@@ -19,7 +19,7 @@ script = "video.rhai"
 children = ["video-transform"]
 properties = [
   { key = "video:source", label = "Source", kind = { type = "string" } },
-  { key = "video:media", label = "Media", kind = { type = "map", value_kind = { type = "string" }, known_keys = ["source", "source_offset"] }, capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" } },
+  { key = "video:media", label = "Media", kind = { type = "group", reference = "video:media" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "droppable", source_offset = "media-offset-provider" } },
   { key = "video:transform", label = "Transform", kind = { type = "map", value_kind = { type = "float", step = 0.1 }, known_keys = ["position", "rotation", "scale"] }, capability = "transformable" },
 ]
 ```

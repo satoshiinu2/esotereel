@@ -41,6 +41,9 @@ pub enum ComponentCapability {
     MediaSource,
     /// メディアオフセット（ティック単位のソース時間オフセット）を提供する（マップ型プロパティのメンバーとして）。
     MediaOffsetProvider,
+    /// ドラッグドロップでファイルパスを書き込む宛先メンバー。
+    /// コンポーネントが提供する能力ではなく、GUI からの入力を受け付けるマーカーとして使用する。
+    Droppable,
     /// プラグイン独自の能力。
     Custom(String),
 }
@@ -57,6 +60,7 @@ impl ComponentCapability {
             ComponentCapability::Keyframeable => "keyframeable".to_string(),
             ComponentCapability::MediaSource => "media-source".to_string(),
             ComponentCapability::MediaOffsetProvider => "media-offset-provider".to_string(),
+            ComponentCapability::Droppable => "droppable".to_string(),
             ComponentCapability::Custom(s) => s.clone(),
         }
     }
@@ -75,6 +79,7 @@ impl ComponentCapability {
             ComponentCapability::Keyframeable => Some("get_keyframes"),
             ComponentCapability::MediaSource => None,
             ComponentCapability::MediaOffsetProvider => None,
+            ComponentCapability::Droppable => None,
             ComponentCapability::Custom(_) => None,
         }
     }
@@ -90,6 +95,7 @@ impl ComponentCapability {
             ComponentCapability::Keyframeable => ComponentHook::Process,
             ComponentCapability::MediaSource => ComponentHook::Evaluate,
             ComponentCapability::MediaOffsetProvider => ComponentHook::Evaluate,
+            ComponentCapability::Droppable => ComponentHook::Evaluate,
             ComponentCapability::Custom(_) => ComponentHook::Evaluate,
         }
     }
@@ -108,6 +114,7 @@ impl FromStr for ComponentCapability {
             "keyframeable" => ComponentCapability::Keyframeable,
             "media-source" => ComponentCapability::MediaSource,
             "media-offset-provider" => ComponentCapability::MediaOffsetProvider,
+            "droppable" => ComponentCapability::Droppable,
             other => ComponentCapability::Custom(other.to_string()),
         })
     }
@@ -244,8 +251,21 @@ impl PropertySchema {
     }
 
     pub fn parse_one(raw: PropertySchemaRaw, plugin_id: &str) -> anyhow::Result<PropertySchema> {
-        let kind = FieldTypeKind::from_toml_value(&raw.kind)
+        let mut kind = FieldTypeKind::from_toml_value(&raw.kind)
             .with_context(|| format!("invalid `kind` for key `{}` in `{plugin_id}`", raw.key))?;
+
+        // Group 型の場合、子フィールドを再帰的にパースして kind に設定する
+        if let FieldTypeKind::Group { fields, .. } = &mut kind {
+            match &raw.fields {
+                Some(raw_fields) => {
+                    *fields = raw_fields
+                        .iter()
+                        .map(|rf| PropertySchema::parse_one(rf.clone(), plugin_id))
+                        .collect::<anyhow::Result<Vec<_>>>()?;
+                }
+                None => *fields = Vec::new(),
+            }
+        }
 
         let capability = match &raw.capability {
             Some(cap_str) => Some(ComponentCapability::from_str(cap_str).with_context(|| {
@@ -363,6 +383,7 @@ mod tests {
             default: Some(toml::Value::String("default.mp4".to_string())),
             capability: None,
             member_capabilities: BTreeMap::new(),
+                        fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
         assert_eq!(schema.key.full(), "std:source");
@@ -389,6 +410,7 @@ mod tests {
             default: None,
             capability: None,
             member_capabilities: BTreeMap::new(),
+                        fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
         assert_eq!(schema.default, FieldValue::Int(0));
@@ -404,6 +426,7 @@ mod tests {
             default: None,
             capability: None,
             member_capabilities: BTreeMap::new(),
+                        fields: None,
         };
         assert!(PropertySchema::parse_one(raw, "std").is_err());
     }
@@ -420,7 +443,7 @@ mod tests {
                 default: FieldValue::String("a".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-            },
+                            },
             PropertySchema {
                 key,
                 category: vec![],
@@ -429,7 +452,7 @@ mod tests {
                 default: FieldValue::String("b".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-            },
+                            },
         ];
         assert!(PropertySchema::validate_properties(&props).is_err());
     }
@@ -448,7 +471,7 @@ mod tests {
             default: FieldValue::Float(24.0),
             capability: None,
             member_capabilities: BTreeMap::new(),
-        };
+                    };
         let group = PropertySchema::group(
             NamespacedID::new("std", "style").unwrap(),
             "Style".to_string(),
@@ -493,7 +516,7 @@ kind = { type = "string" }
             default: FieldValue::Int(1),
             capability: None,
             member_capabilities: BTreeMap::new(),
-        };
+                    };
         let group = PropertySchema::group(
             NamespacedID::new("std", "g").unwrap(),
             "Group".to_string(),

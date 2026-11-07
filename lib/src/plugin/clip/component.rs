@@ -726,7 +726,7 @@ capabilities = ["my-custom-cap"]
                     default: FieldValue::String("default.mp4".to_string()),
                     capability: None,
                     member_capabilities: BTreeMap::new(),
-                },
+                                    },
                 PropertySchema {
                     key: NamespacedID::new("std", "volume").unwrap(),
                     category: vec![],
@@ -739,7 +739,7 @@ capabilities = ["my-custom-cap"]
                     default: FieldValue::Float(1.0),
                     capability: None,
                     member_capabilities: BTreeMap::new(),
-                },
+                                    },
             ],
             children: Vec::new(),
         };
@@ -776,7 +776,7 @@ capabilities = ["my-custom-cap"]
                 default: FieldValue::String("a".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-            }],
+                            }],
             children: Vec::new(),
         };
         let b = ComponentDefinition {
@@ -794,7 +794,7 @@ capabilities = ["my-custom-cap"]
                 default: FieldValue::Int(42),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-            }],
+                            }],
             children: Vec::new(),
         };
 
