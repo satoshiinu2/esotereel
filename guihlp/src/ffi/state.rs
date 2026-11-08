@@ -178,8 +178,8 @@ pub unsafe extern "C" fn client_state_drop(ptr_state: *const ClientStateHandle) 
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
-        let ptr = ptr_state as *const ClientStateHandle;
-        let _ = unsafe { Arc::from_raw(ptr) };
+        let raw = ptr_state as *const Mutex<ClientState>;
+        let _ = unsafe { Arc::from_raw(raw) };
         Ok(())
     }
 
