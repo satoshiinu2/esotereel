@@ -73,7 +73,6 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
                 return opt->asStatic();
             }
             // TODO(Keyframes): opt->isKeyframes() の場合は現在のプレイヘッド位置の値を評価して返す
-        }
         return defaultValue;
     };
     binding.setValue = [this, key](const FieldValue &value) {
