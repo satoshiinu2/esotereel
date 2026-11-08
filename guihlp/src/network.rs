@@ -130,10 +130,17 @@ impl ClientNetworkHandler {
     }
 
     fn on_connected(&self, state: &Arc<Mutex<ClientState>>) {
-        let Ok(state) = state.lock() else {
-            return;
-        };
-        let fn_ptr = state.gui_callbacks.on_connected;
+        // ClientState ロックを保持したまま C++ コールバックを呼ぶと、
+        // コールバック内（例：req_new_project）で同じ Mutex を再取得しようとして
+        // 再入デッドロックになる。コールバック呼び出し前にロックを解放する。
+        let fn_ptr = {
+            let guard = match state.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            guard.gui_callbacks.on_connected
+        }; // ロック解放（ガードドロップ）
+
         (fn_ptr)()
     }
 }
