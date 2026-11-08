@@ -54,6 +54,8 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
         }
         auto projectResult = state->getProject();
         if (projectResult.isError()) {
+            auto err = projectResult.getError();
+            qWarning() << "ClipPropertiesPanel: getProject failed in getValue:" << QString::fromStdString(*err);
             return defaultValue;
         }
         Project project = std::move(projectResult.unwrap());
@@ -61,8 +63,12 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
         auto [clip, layerId] = timeline.findClipById(clipIds[0]);
 
         auto result = getValue(clip, key);
-        if (result.isOk()) {
-            auto opt = result.unwrap();
+        if (result.isError()) {
+            auto err = result.getError();
+            qWarning() << "ClipPropertiesPanel: getValue failed:" << QString::fromStdString(*err);
+            return defaultValue;
+        }
+        auto opt = result.unwrap();
             if (opt.has_value() && opt->isStatic()) {
                 return opt->asStatic();
             }
@@ -98,6 +104,8 @@ void ClipPropertiesPanel::rebuild() {
 
     auto projectResult = state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "ClipPropertiesPanel: getProject failed in rebuild:" << QString::fromStdString(*err);
         return;
     }
     Project project = std::move(projectResult.unwrap());
@@ -177,6 +185,8 @@ void ClipPropertiesPanel::refreshChangedFields() {
 
     auto projectResult = state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "ClipPropertiesPanel: getProject failed in refreshChangedFields:" << QString::fromStdString(*err);
         return;
     }
     Project project = std::move(projectResult.unwrap());
@@ -185,7 +195,9 @@ void ClipPropertiesPanel::refreshChangedFields() {
 
     for (const QString &key : pendingUpdates) {
         auto result = getValue(clip, key);
-        if (!result.isOk()) {
+        if (result.isError()) {
+            auto err = result.getError();
+            qWarning() << "ClipPropertiesPanel: getValue failed in refreshChangedFields:" << QString::fromStdString(*err);
             continue;
         }
         auto opt = result.unwrap();

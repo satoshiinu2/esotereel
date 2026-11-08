@@ -108,6 +108,8 @@ void GpuPreviewWidget::triggerRenderFrame() {
 
     auto projectResult = windowState->state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "GpuPreviewWidget: getProject failed:" << QString::fromStdString(*err);
         return;
     }
     auto project = std::move(projectResult.unwrap());

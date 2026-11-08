@@ -36,9 +36,11 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         auto *checkBox = new QCheckBox();
 
         auto boolValue = currentValue.asBool();
-        // Safe: field.kindType == SettingsFieldType::Bool guarantees the value type matches
-        assert(boolValue.has_value());
-        checkBox->setChecked(boolValue.value());
+        if (boolValue.has_value()) {
+            checkBox->setChecked(boolValue.value());
+        } else {
+            qWarning() << "FieldControlFactory: expected Bool value for" << field.key << "but got different type";
+        }
 
         QObject::connect(checkBox, &QCheckBox::checkStateChanged, checkBox, [binding](Qt::CheckState state) {
             binding.setValue(FieldValue::fromBool(state == Qt::Checked));
@@ -51,9 +53,11 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         spinBox->setRange(0, 1000); // TODO: schemaにmin/maxが乗ったらそちらを使う
 
         auto intValue = currentValue.asInt();
-        // Safe: field.kindType == SettingsFieldType::Int guarantees the value type matches
-        assert(intValue.has_value());
-        spinBox->setValue(intValue.value());
+        if (intValue.has_value()) {
+            spinBox->setValue(intValue.value());
+        } else {
+            qWarning() << "FieldControlFactory: expected Int value for" << field.key << "but got different type";
+        }
 
         QObject::connect(spinBox, QOverload<int>::of(&QSpinBox::valueChanged), spinBox,
                          [binding](int value) { binding.setValue(FieldValue::fromInt(value)); });
@@ -65,9 +69,11 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         doubleSpinBox->setRange(-1.0e9, 1.0e9); // TODO: use schema min/max when exposed by FFI
 
         auto floatValue = currentValue.asFloat();
-        // Safe: field.kindType == SettingsFieldType::Float guarantees the value type matches
-        assert(floatValue.has_value());
-        doubleSpinBox->setValue(floatValue.value());
+        if (floatValue.has_value()) {
+            doubleSpinBox->setValue(floatValue.value());
+        } else {
+            qWarning() << "FieldControlFactory: expected Float value for" << field.key << "but got different type";
+        }
 
         QObject::connect(doubleSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), doubleSpinBox,
                          [binding](double value) { binding.setValue(FieldValue::fromFloat(value)); });
@@ -78,11 +84,13 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         auto *comboBox = new QComboBox();
 
         auto qstringValue = currentValue.asQString();
-        // Safe: field.kindType == SettingsFieldType::Enum guarantees the value type matches
-        assert(qstringValue.has_value());
-        const QStringList options = guessEnumOptions(field.key, qstringValue.value());
-        comboBox->addItems(options);
-        comboBox->setCurrentText(qstringValue.value());
+        if (qstringValue.has_value()) {
+            const QStringList options = guessEnumOptions(field.key, qstringValue.value());
+            comboBox->addItems(options);
+            comboBox->setCurrentText(qstringValue.value());
+        } else {
+            qWarning() << "FieldControlFactory: expected Enum value for" << field.key << "but got different type";
+        }
 
         QObject::connect(comboBox, &QComboBox::currentTextChanged, comboBox, [binding](const QString &text) {
             binding.setValue(FieldValue::fromEnum(text.toStdString()));
@@ -96,9 +104,11 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
             QColor color = Qt::white;
             const FieldValue existing = binding.getValue();
             const auto rgba = existing.asColor();
-            // Safe: field.kindType == SettingsFieldType::Color guarantees the value type matches
-            assert(rgba.has_value());
-            color = QColor::fromRgbF(rgba->r, rgba->g, rgba->b, rgba->a);
+            if (rgba.has_value()) {
+                color = QColor::fromRgbF(rgba->r, rgba->g, rgba->b, rgba->a);
+            } else {
+                qWarning() << "FieldControlFactory: expected Color value but got different type";
+            }
 
             QColorDialog dialog(color, colorButton);
             if (dialog.exec() == QColorDialog::Accepted) {
@@ -148,9 +158,11 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
     // String, および未対応種別(FilePath/Map)のフォールバック
     auto *lineEdit = new QLineEdit();
     auto qstringValue = currentValue.asQString();
-    // Safe: fallback case assumes string type
-    assert(qstringValue.has_value());
-    lineEdit->setText(qstringValue.value());
+    if (qstringValue.has_value()) {
+        lineEdit->setText(qstringValue.value());
+    } else {
+        qWarning() << "FieldControlFactory: expected String value for" << field.key << "but got different type";
+    }
     QObject::connect(lineEdit, &QLineEdit::textChanged, lineEdit,
                      [binding](const QString &text) { binding.setValue(FieldValue::fromString(text)); });
     return lineEdit;

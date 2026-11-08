@@ -67,6 +67,8 @@ void TimelineCanvasWidget::contextMenuEvent(QContextMenuEvent *e) {
     {
         auto projectResult = windowState.state->getProject();
         if (projectResult.isError()) {
+            auto err = projectResult.getError();
+            qWarning() << "TimelineCanvasWidget: getProject failed in context menu:" << QString::fromStdString(*err);
             menu.exec(e->globalPos());
             return;
         }
@@ -222,7 +224,12 @@ void TimelineCanvasWidget::addClipAt(const QPoint &local) {
 
     if (canAdd) {
         // ロックを持たない状態でネットワークへリクエスト
-        commandQueue.addClipAt(this->timelineId, frame, layerId).unwrap();
+        auto addResult = commandQueue.addClipAt(this->timelineId, frame, layerId);
+        if (addResult.isError()) {
+            auto err = addResult.getError();
+            qWarning() << "TimelineCanvasWidget: addClipAt failed:" << QString::fromStdString(*err);
+            return;
+        }
         this->markRowsDirty();
         update();
     }

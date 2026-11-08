@@ -127,6 +127,8 @@ void TimelineCanvasWidget::updateSnapshot() const {
     {
         auto projectResult = windowState.state->getProject();
         if (projectResult.isError()) {
+            auto err = projectResult.getError();
+            qWarning() << "TimelineCanvasWidget: getProject failed in updateSnapshot:" << QString::fromStdString(*err);
             return;
         }
         auto project = std::move(projectResult.unwrap());
