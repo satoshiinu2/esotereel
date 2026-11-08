@@ -274,6 +274,10 @@ struct GuiCallbacks {
   void (*on_connected)();
 };
 
+/// バックグラウンドスレッドで発生した非同期エラーを取得・クリアする。
+/// C++ 側は bootstrap / network_run の後でこれを呼び出し、初期化失敗を検知できる。
+using ClientStateTakeErrorResult = FfiResultVoid;
+
 /// out_guard 出力パラメータを廃止し、ガードの生ポインタ自体を戻り値として返す形に変更。
 using ProjectLockReadResult = FfiResult<const void*>;
 
@@ -507,6 +511,8 @@ FfiResultVoid client_state_bootstrap(const ClientStateHandle *ptr_state);
 FfiResultVoid client_state_network_run(const ClientStateHandle *ptr_state, FfiStringView addr);
 
 FfiResultVoid client_state_drop(const ClientStateHandle *ptr_state);
+
+ClientStateTakeErrorResult client_state_take_error(const ClientStateHandle *ptr_state);
 
 ProjectLockReadResult client_state_project_lock_read(const ClientStateHandle *ptr_state);
 

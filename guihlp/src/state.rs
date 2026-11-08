@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::{Arc, Mutex}};
 
 use dashmap::DashMap;
 use esotereel_lib::{
@@ -36,6 +36,10 @@ pub struct ClientState {
     pub toolbar: ToolbarStore,
 
     pub gui_callbacks: GuiCallbacks,
+
+    /// バックグラウンドスレッド（bootstrap / network_run）で発生した非同期エラーを格納。
+    /// C++ 側は `client_state_take_error` で取得・クリアできる。
+    pub async_error: Arc<Mutex<Option<String>>>,
 }
 
 fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
@@ -109,6 +113,7 @@ impl ClientState {
             toolbar: ToolbarStore::default(),
             media_fetch_cache: Arc::new(MediaFetchCache::default()),
             gui_callbacks,
+            async_error: Arc::new(Mutex::new(None)),
         };
         state.apply_logging_settings();
         state

@@ -92,16 +92,27 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
         // Arc::into_raw 由来のポインタから、参照カウントを増やして
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
+        let async_error = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
+            .async_error
+            .clone();
 
         std::thread::spawn(move || {
+            let async_error_inner = async_error.clone();
             let result = catch_unwind(AssertUnwindSafe(move || {
-                let runtime =
-                    tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        return;
+                    }
+                };
                 runtime.block_on(async {
                     let mut state = match state.lock() {
                         Ok(guard) => guard,
                         Err(e) => {
-                            log::error!("state lock poisoned: {e}");
+                            let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("state lock poisoned: {e}")));
                             return;
                         }
                     };
@@ -109,6 +120,9 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                 });
             }));
 
+            if let Err(ref panic) = result {
+                let _ = async_error.lock().map(|mut g| *g = Some(format!("bootstrap thread panicked: {:?}", panic)));
+            }
             log_if_panicked(result, "Client bootstrap thread");
             // ここで state (Arc) がドロップされ、参照カウントが1つ減る
         });
@@ -140,24 +154,33 @@ pub extern "C" fn client_state_network_run(
             .lock()
             .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = Arc::clone(&state.network);
+        let async_error = state.async_error.clone();
 
         let addr_str = addr.as_str()?;
         let addr = addr_str.to_string();
 
         // Rust側でバックグラウンドスレッドを生成してワーカーを開始する
         std::thread::spawn(move || {
+            let async_error_inner = async_error.clone();
             let result = catch_unwind(AssertUnwindSafe(move || {
-                let runtime =
-                    tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        return;
+                    }
+                };
                 runtime.block_on(async {
                     log::info!("Client worker thread started for: {}", addr);
-
                     if let Err(e) = network.run(state_clone, &addr).await {
-                        log::error!("Client worker error: {}", e);
+                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("network run error: {e}")));
                     }
                 });
             }));
 
+            if let Err(ref panic) = result {
+                let _ = async_error.lock().map(|mut g| *g = Some(format!("network thread panicked: {:?}", panic)));
+            }
             log_if_panicked(result, "Client worker thread");
 
             log::info!("Client worker thread exited");
@@ -185,6 +208,37 @@ pub unsafe extern "C" fn client_state_drop(ptr_state: *const ClientStateHandle) 
 
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
         Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
+}
+
+/// バックグラウンドスレッドで発生した非同期エラーを取得・クリアする。
+/// C++ 側は bootstrap / network_run の後でこれを呼び出し、初期化失敗を検知できる。
+pub type ClientStateTakeErrorResult = FfiResultVoid;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn client_state_take_error(ptr_state: *const ClientStateHandle) -> ClientStateTakeErrorResult {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
+        if ptr_state.is_null() {
+            return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
+        }
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        let mut error = state_guard
+            .async_error
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        if let Some(msg) = error.take() {
+            return Err(anyhow::Error::msg(msg));
+        }
+        Ok(())
+    }
+
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(())) => FfiResultVoid::ok(),
+        Ok(Err(e)) => FfiResultVoid::err(e),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }
 }
