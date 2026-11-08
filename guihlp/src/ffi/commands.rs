@@ -1,4 +1,4 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{panic::{AssertUnwindSafe, catch_unwind}, sync::Arc};
 
 use esotereel_lib::{
     project::ids::{LayerFolderId, LayerId, TimelineId},
@@ -50,14 +50,16 @@ pub unsafe extern "C" fn command_queue_send_all(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let network = &state.network;
+        let network = {
+            let guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            Arc::clone(&guard.network)
+        };
 
         catch_unwind(AssertUnwindSafe(|| {
             let queue = unsafe { &mut *ptr_queue };
-            queue.send_all(network);
+            queue.send_all(&network);
         }))
         .map_err(|_| anyhow::anyhow!("panic while sending command queue"))
     }

@@ -108,15 +108,50 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                         return;
                     }
                 };
-                runtime.block_on(async {
-                    let mut state = match state.lock() {
-                        Ok(guard) => guard,
+                let state_arc = state.clone();
+
+                // Phase 1: プラグインローダーとディレクトリを取得し、ClientState ロックを即座に解放
+                // （ブロックの終了と同時にガードがドロップされ、ロック解放される）
+                let (plugin_loader, dir) = {
+                    let guard = match state_arc.lock() {
+                        Ok(g) => g,
                         Err(e) => {
-                            let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("state lock poisoned: {e}")));
+                            let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to lock state: {e}")));
                             return;
                         }
                     };
-                    state.boot_strap().await;
+                    (
+                        Arc::clone(&guard.common.plugin_loader),
+                        Directories::new(
+                            guard.common.dir.std_plugin_dir.clone(),
+                            guard.common.dir.working_dir.clone(),
+                        ),
+                    )
+                };
+
+                runtime.block_on(async {
+                    // Phase 2: プラグイン読み込みを非同期で実行（ClientState ロックを保持しない）
+                    match plugin_loader.write_or_err() {
+                        Ok(mut loader) => {
+                            match loader.load_from_disk(&dir).await {
+                                Ok(_) => log::info!("Plugins loaded successfully"),
+                                Err(e) => log::error!("Failed to load plugins: {:?}", e),
+                            }
+                        }
+                        Err(e) => log::error!("Failed to load plugins: {:?}", e),
+                    }
+
+                    // Phase 3: プラグインフィールド適用（ClientState ロックを短時間保持）
+                    match state_arc.lock() {
+                        Ok(mut guard) => {
+                            if let Err(e) = guard.apply_extra_plugin_fields() {
+                                log::error!("Failed to apply settings: {:?}", e);
+                            } else {
+                                log::info!("Settings applied successfully");
+                            }
+                        }
+                        Err(e) => log::error!("Failed to acquire state lock: {:?}", e),
+                    }
                 });
             }));
 
