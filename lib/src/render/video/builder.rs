@@ -1,8 +1,16 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    plugin::script::{api::PluginRenderContext, bridge::field_values_to_rhai_map},
-    project::{Clip, video_clip::VideoClipProperties},
+    plugin::{
+        clip::component::{ClipInstance, Scheduler},
+        property::{
+            value::FieldValue,
+            ComponentCapability,
+        },
+        script::api::PluginRenderContext,
+    },
+    project::Clip,
     render::{RenderContext, vertex::Vertex},
 };
 use glam::Mat4;
@@ -37,42 +45,94 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
             continue;
         };
-        let Some(script) = loader.get_script(plugin_id) else {
+
+        // clip → kind → components: 能力ベースのレンダリングをスケジューラで実行。
+        // 従来の script.rhai + kind.render_script 経由ではなく、コンポーネントが
+        // 宣言する能力（frame-provider, prefetchable, transformable など）に基づき、
+        // 各標準関数（render_frame, prefetch, get_transform …）をフックタイミング順に呼び出す。
+        let Ok(runtime_def) = loader.resolve_component_definition(&clip.kind_id) else {
+            log::warn!(
+                "no component definition for clip kind {}, skipping render",
+                clip.kind_id.full()
+            );
             continue;
         };
-        // drop(loader);
 
-        let video_properties = if VideoClipProperties::is_video_kind(&clip.kind_id) {
-            match VideoClipProperties::from_clip(clip) {
-                Ok(properties) => Some(properties),
-                Err(error) => {
-                    log::warn!(
-                        "failed to read properties for video clip {}: {error}",
-                        clip.id
-                    );
-                    continue;
+        // コンポーネントが宣言する能力から、どのプロパティを参照すべきかを解決する。
+        // プロパティID（std:video:media など）をコード中にハードコードせず、
+        // コンポーネント定義の `capability` フィールドから逆引きする。
+        let media_property_key = runtime_def
+            .components
+            .iter()
+            .find(|c| c.id == clip.kind_id)
+            .and_then(|c| {
+                c.properties
+                    .iter()
+                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
+                    .map(|p| p.key.clone())
+            });
+
+        // メンバキー（"source", "source_offset" 等）もハードコードせず、
+        // プロパティ定義の `member_capabilities` から能力ベースで解決する。
+        // 未宣言の場合は既定のメンバー名にフォールバックする。
+        let media_component_def = runtime_def
+            .components
+            .iter()
+            .find(|c| c.id == clip.kind_id);
+        let source_member_key = media_component_def
+            .and_then(|c| {
+                c.properties.iter().find(|p| {
+                    p.capability == Some(ComponentCapability::FrameProvider)
+                }).and_then(|p| {
+                    p.member_capabilities.iter()
+                        .find(|(_, cap)| **cap == ComponentCapability::MediaSource)
+                        .map(|(key, _)| key.as_str())
+                })
+            })
+            .unwrap_or("source");
+        let offset_member_key = media_component_def
+            .and_then(|c| {
+                c.properties.iter().find(|p| {
+                    p.capability == Some(ComponentCapability::FrameProvider)
+                }).and_then(|p| {
+                    p.member_capabilities.iter()
+                        .find(|(_, cap)| **cap == ComponentCapability::MediaOffsetProvider)
+                        .map(|(key, _)| key.as_str())
+                })
+            })
+            .unwrap_or("source_offset");
+
+        let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
+        let mut video_source: Option<String> = None;
+
+        if let Some(media_key) = media_property_key {
+            if let Some(FieldValue::Map(media_map)) =
+                clip.properties.get(&media_key).and_then(|v| v.in_frame_of().cloned())
+            {
+                let source_offset = media_map
+                    .get(offset_member_key)
+                    .and_then(|v| match v {
+                        FieldValue::Int(i) => Some(*i as f64),
+                        FieldValue::Float(f) => Some(*f),
+                        _ => None,
+                    })
+                    .unwrap_or(0.0);
+                let relative_frame = ctx.current_frame.saturating_sub(clip.position);
+                let seconds = (relative_frame as f64 + source_offset) / ctx.timeline.tps;
+                if seconds.is_finite() {
+                    media_time = seconds;
+                }
+
+                // 同じメディアプロパティから source 文字列も取得し、ビデオソースとして設定する。
+                // 空文字列の場合はソース未設定とみなし、ビデオをレンダリングしない。
+                if let Some(FieldValue::String(source)) = media_map.get(source_member_key) {
+                    if !source.is_empty() {
+                        video_source = Some(source.clone());
+                    }
                 }
             }
-        } else {
-            None
-        };
-        let media_time = match video_properties.as_ref() {
-            Some(properties) => match properties.media_time_seconds(
-                clip.position,
-                ctx.current_frame,
-                ctx.timeline.tps,
-            ) {
-                Ok(media_time) => media_time,
-                Err(error) => {
-                    log::warn!(
-                        "failed to compute media time for video clip {}: {error}",
-                        clip.id
-                    );
-                    continue;
-                }
-            },
-            None => compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame),
-        };
+        }
+
         let mut render_ctx = PluginRenderContext::new(
             clip.id,
             media_time,
@@ -81,23 +141,21 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             Arc::clone(ctx.streams),
             Arc::clone(ctx.media_fetch_cache),
         );
-        if let Some(properties) = video_properties {
-            render_ctx.set_video_source(properties.media.source);
-        }
-        let props_dynamic = field_values_to_rhai_map(&clip.properties);
 
-        // TODO: call with state.call_script() instead of directly calling the loader
-        let call_result: Result<(), _> = loader.call_script::<()>(
-            ctx.script_engine,
-            plugin_id,
-            &kind.render_script,
-            (render_ctx.clone(), props_dynamic),
-        );
-        if let Err(e) = call_result {
+        if let Some(source) = video_source {
+            render_ctx.set_video_source(source);
+        }
+
+        let instance = ClipInstance {
+            kind_id: clip.kind_id.clone(),
+            properties: clip.properties.clone(),
+            state: HashMap::new(),
+        };
+        let scheduler = Scheduler::new();
+        if let Err(e) = scheduler.run_clip(ctx.script_engine, &*loader, &instance, &runtime_def, &mut render_ctx) {
             log::warn!(
-                "plugin render script `{}` failed: {}",
-                clip.kind_id.full(),
-                e
+                "component scheduler failed for clip {}: {e}",
+                clip.id
             );
         }
 

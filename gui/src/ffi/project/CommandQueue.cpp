@@ -33,6 +33,13 @@ Result<void> CommandQueue::addClipAt(TimelineId timelineId, TimelineTick positio
         esotereel_gui_helper::req_cmd_add_clip_dummy(ptr_queue, ptr_state, timelineId, position, layerId));
 }
 
+Result<void> CommandQueue::addVideoClipAt(TimelineId timelineId, TimelineTick position, LayerId layerId,
+                                          const std::string &sourcePath) noexcept {
+    return Result<void>(esotereel_gui_helper::req_cmd_add_clip_with_source(
+        ptr_queue, ptr_state, timelineId, position, layerId,
+        StringView::fromStdString(sourcePath)));
+}
+
 void CommandQueue::addLayer(TimelineId timelineId, std::optional<uint64_t> parentLayerId,
                             std::optional<uint32_t> insertIndex, const std::string &name) noexcept {
     esotereel_gui_helper::req_cmd_add_layer(ptr_queue, timelineId, parentLayerId.has_value(), parentLayerId.value_or(0),

@@ -1,6 +1,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use esotereel_lib::{
+    decode::streamplayer::FetchState,
     project::{TimelineTick, command::CommandRequest, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
@@ -100,17 +101,77 @@ pub unsafe extern "C" fn req_fetch_frame(
             )
         };
 
+        // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
+        // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求
+        // も、可視範囲が変わっていなければ再送しない。
+        let mut requests_to_send = Vec::with_capacity(req.len());
+        for r in req.into_iter() {
+            match r {
+                Request::FetchStreamData {
+                    resource_id,
+                    ranges,
+                } => {
+                    let is_duplicate = state_guard
+                        .last_stream_fetch
+                        .get(&resource_id)
+                        .map_or(false, |last| *last == ranges);
+                    if is_duplicate {
+                        log::debug!(
+                            "Skip duplicate FetchStreamData for resource_id: {} ranges: {:?}",
+                            resource_id,
+                            ranges
+                        );
+                        // 実際には送信しないため、request_stream_packets_for_time が
+                        // 設定したフェッチ中状態をアイドルに戻す
+                        if let Some(mut player) =
+                            state_guard.stream_players.get_mut(&resource_id)
+                        {
+                            player.fetch_state = FetchState::Idle;
+                        }
+                        continue;
+                    }
+                    state_guard
+                        .last_stream_fetch
+                        .insert(resource_id, ranges.clone());
+                    requests_to_send.push(Request::FetchStreamData {
+                        resource_id,
+                        ranges,
+                    });
+                }
+                other => requests_to_send.push(other),
+            }
+        }
+
+        let clips_range = visible_range_start..visible_range_end;
+        let send_clips = state_guard
+            .last_clips_fetch
+            .get(&timeline_id)
+            .map_or(true, |last| *last != (visible_range_start, visible_range_end));
+        if send_clips {
+            state_guard
+                .last_clips_fetch
+                .insert(timeline_id, (visible_range_start, visible_range_end));
+        }
+
         {
             let network = &state_guard.network;
 
-            for req in req.iter() {
-                network.send(req);
+            for r in &requests_to_send {
+                network.send(r);
             }
 
-            network.send(&Request::FetchClipsInRange {
-                timeline_id,
-                range: visible_range_start..visible_range_end,
-            });
+            if send_clips {
+                network.send(&Request::FetchClipsInRange {
+                    timeline_id,
+                    range: clips_range,
+                });
+            } else {
+                log::debug!(
+                    "Skip duplicate FetchClipsInRange for timeline_id: {} range: {:?}",
+                    timeline_id,
+                    clips_range
+                );
+            }
         }
 
         Ok(())

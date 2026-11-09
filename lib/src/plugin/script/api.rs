@@ -4,13 +4,12 @@ use std::{
 };
 
 use dashmap::DashMap;
-use glam::{Mat4, Vec3};
+use glam::{EulerRot, Mat4, Quat, Vec3};
 
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
     network::NetworkHandler,
-    plugin::property::special::{Transform, TransformValues},
     project::{
         Project,
         ids::{ClipId, ResourceId, TimelineId},
@@ -264,14 +263,76 @@ fn transform_matrix(
     .matrix())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransformValues {
+    pub position: [f32; 3],
+    pub rotation: [f32; 3],
+    pub scale: [f32; 3],
+}
+
+impl TransformValues {
+    pub fn matrix(self) -> Mat4 {
+        let rotation = Vec3::from_array(self.rotation) * (std::f32::consts::PI / 180.0);
+        Mat4::from_scale_rotation_translation(
+            Vec3::from_array(self.scale),
+            Quat::from_euler(EulerRot::XYZ, rotation.x, rotation.y, rotation.z),
+            Vec3::from_array(self.position),
+        )
+    }
+}
+
+fn read_rhai_vector(
+    fields: &rhai::Map,
+    key: &str,
+) -> Result<[f32; 3], Box<rhai::EvalAltResult>> {
+    let values = fields
+        .get(key)
+        .cloned()
+        .and_then(rhai::Dynamic::try_cast::<rhai::Array>)
+        .ok_or_else(|| {
+            Box::<rhai::EvalAltResult>::from(format!("transform property `{key}` must be an array"))
+        })?;
+    if values.len() != 3 {
+        return Err(
+            format!("transform property `{key}` must contain exactly three numbers").into(),
+        );
+    }
+
+    let mut vector = [0.0; 3];
+    for (output, value) in vector.iter_mut().zip(values) {
+        let number = value
+            .clone()
+            .try_cast::<f64>()
+            .or_else(|| value.try_cast::<i64>().map(|v| v as f64))
+            .ok_or_else(|| {
+                Box::<rhai::EvalAltResult>::from(format!(
+                    "transform property `{key}` must contain numbers"
+                ))
+            })?;
+        *output = number as f32;
+        if !number.is_finite() || !output.is_finite() {
+            return Err(format!("transform property `{key}` must contain finite numbers").into());
+        }
+    }
+    Ok(vector)
+}
+
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
     engine.register_fn("mat4_trs", transform_matrix);
-    engine.register_fn("as_mat4", |fields: rhai::Map| {
-        Transform::from_rhai_map(&fields).map(TransformValues::matrix)
+    engine.register_fn("as_mat4", |fields: rhai::Map| -> Result<Mat4, Box<rhai::EvalAltResult>> {
+        let position = read_rhai_vector(&fields, "position")?;
+        let rotation = read_rhai_vector(&fields, "rotation")?;
+        let scale = read_rhai_vector(&fields, "scale")?;
+        Ok(TransformValues {
+            position,
+            rotation,
+            scale,
+        }
+        .matrix())
     });
     engine.register_fn(
         "set_transform",
@@ -297,10 +358,9 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
     engine.register_fn(
         "get_video_texture",
         |ctx: &mut PluginRenderContext| -> Result<i64, Box<rhai::EvalAltResult>> {
-            let source = ctx
-                .video_source
-                .clone()
-                .ok_or_else(|| Box::<rhai::EvalAltResult>::from("video source is not set"))?;
+            let Some(source) = ctx.video_source.clone() else {
+                return Ok(-1);
+            };
             Ok(ctx.get_texture(&source, ctx.media_time(), DEFAULT_LOOKAHEAD_SECONDS))
         },
     );
@@ -388,7 +448,6 @@ mod render_tests {
     use super::*;
     use crate::plugin::{Plugin, script::bridge::field_values_to_rhai_map};
     use crate::project::clip::ClipBindingValue;
-    use crate::project::video_clip::VideoClipProperties;
 
     #[test]
     fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
@@ -397,48 +456,29 @@ mod render_tests {
             "/../plugins/std"
         )))
         .unwrap();
-        let schemas = crate::project::clip::ClipKind::resolve_properties(
-            &plugin.clip_kinds,
-            plugin.pending_properties,
-        )
-        .unwrap();
-        let fields = &schemas[&crate::plugin::NamespacedID::new("std", "video").unwrap()];
-        let [
-            crate::plugin::property::PropertySchema {
-                kind:
-                    crate::plugin::property::value::FieldTypeKind::Group {
-                        fields: video_fields,
-                        ..
-                    },
-                ..
-            },
-        ] = fields.as_slice()
+        // コンポーネントがプロパティを提供する。ルートコンポーネント std:video の
+        // プロパティスキーマを取得し、core:media / core:transform 特別プロパティを含むことを確認する。
+        let component = plugin
+            .component_definitions
+            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .unwrap();
+        let fields = &component.properties;
+        let media = fields
+            .iter()
+            .find(|f| f.key.local_id() == "video:media")
+            .unwrap();
+        let transform = fields
+            .iter()
+            .find(|f| f.key.local_id() == "video:transform")
+            .unwrap();
+        let crate::plugin::property::value::FieldTypeKind::Group { .. } = &media.kind
         else {
-            panic!("video property root")
+            panic!("media property must be a group")
         };
-        let [
-            crate::plugin::property::PropertySchema {
-                kind:
-                    crate::plugin::property::value::FieldTypeKind::Special {
-                        reference: media_reference,
-                        ..
-                    },
-                ..
-            },
-            crate::plugin::property::PropertySchema {
-                kind:
-                    crate::plugin::property::value::FieldTypeKind::Special {
-                        reference: transform_reference,
-                        ..
-                    },
-                ..
-            },
-        ] = video_fields.as_slice()
+        let crate::plugin::property::value::FieldTypeKind::Map { .. } = &transform.kind
         else {
-            panic!("video schema must use core special properties")
+            panic!("transform property must be a map")
         };
-        assert_eq!(media_reference.full(), "core:media");
-        assert_eq!(transform_reference.full(), "core:transform");
         assert!(
             !fields
                 .iter()
@@ -450,30 +490,29 @@ mod render_tests {
                 .iter()
                 .map(|(path, _)| path.to_string())
                 .collect::<Vec<_>>(),
-            [
-                "std:video/media/source",
-                "std:video/media/source_offset",
-                "std:video/transform/position",
-                "std:video/transform/rotation",
-                "std:video/transform/scale",
-            ]
+            ["std:video:media/source", "std:video:media/source_offset", "std:video:transform"]
         );
         let mut props = ClipBindingValue::default_properties(fields);
-        let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(video)) =
-            props
-                .get_mut(&crate::plugin::NamespacedID::new("std", "video").unwrap())
-                .unwrap()
+        // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。
+        // transform デフォルト値をセット（as_mat4 は position/rotation/scale を全て要求する）
+        let transform_value = props
+            .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+            .unwrap();
+        let ClipBindingValue::Static(
+            crate::plugin::property::value::FieldValue::Map(transform_map),
+        ) = transform_value
         else {
-            panic!("video group")
+            panic!("transform property must be a map")
         };
-        let Some(crate::plugin::property::value::FieldValue::Map(media)) = video.get_mut("media")
-        else {
-            panic!("media group")
+        let vec = |v: [f64; 3]| {
+            crate::plugin::property::value::FieldValue::Array(
+                v.into_iter().map(crate::plugin::property::value::FieldValue::Float).collect(),
+            )
         };
-        media.insert(
-            "source".into(),
-            crate::plugin::property::value::FieldValue::String("test.mp4".into()),
-        );
+        transform_map.insert("position".into(), vec([0.0, 0.0, 0.0]));
+        transform_map.insert("rotation".into(), vec([0.0, 0.0, 0.0]));
+        transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
+
         let cache = Arc::new(MediaFetchCache::default());
         let path_to_stream = Arc::new(DashMap::new());
         let streams = Arc::new(DashMap::new());
@@ -488,11 +527,14 @@ mod render_tests {
         context.set_video_source("test.mp4".into());
         let mut engine = rhai::Engine::new();
         register_render_api(&mut engine);
-        let script = plugin.script.unwrap();
+        let script = plugin
+            .component_scripts
+            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .unwrap();
         script
             .call::<()>(
                 &engine,
-                "render_clip_video",
+                "render_frame",
                 (context.clone(), field_values_to_rhai_map(&props)),
             )
             .unwrap();
@@ -509,19 +551,16 @@ mod render_tests {
         path_to_stream.insert("test.mp4".into(), StreamState::Loaded(7));
         streams.insert(7, player);
         for factor in [1.0, 0.5, 2.0] {
-            let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(video)) =
-                props
-                    .get_mut(&crate::plugin::NamespacedID::new("std", "video").unwrap())
-                    .unwrap()
+            let transform_value = props
+                .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+                .unwrap();
+            let ClipBindingValue::Static(
+                crate::plugin::property::value::FieldValue::Map(transform_map),
+            ) = transform_value
             else {
-                panic!("video group")
+                panic!("transform property must be a map")
             };
-            let Some(crate::plugin::property::value::FieldValue::Map(transform)) =
-                video.get_mut("transform")
-            else {
-                panic!("transform group")
-            };
-            transform.insert(
+            transform_map.insert(
                 "scale".into(),
                 crate::plugin::property::value::FieldValue::Array(
                     [32.0 * factor, 24.0 * factor, 1.0]
@@ -530,10 +569,6 @@ mod render_tests {
                         .collect(),
                 ),
             );
-            let video_properties = VideoClipProperties::from_value(
-                &crate::plugin::property::value::FieldValue::Map(video.clone()),
-            )
-            .unwrap();
             let mut context = PluginRenderContext::new(
                 1,
                 2.0,
@@ -542,11 +577,11 @@ mod render_tests {
                 Arc::clone(&streams),
                 Arc::clone(&cache),
             );
-            context.set_video_source(video_properties.media.source);
+            context.set_video_source("test.mp4".into());
             script
                 .call::<()>(
                     &engine,
-                    "render_clip_video",
+                    "render_frame",
                     (context.clone(), field_values_to_rhai_map(&props)),
                 )
                 .unwrap();

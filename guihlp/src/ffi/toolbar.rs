@@ -185,14 +185,20 @@ pub unsafe extern "C" fn toolbar_handle_action(
         let project = state.project.clone();
         let context = PluginActionContext::new(Arc::clone(&state.network), project, timeline_id);
 
-        // スクリプト実行
-        state
+        // スクリプト実行（ボタン専用の個別スクリプトから実行。script は必須）
+        let loader = state
             .common
             .plugin_loader
-            .read_or_err()?
-            .call_script::<()>(
+            .read()
+            .expect("lock poisoned");
+        let script = loader
+            .get_toolbar_button_script(&button_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!("script for toolbar button `{}` not found", button_id.full())
+            })?;
+        script
+            .call::<()>(
                 &state.common.script_engine,
-                button_id.plugin_id(),
                 &button.action.func_name,
                 (context.clone(),),
             )

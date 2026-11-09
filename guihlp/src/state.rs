@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::{Arc, Mutex}};
+use std::{collections::BTreeMap, ops::Range, sync::{Arc, Mutex}};
 
 use dashmap::DashMap;
 use esotereel_lib::{
@@ -15,7 +15,10 @@ use esotereel_lib::{
         toolbar::ToolbarStore,
     },
     prebootstrap::PreBootstrapSettings,
-    project::ids::{ResourceId, TimelineId},
+    project::{
+        MediaSec, TimelineTick,
+        ids::{ResourceId, TimelineId},
+    },
     render::video::MediaFetchCache,
     state::{CommonState, HostState},
     util::result::LockExt,
@@ -29,6 +32,14 @@ pub struct ClientState {
     pub network: Arc<ClientNetworkHandler>,
 
     pub stream_players: Arc<DashMap<ResourceId, StreamPlayer>>,
+
+    /// 直前の FetchClipsInRange 要求: timeline_id => (start, end)。
+    /// 同一タイムラインへの同一レンジの重複送信を抑制するために使用する。
+    pub last_clips_fetch: DashMap<TimelineId, (TimelineTick, TimelineTick)>,
+
+    /// 直前の FetchStreamData 要求: resource_id => 要求済みレンジのリスト。
+    /// 同一リソースへの同一レンジの重複送信を抑制するために使用する。
+    pub last_stream_fetch: DashMap<ResourceId, Vec<Range<MediaSec>>>,
 
     pub media_fetch_cache: Arc<MediaFetchCache>,
 
@@ -58,6 +69,8 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
             label: "Default Log Level".to_owned(),
             kind: level_kind.clone(),
             default: FieldValue::Enum("Info".to_owned()),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
         },
         PropertySchema {
             key: NamespacedID::new("core", "log.filters")?,
@@ -68,6 +81,8 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
                 known_keys: None,
             },
             default: FieldValue::Map(BTreeMap::new()),
+            capability: None,
+            member_capabilities: BTreeMap::new(),
         },
     ])
 }
@@ -109,6 +124,8 @@ impl ClientState {
             common: CommonState::new::<ClientState>(dirs_def, None),
             network: Arc::new(ClientNetworkHandler::new()),
             stream_players: Arc::new(DashMap::new()),
+            last_clips_fetch: DashMap::new(),
+            last_stream_fetch: DashMap::new(),
             settings,
             toolbar: ToolbarStore::default(),
             media_fetch_cache: Arc::new(MediaFetchCache::default()),

@@ -155,7 +155,32 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
         return container;
     }
 
-    // String, および未対応種別(FilePath/Map)のフォールバック
+    if (field.kindType == SettingsFieldType::Map) {
+        // Map型は簡易表示のみ。編集UIは将来の実装に残す。
+        auto *lineEdit = new QLineEdit();
+        lineEdit->setEnabled(false);
+        if (auto mapValue = currentValue.asMap()) {
+            QStringList parts;
+            for (const auto &[k, v] : *mapValue) {
+                QString valStr;
+                if (auto s = v.asQString())
+                    valStr = *s;
+                else if (auto n = v.asInt())
+                    valStr = QString::number(*n);
+                else if (auto f = v.asFloat())
+                    valStr = QString::number(*f);
+                else
+                    valStr = QObject::tr("?");
+                parts << QString::fromStdString(k) + ": " + valStr;
+            }
+            lineEdit->setText(parts.join(", "));
+        } else if (auto qstringValue = currentValue.asQString()) {
+            lineEdit->setText(qstringValue.value());
+        }
+        return lineEdit;
+    }
+
+    // String および FilePath のフォールバック（どちらもQStringとして扱える）
     auto *lineEdit = new QLineEdit();
     auto qstringValue = currentValue.asQString();
     if (qstringValue.has_value()) {

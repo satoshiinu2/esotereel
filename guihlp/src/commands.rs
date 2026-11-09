@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
-    plugin::NamespacedID,
+    plugin::{NamespacedID, property::{ComponentCapability, value::FieldValue}},
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
@@ -63,6 +63,8 @@ impl CommandQueue {
 
                 Some(ClipMoveCtx {
                     clip_id: *clip_id,
+                    base_position: clip.position,
+                    base_duration: clip.duration,
                     new_position: clip.position + position_moved,
                     new_duration: clip.duration + duration_added,
                     new_layer_id,
@@ -84,12 +86,30 @@ impl CommandQueue {
         left_edge: bool,
         frame_delta: i64,
     ) -> anyhow::Result<()> {
+        let timeline = project
+            .timeline_ref(timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+
         let clip_data = clip_ids
             .iter()
-            .map(|clip_id| ClipResizeCtx {
-                clip_id: *clip_id,
-                left_edge,
-                frame_delta,
+            .filter_map(|clip_id| {
+                let (clip, _) = timeline.get_clip_and_layer(*clip_id)?;
+                let (new_position, new_duration) = if left_edge {
+                    (
+                        clip.position + frame_delta,
+                        clip.duration - frame_delta,
+                    )
+                } else {
+                    (clip.position, clip.duration + frame_delta)
+                };
+                Some(ClipResizeCtx {
+                    clip_id: *clip_id,
+                    left_edge,
+                    base_position: clip.position,
+                    base_duration: clip.duration,
+                    new_position,
+                    new_duration,
+                })
             })
             .collect();
 
@@ -116,6 +136,56 @@ impl CommandQueue {
 
         let properties = ClipBindingValue::default_properties(property_schema);
         drop(loader);
+
+        let command = CommandRequest::AddClip {
+            layer_id,
+            position,
+            duration: 50,
+            kind_id,
+            properties,
+        };
+
+        self.enqueue(timeline_id, command);
+
+        Ok(())
+    }
+
+    pub fn req_cmd_add_clip_with_source(
+        &mut self,
+        state: &ClientState,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+        source_path: &str,
+    ) -> anyhow::Result<()> {
+        let kind_id = NamespacedID::parse("std:video").unwrap();
+
+        let loader = state.plugin_loader.read().expect("mutex poisoned");
+
+        let property_schema = loader
+            .get_clip_properties(&kind_id)
+            .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
+
+        // ドロップターゲットメンバーを能力から逆引き（loaderをdropする前に取得）。
+        let drop_target = property_schema
+            .iter()
+            .find_map(|prop| {
+                prop.member_capabilities.iter()
+                    .find(|(_, cap)| **cap == ComponentCapability::Droppable)
+                    .map(|(member, _)| (prop.key.clone(), member.clone()))
+            });
+
+        let mut properties = ClipBindingValue::default_properties(property_schema);
+        drop(loader);
+
+        let (prop_key, member_key) =
+            drop_target.ok_or_else(|| anyhow::anyhow!("no drop-target property found"))?;
+
+        if let Some(ClipBindingValue::Static(FieldValue::Map(map))) =
+            properties.get_mut(&prop_key)
+        {
+            map.insert(member_key, FieldValue::String(source_path.to_string()));
+        }
 
         let command = CommandRequest::AddClip {
             layer_id,

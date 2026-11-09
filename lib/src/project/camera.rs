@@ -109,18 +109,20 @@ mod preview_tests {
         let kind = NamespacedID::new("std", "video").unwrap();
         let mut properties =
             ClipBindingValue::default_properties(loader.get_clip_properties(&kind).unwrap());
-        let ClipBindingValue::Static(FieldValue::Map(video)) = properties
-            .get_mut(&NamespacedID::new("std", "video").unwrap())
-            .unwrap()
-        else {
-            panic!("video group")
-        };
-        let Some(FieldValue::Map(media)) = video.get_mut("media") else {
-            panic!("media group")
+        // コンポーネントが提供するプロパティはフラットなキーで配置される:
+        // std:video:media, std:video:transform など
+        let media_value = properties
+            .get_mut(&NamespacedID::new("std", "video:media").unwrap())
+            .unwrap();
+        let ClipBindingValue::Static(FieldValue::Map(media)) = media_value else {
+            panic!("media property must be a map")
         };
         media.insert("source".into(), FieldValue::String("fixture.mp4".into()));
-        let Some(FieldValue::Map(transform)) = video.get_mut("transform") else {
-            panic!("transform group")
+        let transform_value = properties
+            .get_mut(&NamespacedID::new("std", "video:transform").unwrap())
+            .unwrap();
+        let ClipBindingValue::Static(FieldValue::Map(transform)) = transform_value else {
+            panic!("transform property must be a map")
         };
         transform.insert(
             "scale".into(),

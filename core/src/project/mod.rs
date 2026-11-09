@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use anyhow::Ok;
 use esotereel_lib::{
     plugin::{
         NamespacedID,
-        property::{special::Media, value::FieldValue},
+        property::{value::FieldValue, PropertyPath},
     },
     project::{
         Clip, Project, TimelineTick,
@@ -138,21 +137,29 @@ pub(crate) fn clip_resize_core(
     for (layer_id, ctx, mut clip) in extracted {
         clip.set_position(ctx.new_position);
         clip.duration = ctx.new_duration;
+
+        // 左エッジ変更時は source_offset を位置変化分だけシフトする。
+        // 左端を右に動かすと source 側からのオフセットも同じだけ進む。
+        if ctx.left_edge && ctx.position_delta != 0 {
+            match PropertyPath::parse("std:video:media/source_offset") {
+                Ok(path) => {
+                    if let Some(FieldValue::String(current_offset)) = clip.get_property_path(&path) {
+                        if let Ok(current) = current_offset.parse::<i64>() {
+                            let new_offset = current + ctx.position_delta;
+                            let _ = clip.set_property_path(
+                                &path,
+                                ClipBindingValue::Static(FieldValue::String(new_offset.to_string())),
+                            );
+                        }
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+
         timeline.place_clip(layer_id, clip)?;
     }
 
-    for ctx in resized_clips {
-        if let Some(off) = ctx.new_source_offset {
-            let v = ClipBindingValue::Static(FieldValue::Int(off));
-            let clip = timeline
-                .get_clip_mut(ctx.clip_id)
-                .ok_or(EsotereelError::ClipNotFound(ctx.clip_id))?;
-            let key = Media::source_offset_path(&clip.kind_id)?;
-            clip.set_property_path(&key, v)?;
-            let root_value = clip.get_property_value(key.root()).unwrap().clone();
-            timeline.touch_property_changed(ctx.clip_id, key.root().clone(), root_value);
-        }
-    }
     Ok(())
 }
 

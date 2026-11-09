@@ -12,6 +12,7 @@ TimelineCanvasWidget::TimelineCanvasWidget(WindowGState &windowState, size_t tim
     hScrollBar = new QScrollBar(Qt::Horizontal, this);
     vScrollBar = new QScrollBar(Qt::Vertical, this);
     setMouseTracking(true); // ホバーでリサイズカーソルを出すため
+    setAcceptDrops(true); // 外部ファイルのドラッグドロップを受け付ける
 
     connect(hScrollBar, &QScrollBar::valueChanged, [this](int val) {
         this->scroll.setX(val);
@@ -46,6 +47,35 @@ void TimelineCanvasWidget::advancePlaybackFrame() {
 }
 
 TimelineCanvasWidget::~TimelineCanvasWidget() = default;
+
+void TimelineCanvasWidget::dragEnterEvent(QDragEnterEvent *e) {
+    if (e->mimeData()->hasUrls()) {
+        e->acceptProposedAction();
+    } else {
+        e->ignore();
+    }
+}
+
+void TimelineCanvasWidget::dragMoveEvent(QDragMoveEvent *e) {
+    if (e->mimeData()->hasUrls()) {
+        e->acceptProposedAction();
+    } else {
+        e->ignore();
+    }
+}
+
+void TimelineCanvasWidget::dragLeaveEvent(QDragLeaveEvent *e) {
+    QWidget::dragLeaveEvent(e);
+}
+
+void TimelineCanvasWidget::dropEvent(QDropEvent *e) {
+    if (e->mimeData()->hasUrls()) {
+        handleVideoFileDrop(this, e);
+        e->acceptProposedAction();
+    } else {
+        e->ignore();
+    }
+}
 
 void TimelineCanvasWidget::resizeEvent(QResizeEvent *event) {
     QWidget::resizeEvent(event);

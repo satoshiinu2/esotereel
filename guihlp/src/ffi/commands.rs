@@ -220,6 +220,57 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_cmd_add_clip_with_source(
+    ptr_queue: *mut CommandQueue,
+    ptr_state: *const ClientStateHandle,
+    timeline_id: TimelineId,
+    position: i64,
+    layer_id: LayerId,
+    source_path: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_queue: *mut CommandQueue,
+        ptr_state: *const ClientStateHandle,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+        source_path: FfiStringView,
+    ) -> anyhow::Result<()> {
+        if ptr_queue.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_string()));
+        }
+        if ptr_state.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_state".to_string()));
+        }
+
+        let state = ClientStateHandle::from_ptr(ptr_state);
+        let state_guard = state.lock().expect("mutex poisoned");
+
+        let queue = unsafe { &mut *ptr_queue };
+        queue.req_cmd_add_clip_with_source(
+            &state_guard,
+            timeline_id,
+            position,
+            layer_id,
+            source_path.as_str().unwrap_or(""),
+        )?;
+
+        Ok(())
+    }
+
+    FfiResultVoid::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
+        inner(
+            ptr_queue,
+            ptr_state,
+            timeline_id,
+            position,
+            layer_id,
+            source_path,
+        )
+    })))
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn req_cmd_add_layer(
     ptr_queue: *mut CommandQueue,
     timeline_id: TimelineId,

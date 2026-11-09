@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 
 use crate::plugin::property::{FieldTypeKind, value::FieldValue};
+use crate::plugin::NamespacedID;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertySchemaRaw {
@@ -13,6 +14,17 @@ pub struct PropertySchemaRaw {
     pub kind: toml::Value,
     #[serde(default)]
     pub default: Option<toml::Value>,
+    /// このプロパティが提供する能力（例: "frame-provider", "transformable"）。
+    /// 設定スキーマなど能力に関係ないプロパティは省略可能。
+    #[serde(default)]
+    pub capability: Option<String>,
+    /// マップ型プロパティのメンバーに対する能力マッピング（例: { source_offset = "media-offset-provider" }）。
+    /// メンバーレベルの参照をハードコード文字列ではなく能力で解決するために使用する。
+    #[serde(default)]
+    pub member_capabilities: BTreeMap<String, String>,
+    /// Group 型プロパティの子フィールド定義。
+    #[serde(default)]
+    pub fields: Option<Vec<PropertySchemaRaw>>,
 }
 
 impl FieldTypeKind {
@@ -96,6 +108,18 @@ impl FieldTypeKind {
                 }
             }
 
+            "group" => {
+                let reference_str = table
+                    .get("reference")
+                    .and_then(|t| t.as_str())
+                    .context("Group `kind` is missing a string `reference` field")?;
+                let reference = NamespacedID::parse(reference_str)?;
+                FieldTypeKind::Group {
+                    reference,
+                    fields: Vec::new(),
+                }
+            }
+
             other => bail!("unknown settings field kind `{other}`"),
         };
 
@@ -143,12 +167,6 @@ impl FieldTypeKind {
 
             FieldTypeKind::Map { .. } => FieldValue::Map(BTreeMap::new()),
             FieldTypeKind::Group { fields, .. } => FieldValue::Map(
-                fields
-                    .iter()
-                    .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
-                    .collect(),
-            ),
-            FieldTypeKind::Special { fields, .. } => FieldValue::Map(
                 fields
                     .iter()
                     .map(|field| (field.key.local_id().to_owned(), field.default.clone()))

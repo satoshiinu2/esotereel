@@ -42,6 +42,7 @@ class CommandQueue {
                      int64_t frameDelta) noexcept;
 
     Result<void> addClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId) noexcept;
+    Result<void> addVideoClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId, const std::string &sourcePath) noexcept;
     void addLayer(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
                   const std::string &name) noexcept;
     void addFolder(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,

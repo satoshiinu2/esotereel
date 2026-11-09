@@ -12,10 +12,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMap>
-#include <QSpinBox>
 #include <QSignalBlocker>
-#include <functional>
+#include <QSpinBox>
 #include <QVBoxLayout>
+#include <functional>
 
 namespace esotereel::window {
 
@@ -125,10 +125,14 @@ void ClipPropertiesPanel::rebuild() {
     }
     const QVector<ClipPropertySchema> fields = fieldsResult.unwrap();
 
+    // Map型もFieldControlFactoryで簡易表示（読み取り専用）に対応済みのため、
+    // フィルタリングせずすべてのフィールドを編集パネルに表示する。
+    QVector<ClipPropertySchema> editableFields = fields;
+
     qDebug() << "[ClipPropertiesPanel] rebuild:"
              << "timelineId =" << timelineId << "clipIds count =" << clipIds.size();
 
-    qDebug() << "[ClipPropertiesPanel] fields =" << fields.size();
+    qDebug() << "[ClipPropertiesPanel] fields =" << editableFields.size();
 
     // Rust projects typed groups into leaf fields with an ordered category path.
     // Keep that order and support arbitrary nesting instead of a fixed tab depth.
@@ -141,7 +145,39 @@ void ClipPropertiesPanel::rebuild() {
         for (const auto &field : items) {
             const auto path = categoryPath(field);
             if (path.size() <= depth) {
-                layout->addWidget(buildRow(field));
+                if (field.kindType == esotereel_gui_helper::SettingsFieldType::Map) {
+                    // Map型はツリー表示：見出しをコラプシブルセクションにし、
+                    // メンバーを編集行として配置する（Transform > position/rotation/scale など）。
+                    auto *section = new widget::CollapsibleSection(field.label);
+                    if (auto mapValue = field.defaultValue.asMap()) {
+                        for (const auto &[memberKey, memberValue] : *mapValue) {
+                            ClipPropertySchema memberField;
+                            memberField.key = field.key + "/" + QString::fromStdString(memberKey);
+                            memberField.label = QString::fromStdString(memberKey);
+                            memberField.category = field.category;
+
+                            if (std::holds_alternative<FieldValue::Array>(memberValue.variant())) {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::Array;
+                            } else if (std::holds_alternative<double>(memberValue.variant())) {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::Float;
+                            } else if (std::holds_alternative<int64_t>(memberValue.variant())) {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::Int;
+                            } else if (std::holds_alternative<bool>(memberValue.variant())) {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::Bool;
+                            } else if (std::holds_alternative<RgbaColor>(memberValue.variant())) {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::Color;
+                            } else {
+                                memberField.kindType = esotereel_gui_helper::SettingsFieldType::String;
+                            }
+                            memberField.defaultValue = memberValue;
+
+                            section->contentLayout()->addWidget(buildRow(memberField));
+                        }
+                    }
+                    layout->addWidget(section);
+                } else {
+                    layout->addWidget(buildRow(field));
+                }
                 continue;
             }
             const QString name = path[depth];
@@ -159,13 +195,13 @@ void ClipPropertiesPanel::rebuild() {
         }
     };
     QStringList roots;
-    for (const auto &field : fields) {
+    for (const auto &field : editableFields) {
         const QString root = categoryPath(field).value(0, "General");
         if (roots.contains(root))
             continue;
         roots.append(root);
         QVector<ClipPropertySchema> children;
-        for (const auto &candidate : fields) {
+        for (const auto &candidate : editableFields) {
             if (categoryPath(candidate).value(0, "General") == root)
                 children.append(candidate);
         }
@@ -214,34 +250,35 @@ void ClipPropertiesPanel::refreshChangedFields() {
         const QSignalBlocker blocker(control);
 
         // コントロールのタイプに応じて値を設定
-        if (auto *spinBox = qobject_cast<QSpinBox*>(control)) {
+        if (auto *spinBox = qobject_cast<QSpinBox *>(control)) {
             auto intValue = value.asInt();
             if (intValue.has_value()) {
                 spinBox->setValue(intValue.value());
             }
-        } else if (auto *doubleSpinBox = qobject_cast<QDoubleSpinBox*>(control)) {
+        } else if (auto *doubleSpinBox = qobject_cast<QDoubleSpinBox *>(control)) {
             auto floatValue = value.asFloat();
             if (floatValue.has_value()) {
                 doubleSpinBox->setValue(floatValue.value());
             }
-        } else if (auto *checkBox = qobject_cast<QCheckBox*>(control)) {
+        } else if (auto *checkBox = qobject_cast<QCheckBox *>(control)) {
             auto boolValue = value.asBool();
             if (boolValue.has_value()) {
                 checkBox->setChecked(boolValue.value());
             }
-        } else if (auto *comboBox = qobject_cast<QComboBox*>(control)) {
+        } else if (auto *comboBox = qobject_cast<QComboBox *>(control)) {
             auto qstringValue = value.asQString();
             if (qstringValue.has_value()) {
                 comboBox->setCurrentText(qstringValue.value());
             }
-        } else if (auto *lineEdit = qobject_cast<QLineEdit*>(control)) {
+        } else if (auto *lineEdit = qobject_cast<QLineEdit *>(control)) {
             auto qstringValue = value.asQString();
             if (qstringValue.has_value()) {
                 lineEdit->setText(qstringValue.value());
             }
         } else if (const auto values = value.asArray()) {
             const auto components = control->findChildren<QDoubleSpinBox *>(QString(), Qt::FindDirectChildrenOnly);
-            for (qsizetype index = 0; index < components.size() && index < static_cast<qsizetype>(values->size()); ++index) {
+            for (qsizetype index = 0; index < components.size() && index < static_cast<qsizetype>(values->size());
+                 ++index) {
                 const QSignalBlocker componentBlocker(components[index]);
                 const auto &component = (*values)[index];
                 if (auto number = component.asFloat())
