@@ -7,21 +7,29 @@ use crate::plugin::{
     property::{PropertyHost, PropertySchema, value::FieldValue},
 };
 
+/// 設定スキーマのレジストリです。
+///
+/// プロパティスキーマのリストを保持し、フィールド情報を提供します。
 #[derive(Debug, Default)]
 pub struct SettingsSchemaRegistry {
     fields: Vec<PropertySchema>,
 }
 
 impl SettingsSchemaRegistry {
+    /// 登録されているフィールドスライスを返します。
     pub fn fields(&self) -> &[PropertySchema] {
         &self.fields
     }
 
+    /// フィールドリストからレジストリを構築します。
     pub fn from_fields(fields: Vec<PropertySchema>) -> Self {
         Self { fields }
     }
 }
 
+/// 設定値のストアです。
+///
+/// スキーマと値のマップ、保留中の値を管理し、設定ファイルの読み書きを行います。
 #[derive(Debug, Default)]
 pub struct SettingsStore {
     pub schema: SettingsSchemaRegistry,
@@ -30,6 +38,7 @@ pub struct SettingsStore {
 }
 
 impl SettingsStore {
+    /// フィールドリストからストアを構築します。
     pub fn from_fields(fields: Vec<PropertySchema>) -> Self {
         Self {
             schema: SettingsSchemaRegistry::from_fields(fields),
@@ -38,10 +47,12 @@ impl SettingsStore {
         }
     }
 
+    /// プラグインフィールドからストアを構築します。
     pub fn from_plugin_fields(plugin_fields: Vec<PropertySchema>) -> Self {
         Self::from_fields(plugin_fields)
     }
 
+    /// スキーマに基づき、まだ値が設定されていないキーにデフォルト値を設定します。
     pub fn add_missing_from_schema(&mut self) {
         for f in self.schema.fields() {
             self.values
@@ -51,7 +62,9 @@ impl SettingsStore {
         self.apply_pending_values();
     }
 
-    /// 既存の設定スキーマと値を保ったまま、新しいスキーマを追加する。
+    /// 既存の設定スキーマと値を保ったまま、新しいスキーマを追加します。
+    ///
+    /// 重複するキーがある場合はエラーを返します。
     pub fn merge_fields(&mut self, fields: Vec<PropertySchema>) -> anyhow::Result<()> {
         for field in fields {
             if self
@@ -71,14 +84,14 @@ impl SettingsStore {
         Ok(())
     }
 
-    /// 未知のキーは保留し、後からプラグインスキーマが追加された時に適用する。
+    /// 未知のキーは保留し、後からプラグインスキーマが追加された時に適用します。
     pub async fn load_from_path(&mut self, path: &Path) -> anyhow::Result<()> {
         self.pending_values = load_settings_values(path).await?;
         self.apply_pending_values();
         Ok(())
     }
 
-    /// プラグイン読み込み後の通常設定を同期的に読み込む。
+    /// プラグイン読み込み後の通常設定を同期的に読み込みます。
     pub fn load_from_path_sync(&mut self, path: &Path) -> anyhow::Result<()> {
         if !path.exists() {
             self.pending_values.clear();
@@ -117,7 +130,7 @@ impl SettingsStore {
         }
     }
 
-    /// 現在認識している値と未知キーをまとめてTOMLへ保存する。
+    /// 現在認識している値と未知キーをまとめて TOML へ保存します。
     pub fn save_to_path(&self, path: &Path) -> anyhow::Result<()> {
         let mut table = toml::map::Map::new();
         for (key, value) in &self.pending_values {
@@ -149,7 +162,7 @@ impl SettingsStore {
         Ok(())
     }
 
-    /// ディスクから読み込めた値だけ上書き。存在しないキーはdefaultのまま残る。
+    /// ディスクから読み込めた値だけ上書きします。存在しないキーはデフォルトのまま残ります。
     pub fn apply_loaded_setting(&mut self, loaded: HashMap<NamespacedID, FieldValue>) {
         for (k, v) in loaded {
             self.values.insert(k, v);
@@ -160,10 +173,12 @@ impl SettingsStore {
         self.schema.fields().to_vec()
     }
 
+    /// 指定キーの値への参照を返します。
     pub fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue> {
         self.values.get(key)
     }
 
+    /// 指定キーの値を設定します。スキーマに存在しないキーの場合はエラー。
     pub fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()> {
         // スキーマに存在するキーかチェック
         if !self.schema.fields().iter().any(|f| f.key == key) {
@@ -173,6 +188,7 @@ impl SettingsStore {
         Ok(())
     }
 
+    /// 登録されているカテゴリの一覧を返します。
     pub fn get_categories(&self) -> Vec<String> {
         let mut categories = std::collections::HashSet::new();
         for field in self.schema.fields() {
@@ -185,6 +201,7 @@ impl SettingsStore {
         cats
     }
 
+    /// 指定カテゴリに属するフィールドの一覧を返します。
     pub fn get_fields_by_category(&self, category: &str) -> Vec<PropertySchema> {
         self.schema
             .fields()
@@ -194,6 +211,7 @@ impl SettingsStore {
             .collect()
     }
 
+    /// スキーマに基づき、まだ値が設定されていないキーにデフォルト値を設定します。
     pub fn fill_missing_defaults(&mut self, schema: &SettingsSchemaRegistry) {
         for f in schema.fields() {
             self.values
@@ -203,6 +221,7 @@ impl SettingsStore {
     }
 }
 
+/// `FieldValue` を TOML 値に変換します。
 fn field_value_to_toml(
     kind: &crate::plugin::property::value::FieldTypeKind,
     value: &FieldValue,
@@ -266,7 +285,7 @@ impl PropertyHost for SettingsStore {
     }
 }
 
-// TODO:
+/// 設定ファイルから値を非同期で読み込みます。
 pub async fn load_settings_values(path: &Path) -> anyhow::Result<HashMap<String, toml::Value>> {
     if !path.exists() {
         return Ok(HashMap::new());

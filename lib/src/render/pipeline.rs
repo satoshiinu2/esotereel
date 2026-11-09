@@ -4,6 +4,12 @@ use wgpu::util::DeviceExt;
 
 use super::{uniform::ScreenUniform, vertex::Vertex};
 
+/// wgpu レンダーパイプラインと関連リソースをまとめた構造体です。
+///
+/// 頂点バッファ・ユニフォームバッファ・変換行列バッファ・バインドグループ・
+/// パイプラインを保持し、バッファ更新と描画コマンドの記録を行います。
+///
+/// バッファ容量が不足した場合は `check_capacity` により自動的に拡張（再作成）されます。
 pub struct WgpuRenderResources {
     pub pipeline: wgpu::RenderPipeline,
     pub vertex_buffer: wgpu::Buffer,
@@ -19,6 +25,10 @@ pub struct WgpuRenderResources {
 }
 
 impl WgpuRenderResources {
+    /// 新しい `WgpuRenderResources` を作成します。
+    ///
+    /// 初期画面サイズは 1280x720、頂点バッファは最大 6000 頂点（1000 矩形）、
+    /// 変換行列バッファは 256 スロット分を確保します。
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         // Uniform buffer
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -244,7 +254,10 @@ impl WgpuRenderResources {
         }
     }
 
-    /// バッファの内容を更新する
+    /// バッファの内容を更新します。
+    ///
+    /// ユニフォーム（画面サイズ・ビュープロジェクション行列）、頂点バッファ、
+    /// 変換行列バッファを更新し、必要に応じてバッファ容量を拡張します。
     pub fn update_buffers(
         &mut self,
         device: &wgpu::Device,
@@ -290,6 +303,10 @@ impl WgpuRenderResources {
         queue.write_buffer(&self.transform_buffer, 0, &transform_data);
     }
 
+    /// 描画コマンドをレンダーパスに記録します。
+    ///
+    /// パイプライン・バインドグループを設定し、バッチごとにテクスチャと
+    /// 動的オフセット（変換行列）を切り替えて描画します。
     pub fn record_render_commands(
         &self,
         rpass: &mut wgpu::RenderPass,

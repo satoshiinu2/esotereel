@@ -13,9 +13,15 @@ use std::time;
 
 use crate::project::MediaSec;
 
-const BUFFER_KEEP_SECONDS_BEFORE: MediaSec = 2.0; // 現在位置より前に保持する秒数
-const BUFFER_KEEP_SECONDS_AFTER: MediaSec = 5.0; // 現在位置より後に保持する秒数
+/// 現在位置より前に保持する秒数（バッファの前方マージン）。
+const BUFFER_KEEP_SECONDS_BEFORE: MediaSec = 2.0;
+/// 現在位置より後に保持する秒数（バッファの後方マージン）。
+const BUFFER_KEEP_SECONDS_AFTER: MediaSec = 5.0;
 
+/// ストリームのフェッチ状態を表します。
+///
+/// `Idle` はアイドル、`Fetching` はリクエスト時刻と求める範囲を保持した
+/// フェッチ中状態です。`FETCH_TIMEOUT`（10秒）を超えると非アクティブとみなします。
 pub enum FetchState {
     Idle,
     Fetching {
@@ -25,8 +31,10 @@ pub enum FetchState {
 }
 
 impl FetchState {
+    /// フェッチがタイムアウトとみなされる時間（10秒）。
     const FETCH_TIMEOUT: time::Duration = time::Duration::from_secs(10);
 
+    /// フェッチがアクティブ（タイムアウト前）かを返します。
     pub fn is_active(&self) -> bool {
         match self {
             FetchState::Idle => false,
@@ -37,6 +45,14 @@ impl FetchState {
     }
 }
 
+/// ストリームプレイヤーです。
+///
+/// デコーダ・スケーラを持ち、サーバーから届いたパケットをデコードして
+/// フレームバッファ（`frames`）に保持します。`active_windows` に基づき
+/// 不要なフレームを `free_no_needed_frames` で解放し、メモリ使用量を抑えます。
+///
+/// `frames` は `OrderedFloat<MediaSec>`（秒数）をキーに `Video` フレームを保持し、
+/// `get_frame_at` で指定秒数に最も近いフレームを取得できます。
 pub struct StreamPlayer {
     decoder: VideoDecoder,
     scaler: Option<Scaler>,
@@ -45,9 +61,12 @@ pub struct StreamPlayer {
     frame_count: u32,
     current_generation: u64,
 
-    pub frames: BTreeMap<ordered_float::OrderedFloat<MediaSec>, Video>, // (秒数, フレーム) のペアで保持
-    pub time_base: MediaSec, // 1単位あたりの秒数 (1/fps 等)
+    /// 秒数 → フレーム のマップ。バッファされたデコード済みフレームを保持。
+    pub frames: BTreeMap<ordered_float::OrderedFloat<MediaSec>, Video>,
+    /// 1単位あたりの秒数（1/fps 等）。
+    pub time_base: MediaSec,
     pub fetch_state: FetchState,
+    /// 現在アクティブな再生ウィンドウの範囲一覧。
     pub active_windows: Vec<Range<MediaSec>>,
 }
 
@@ -64,7 +83,10 @@ impl fmt::Debug for StreamPlayer {
 }
 
 impl StreamPlayer {
-    /// メタデータからデコーダとスケーラを初期化
+    /// メタデータからデコーダとスケーラを初期化します。
+    ///
+    /// `unsafe` で FFmpeg の `AVCodecContext` に幅・高さ・extradata を直接設定し、
+    /// extradata の末尾には FFmpeg が要求するパディングを付加します。
     pub fn new_from_metadata(
         codec_id: ffmpeg::codec::Id,
         width: u32,
@@ -116,12 +138,17 @@ impl StreamPlayer {
         })
     }
 
-    /// メタデータで指定されたデコード画像の解像度。現在は元動画と同じサイズ。
+    /// メタデータで指定されたデコード画像の解像度を返します。
+    ///
+    /// 現在は元動画と同じサイズです。
     pub fn dimensions(&self) -> (u32, u32) {
         (self.target_width, self.target_height)
     }
 
-    /// サーバーから届いたパケット（バイナリ）をデコードしてフレームを返す
+    /// サーバーから届いたパケット（バイナリ）をデコードしてフレームバッファに保持します。
+    ///
+    /// 古い世代のパケットは無視し、`discontinuous` フラグが立っている場合はデコーダをフラッシュします。
+    /// 初回フレーム受信時にスケーラを遅延初期化し、RGBA フレームを `frames` に挿入します。
     pub fn process_packet(
         &mut self,
         packet_data: &[u8],
@@ -182,6 +209,10 @@ impl StreamPlayer {
         Ok(())
     }
 
+    /// 不要なフレームをバッファから解放します。
+    ///
+    /// `active_ranges` の各範囲（前後 `BUFFER_KEEP_SECONDS` 分をマージン）に含まれない
+    /// フレームを削除し、メモリ使用量を抑えます。
     pub fn free_no_needed_frames(&mut self, active_ranges: &[Range<f64>]) {
         if active_ranges.is_empty() {
             return;
@@ -196,7 +227,10 @@ impl StreamPlayer {
         });
     }
 
-    /// 指定した秒数に最も近いフレームをバッファから取得する
+    /// 指定秒数に最も近いフレームをバッファから取得します。
+    ///
+    /// 前後のフレームを比較し、差分が 0.1 秒以内の場合のみ `Some` を返します。
+    /// それ以外は `None` を返します。
     pub fn get_frame_at(&self, seconds: f64) -> Option<&Video> {
         let target = OrderedFloat(seconds);
 
@@ -215,13 +249,14 @@ impl StreamPlayer {
         Some(frame)
     }
 
+    /// デコーダをフラッシュし、バッファされた内部状態をリセットします。
     pub fn flush(&mut self) {
         // self.fetch_state = FetchState::Idle;
         self.decoder.flush();
         // self.frames.clear(); // Clear buffered frames on flush
     }
 
-    /// デバッグ用: PPM形式で保存する内部メソッド
+    /// デバッグ用：フレームを PPM 形式で保存する内部メソッドです。
     #[allow(dead_code)]
     fn save_debug_frame(&mut self, frame: &Video) {
         let path = format!("debug_frame_{}.ppm", self.frame_count);

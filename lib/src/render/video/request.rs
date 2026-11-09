@@ -11,11 +11,18 @@ use crate::{
     requests::Request,
 };
 
+/// バッファの十分性判定結果です。
 enum BufferNeed {
-    Sufficient,                   // 十分
-    NeedMore { fetch_from: f64 }, // 不足、この位置から取得が必要
+    /// 十分なバッファがある
+    Sufficient,
+    /// 不足。この位置から取得が必要
+    NeedMore { fetch_from: f64 },
 }
 
+/// 必要な時間範囲に基づき、ストリームパケット取得リクエストを構築します。
+///
+/// プラグインキャッシュから初期化リクエスト（InitStream）と取得対象範囲を収集し、
+/// 各リソースごとにバッファ不足分だけを抽出して `Request::FetchStreamData` を生成します。
 pub fn request_stream_packets_for_time(
     path_to_stream: &DashMap<String, StreamState>,
     players: &DashMap<ResourceId, StreamPlayer>,
@@ -63,6 +70,10 @@ pub fn request_stream_packets_for_time(
     requests
 }
 
+/// 特定リソースの取得リクエストを構築します。
+///
+/// 必要な窓を先に `player.active_windows` に記録し、デコーダがフェッチ中でない場合のみ
+/// 本当に不足している窓だけを抽出してマージし、`Request::FetchStreamData` を返します。
 fn collect_request_for_resource(
     players: &DashMap<ResourceId, StreamPlayer>,
     resource_id: ResourceId,
@@ -106,6 +117,7 @@ fn collect_request_for_resource(
     })
 }
 
+/// 隣接・重複する範囲を1つに統合します。
 fn merge_overlapping_ranges(ranges: &mut Vec<Range<f64>>) {
     ranges.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
     let mut merged: Vec<Range<f64>> = Vec::new();
@@ -121,6 +133,7 @@ fn merge_overlapping_ranges(ranges: &mut Vec<Range<f64>>) {
     *ranges = merged;
 }
 
+/// 指定範囲がバッファに十分あるかを評価します。
 fn assess_buffer(player: &StreamPlayer, range: &Range<f64>) -> BufferNeed {
     if player.get_frame_at(range.start).is_none() {
         return BufferNeed::NeedMore {

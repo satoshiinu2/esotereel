@@ -27,7 +27,7 @@ use crate::{
     settings::FfiPropertySchema,
 };
 
-// ---- ClipBindingValueのC表現 ----
+// ClipBindingValueのC表現
 // 今はStaticのみ。将来Keyframesが増えたらタグを1つ足すだけで拡張できる形。
 
 #[repr(u32)]

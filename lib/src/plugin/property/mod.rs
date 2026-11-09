@@ -50,6 +50,8 @@ pub enum ComponentCapability {
 
 impl ComponentCapability {
     /// 小文字の kebab-case 文字列表現を返す（API / TOML 向け）。
+    ///
+    /// 例: `FrameProvider` → `"frame-provider"`。
     pub fn as_str(&self) -> String {
         match self {
             ComponentCapability::FrameProvider => "frame-provider".to_string(),
@@ -68,7 +70,8 @@ impl ComponentCapability {
     /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
     ///
     /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
-    /// `Custom` の場合は None（従来の hooks 仕組みは廃止）。
+    /// 例: `FrameProvider` → `"render_frame"`、`Prefetchable` → `"prefetch"`。
+    /// `Custom` の場合は `None`（従来の hooks 仕組みは廃止）。
     pub fn standard_fn(&self) -> Option<&'static str> {
         match self {
             ComponentCapability::FrameProvider => Some("render_frame"),
@@ -85,6 +88,9 @@ impl ComponentCapability {
     }
 
     /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
+    ///
+    /// `Scheduler` はこのタイミング順に標準関数を呼び出します。
+    /// 順序: `Prepare` < `Prefetch` < `Evaluate` < `Process` < `Finalize`。
     pub fn hook_timing(&self) -> ComponentHook {
         match self {
             ComponentCapability::Prefetchable => ComponentHook::Prefetch,
@@ -153,6 +159,10 @@ pub struct PropertySchema {
 }
 
 impl PropertySchema {
+    /// グループ型（複数フィールドをまとめる）プロパティスキーマを構築します。
+    ///
+    /// `reference` はグループを参照する `NamespacedID`、`fields` は子フィールドの一覧です。
+    /// デフォルト値は子フィールドのデフォルトを `Map` として展開します。
     pub fn group(
         key: NamespacedID,
         label: String,
@@ -176,7 +186,10 @@ impl PropertySchema {
         }
     }
 
-    /// Flatten only the editor projection. The schema and stored values remain trees.
+    /// グループ構造を「エディタ用の平坦な葉（leaf）一覧」に展開します。
+    ///
+    /// スキーマ自体と保存値はツリー構造のまま残し、表示・編集用にのみ平坦化します。
+    /// 戻り値は `(PropertyPath, PropertySchema)` のベクタで、パスは `std:group/leaf` 形式です。
     pub fn leaf_fields(fields: &[Self]) -> anyhow::Result<Vec<(PropertyPath, Self)>> {
         fn visit(
             field: &PropertySchema,
@@ -229,6 +242,9 @@ impl PropertySchema {
         Ok(out)
     }
 
+    /// TOML テキストからプロパティスキーマの一覧をパースします。
+    ///
+    /// 重複するキーや不正な `kind` はエラーとなります（`validate_properties` で検証）。
     pub fn parse_toml(text: &str, plugin_id: &str) -> anyhow::Result<Vec<PropertySchema>> {
         let parsed: SchemaFile = toml::from_str(text).map_err(|e| {
             anyhow::anyhow!(
@@ -250,6 +266,10 @@ impl PropertySchema {
         Ok(properties)
     }
 
+    /// 単一の生プロパティ定義（`PropertySchemaRaw`）をパースして `PropertySchema` を構築します。
+    ///
+    /// `kind` は TOML 値から `FieldTypeKind` に変換し、`default` が省略された場合は
+    /// `kind` からデフォルト値を導出します。
     pub fn parse_one(raw: PropertySchemaRaw, plugin_id: &str) -> anyhow::Result<PropertySchema> {
         let mut kind = FieldTypeKind::from_toml_value(&raw.kind)
             .with_context(|| format!("invalid `kind` for key `{}` in `{plugin_id}`", raw.key))?;
@@ -320,6 +340,9 @@ impl PropertySchema {
         })
     }
 
+    /// プロパティ一覧を検証します。
+    ///
+    /// 重複するキーや、空の `Enum` オプション、`Group` 内の重複メンバー名を拒否します。
     pub fn validate_properties(properties: &[PropertySchema]) -> anyhow::Result<()> {
         let mut seen = HashSet::new();
         for property in properties {
@@ -356,9 +379,18 @@ impl PropertySchema {
     }
 }
 
+/// プロパティを保持・読み書きするホスト（所有者）を表すトレイトです。
+///
+/// コンポーネントやクリップインスタンスがこのトレイトを実装し、
+/// スケジューラやレンダラーは `key` 経由でプロパティ値にアクセスします。
+/// ID が見つからない場合は `None` やエラーを返し、アプリをクラッシュさせません
+/// （AGENTS.md 第9条：パニックの使用制限）。
 pub trait PropertyHost {
+    /// このホストが宣言するプロパティスキーマの一覧を返します。
     fn properties(&self) -> Cow<'_, [PropertySchema]>;
+    /// 指定キーのプロパティ値を返します。存在しなければ `None` を返します。
     fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue>;
+    /// 指定キーのプロパティ値を設定します。
     fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()>;
 }
 

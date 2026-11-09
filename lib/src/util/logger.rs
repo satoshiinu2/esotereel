@@ -7,15 +7,24 @@ use log::{LevelFilter, Log, Metadata, Record};
 
 use crate::prebootstrap::PreBootstrapSettings;
 
+/// 外部へログを出力するためのコールバック関数型です。
+///
+/// 第一引数はログレベル（`usize`）、第二引数はログメッセージです。
 pub type OutLogFn = fn(level: usize, msg: String);
 
+/// GUI へのログ出力コールバックを保持するグローバル静的変数です。
 pub(crate) static LOG_CALLBACK: OnceLock<OutLogFn> = OnceLock::new();
 
+/// Qt ロガーの実装です。
+///
+/// `log` クレートの `Log` トレイトを実装し、フィルタ設定に基づいて
+/// ログメッセージをコールバック経由で GUI に転送します。
 struct QtLogger {
     default_level: RwLock<LevelFilter>,
     filters: RwLock<HashMap<String, LevelFilter>>,
 }
 
+/// グローバルロガーインスタンスです。
 static LOGGER: LazyLock<QtLogger> = LazyLock::new(|| QtLogger {
     default_level: RwLock::new(LevelFilter::Info),
     filters: RwLock::new(HashMap::new()),
@@ -54,10 +63,16 @@ impl Log for QtLogger {
     fn flush(&self) {}
 }
 
+/// デフォルト設定でロガーを初期化します。
 pub fn init_logger(callback: OutLogFn) {
     init_logger_with_settings(callback, &PreBootstrapSettings::default());
 }
 
+/// 設定を指定してロガーを初期化します。
+///
+/// コールバックを設定し、デフォルトレベルとフィルタを適用した上で
+/// `log` クレートのグローバルロガーとして登録します。また、パニックフックも
+/// 設定し、パニック発生時にコールバック経由でメッセージを送信します。
 pub fn init_logger_with_settings(callback: OutLogFn, settings: &PreBootstrapSettings) {
     LOG_CALLBACK.set(callback).ok();
     if let Ok(mut guard) = LOGGER.default_level.write() {

@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 use crate::plugin::toolbar::{RunOn, ToolbarAction};
 
+/// ツールバーボタンの生 TOML デシリアライズ構造体です。
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct ToolbarButtonRaw {
     pub(super) id: String,
@@ -17,7 +18,8 @@ pub(super) struct ToolbarButtonRaw {
 }
 
 impl ToolbarAction {
-    pub(super) fn from_toml_value(v: &toml::Value) -> Result<Self> {
+    /// TOML 値から `ToolbarAction` を構築します。
+pub(super) fn from_toml_value(v: &toml::Value) -> Result<Self> {
         let table = v
             .as_table()
             .context("`action` must be a table (e.g. `action = { type = \"builtin\", command = \"zoom_in\" }`)")?;

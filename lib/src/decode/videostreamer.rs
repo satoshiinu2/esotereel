@@ -15,7 +15,15 @@ use crate::responces::Response;
 use crate::util::result::EsotereelResult;
 use anyhow::Context;
 
+/// FFmpeg の時間基準（マイクロ秒単位）です。
 const AV_TIME_BASE: f64 = 1_000_000.0;
+
+/// 動画ストリームのデコーダ・スケーラを保持し、フレーム単位のデコードを行います。
+///
+/// `Input`（デマルチプレクサ）、`VideoDecoder`、スケーラを内部に持ち、
+/// `next_frame` で次のフレームを、`get_frame_at_time` で指定時刻のフレームを
+/// 取得します。`Client` 側で使用され、サーバーからのストリームデータとは
+/// 別の独立したデコード経路です。
 pub struct VideoStreamer {
     pub ictx: Input,
     decoder: VideoDecoder,
@@ -28,6 +36,9 @@ pub struct VideoStreamer {
 }
 
 impl VideoStreamer {
+    /// 動画ファイルを開き、デコーダとスケーラを初期化します。
+    ///
+    /// 出力サイズを指定できるため、プレビュー時に低解像度でデコードして高速化できます。
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, ffmpeg::Error> {
         let ictx = input(&path)?;
 
@@ -66,12 +77,16 @@ impl VideoStreamer {
         })
     }
 
+    /// 世代番号を 1 増やして返します。
     pub fn next_generation(&mut self) -> u64 {
         self.generation += 1;
         self.generation
     }
 
-    /// 次のフレームをデコードして取得する
+    /// 次のフレームをデコードして取得します。
+    ///
+    /// パケットを読み込みデコーダに流し込み、RGBA にスケーリングした
+    /// `Video` フレームを返します。デコードに失敗したパケットはスキップします。
     pub fn next_frame(&mut self) -> Option<Video> {
         let mut decoded = Video::empty();
 
@@ -100,7 +115,10 @@ impl VideoStreamer {
         None
     }
 
-    /// 指定した秒数のフレームをピンポイントで取得する
+    /// 指定秒数のフレームをピンポイントで取得します。
+    ///
+    /// 1. 指定位置の直前のキーフレームへシーク
+    /// 2. 目的の秒数を超えるまでデコードを進める
     pub fn get_frame_at_time(&mut self, seconds: MediaSec) -> Option<Video> {
         // 1. 指定位置の直前のキーフレームへシーク
         if self.seek(seconds).is_err() {
@@ -117,6 +135,10 @@ impl VideoStreamer {
         None
     }
 
+    /// ストリーム初期化パケット（`StreamMetadata` レスポンス）を構築します。
+    ///
+    /// コーデック ID、解像度、時間基準、extradata などを含みます。
+    /// コーデック ID は `unsafe` で `transmute` して `u16` に変換します。
     pub fn get_init_packet(&self, path: &str, resource_id: u32) -> Response {
         let codec_id = self.codec_id();
         let width = self.width();
@@ -136,6 +158,10 @@ impl VideoStreamer {
             extradata,
         }
     }
+    /// 指定範囲のストリームデータをバッチで取得します。
+    ///
+    /// 範囲を開始時刻でソートし、各範囲ごとに `fetch_stream_data_single` を呼び出し、
+    /// 最後に `StreamDataEnd` を追加して返します。
     pub fn fetch_stream_data_batch(
         &mut self,
         resource_id: u32,
@@ -162,6 +188,10 @@ impl VideoStreamer {
         Ok(to_sends)
     }
 
+    /// 単一の時刻範囲についてストリームデータを取得します。
+    ///
+    /// 現在位置から範囲が遠い場合はシークを実行し、パケットを順に読み出して
+    /// `StreamData` レスポンスを生成します。範囲終了時刻に達すると終了します。
     fn fetch_stream_data_single(
         &mut self,
         resource_id: u32,
@@ -218,7 +248,9 @@ impl VideoStreamer {
         Ok(to_sends)
     }
 
-    /// 指定した秒数（timestamp）にシークする
+    /// 指定秒数（タイムスタンプ）にシークします。
+    ///
+    /// デコーダをフラッシュし、`last_pts` をリセットします。
     pub fn seek(&mut self, seconds: MediaSec) -> Result<(), ffmpeg::Error> {
         let timestamp = (seconds * AV_TIME_BASE) as i64;
         self.ictx.seek(timestamp, ..timestamp)?;
@@ -227,19 +259,25 @@ impl VideoStreamer {
         Ok(())
     }
 
+    /// コーデック ID を返します。
     pub fn codec_id(&self) -> CodecId {
         self.decoder.id()
     }
 
+    /// 動画の幅を返します。
     pub fn width(&self) -> u32 {
         self.decoder.width()
     }
 
+    /// 動画の高さを返します。
     pub fn height(&self) -> u32 {
         self.decoder.height()
     }
 
-    /// extradataが存在しない場合を考慮し、Optionで包む
+    /// extradata が存在しない場合を考慮し、`Option` で包んで返します。
+    ///
+    /// `unsafe` で FFmpeg の `AVCodecContext` から `extradata` ポインタを取得し、
+    /// ヌルチェックの上でスライスとして返します。
     pub fn extradata(&self) -> Option<&[u8]> {
         unsafe {
             let codec_context = self.decoder.as_ptr();

@@ -15,12 +15,33 @@ use crate::{
 };
 use glam::Mat4;
 
+/// 1 つのテクスチャと変換行列をまとめた頂点バッチです。
+///
+/// `texture_id` でどのビデオテクスチャを使用するかを識別します。
 pub struct VertexBatch {
     pub vertices: Vec<Vertex>,
-    pub texture_id: u32, // ここでどのテクスチャを使用するか識別する
+    pub texture_id: u32,
     pub transform: Mat4,
 }
 
+/// レンダリングコンテキストから頂点バッチを構築します。
+///
+/// 各レイヤーの実行順序を走査し、有効なレイヤーに配置されたクリップについて
+/// コンポーネントスケジューラを実行し、プラグインから頂点バッチを取得します。
+///
+/// # 能力ベースプロパティ参照
+///
+/// プロパティ ID（`std:video:media` 等）をコード中にハードコードせず、
+/// コンポーネント定義の `capability` フィールドから `FrameProvider` などの能力を
+/// 逆引きしてプロパティキーを解決します。未宣言の場合は既定のメンバー名に
+/// フォールバックします。
+///
+/// # スケジューラ
+///
+/// 従来の `script.rhai` + `kind.render_script` 経由ではなく、コンポーネントが
+/// 宣言する能力（`frame-provider`, `prefetchable`, `transformable` 等）に基づき、
+/// 各標準関数（`render_frame`, `prefetch`, `get_transform` …）をフックタイミング順に
+/// 呼び出します。
 pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
     let mut batches = vec![];
 
@@ -46,10 +67,6 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        // clip → kind → components: 能力ベースのレンダリングをスケジューラで実行。
-        // 従来の script.rhai + kind.render_script 経由ではなく、コンポーネントが
-        // 宣言する能力（frame-provider, prefetchable, transformable など）に基づき、
-        // 各標準関数（render_frame, prefetch, get_transform …）をフックタイミング順に呼び出す。
         let Ok(runtime_def) = loader.resolve_component_definition(&clip.kind_id) else {
             log::warn!(
                 "no component definition for clip kind {}, skipping render",
@@ -59,8 +76,6 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         };
 
         // コンポーネントが宣言する能力から、どのプロパティを参照すべきかを解決する。
-        // プロパティID（std:video:media など）をコード中にハードコードせず、
-        // コンポーネント定義の `capability` フィールドから逆引きする。
         let media_property_key = runtime_def
             .components
             .iter()
@@ -74,7 +89,6 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
 
         // メンバキー（"source", "source_offset" 等）もハードコードせず、
         // プロパティ定義の `member_capabilities` から能力ベースで解決する。
-        // 未宣言の場合は既定のメンバー名にフォールバックする。
         let media_component_def = runtime_def
             .components
             .iter()
@@ -123,8 +137,6 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
                     media_time = seconds;
                 }
 
-                // 同じメディアプロパティから source 文字列も取得し、ビデオソースとして設定する。
-                // 空文字列の場合はソース未設定とみなし、ビデオをレンダリングしない。
                 if let Some(FieldValue::String(source)) = media_map.get(source_member_key) {
                     if !source.is_empty() {
                         video_source = Some(source.clone());
@@ -159,7 +171,6 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             );
         }
 
-        // スクリプトが core_render_video を何回呼んでもここで全部回収される
         let (plugin_batches, requested_paths) = render_ctx.into_parts();
         batches.extend(plugin_batches);
         for path in requested_paths {

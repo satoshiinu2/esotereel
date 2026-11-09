@@ -12,6 +12,14 @@ use crate::{
     },
 };
 
+/// タイムライン上のクリップ実体です。
+///
+/// `id` で識別され、`position`/`duration` で配置範囲を持ち、`kind_id` で
+/// クリップ種別（`NamespacedID`）を参照します。プロパティ値は
+/// `properties` マップに `ClipBindingValue` として保持されます。
+///
+/// Clip 実体は `Timeline.clips` にのみ存在し、`Layer.clips` は位置 → `ClipId`
+/// の参照のみを保持します。
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
 )]
@@ -26,6 +34,7 @@ pub struct Clip {
 }
 
 impl Clip {
+    /// 新しい `Clip` を作成します。
     pub fn new(
         id: ClipId,
         position: TimelineTick,
@@ -42,18 +51,28 @@ impl Clip {
         }
     }
 
+    /// 配置開始位置（タイムラインティック）を返します。
     pub fn position(&self) -> i64 {
         self.position
     }
 
+    /// 配置開始位置を変更します。
+    ///
+    /// `position`/`duration` を変更する場合は `Timeline::move_clip` を経由することで、
+    /// `layer.clips` と `chunk_index` の整合性を保ちます。
     pub fn set_position(&mut self, new_pos: i64) {
         self.position = new_pos;
     }
 
+    /// 指定キーのプロパティ値を返します。存在しなければ `None`。
     pub fn get_property_value(&self, key: &NamespacedID) -> Option<&ClipBindingValue> {
         self.properties.get(key)
     }
 
+    /// プロパティパス（`PropertyPath`）を辿って値を取得します。
+    ///
+    /// グループ型プロパティのメンバー値にアクセスする際に使用します。
+    /// パスを辿れない場合（グループでない、メンバーが不在など）は `None` を返します。
     pub fn get_property_path(&self, path: &PropertyPath) -> Option<&FieldValue> {
         let mut value = self.properties.get(path.root())?.in_frame_of()?;
         for member in path.members() {
@@ -65,6 +84,10 @@ impl Clip {
         Some(value)
     }
 
+    /// プロパティパスを辿って値を設定します。
+    ///
+    /// ルートがグループ型の場合、メンバー単位で値を更新します。
+    /// パスが不正な場合はエラーを返します。
     pub fn set_property_path(
         &mut self,
         path: &PropertyPath,
@@ -92,6 +115,7 @@ impl Clip {
         Ok(())
     }
 
+    /// 指定キーのプロパティ値を設定（上書き）します。
     pub fn set_property_value(
         &mut self,
         key: NamespacedID,
@@ -102,12 +126,20 @@ impl Clip {
     }
 }
 
+/// クリップ種別の定義です。
+///
+/// プラグインが `clips/` ディレクトリ下の TOML で宣言し、
+/// `ClipKindRegistry` に登録されます。
 #[derive(Debug, Clone)]
 pub struct ClipKind {
     pub render_script: String,
     pub tags: HashSet<String>,
 }
 
+/// クリッププロパティの値です。
+///
+/// 現在は `Static(FieldValue)` のみですが、将来的にキーフレーム
+/// （`Vec<(TimelineTick, FieldValue)>` 等）を追加予定です。
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
 )]
@@ -118,13 +150,16 @@ pub enum ClipBindingValue {
 }
 
 impl ClipBindingValue {
-    // TODO: 将来的に Keyframes等を追加したら、ここもそれに応じて変更する
+    /// `Static` の内部 `FieldValue` への参照を返します。
+    ///
+    /// 将来キーフレームを追加したら、ここもそれに応じて変更する予定です。
     pub fn in_frame_of(&self) -> Option<&FieldValue> {
         match self {
             ClipBindingValue::Static(v) => Some(v),
         }
     }
 
+    /// スキーマ一覧からデフォルト値のプロパティマップを構築します。
     pub fn default_properties(
         schema: &[PropertySchema],
     ) -> HashMap<NamespacedID, ClipBindingValue> {
@@ -140,8 +175,10 @@ impl ClipBindingValue {
     }
 }
 
-/// Compositionへの参照。Mirrorは複数Clipが同じTimelineIdを共有し、
-/// Independentはこのclip専用のprivate Timelineを指す。
+/// タイムラインへの参照種別です。
+///
+/// `Mirror` は複数クリップが同じ `TimelineId` を共有し、
+/// `Independent` はこのクリップ専用のプライベートタイムラインを指します。
 #[derive(
     Archive,
     rkyv::Deserialize,
@@ -161,6 +198,7 @@ pub enum CompositionRef {
 }
 
 impl CompositionRef {
+    /// 参照先の `TimelineId` を返します。
     pub fn timeline_id(&self) -> TimelineId {
         match self {
             CompositionRef::Mirror(id) | CompositionRef::Independent(id) => *id,
@@ -168,8 +206,9 @@ impl CompositionRef {
     }
 }
 
-/// Scriptに渡すパラメータ。今はプレースホルダー。
-/// rhai等のスクリプトエンジンと繋ぐ際に型を差し替える想定。
+/// スクリプトに渡すパラメータです。現在はプレースホルダーです。
+///
+/// Rhai 等のスクリプトエンジンと連携する際に型を差し替える想定です。
 #[derive(
     Archive,
     rkyv::Deserialize,

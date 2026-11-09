@@ -13,18 +13,6 @@
 
 namespace esotereel_gui_helper {
 
-enum class CFieldValueTag : uint32_t {
-  Bool,
-  Int,
-  Float,
-  Enum,
-  String,
-  Path,
-  Color,
-  Array,
-  Map,
-};
-
 enum class CLogLevel : uint8_t {
   Off,
   Error,
@@ -36,6 +24,18 @@ enum class CLogLevel : uint8_t {
 
 enum class CClipBindingValueTag : uint32_t {
   Static,
+};
+
+enum class CFieldValueTag : uint32_t {
+  Bool,
+  Int,
+  Float,
+  Enum,
+  String,
+  Path,
+  Color,
+  Array,
+  Map,
 };
 
 enum class SettingsFieldType {
@@ -55,39 +55,81 @@ enum class FfiLayerRowKind {
   Folder,
 };
 
+/// カメラの向きです。
+///
+/// 正射影モードで使用される固定方向を表現します。
 enum class Direction {
+  /// 前方
   Front,
+  /// 後方
   Back,
+  /// 上方
   Top,
+  /// 下方
   Bottom,
+  /// 左方
   Left,
+  /// 右方
   Right,
 };
 
 struct ClientStateHandle;
 
+/// タイムライン上のクリップ実体です。
+///
+/// `id` で識別され、`position`/`duration` で配置範囲を持ち、`kind_id` で
+/// クリップ種別（`NamespacedID`）を参照します。プロパティ値は
+/// `properties` マップに `ClipBindingValue` として保持されます。
+///
+/// Clip 実体は `Timeline.clips` にのみ存在し、`Layer.clips` は位置 → `ClipId`
+/// の参照のみを保持します。
 struct Clip;
 
 struct CommandQueue;
 
-struct FieldValue;
-
+/// レイヤーの実体です。
+///
+/// `position -> ClipId` のマップを保持しますが、クリップ実体は
+/// `Timeline.clips` が持つため、ここでは参照のみを管理します。
 struct Layer;
 
-/// Folderの中身(名前・開閉状態・並び順)。
+/// フォルダーの中身（名前・開閉状態・並び順）。
 struct LayerFolder;
 
+/// オフスクリーンレンダリングターゲットです。
+///
+/// テクスチャ、ビュー、読み戻し用バッファを保持し、GPU 上で描画した結果を
+/// CPU 側の紧密パックされた RGBA バイト列として取得できます。
 struct OffscreenTarget;
 
 template<typename T = void>
 struct Option;
 
+/// プロジェクトのルートデータモデルです。
+///
+/// 複数のタイムライン（`Timeline`）を `TimelineId` でキーに保持し、
+/// `IdGenerator` により各種 ID を一意に生成します。
+///
+/// タイムライン・レイヤー・クリップの挿入・取得・削除、タイムラインの
+/// 独立化（ミラーからのコピー）、変更セットの抽出などを提供します。
 struct Project;
 
 struct RenderRowsResult;
 
+/// タイムラインの実体です。
+///
+/// レイヤー（`Layer`）、クリップ（`Clip`）、アウトライン（`LayerOutline`）を保持し、
+/// 編集操作と変更セット（`ChangeSet`）の管理を行います。
+///
+/// - `clips` は Clip 実体の唯一の保持場所で、`Layer.clips` は位置 → `ClipId` の参照のみを保持します。
+/// - `chunk_index` は位置検索用の遅延構築キャッシュで、保存対象外です。
+/// - `changes` は未同期の差分で、ネットワーク同期時に `drain_changes` で取り出されます。
 struct Timeline;
 
+/// wgpu のデバイス・キュー・リソースをまとめたユーティリティ構造体です。
+///
+/// オフスクリーンレンダリング専用で、ウィンドウサーフェスは持たず、
+/// オフスクリーンテクスチャへのレンダリングと GPU 読み戻しを行います。
 struct WGpuUtil;
 
 /// 手動で解放しないといけない
@@ -104,8 +146,10 @@ struct FfiResultVoid {
 
 using OptionProject = Option<Project>;
 
+/// タイムライン識別子（`u64`）。
 using TimelineId = uint64_t;
 
+/// レイヤー識別子（`u64`）。
 using LayerId = uint64_t;
 
 struct FfiStringView {
@@ -113,7 +157,20 @@ struct FfiStringView {
   uintptr_t len;
 };
 
+/// レイヤーフォルダー識別子（`u64`）。
 using LayerFolderId = uint64_t;
+
+using OnServerReadyCFn = void(*)(bool, FfiStringView);
+
+using LogOutCStrFn = void(*)(uintptr_t level, FfiStringView target, FfiStringView msg);
+
+/// クリップ識別子（`u64`）。
+using ClipId = uint64_t;
+
+/// タイムライン上の時刻を表すティック単位の ID（`i64`）です。
+///
+/// フレームレートに依存しない整数時刻として使用し、クリップの位置・長さに用いられます。
+using TimelineTick = int64_t;
 
 struct FfiOwnedStringArray {
   FfiOwnedString *ptr;
@@ -121,6 +178,10 @@ struct FfiOwnedStringArray {
   uintptr_t capacity;
 };
 
+/// RGBA カラー値です。
+///
+/// 各チャネルは `0.0..=1.0` の `f32` で表現され、`rkyv` / `serde` による
+/// シリアライズおよび `bytemuck` による GPU バッファ転送をサポートします。
 struct RgbaColor {
   float r;
   float g;
@@ -166,14 +227,6 @@ struct CFieldValueMapEntry {
   FfiOwnedString key;
   CFieldValue value;
 };
-
-using OnServerReadyCFn = void(*)(bool, FfiStringView);
-
-using LogOutCStrFn = void(*)(uintptr_t level, FfiStringView target, FfiStringView msg);
-
-using ClipId = uint64_t;
-
-using TimelineTick = int64_t;
 
 union CClipBindingValueData {
   CFieldValue static_value;
@@ -254,12 +307,22 @@ struct FrameRenderResult {
   FfiArray<uint8_t> data;
 };
 
+/// カメラ情報です。
+///
+/// 視点・回転・投影種別（正射影/透視投影）を持ち、ビュー行列と射影行列を
+/// 生成します。レンダリング時にカメラ変換を適用するために使用されます。
 struct CameraInfo {
+  /// カメラ位置
   QVector3D position;
+  /// 回転（度）
   QVector3D rotation;
+  /// 正射影モードかどうか
   bool is_orthographic;
+  /// 正射影方向
   Direction orthographic_direction;
+  /// スケール係数
   float scale_factor;
+  /// 視野角（度）
   float fov;
 };
 
@@ -305,8 +368,10 @@ using WGpuUtilNewResult = FfiResult<WGpuUtil*>;
 /// out 出力パラメータを廃止し、生成したポインタ自体を戻り値として返す形に変更。
 using OffscreenTargetNewResult = FfiResult<OffscreenTarget*>;
 
+/// レイヤー移動量（`i64`）。
 using LayerDelta = int64_t;
 
+/// スクリプト識別子（`u64`）。
 using ScriptId = uint64_t;
 
 extern "C" {
@@ -377,10 +442,6 @@ bool debug_streams_write_loaded_streams_sec_arr(const ClientStateHandle *ptr_sta
                                                 uint32_t resource_id,
                                                 double *ptr_out_arr,
                                                 uintptr_t safety_size);
-
-CFieldValue *esotereel_field_value_export(const FieldValue *value);
-
-void esotereel_field_value_free(CFieldValue *value);
 
 FfiResultVoid internal_server_start(const ClientStateHandle *ptr_state,
                                     FfiStringView addr,

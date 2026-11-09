@@ -5,6 +5,10 @@ use rkyv::{Archive, CheckBytes, bytecheck, with::Map};
 use crate::util::color::RgbaColor;
 use crate::util::rkyv_with::PathAsString;
 
+/// プロパティ値の変換・検証で発生しうるエラーです。
+///
+/// TOML 値を `FieldValue` に変換する際の型不一致・範囲外・無効な色・
+/// 無効な列挙型値などを表現します。
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
     #[error("型が一致しません: 期待値 {expected}, 実際値 {got}")]
@@ -17,6 +21,10 @@ pub enum ConvertError {
     InvalidOption(String),
 }
 
+/// プロパティフィールドの種類（スキーマ）を表します。
+///
+/// 各バリアントは対応する TOML 表現と `FieldValue` への変換規則を持ち、
+/// `parse_toml_to` で変換・検証されます。
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum FieldTypeKind {
     Bool,
@@ -50,6 +58,10 @@ pub enum FieldTypeKind {
     },
 }
 
+/// プロパティ値の実体を表す列挙体です。
+///
+/// `rkyv` によるアーカイブ化（シリアライゼーション）と `serde` による
+/// シリアライゼーションの両方に対応し、ネットワーク転送や保存に使用されます。
 #[derive(
     Archive,
     rkyv::Deserialize,
@@ -127,12 +139,16 @@ impl ToString for FieldValue {
 }
 
 impl FieldTypeKind {
+    /// TOML 値をこのフィールド種類に従って `FieldValue` に変換します。
+    ///
+    /// 型不一致や範囲外、無効な列挙型値・色文字列の場合は `ConvertError` を返します。
+    /// `Float` に `Integer` が渡された場合はエラー救済として `Float` に変換します。
     pub fn parse_toml_to(&self, value: &toml::Value) -> Result<FieldValue, ConvertError> {
         match (self, value) {
-            // --- Bool ---
+            // Bool
             (FieldTypeKind::Bool, toml::Value::Boolean(b)) => Ok(FieldValue::Bool(*b)),
 
-            // --- Int ---
+            // Int
             (FieldTypeKind::Int { min, max }, toml::Value::Integer(i)) => {
                 if let Some(min_val) = min {
                     if i < min_val {
@@ -151,7 +167,7 @@ impl FieldTypeKind {
                 Ok(FieldValue::Int(*i))
             }
 
-            // --- Float ---
+            // Float
             (FieldTypeKind::Float { min, max, .. }, toml::Value::Float(f)) => {
                 if let Some(min_val) = min {
                     if f < min_val {
@@ -189,7 +205,7 @@ impl FieldTypeKind {
                 Ok(FieldValue::Float(f))
             }
 
-            // --- Enum ---
+            // Enum
             (FieldTypeKind::Enum { options }, toml::Value::String(s)) => {
                 if options.contains(s) {
                     Ok(FieldValue::Enum(s.clone()))
@@ -200,10 +216,10 @@ impl FieldTypeKind {
                 }
             }
 
-            // --- String ---
+            // String
             (FieldTypeKind::String, toml::Value::String(s)) => Ok(FieldValue::String(s.clone())),
 
-            // --- FilePath ---
+            // FilePath
             // 単一文字列、または配列形式のどちらの TOML 表現にも対応
             (FieldTypeKind::FilePath { .. }, toml::Value::String(s)) => {
                 Ok(FieldValue::Path(vec![PathBuf::from(s)]))
@@ -223,13 +239,13 @@ impl FieldTypeKind {
                 Ok(FieldValue::Path(paths))
             }
 
-            // --- Color ---
+            // Color
             (FieldTypeKind::Color, toml::Value::String(s)) => {
                 let color = Self::parse_rgba_color(s)?;
                 Ok(FieldValue::Color(color))
             }
 
-            // --- Array ---
+            // Array
             (FieldTypeKind::Array { item_kind }, toml::Value::Array(arr)) => {
                 let mut result = Vec::with_capacity(arr.len());
                 for item in arr {
@@ -239,7 +255,7 @@ impl FieldTypeKind {
                 Ok(FieldValue::Array(result))
             }
 
-            // --- Map ---
+            // Map
             (
                 FieldTypeKind::Map {
                     value_kind,
@@ -260,10 +276,7 @@ impl FieldTypeKind {
                 Ok(FieldValue::Map(result))
             }
 
-            (
-                FieldTypeKind::Group { fields, .. },
-                toml::Value::Table(table),
-            ) => {
+            (FieldTypeKind::Group { fields, .. }, toml::Value::Table(table)) => {
                 for key in table.keys() {
                     if !fields.iter().any(|field| field.key.local_id() == key) {
                         return Err(ConvertError::InvalidOption(format!(
@@ -282,7 +295,7 @@ impl FieldTypeKind {
                 Ok(FieldValue::Map(values))
             }
 
-            // --- 型不一致 ---
+            // 型不一致
             (expected_kind, actual_val) => Err(ConvertError::TypeMismatch {
                 expected: match expected_kind {
                     FieldTypeKind::Bool => "Boolean",

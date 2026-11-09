@@ -14,21 +14,27 @@ use crate::{
 pub mod builder;
 pub mod request;
 
-// render/plugin.rs
+/// メディア取得キャッシュです。
+///
+/// クリップ ID ごとに「どのパスのどの時間範囲が必要か」を記録し、
+/// フレームごとのフェッチ計算に使用します。また、初期化リクエスト（InitStream）
+/// の重複を自動排除するためのセットとしても機能します。
 #[derive(Default)]
 pub struct MediaFetchCache {
     // clip_id -> (path, needed_seconds群)
     needs: DashMap<ClipId, Vec<(String, Range<f64>)>>,
 
-    init_requests: DashMap<String, ()>, // Setとして使う(重複自動排除)
+    // Setとして使う(重複自動排除)
+    init_requests: DashMap<String, ()>,
 }
 
 impl MediaFetchCache {
+    /// クリップに必要なメディア取得範囲を記録します。
     pub fn record(&self, clip_id: ClipId, path: String, range: Range<f64>) {
         self.needs.entry(clip_id).or_default().push((path, range));
     }
 
-    /// 前フレーム分を取り出してクリアする(このフレームのフェッチ計算に使う)
+    /// このフレームのフェッチ計算に使用するため、前フレーム分をすべて取り出してクリアします。
     pub fn take_all(&self) -> Vec<(String, Range<f64>)> {
         let mut all = Vec::new();
         for mut entry in self.needs.iter_mut() {
@@ -37,6 +43,7 @@ impl MediaFetchCache {
         all
     }
 
+    /// 記録されたすべての取得範囲のスナップショットを返します（クリアしません）。
     pub fn snapshot(&self) -> Vec<(String, Range<f64>)> {
         self.needs
             .iter()
@@ -44,16 +51,23 @@ impl MediaFetchCache {
             .collect()
     }
 
+    /// 初期化リクエスト（InitStream）として送るべきパスを記録します。
     pub fn record_init_request(&self, path: String) {
         self.init_requests.insert(path, ());
     }
 
+    /// 記録された初期化リクエストパスをすべて取り出してクリアします。
     pub fn take_init_requests(&self) -> Vec<String> {
         let keys: Vec<String> = self.init_requests.iter().map(|e| e.key().clone()).collect();
         self.init_requests.clear();
         keys
     }
 }
+
+/// タイムライン上のクリップテクスチャを更新します。
+///
+/// `ctx.media_fetch_cache` のスナップショットを走査し、ロード済みストリームから
+/// 該当時間のビデオフレームを取得してテクスチャに書き込みます。
 pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderContext) {
     for (path, range) in ctx.media_fetch_cache.snapshot() {
         if let Some(resource_id_ref) = ctx.path_to_stream.get(&path) {
@@ -68,6 +82,10 @@ pub(crate) fn update_timline_clips_texture(util: &mut WGpuUtil, ctx: &RenderCont
     }
 }
 
+/// 指定リソース ID のビデオテクスチャを確保し、フレームデータを書き込みます。
+///
+/// テクスチャが未作成またはサイズが変更された場合は再作成し、その後
+/// キュー経由でフレームデータをコピーします。
 fn ensure_and_update_texture(util: &mut WGpuUtil, resource_id: u32, frame: &Video) {
     let (width, height) = (frame.width(), frame.height());
     let mut should_recreate = false;

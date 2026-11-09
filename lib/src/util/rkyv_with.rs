@@ -5,6 +5,11 @@ use rkyv::{
     with::{ArchiveWith, DeserializeWith, SerializeWith},
 };
 
+/// `PathBuf` を rkyv でシリアライズ/デシリアライズする際に、
+/// `ArchivedString` として扱うためのアダプタです。
+///
+/// `to_string_lossy()` を使用することで、非 UTF-8 なパスでもエラーを出さずに
+/// 文字列化できます。
 pub struct PathAsString;
 
 impl ArchiveWith<PathBuf> for PathAsString {

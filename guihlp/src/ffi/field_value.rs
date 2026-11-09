@@ -335,25 +335,3 @@ impl CFieldValue {
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn esotereel_field_value_export(value: *const FieldValue) -> *mut CFieldValue {
-    if value.is_null() {
-        return std::ptr::null_mut();
-    }
-
-    let value = unsafe { &*value };
-
-    Box::into_raw(Box::new(CFieldValue::wrap_ffi(value)))
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn esotereel_field_value_free(value: *mut CFieldValue) {
-    if value.is_null() {
-        return;
-    }
-
-    unsafe {
-        let value = Box::from_raw(value);
-        (*value).free();
-    }
-}

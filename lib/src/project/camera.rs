@@ -1,17 +1,32 @@
 use glam::{Mat4, Vec3, camera::lh::proj::directx};
 
+/// カメラ情報です。
+///
+/// 視点・回転・投影種別（正射影/透視投影）を持ち、ビュー行列と射影行列を
+/// 生成します。レンダリング時にカメラ変換を適用するために使用されます。
 #[repr(C)]
 #[derive(Debug)]
 pub struct CameraInfo {
+    /// カメラ位置
     position: Vec3,
-    rotation: Vec3, // degree
+    /// 回転（度）
+    rotation: Vec3,
+    /// 正射影モードかどうか
     is_orthographic: bool,
+    /// 正射影方向
     orthographic_direction: Direction,
+    /// スケール係数
     scale_factor: f32,
-    fov: f32, // degree
+    /// 視野角（度）
+    fov: f32,
 }
 
 impl CameraInfo {
+    /// ビュー行列を返します。
+    ///
+    /// 正射影モードの場合は方向に合わせた固定回転を適用し、
+    /// 3Dモードの場合はオイラー角から回転を生成します。
+    /// 左手系への変換と平行移動を適用した行列を返します。
     pub fn get_view_mat(&self) -> Mat4 {
         let rot_mat = if self.is_orthographic {
             // 2Dモード: 方向に合わせた固定回転を適用
@@ -33,6 +48,10 @@ impl CameraInfo {
         rot_mat * trans_mat
     }
 
+    /// 射影行列を返します。
+    ///
+    /// 正射影モードの場合は 2D 用の平行投影行列（ズームレベルを考慮）を、
+    /// 3Dモードの場合は透視投影行列を返します。
     pub fn get_proj_mat(&self, screen_size: [f32; 2]) -> Mat4 {
         let half_w = screen_size[0] / 2.0;
         let half_h = screen_size[1] / 2.0;
@@ -53,19 +72,31 @@ impl CameraInfo {
     }
 }
 
+/// カメラの向きです。
+///
+/// 正射影モードで使用される固定方向を表現します。
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 
 pub enum Direction {
+    /// 前方
     Front,
+    /// 後方
     Back,
+    /// 上方
     Top,
+    /// 下方
     Bottom,
+    /// 左方
     Left,
+    /// 右方
     Right,
 }
 
 impl Direction {
+    /// 回転行列を返します。
+    ///
+    /// 各方向に対応する固定回転行列を返します。
     pub fn get_rotation_mat(&self) -> Mat4 {
         match self {
             Direction::Front => Mat4::IDENTITY,

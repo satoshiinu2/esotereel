@@ -12,6 +12,10 @@ use crate::{
     },
 };
 
+/// クリップ移動のコンテキストです。
+///
+/// `base_position`/`base_duration` はクライアントが認識している現在の値で、
+/// ステールネス（古い状態に基づく操作）検出に使用されます。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipMoveCtx {
@@ -25,6 +29,7 @@ pub struct ClipMoveCtx {
     pub new_layer_id: LayerId,
 }
 
+/// クリップ移動の履歴コンテキストです。Undo/Redo で使用します。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipMoveHistoryCtx {
@@ -37,6 +42,7 @@ pub struct ClipMoveHistoryCtx {
     pub new_layer_id: LayerId,
 }
 
+/// クリップリサイズのコンテキストです。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipResizeCtx {
@@ -50,6 +56,7 @@ pub struct ClipResizeCtx {
     pub new_duration: TimelineTick,
 }
 
+/// クリップリサイズの履歴コンテキストです。Undo/Redo で使用します。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct ClipResizeHistoryCtx {
@@ -65,15 +72,23 @@ pub struct ClipResizeHistoryCtx {
     pub duration_delta: TimelineTick,
 }
 
+/// タイムライン操作のコマンドリクエストです。
+///
+/// クライアントからサーバーへ送られ、`Request::Command` でバッチ処理されます。
+/// 各バリアントは「どのような編集を行うか」を表現し、サーバー側で
+/// 重複チェックやステールネス検出を行った上で適用します。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandRequest {
+    /// 複数クリップを一括移動します。
     ClipsMove {
         clips: Vec<ClipMoveCtx>,
     },
+    /// 複数クリップを一括リサイズします。
     ClipsResize {
         clips: Vec<ClipResizeCtx>,
     },
+    /// 新しいクリップを追加します。
     AddClip {
         layer_id: LayerId,
         position: TimelineTick,
@@ -82,16 +97,19 @@ pub enum CommandRequest {
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
     },
+    /// 新しいレイヤーを追加します。
     AddLayer {
         parent_folder_id: Option<LayerFolderId>,
         insert_index: Option<usize>,
         name: String,
     },
+    /// 新しいフォルダーを追加します。
     AddFolder {
         parent_folder_id: Option<LayerFolderId>,
         insert_index: Option<usize>,
         name: String,
     },
+    /// クリッププロパティの値を設定します。
     SetClipPropertyValue {
         clip_id: ClipId,
         key: PropertyPath,
@@ -99,15 +117,19 @@ pub enum CommandRequest {
     },
 }
 
+/// コマンドの履歴エントリです。Undo/Redo で使用します。
 #[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandHistory {
+    /// クリップ移動の履歴。
     ClipsMove {
         clips: Vec<ClipMoveHistoryCtx>,
     },
+    /// クリップリサイズの履歴。
     ClipsResize {
         clips: Vec<ClipResizeHistoryCtx>,
     },
+    /// クリップ追加の履歴。
     AddClip {
         clip_id: Option<ClipId>,
         layer_id: LayerId,
@@ -117,18 +139,21 @@ pub enum CommandHistory {
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
     },
+    /// レイヤー追加の履歴。
     AddLayer {
         layer_id: Option<LayerId>,
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
     },
+    /// フォルダー追加の履歴。
     AddFolder {
         folder_id: Option<LayerFolderId>,
         parent_layer_id: Option<LayerId>,
         insert_index: Option<usize>,
         name: String,
     },
+    /// プロパティ値変更の履歴。
     SetClipPropertyValue {
         clip_id: ClipId,
         key: PropertyPath,

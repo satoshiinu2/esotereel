@@ -15,9 +15,17 @@ use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::util::result::{EsotereelError, EsotereelResult};
 
-/// Composite/Script/Mirrorの入れ子実行を無限ループさせないための上限。
+/// Composite / Script / Mirror の入れ子実行を無限ループさせないための上限。
 pub const MAX_NESTED_DEPTH: u32 = 32;
 
+/// タイムラインの実体です。
+///
+/// レイヤー（`Layer`）、クリップ（`Clip`）、アウトライン（`LayerOutline`）を保持し、
+/// 編集操作と変更セット（`ChangeSet`）の管理を行います。
+///
+/// - `clips` は Clip 実体の唯一の保持場所で、`Layer.clips` は位置 → `ClipId` の参照のみを保持します。
+/// - `chunk_index` は位置検索用の遅延構築キャッシュで、保存対象外です。
+/// - `changes` は未同期の差分で、ネットワーク同期時に `drain_changes` で取り出されます。
 #[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Serialize, Deserialize, Debug)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Timeline {
@@ -25,17 +33,17 @@ pub struct Timeline {
     pub tps: f64,
     layers: HashMap<LayerId, Layer>,
 
-    /// Clip実体はここだけに存在する。Layer.clipsはidを参照するのみ。
+    /// Clip 実体はここだけに存在する。`Layer.clips` は id を参照するのみ。
     clips: HashMap<ClipId, Clip>,
 
     pub outline: LayerOutline,
 
-    /// position検索用の遅延構築キャッシュ。保存対象外、壊れても再構築可能。
+    /// 位置検索用の遅延構築キャッシュ。保存対象外、壊れても再構築可能。
     #[with(rkyv::with::Skip)]
     #[serde(skip)]
     chunk_index: RwLock<Option<ChunkIndex>>,
 
-    /// 未同期の差分
+    /// 未同期の差分。
     #[with(rkyv::with::Skip)]
     #[serde(skip)]
     changes: ChangeSet,
@@ -57,6 +65,7 @@ impl Clone for Timeline {
 }
 
 impl Timeline {
+    /// 新しいタイムラインを作成し、デフォルトで 4 つのレイヤーを挿入します。
     pub fn new(id: u64, fps: f64, ids: &mut IdGenerator) -> Self {
         let mut tl = Self {
             id,
@@ -74,6 +83,7 @@ impl Timeline {
         tl
     }
 
+    /// 空のタイムラインを作成します（レイヤーなし）。
     pub fn new_empty(id: u64, tps: f64) -> Self {
         Self {
             id,
@@ -95,7 +105,7 @@ impl Timeline {
         *guard = None;
     }
 
-    // ---- Layer ----
+    // Layer
 
     pub fn insert_layer(
         &mut self,
@@ -166,8 +176,9 @@ impl Timeline {
         Ok(())
     }
 
-    /// クライアント側のローカル反映用。親のchildren書き換えはしない
-    /// (親レイヤー自体もUpdateLayerで別途送られてくる前提)。
+    /// クライアント側のローカル反映用。親の `children` 書き換えは行いません。
+    ///
+    /// 親レイヤー自体は `UpdateLayer` で別途送られてくる前提です。
     pub fn remove_layer_local(&mut self, id: LayerId) -> Option<Layer> {
         self.layers.remove(&id)
     }
@@ -232,15 +243,16 @@ impl Timeline {
         }
     }
 
-    /// Composite実行やレンダリングが使う「実際の重ね合わせ順」。
-    /// iter_layers()(HashMap由来で順不同)と違い、こちらは常に決まった順を返す。
+    /// レンダリング・合成実行で使用する「実際の重ね合わせ順」でレイヤーを反復します。
+    ///
+    /// `iter_layers()` は `HashMap` 由来で順序不定ですが、こちらは常に決まった順序を返します。
     pub fn iter_execution_order(&self) -> impl Iterator<Item = &Layer> + '_ {
         self.outline
             .iter_execution_order()
             .filter_map(move |id| self.layers.get(&id))
     }
 
-    // ---- Clip ----
+    // Clip
 
     pub fn new_clip_in(
         &mut self,
@@ -307,9 +319,10 @@ impl Timeline {
         Some(clip)
     }
 
-    /// 既にid確定済みのClipをそのままレイヤーに配置する。新規id発行はしない。
-    /// undo/redoでの復元や、位置変更・レイヤー移動を伴う再配置に使う。
-    /// 既に(別の場所に)存在するidなら、まず参照を除去してから配置し直す。
+    /// 既に ID 確定済みの `Clip` をそのままレイヤーに配置します。新規 ID は発行しません。
+    ///
+    /// Undo/Redo での復元や、位置変更・レイヤー移動を伴う再配置に使用します。
+    /// 既に別の場所に存在する同 ID の場合は、まず参照を除去してから配置し直します。
     pub fn place_clip(&mut self, layer_id: LayerId, clip: Clip) -> EsotereelResult<()> {
         let clip_id = clip.id;
         if self.clips.contains_key(&clip_id) {
@@ -380,8 +393,9 @@ impl Timeline {
         true
     }
 
-    /// 指定レイヤーの、その時刻に実際に存在する(duration込みで判定した)Clipを取得。
-    /// layer.get_clip_id_at は開始位置しか見ていないため、範囲判定はここで行う。
+    /// 指定レイヤーの、その時刻に実際に存在する（`duration` を含めて判定）クリップを取得します。
+    ///
+    /// `Layer::get_clip_id_at` は開始位置しか見ていないため、範囲判定はここで行います。
     pub fn get_clip_at(&self, layer_id: LayerId, pos: i64) -> Option<&Clip> {
         let layer = self.layers.get(&layer_id)?;
         let clip_id = layer.get_clip_id_at(pos)?;
@@ -403,7 +417,9 @@ impl Timeline {
         self.clips.get_mut(&id)
     }
 
-    /// クリップのposition変更。layer.clipsとchunk_indexの整合を保つ唯一の経路。
+    /// クリップの `position` を変更します。
+    ///
+    /// `layer.clips` と `chunk_index` の整合性を保つ唯一の経路です。
     pub fn move_clip(&mut self, clip_id: ClipId, new_position: i64) -> EsotereelResult<()> {
         let layer_id = self
             .layers
@@ -427,7 +443,9 @@ impl Timeline {
         Ok(())
     }
 
-    /// 範囲検索。chunk_indexが無ければ遅延構築する。
+    /// 指定範囲に重なるクリップを検索します。
+    ///
+    /// `chunk_index` が無ければ遅延構築します。
     pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
         // Single lock strategy: use write lock to handle both check and build
         // This avoids read-write lock upgrade deadlock
@@ -489,7 +507,7 @@ impl Timeline {
         std::mem::take(&mut self.changes)
     }
 
-    // ---- Independent化(deep clone) ----
+    // Independent化(deep clone)
 
     pub fn deep_clone(&self, ids: &mut IdGenerator, new_id: u64) -> Self {
         let mut cloned = self.clone();
@@ -508,7 +526,7 @@ impl Timeline {
         self.layers.values().map(LayerMeta::from).collect()
     }
 
-    // ---- クライアント側: ネットワーク経由の構築/マージ ----
+    // クライアント側: ネットワーク経由の構築/マージ
 
     /// ProjectMeta受信時、構造だけからTimelineの骨格を作る(Clip無し)。
     pub fn from_meta(meta: &TimelineMeta) -> Self {

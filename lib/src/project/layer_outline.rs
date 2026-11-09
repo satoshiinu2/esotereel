@@ -10,6 +10,9 @@ use crate::{
     util::result::{EsotereelError, EsotereelResult},
 };
 
+/// アウトラインノードです。
+///
+/// レイヤーまたはフォルダーのいずれかを表現し、ツリー構造のノードとして使用されます。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
@@ -23,12 +26,13 @@ use crate::{
 )]
 #[archive_attr(derive(CheckBytes))]
 pub enum OutlineNode {
+    /// レイヤーノード
     Layer(LayerId),
+    /// フォルダーノード
     Folder(LayerFolderId),
 }
 
-/// Folderの中身(名前・開閉状態・並び順)。
-
+/// フォルダーの中身（名前・開閉状態・並び順）。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
@@ -41,19 +45,26 @@ pub enum OutlineNode {
 )]
 #[archive_attr(derive(CheckBytes))]
 pub struct LayerFolder {
+    /// フォルダー名
     pub name: String,
+    /// 子ノードのリスト
     pub children: Vec<OutlineNode>,
+    /// 不透明度（0.0〜1.0）
     pub opacity: f32,
+    /// ブレンドモード
     pub blend_mode: BlendMode,
 }
 
 impl LayerFolder {
+    /// パススルー（不透明度1.0かつNormalブレンド）かどうかを返します。
     pub fn is_pass_through(&self) -> bool {
         self.opacity >= 1.0 && self.blend_mode == BlendMode::Normal
     }
 }
 
-/// 表示用の並び・階層を持つ構造。
+/// 表示用の並び・階層を持つ構造です。
+///
+/// ルートノードとフォルダーマップを持ち、ツリー構造のレイヤー/フォルダー階層を管理します。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
@@ -66,16 +77,22 @@ impl LayerFolder {
 )]
 #[archive_attr(derive(CheckBytes))]
 pub struct LayerOutline {
+    /// ルートレベルのノードリスト
     pub roots: Vec<OutlineNode>,
+    /// フォルダーID → フォルダー情報のマップ
     folders: HashMap<LayerFolderId, LayerFolder>,
 }
 
+/// ノードの配置場所です。
 pub enum NodeLocation {
+    /// ルートレベル
     Root,
+    /// フォルダー内
     InFolder(LayerFolderId),
 }
 
 impl NodeLocation {
+    /// オプションのフォルダー ID に変換します。ルートの場合は `None`。
     pub fn to_option(&self) -> Option<LayerFolderId> {
         match self {
             NodeLocation::Root => None,
@@ -84,6 +101,9 @@ impl NodeLocation {
     }
 }
 
+/// レイアウトの実行順序イテレータです。
+///
+/// フォルダーを再帰的に走査し、レイヤー ID を実行順に返します。
 pub struct ExecutionOrderIter<'a> {
     stack: Vec<std::slice::Iter<'a, OutlineNode>>,
     folders: &'a HashMap<LayerFolderId, LayerFolder>,
@@ -310,8 +330,12 @@ impl LayerOutline {
     Clone,
 )]
 #[archive_attr(derive(CheckBytes))]
+/// レイヤーまたはフォルダーのメタデータです。
 pub struct Meta {
+    /// 名前
     pub name: String,
+    /// 不透明度（0.0〜1.0）
     pub opacity: f32,
+    /// ブレンドモード
     pub blend_mode: BlendMode,
 }

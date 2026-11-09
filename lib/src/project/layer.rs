@@ -3,12 +3,15 @@ use std::collections::BTreeMap;
 
 use crate::project::ids::{ClipId, LayerId};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// レイヤー削除時の子ノード処理方針です。
 pub enum LayerRemoveStrategy {
+    /// 子ノードも再帰的に削除します。
     Recursive,
+    /// 子ノードを親に昇格させます。
     PromoteChildren,
 }
 
+/// ブレンドモードです。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
@@ -30,12 +33,16 @@ pub enum BlendMode {
     Screen,
 }
 
+/// レイヤーの実体です。
+///
+/// `position -> ClipId` のマップを保持しますが、クリップ実体は
+/// `Timeline.clips` が持つため、ここでは参照のみを管理します。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
     rkyv::Serialize,
     serde::Serialize,
-    serde:: Deserialize,
+    serde::Deserialize,
     Debug,
     Clone,
 )]
@@ -44,11 +51,12 @@ pub struct Layer {
     pub id: LayerId,
     pub name: String,
     pub enabled: bool,
-    /// position -> ClipId。Clip本体はここでは持たない(Timeline.clipsが実体)。
+    /// 位置 → `ClipId` のマップ。クリップ実体は `Timeline.clips` が保持。
     pub clips: BTreeMap<i64, ClipId>,
 }
 
 impl Layer {
+    /// 新しいレイヤーを作成します。
     pub fn new(id: LayerId, name: String) -> Self {
         Self {
             id,
@@ -58,12 +66,14 @@ impl Layer {
         }
     }
 
+    /// 指定位置にお or その直前にあるクリップ ID を返します。
     pub fn get_clip_id_at(&self, pos: i64) -> Option<ClipId> {
         self.clips.range(..=pos).next_back().map(|(_, &id)| id)
     }
 
-    /// clip_idの参照をこのレイヤーから除去し、あった位置を返す。
-    /// Clip実体はTimeline.clipsが持つので、そちらの削除は呼び出し側の責務。
+    /// `clip_id` の参照をこのレイヤーから除去し、あった位置を返します。
+    ///
+    /// クリップ実体は `Timeline.clips` が持つため、そちらの削除は呼び出し側の責務です。
     pub fn remove_clip(&mut self, clip_id: ClipId) -> Option<i64> {
         let pos = self
             .clips
@@ -75,7 +85,7 @@ impl Layer {
     }
 }
 
-/// ProjectAll等で「構造だけ」送るための軽量版。clipsを含まない。
+/// `ProjectAll` 等で「構造だけ」を送るための軽量版です。クリップを含みません。
 #[derive(rkyv::Archive, rkyv::Serialize, serde::Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct LayerMeta {

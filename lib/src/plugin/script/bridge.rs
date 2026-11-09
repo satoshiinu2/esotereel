@@ -7,6 +7,9 @@ use crate::{
     project::clip::ClipBindingValue,
 };
 
+/// プロパティ値のマップを Rhai の `Map` に変換します。
+///
+/// `ClipBindingValue` を `rhai::Dynamic` に変換し、スクリプトエンジンに渡せる形式にします。
 pub fn field_values_to_rhai_map(properties: &HashMap<NamespacedID, ClipBindingValue>) -> Map {
     properties
         .iter()

@@ -15,6 +15,13 @@ use crate::{
     },
 };
 
+// Esotereel コア全体で共通に使用するエラー型と結果型です。
+//
+// 各エラーは「何をしようとして失敗したか」を文脈付きで表現し、GUI やネットワーク
+// 層へエラーとして伝播させます。本番コードでは `panic!`/`expect()`/`unwrap()` を避け、
+// ここで定義された `EsotereelError` を返すか `anyhow::Result` で伝播することを原則とします
+// （AGENTS.md 第9条：パニックの使用制限）。
+
 // TODO: cow
 #[derive(Archive, Serialize, Deserialize, Debug, thiserror::Error)]
 pub enum EsotereelError {
@@ -65,8 +72,13 @@ impl fmt::Display for EsotereelError {
     }
 }
 
+/// Esotereel の結果型の省略形です。エラーは `EsotereelError` に統一されます。
 pub type EsotereelResult<T> = Result<T>;
 
+/// スパン／スレッド境界で回収されたパニックペイロードを文字列に変換します。
+///
+/// `Box<dyn Any + Send>` は `std::panic::catch_unwind` 等で回収されたペイロードを想定し、
+/// `&str` / `String` の場合はそのまま返し、それ以外は「Unknown panic or error payload」を返します。
 pub fn format_any_error(error: Box<dyn Any + Send>) -> String {
     if let Some(s) = error.downcast_ref::<&str>() {
         s.to_string()
@@ -77,8 +89,14 @@ pub fn format_any_error(error: Box<dyn Any + Send>) -> String {
     }
 }
 
+/// `RwLock<T>` の取得に失敗した際に `EsotereelError::LockError` に変換する拡張トレイトです。
+///
+/// ミューテックスポイズン（スレッドがパニックを起こしながらロックを保持していた状態）
+/// は回復不能な状態とみなし、`LockError` としてエラーを返します。
 pub trait LockExt<T> {
+    /// 書き込みロックを取得し、失敗時は `EsotereelError::LockError` を返します。
     fn write_or_err(&self) -> Result<RwLockWriteGuard<'_, T>>;
+    /// 読み取りロックを取得し、失敗時は `EsotereelError::LockError` を返します。
     fn read_or_err(&self) -> Result<RwLockReadGuard<'_, T>>;
 }
 

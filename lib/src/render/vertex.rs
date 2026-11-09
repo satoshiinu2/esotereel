@@ -1,5 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 
+/// 頂点データです。
+///
+/// `bytemuck` の `Pod` / `Zeroable` を実装し、wgpu の頂点バッファに直接書き込めます。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
@@ -15,6 +18,7 @@ impl Vertex {
         2 => Float32x2,
     ];
 
+    /// 頂点バッファレイアウトを返します。
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as u64,
@@ -23,6 +27,7 @@ impl Vertex {
         }
     }
 
+    /// 矩形を構成する 6 頂点（2 三角形）を返します。
     pub fn rect(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> [Vertex; 6] {
         let (x2, y2) = (x + w, y + h);
         [

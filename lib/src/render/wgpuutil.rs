@@ -4,6 +4,10 @@ use wgpu::ExperimentalFeatures;
 
 use crate::render::pipeline::WgpuRenderResources;
 
+/// wgpu のデバイス・キュー・リソースをまとめたユーティリティ構造体です。
+///
+/// オフスクリーンレンダリング専用で、ウィンドウサーフェスは持たず、
+/// オフスクリーンテクスチャへのレンダリングと GPU 読み戻しを行います。
 pub struct WGpuUtil {
     pub instance: wgpu::Instance,
     pub device: wgpu::Device,
@@ -16,6 +20,10 @@ pub struct WGpuUtil {
 }
 
 impl WGpuUtil {
+    /// 新しい `WGpuUtil` を作成します。
+    ///
+    /// ハイパフォーマンス電源設定のアダプターを選択し、デバイスとキュー、
+    /// レンダーリソースを初期化します。
     pub fn new(width: u32, height: u32) -> Self {
         let instance = wgpu::Instance::default();
 
@@ -52,6 +60,10 @@ impl WGpuUtil {
     }
 }
 
+/// オフスクリーンレンダリングターゲットです。
+///
+/// テクスチャ、ビュー、読み戻し用バッファを保持し、GPU 上で描画した結果を
+/// CPU 側の紧密パックされた RGBA バイト列として取得できます。
 pub struct OffscreenTarget {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -65,6 +77,10 @@ pub struct OffscreenTarget {
 const BYTES_PER_PIXEL: u32 = 4; // RGBA8
 
 impl OffscreenTarget {
+    /// 新しい `OffscreenTarget` を作成します。
+    ///
+    /// レンダーアタッチメントおよびコピー元として使用可能なテクスチャと、
+    /// CPU 読み戻し用のマップ可能バッファを作成します。
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
@@ -110,8 +126,11 @@ impl OffscreenTarget {
         }
     }
 
-    /// copy_texture_to_bufferでコピー済みのbufferをCPU側に読み戻し、
-    /// パディングを除去したtightly-packedなRGBAバイト列を返す
+    /// コピー済みのバッファを CPU 側に読み戻し、パディングを除去した
+    /// 紧密パックされた RGBA バイト列を返します。
+    ///
+    /// 各行が `COPY_BYTES_PER_ROW_ALIGNMENT`（256 バイト）境界に揃えられているため、
+    /// 不要なパディング部分を取り除いて返します。
     pub fn readback(&self, device: &wgpu::Device) -> Result<Vec<u8>, String> {
         let slice = self.buffer.slice(..);
 

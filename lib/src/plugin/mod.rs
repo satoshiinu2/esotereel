@@ -1,3 +1,16 @@
+//! プラグインシステムのモジュールです。
+//!
+//! プラグインは `manifest.toml`、`settings.toml`、`clips/`、`components/`、`toolbars.toml`、
+//! `script.rhai` で構成され、`PluginLoader` によりディスクから読み込まれます。
+//! 各プラグインは `ClipKind`（クリップ種別）、`ComponentDefinition`（コンポーネント定義）、
+//! `PropertySchema`（プロパティスキーマ）、Rhai スクリプトを登録します。
+//!
+//! ## 設計上の注意
+//! - プロパティ ID（`NamespacedID`）はハードコードせず、コンポーネントが宣言する
+//!   能力（`ComponentCapability`）から解決して参照します（AGENTS.md 第9条）。
+//! - プラグイン読み込みは `tokio::task::spawn_blocking` で並列実行され、
+//!   1 つのプラグインの失敗が全体を止めません（`load_from_disk`）。
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -33,13 +46,23 @@ pub mod script;
 pub mod settings;
 pub mod toolbar;
 
+/// プラグインスコープ下の識別子を表す名前空間付き ID です。
+///
+/// 形式は `plugin_id:local_id`（例: `std:video`）。プラグイン間で ID が衝突しないよう、
+/// プラグイン ID とローカル ID の組み合わせで一意性を保証します。
+///
+/// プロパティ ID やコンポーネント ID など、システム内の識別子はすべてこの型を介して
+/// 表現し、ハードコードされたリテラル ID を使用しないこと（AGENTS.md 第9条）。
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
 )]
 #[archive_attr(derive(CheckBytes))]
 pub struct NamespacedID {
+    /// `plugin_id:local_id` 形式のフル ID 文字列。
     full: String,
+    /// プラグイン識別子。
     plugin_id: String,
+    /// プラグイン内部でのローカル識別子。
     local_id: String,
 }
 
@@ -47,6 +70,10 @@ static ID_VALIDATION_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_.:-]+$").unwrap());
 
 impl NamespacedID {
+    /// `plugin_id:local_id` 形式の新しい `NamespacedID` を作成します。
+    ///
+    /// 入力は ASCII 英字・数字・`.` `_` `-` のみを含む必要があります。
+    /// 不正な場合は `anyhow::bail!` でエラーを返します。
     pub fn new(plugin_id: &str, local_id: &str) -> anyhow::Result<Self> {
         if !ID_VALIDATION_REGEX.is_match(plugin_id) || !ID_VALIDATION_REGEX.is_match(local_id) {
             anyhow::bail!(
@@ -60,6 +87,9 @@ impl NamespacedID {
         })
     }
 
+    /// `plugin_id:local_id` 形式の文字列をパースして `NamespacedID` を作成します。
+    ///
+    /// `:` 区切りがなければエラーとなります。
     pub fn parse(full: &str) -> anyhow::Result<Self> {
         let (plugin_id, local_id) = full
             .split_once(':')
@@ -71,12 +101,17 @@ impl NamespacedID {
         })
     }
 
+    /// フル ID 文字列（`plugin_id:local_id`）を返します。
     pub fn full(&self) -> &str {
         &self.full
     }
+
+    /// プラグイン識別子を返します。
     pub fn plugin_id(&self) -> &str {
         &self.plugin_id
     }
+
+    /// プラグイン内部のローカル識別子を返します。
     pub fn local_id(&self) -> &str {
         &self.local_id
     }
@@ -114,13 +149,23 @@ impl std::fmt::Display for NamespacedID {
     }
 }
 
+/// プラグインのマニフェスト（`manifest.toml` の内容）を表します。
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
+    /// プラグイン識別子（例: `std`）。
     pub id: String,
+    /// プラグインの表示名。
     pub name: String,
+    /// プラグインのバージョン。
     pub version: String,
 }
 
+/// 読み込まれたプラグインの実体です。
+///
+/// プラグインディレクトリからマニフェスト・設定スキーマ・クリップ種別・
+/// コンポーネント定義・ツールバーボタン・スクリプトをすべて読み込み、保持します。
+/// `PluginLoader` が所有し、他モジュールからは `PluginLoader` のアクセサ経由で
+/// 間接的に参照することを前提とします。
 pub struct Plugin {
     pub manifest: PluginManifest,
     pub setting_schemas: Vec<PropertySchema>,
@@ -134,7 +179,8 @@ pub struct Plugin {
 }
 
 impl Plugin {
-    /// このプラグイン単体のディレクトリからmanifest+settings.tomlを読み込む
+    /// このプラグイン単体のディレクトリから `manifest.toml` + `settings.toml` などを読み込み、
+    /// `Plugin` インスタンスを構築します。
     fn load(dir: &Path) -> anyhow::Result<Self> {
         let manifest = Self::load_manifest(&dir.join("manifest.toml"))?;
 
@@ -254,14 +300,13 @@ impl Plugin {
         for path in toml_paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
-            let kinds = ClipKind::parse_toml(&text, &manifest.id)
-                .with_context(|| {
-                    format!(
-                        "failed parse clip kinds in `{}` for plugin `{}`",
-                        path.display(),
-                        manifest.id
-                    )
-                })?;
+            let kinds = ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
+                format!(
+                    "failed parse clip kinds in `{}` for plugin `{}`",
+                    path.display(),
+                    manifest.id
+                )
+            })?;
 
             for (id, kind) in kinds {
                 if all_kinds.insert(id.clone(), kind).is_some() {
@@ -308,8 +353,8 @@ impl Plugin {
         for path in toml_paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read component file at {}", path.display()))?;
-            let components = parse_component_definitions(&text, &manifest.id)
-                .with_context(|| {
+            let components =
+                parse_component_definitions(&text, &manifest.id).with_context(|| {
                     format!(
                         "failed parse components in `{}` for plugin `{}`",
                         path.display(),
@@ -351,6 +396,16 @@ pub struct PluginLoadedResult {
     pub result: anyhow::Result<PluginManifest>,
 }
 
+/// 全プラグインの読み込み・インデックス構築・アクセスを管理するローダーです。
+///
+/// `load_from_disk` で全プラグインを並列読み込みし、`rebuild_indices` で
+/// `clip_kinds`・`component_definitions`・スクリプト・スキーマ・ツールバーを
+/// マージ・インデックス化します。
+///
+/// ## スレッドモデル
+/// プラグインの読み込みは `spawn_blocking` で並列化されますが、構築後の
+/// `PluginLoader` 自体は `Arc<RwLock<PluginLoader>>` として共有され、
+/// 読み取りは `read`、書き込み（再読み込み・追加・削除）は `write` で保護されます。
 pub struct PluginLoader {
     pub plugins: Vec<Plugin>,
     is_loaded: bool,
@@ -418,8 +473,10 @@ impl PluginLoader {
         Ok(dirs)
     }
 
-    /// ディスクから全プラグインを読み込む。1つの失敗が全体を止めないよう、
-    /// 個別にResultを保持したまま返す。
+    /// ディスクから全プラグインを読み込みます。
+    ///
+    /// 1 つのプラグインの失敗が全体を止めないよう、個別に `Result` を保持したまま返します。
+    /// 既に読み込み済みの場合はキャッシュを返します。
     pub async fn load_from_disk(
         &mut self,
         dirs_def: &Directories,
@@ -508,8 +565,9 @@ impl PluginLoader {
             .collect())
     }
 
-    /// 全プラグインのclip_kindsをマージし、その後で全プラグインの
-    /// 全プラグインのkindsとcomponent_definitionsをマージし、インデックスを再構築する。
+    /// 全プラグインの `clip_kinds` と `component_definitions` をマージし、インデックスを再構築します。
+    ///
+    /// ID 衝突がある場合はエラーとなり、どのプラグインがどの ID を所有するかを明確にします。
     fn rebuild_indices(&mut self) -> anyhow::Result<()> {
         self.scripts_index.clear();
         self.component_scripts_index.clear();
@@ -556,11 +614,13 @@ impl PluginLoader {
             }
             // コンポーネントごとの個別スクリプト
             for (id, script) in &plugin.component_scripts {
-                self.component_scripts_index.insert(id.clone(), script.clone());
+                self.component_scripts_index
+                    .insert(id.clone(), script.clone());
             }
             // ツールバーボタンごとの個別スクリプト
             for (id, script) in &plugin.toolbar_button_scripts {
-                self.toolbar_button_scripts_index.insert(id.clone(), script.clone());
+                self.toolbar_button_scripts_index
+                    .insert(id.clone(), script.clone());
             }
 
             // schemas index
@@ -586,6 +646,9 @@ impl PluginLoader {
         Ok(())
     }
 
+    /// 追加のプラグインをディスクから読み込み、インデックスを再構築します。
+    ///
+    /// ホットロード（実行時追加）に使用します。
     pub fn load_additional_plugin(&mut self, dir: &Path) -> anyhow::Result<PluginManifest> {
         let plugin = Plugin::load(dir)
             .with_context(|| format!("Failed to load plugin at {}", dir.display()))?;
@@ -596,6 +659,10 @@ impl PluginLoader {
         Ok(manifest)
     }
 
+    /// 指定 ID のプラグインをディスクから再読み込み（ホットリロード）します。
+    ///
+    /// 他プラグインの pending properties が差し替え対象の kind を参照している
+    /// 可能性があるため、必ず全プラグイン分を再解決します。
     pub fn reload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         // 対象プラグインのディレクトリを取得
         let dir = self
@@ -621,6 +688,7 @@ impl PluginLoader {
         Ok(())
     }
 
+    /// 指定 ID のプラグインをアンロードし、インデックスを再構築します。
     pub fn unload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
         let before = self.plugins.len();
         self.plugins.retain(|p| p.manifest.id != plugin_id);
@@ -632,33 +700,37 @@ impl PluginLoader {
         Ok(())
     }
 
+    /// 全設定スキーマのコピーを返します。
     pub fn collect_all_schemas(&self) -> Vec<PropertySchema> {
         self.schemas_index.clone()
     }
 
+    /// 全ツールバーボタン仕様のコピーを返します。
     pub fn collect_all_toolbars(&self) -> Vec<(String, ToolbarButtonSpec)> {
         self.toolbars_index.clone()
     }
 
     // ホットパス用の直接アクセスメソッド
+    /// 指定 ID の `ClipKind` を返します。
     pub fn get_clip_kind(&self, id: &NamespacedID) -> Option<&ClipKind> {
         self.clip_kinds.get(id)
     }
 
-    /// 指定 id のクリップ（ルートコンポーネント）のプロパティスキーマを返す。
-    /// プロパティはクリップ側ではなく、ルートコンポーネントが提供する。
+    /// 指定 ID のクリップ（ルートコンポーネント）のプロパティスキーマを返します。
+    ///
+    /// プロパティはクリップ側ではなく、ルートコンポーネントが提供します。
     pub fn get_clip_properties(&self, id: &NamespacedID) -> Option<&[PropertySchema]> {
         self.component_registry
             .get(id)
             .map(|c| c.properties.as_slice())
     }
 
-    /// 指定 id の ComponentDefinition を返す。
+    /// 指定 ID の `ComponentDefinition` を返します。
     pub fn get_component(&self, id: &NamespacedID) -> Option<&ComponentDefinition> {
         self.component_registry.get(id)
     }
 
-    /// ルートコンポーネント id から階層を解決し、フラットな RuntimeDefinition を返す。
+    /// ルートコンポーネント ID から階層を解決し、フラットな `RuntimeDefinition` を返します。
     pub fn resolve_component_definition(
         &self,
         root_id: &NamespacedID,
@@ -666,7 +738,10 @@ impl PluginLoader {
         self.component_registry.resolve_definition(root_id)
     }
 
-    /// 指定 Capability を提供する ComponentDefinition をすべて返す。
+    /// 指定 `Capability` を提供する `ComponentDefinition` をすべて返します。
+    ///
+    /// レンダラー等はこのメソッドで能力からコンポーネントを逆引きし、
+    /// ハードコードされた ID に依存しない設計とします（AGENTS.md 第9条）。
     pub fn get_components_by_capability(
         &self,
         capability: &ComponentCapability,
@@ -674,28 +749,34 @@ impl PluginLoader {
         self.component_registry.by_capability(capability)
     }
 
+    /// 全設定スキーマへのスライス参照を返します。
     pub fn get_settings_schemas(&self) -> &[PropertySchema] {
         &self.schemas_index
     }
 
+    /// 全ツールバーボタン仕様へのスライス参照を返します。
     pub fn get_toolbar_buttons(&self) -> &[(String, ToolbarButtonSpec)] {
         &self.toolbars_index
     }
 
+    /// プラグイン共通の Rhai スクリプトを返します。
     pub fn get_script(&self, plugin_id: &str) -> Option<&CompiledScript> {
         self.scripts_index.get(plugin_id)
     }
 
-    /// コンポーネントごとの個別スクリプトを返す。
+    /// コンポーネントごとの個別 Rhai スクリプトを返します。
     pub fn get_component_script(&self, id: &NamespacedID) -> Option<&CompiledScript> {
         self.component_scripts_index.get(id)
     }
 
-    /// ツールバーボタンごとの個別スクリプトを返す。
+    /// ツールバーボタンごとの個別 Rhai スクリプトを返します。
     pub fn get_toolbar_button_script(&self, id: &NamespacedID) -> Option<&CompiledScript> {
         self.toolbar_button_scripts_index.get(id)
     }
 
+    /// プラグイン共通スクリプトの関数を呼び出します。
+    ///
+    /// プラグイン ID が見つからない場合はエラーを返します。
     pub fn call_script<R: Clone + Send + Sync + 'static>(
         &self,
         engine: &rhai::Engine,

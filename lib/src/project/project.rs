@@ -7,6 +7,13 @@ use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineI
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::util::result::EsotereelError;
 
+/// プロジェクトのルートデータモデルです。
+///
+/// 複数のタイムライン（`Timeline`）を `TimelineId` でキーに保持し、
+/// `IdGenerator` により各種 ID を一意に生成します。
+///
+/// タイムライン・レイヤー・クリップの挿入・取得・削除、タイムラインの
+/// 独立化（ミラーからのコピー）、変更セットの抽出などを提供します。
 #[derive(Debug, Default)]
 pub struct Project {
     timelines: BTreeMap<TimelineId, Timeline>,
@@ -14,10 +21,12 @@ pub struct Project {
 }
 
 impl Project {
+    /// 新しい空のプロジェクトを作成します。
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// 指定 FPS で新しいタイムラインを追加し、その `TimelineId` を返します。
     pub fn insert_timeline(&mut self, fps: f64) -> TimelineId {
         let id = self.ids.next_timeline_id();
         self.timelines
@@ -25,25 +34,30 @@ impl Project {
         id
     }
 
+    /// 指定 ID のタイムラインへの不変参照を返します。存在しなければ `None`。
     pub fn timeline_ref(&self, id: TimelineId) -> Option<&Timeline> {
         self.timelines.get(&id)
     }
 
+    /// 指定 ID のタイムラインへの可変参照を返します。存在しなければ `None`。
     pub fn timeline_mut(&mut self, id: TimelineId) -> Option<&mut Timeline> {
         self.timelines.get_mut(&id)
     }
 
+    /// 保持するタイムラインの数を返します。
     pub fn timeline_count(&self) -> usize {
         self.timelines.len()
     }
 
+    /// ID 生成器への可変参照を返します。
     pub fn id_generator_mut(&mut self) -> &mut IdGenerator {
         &mut self.ids
     }
 
-    /// 指定Timelineにレイヤー(またはフォルダー)を新規挿入する。
-    /// parent が Some の場合はそのレイヤーの子として、None の場合はroot_layers直下に追加する。
-    /// index を省略すると末尾に追加される。
+    /// 指定タイムラインにレイヤー（またはフォルダー）を新規挿入します。
+    ///
+    /// `parent` が `Some` の場合はそのレイヤーの子として、`None` の場合はルート直下に追加します。
+    /// `index` を省略すると末尾に追加されます。
     pub fn insert_layer_in_timeline(
         &mut self,
         timeline_id: TimelineId,
@@ -96,8 +110,9 @@ impl Project {
         )
     }
 
-    /// Mirror参照されているTimelineを独立コピーし、新しいTimelineIdを返す。
-    /// 呼び出し側でClipのCompositionRefをIndependent(new_id)に差し替えること。
+    /// ミラー参照されているタイムラインを独立コピーし、新しい `TimelineId` を返します。
+    ///
+    /// 呼び出し側で `Clip` の `CompositionRef` を `Independent(new_id)` に差し替えること。
     pub fn make_independent(&mut self, source: TimelineId) -> anyhow::Result<TimelineId> {
         let new_id = self.ids.next_timeline_id();
         let cloned = self
@@ -109,8 +124,9 @@ impl Project {
         Ok(new_id)
     }
 
-    /// 対応するClipが存在しなくなったIndependent Timelineの掃除。
-    /// 厳密な参照カウントは今はせず、呼び出し側(Clip削除時)から明示的に呼ぶ。
+    /// 対応する `Clip` が存在しなくなった Independent Timeline を掃除します。
+    ///
+    /// 厳密な参照カウントは行わず、呼び出し側（クリップ削除時）から明示的に呼び出します。
     pub fn remove_timeline(&mut self, id: TimelineId) -> Option<Timeline> {
         self.timelines.remove(&id)
     }
@@ -125,11 +141,15 @@ impl Project {
             .collect()
     }
 
-    /// ProjectAll用の軽量メタ情報。Clip本体を含まない。
+    /// `ProjectAll` 用の軽量メタ情報一覧を返します。クリップ本体は含みません。
     pub fn timelines_meta(&self) -> Vec<TimelineMeta> {
         self.timelines.values().map(TimelineMeta::from).collect()
     }
 
+    /// メタ情報一覧からプロジェクトを復元します。
+    ///
+    /// 各タイムライン・レイヤーの ID を `IdGenerator` に記録し、
+    /// 整合性を保った状態で再構築します。
     pub fn from_meta(timelines: Vec<TimelineMeta>) -> Self {
         let mut project = Self::new();
         for meta in timelines {

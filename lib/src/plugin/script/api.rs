@@ -88,6 +88,11 @@ impl<T> Clone for PluginNetworkContext<T> {
     }
 }
 
+/// プラグインレンダリングコンテキストです。
+///
+/// スクリプトからビデオテクスチャの取得、変換の設定、頂点バッチの生成を行うための
+/// API を提供します。`render_video` / `render_video_with_transform` で頂点バッチを
+/// 積み上げ、`into_parts` で回収します。
 #[derive(Clone)]
 pub struct PluginRenderContext {
     clip_id: ClipId,

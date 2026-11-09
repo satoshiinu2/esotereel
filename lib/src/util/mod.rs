@@ -1,3 +1,8 @@
+/// ユーティリティモジュールです。
+///
+/// パディング構造体、カラー型、ロガー、順序マップ、rkyv 用カスタムシリアライザ、
+/// スロットマップなど、共通して利用される補助型を定義します。
+
 pub mod color;
 pub mod logger;
 pub mod order_map;
@@ -5,6 +10,10 @@ pub mod result;
 pub mod rkyv_with;
 pub mod slot_map;
 
+/// `bytemuck` 互換のパディング型です。
+///
+/// `#[repr(C)]` 構造体でパディングバイトをゼロ埋めし、`bytemuck::Pod` / `Zeroable` を
+/// 実装することで GPU バッファへの安全な書き込みを可能にします。
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct Padding<const T: usize> {

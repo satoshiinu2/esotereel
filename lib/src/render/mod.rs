@@ -21,19 +21,36 @@ pub mod vertex;
 pub mod video;
 pub mod wgpuutil;
 
+/// 1 フレームのレンダーに必要なコンテキストです。
+///
+/// 各フィールドはライフタイム `'a` で結びつけられ、レンダースレッドから
+/// 参照されます。`plugin_loader` は `Arc<RwLock<>>` で共有され、
+/// GUI スレッドとの競合を避けるためロックを適切に取得して使用します。
 pub struct RenderContext<'a> {
+    /// パス → ストリーム状態のマップ。
     pub path_to_stream: &'a Arc<DashMap<String, StreamState>>,
+    /// リソース ID → ストリームプレイヤーのマップ。
     pub streams: &'a Arc<DashMap<ResourceId, StreamPlayer>>,
+    /// メディアフェッチキャッシュ。
     pub media_fetch_cache: &'a Arc<MediaFetchCache>,
 
+    /// プラグインローダー。`Arc<RwLock<>>` で共有される。
     pub plugin_loader: &'a Arc<RwLock<PluginLoader>>,
+    /// Rhai スクリプトエンジン。
     pub script_engine: &'a rhai::Engine,
 
+    /// 現在レンダー対象のタイムライン。
     pub timeline: &'a Timeline,
+    /// カメラ情報（ビュープロジェクション行列の計算に使用）。
     pub camera_info: &'a CameraInfo,
+    /// 現在のフレーム（タイムラインティック）。
     pub current_frame: TimelineTick,
 }
 
+/// 1 バッチ分のレンダー命令を表します。
+///
+/// 頂点データ・テクスチャバインドグループ・変換行列をまとめ、
+/// `WgpuRenderResources::record_render_commands` でまとめて描画されます。
 #[derive(Debug)]
 pub struct RenderBatch {
     pub vertices: Vec<Vertex>,
@@ -41,6 +58,14 @@ pub struct RenderBatch {
     pub transform: Mat4,
 }
 
+/// オフスクリーンテクスチャへ 1 フレームをレンダーします。
+///
+/// ウィンドウサイズが 0 の場合はエラーを返します。カメラのビュープロジェクション行列を
+/// 計算し、頂点を構築してテクスチャを更新し、wgpu のレンダーパスで描画後、
+/// 結果を `offscreen.buffer` にコピーして GPU 読み戻しの準備を行います。
+///
+/// GPU 読み戻しの前には `ClientState` ロックを解放することで GUI フリーズを防ぎます
+///（コミット `67b6d06` 参照）。
 pub fn render_frame_offscreen(
     util: &mut WGpuUtil,
     offscreen: &OffscreenTarget,
