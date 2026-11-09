@@ -4,7 +4,7 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::plugin::NamespacedID;
 use crate::project::{
-    Clip,
+    Clip, TimelineTick,
     clip::ClipBindingValue,
     ids::{ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     layer::LayerMeta,
@@ -32,6 +32,13 @@ pub enum Response {
     RemoveClip {
         timeline_id: TimelineId,
         clip_ids: Vec<(LayerId, ClipId)>,
+    },
+    CommandRejected {
+        timeline_id: TimelineId,
+        clip_id: ClipId,
+        current_position: TimelineTick,
+        current_duration: TimelineTick,
+        current_layer_id: LayerId,
     },
     UpdateLayer {
         timeline_id: TimelineId,

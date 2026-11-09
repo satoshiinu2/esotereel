@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, ops::Range, sync::{Arc, Mutex}};
+use std::{
+    collections::BTreeMap,
+    ops::Range,
+    sync::{Arc, Mutex},
+};
 
 use dashmap::DashMap;
 use esotereel_lib::{
@@ -134,10 +138,6 @@ impl ClientState {
         };
         state.apply_logging_settings();
         state
-    }
-
-    pub fn mark_dirty_timeline(&self, id: TimelineId) {
-        (self.gui_callbacks.mark_dirty_timeline)(id);
     }
 
     pub fn apply_logging_settings(&self) {

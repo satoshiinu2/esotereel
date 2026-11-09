@@ -161,6 +161,38 @@ pub(super) fn on_responce_recveve(
             drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
+        ArchivedResponse::CommandRejected {
+            timeline_id,
+            clip_id,
+            current_position,
+            current_duration,
+            current_layer_id: _,
+            ..
+        } => {
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
+            let project = project_guard
+                .as_mut()
+                .ok_or(EsotereelError::ProjectNotFound)?;
+
+            let timeline = project
+                .timeline_mut(*timeline_id)
+                .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
+
+            // サーバーが通知した正しい状態でローカルのクリップを上書きし、
+            // 次の操作でステールネスエラーが再発しないようにする
+            if let Some(clip) = timeline.get_clip_mut(*clip_id) {
+                clip.set_position(*current_position);
+                clip.duration = *current_duration;
+            }
+
+            drop(project_guard);
+            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
+            drop(state_guard);
+            (fn_ptr)(*timeline_id);
+        }
 
         ArchivedResponse::UpdateLayer {
             timeline_id,

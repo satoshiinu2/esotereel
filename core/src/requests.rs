@@ -7,12 +7,11 @@ use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{NamespacedID, script::api::PluginActionContext},
-    project::{Project, command::CommandRequest},
+    project::{Project, command::CommandRequest, ids::TimelineId},
     requests::{ArchivedRequest, Request},
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt},
 };
-use log::info;
 use rkyv::Deserialize;
 
 use crate::{
@@ -109,24 +108,41 @@ pub fn on_request_receive(
             for (timeline_id, command) in commands.iter() {
                 let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
 
-                log::info!("request: {:?}", command);
+                log::debug!(target:"core_packet_request","request: {:?}", command);
 
-                let command_history = command_to_history(project, *timeline_id, command)?;
-                let mut histories = state_guard
-                    .histories
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                let history = histories
-                    .entry(*timeline_id)
-                    .or_insert_with(|| HistoryStack::default());
-                execute_command_with_history(
-                    project,
-                    *timeline_id,
-                    command_history.clone(),
-                    history,
-                )?;
-
-                log::info!("history: {:?}", command_history);
+                match command_to_history(project, *timeline_id, command.clone()) {
+                    Ok(command_history) => {
+                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
+                        })?;
+                        let history = histories
+                            .entry(*timeline_id)
+                            .or_insert_with(|| HistoryStack::default());
+                        if let Err(e) = execute_command_with_history(
+                            project,
+                            *timeline_id,
+                            command_history.clone(),
+                            history,
+                        ) {
+                            log::error!("Command execution error: {:?}", e);
+                        } else {
+                            log::debug!(target:"core_packet_history","history: {:?}", command_history);
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Command rejected: {:?}", e);
+                        // クライアントに拒否を通知し、サーバー側の正しい状態で同期し直すよう促す
+                        let rejections = build_command_rejected_responses(
+                            project,
+                            *timeline_id,
+                            client_id,
+                            &command,
+                        );
+                        for resp in rejections {
+                            state_guard.network.send(client_id, &resp);
+                        }
+                    }
+                }
             }
 
             drop(project_guard);
@@ -154,7 +170,7 @@ pub fn on_request_receive(
 
             state.network.send(client_id, &res);
 
-            log::debug!(target: "server_stream_packet",
+            log::debug!(target: "core_stream_packet_handler",
                 "Sent StreamMetadata for resource_id: {} ({})",
                 resource_id,
                 path
@@ -164,7 +180,7 @@ pub fn on_request_receive(
             resource_id,
             ranges,
         } => {
-            log::debug!(target: "server_stream_packet",
+            log::debug!(target: "core_stream_packet_handler",
                 "Received FetchStreamData request for resource_id: {} ranges: {:?}",
                 resource_id,
                 ranges
@@ -192,7 +208,7 @@ pub fn on_request_receive(
             timeline_id: timeline_key,
             range,
         } => {
-            log::info!(
+            log::debug!(target: "core_stream_packet_handler",
                 "Received FetchClipsInRange request for timeline_key: {} in:{:?}",
                 timeline_key,
                 range
@@ -327,8 +343,8 @@ pub fn on_request_receive(
                 }
             }
 
-            log::info!(
-                "Server: Executed toolbar action {} from plugin {}",
+            log::debug!(target: "core_toolbar_action",
+                "Core: Executed toolbar action {} from plugin {}",
                 func_name,
                 plugin_id
             );
@@ -379,4 +395,70 @@ pub fn on_request_receive(
         }
     }
     Ok(())
+}
+
+/// コマンドが拒否された場合にクライアントへ送信する `CommandRejected` レスポンスを構築する。
+/// クライアントはこれを受け取り、サーバー側の正しいクリップ状態に同期し直す。
+fn build_command_rejected_responses(
+    project: &Project,
+    timeline_id: TimelineId,
+    client_id: u32,
+    command: &CommandRequest,
+) -> Vec<Response> {
+    let Some(timeline) = project.timeline_ref(timeline_id) else {
+        return vec![];
+    };
+
+    match command {
+        CommandRequest::ClipsMove { clips } => clips
+            .iter()
+            .filter_map(|ctx| {
+                let (clip, layer) = timeline.get_clip_and_layer(ctx.clip_id)?;
+                if clip.position != ctx.base_position || clip.duration != ctx.base_duration {
+log::warn!(
+                            "stale move request: client ({}) base ({}, {}) != server current ({}, {})",
+                            client_id,
+                            ctx.base_position, ctx.base_duration, clip.position, clip.duration
+                        );
+
+                    Some(Response::CommandRejected {
+                        timeline_id,
+                        clip_id: ctx.clip_id,
+                        current_position: clip.position,
+                        current_duration: clip.duration,
+                        current_layer_id: layer,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        CommandRequest::ClipsResize { clips } => clips
+            .iter()
+            .filter_map(|ctx| {
+                let clip = timeline.get_clip(ctx.clip_id)?;
+                if clip.position != ctx.base_position || clip.duration != ctx.base_duration {
+                    log::warn!(
+                        "stale resize request: client ({}) base ({}, {}) != server current ({}, {})",
+                        client_id,
+                        ctx.base_position,
+                        ctx.base_duration,
+                        clip.position,
+                        clip.duration
+                    );
+
+                    Some(Response::CommandRejected {
+                        timeline_id,
+                        clip_id: ctx.clip_id,
+                        current_position: clip.position,
+                        current_duration: clip.duration,
+                        current_layer_id: 0,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        _ => vec![],
+    }
 }

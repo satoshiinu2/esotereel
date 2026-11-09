@@ -65,7 +65,7 @@ pub struct ClipResizeHistoryCtx {
     pub duration_delta: TimelineTick,
 }
 
-#[derive(Archive, Deserialize, Serialize, Debug)]
+#[derive(Archive, Deserialize, Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandRequest {
     ClipsMove {
