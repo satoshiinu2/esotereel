@@ -1,5 +1,6 @@
 use std::{
     ops::Range,
+    path::Path,
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -7,10 +8,10 @@ use colored::Colorize;
 use esotereel_lib::{
     StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
-    plugin::NamespacedID,
+    plugin::{NamespacedID, property::value::FieldValue},
     project::{
         Project,
-        clip::ClipBindingValue,
+        clip::{Clip, ClipBindingValue},
         ids::{ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
         layer_outline::{Meta, OutlineNode},
@@ -90,9 +91,18 @@ pub(super) fn on_responce_recveve(
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
+                let mut sources = Vec::new();
                 for (layer_id, archived_clip) in clips.iter() {
                     let clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
+                    if let Some(source) = video_source_path(&clip) {
+                        sources.push(source);
+                    }
                     timeline.upsert_clip_from_network(*layer_id, clip);
+                }
+                // クライアント側のアセットレジストリにも動画ソースを登録し、
+                // Project.assets をサーバーと整合したカタログとして保つ。
+                for source in sources {
+                    let _ = project.register_asset(Path::new(&source));
                 }
             }
 
@@ -115,6 +125,7 @@ pub(super) fn on_responce_recveve(
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
+            let mut new_source = None;
             {
                 let timeline = project
                     .timeline_mut(*timeline_id)
@@ -124,9 +135,17 @@ pub(super) fn on_responce_recveve(
                 let key: NamespacedID = key.deserialize(&mut rkyv::Infallible).unwrap();
                 let value: ClipBindingValue = value.deserialize(&mut rkyv::Infallible).unwrap();
 
+                // プロパティ変更が動画ソースなら、タイムライン貸し出しを解放した後に
+                // クライアントのアセットレジストリにも反映する。
+                new_source = video_source_from_property(&key, &value);
+
                 if let Some(clip) = timeline.get_clip_mut(clip_id) {
                     clip.set_property_value(key, value)?;
                 }
+            }
+
+            if let Some(source) = new_source {
+                let _ = project.register_asset(Path::new(&source));
             }
 
             let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
@@ -424,4 +443,39 @@ pub(super) fn on_responce_recveve(
         }
     }
     Ok(())
+}
+
+/// クリッププロパティから動画ソース（`std:video:media/source`）のパス文字列を取り出す。
+fn video_source_path(clip: &Clip) -> Option<String> {
+    let media_key = NamespacedID::new("std", "video:media").unwrap();
+    let FieldValue::Map(media_map) = clip.properties.get(&media_key)?.in_frame_of()? else {
+        return None;
+    };
+    let FieldValue::String(source) = media_map.get("source")? else {
+        return None;
+    };
+    if source.is_empty() {
+        return None;
+    }
+    Some(source.clone())
+}
+
+/// プロパティ変更（ルートキー + 値）から動画ソースパスを取り出す。
+/// `key` が動画メディアグループのルートで、`value` がそのマップ値である場合にのみ
+/// `source` メンバーを返す。
+fn video_source_from_property(key: &NamespacedID, value: &ClipBindingValue) -> Option<String> {
+    let media_key = NamespacedID::new("std", "video:media").unwrap();
+    if key != &media_key {
+        return None;
+    }
+    let FieldValue::Map(media_map) = value.in_frame_of()? else {
+        return None;
+    };
+    let FieldValue::String(source) = media_map.get("source")? else {
+        return None;
+    };
+    if source.is_empty() {
+        return None;
+    }
+    Some(source.clone())
 }

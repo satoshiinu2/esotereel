@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use esotereel_lib::{
     plugin::{
         NamespacedID,
-        property::{value::FieldValue, PropertyPath},
+        property::{PropertyPath, value::FieldValue},
     },
     project::{
         Clip, Project, TimelineTick,
@@ -98,6 +99,9 @@ pub(crate) fn clip_resize_core(
     project: &mut Project,
     timeline_id: TimelineId,
     resized_clips: &[ClipResizeHistoryCtx],
+    // コンポーネント定義から能力ベースで解決したメディアオフセットメンバーのキー。
+    // `None` の場合はオフセット調整をスキップする。
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     // 重なり判定
     {
@@ -140,20 +144,27 @@ pub(crate) fn clip_resize_core(
 
         // 左エッジ変更時は source_offset を位置変化分だけシフトする。
         // 左端を右に動かすと source 側からのオフセットも同じだけ進む。
+        // プロパティキーはハードコードせず、呼び出し側で能力ベースに解決した
+        // メンバキーを受け取って使用する（AGENTS.md 第9条）。
         if ctx.left_edge && ctx.position_delta != 0 {
-            match PropertyPath::parse("std:video:media/source_offset") {
-                Ok(path) => {
-                    if let Some(FieldValue::String(current_offset)) = clip.get_property_path(&path) {
+            if let Some(offset_member_key) = offset_member_key {
+                let source_offset_path = PropertyPath::parse(&format!(
+                    "std:video:media/{offset_member_key}"
+                ));
+                if let Ok(path) = source_offset_path {
+                    if let Some(FieldValue::String(current_offset)) = clip.get_property_path(&path)
+                    {
                         if let Ok(current) = current_offset.parse::<i64>() {
                             let new_offset = current + ctx.position_delta;
                             let _ = clip.set_property_path(
                                 &path,
-                                ClipBindingValue::Static(FieldValue::String(new_offset.to_string())),
+                                ClipBindingValue::Static(FieldValue::String(
+                                    new_offset.to_string(),
+                                )),
                             );
                         }
                     }
                 }
-                Err(_) => {}
             }
         }
 
@@ -161,6 +172,28 @@ pub(crate) fn clip_resize_core(
     }
 
     Ok(())
+}
+
+/// クリッププロパティから動画ソースのファイルパスを取り出す。
+///
+/// プロパティ ID はハードコードせず、`well_known` で定義した定数を経由する
+///（AGENTS.md 第9条）。グループ/メンバー構造はコンポーネント定義のスキーマに
+/// 従うが、既知の標準プロパティ（`std:video:media/source`）についてはここで解決する。
+fn extract_video_source_path(
+    properties: &HashMap<NamespacedID, ClipBindingValue>,
+) -> Option<String> {
+    let media_key = NamespacedID::new("std", "video:media").unwrap();
+    let media_value = properties.get(&media_key)?.in_frame_of()?;
+    let FieldValue::Map(media_map) = media_value else {
+        return None;
+    };
+    let FieldValue::String(source) = media_map.get("source")? else {
+        return None;
+    };
+    if source.is_empty() {
+        return None;
+    }
+    Some(source.clone())
 }
 
 pub(crate) fn clip_add_core(
@@ -173,6 +206,13 @@ pub(crate) fn clip_add_core(
     properties: HashMap<NamespacedID, ClipBindingValue>,
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
+    // クリップが参照する動画リソースをプロジェクトのアセットレジストリに登録し、
+    // `Project.assets` を動画コンテンツのカタログとする。クリップの `source`
+    // プロパティ自体は従来通り生パスを保持し、クライアントとの互換性を保つ。
+    if let Some(source) = extract_video_source_path(&properties) {
+        let _ = project.register_asset(Path::new(&source));
+    }
+
     if let Some(existing) = preferred_clip_id {
         project.id_generator_mut().observe_clip(existing);
         let timeline = project

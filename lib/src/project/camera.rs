@@ -205,6 +205,7 @@ mod preview_tests {
             scale_factor: 1.0,
             fov: 60.0,
         };
+        let project = Arc::new(RwLock::new(None));
         test(&RenderContext {
             path_to_stream: &paths,
             streams: &streams,
@@ -214,6 +215,7 @@ mod preview_tests {
             timeline: &timeline,
             camera_info: &camera,
             current_frame: 0,
+            project: &project,
         });
     }
 

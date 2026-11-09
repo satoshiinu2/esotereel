@@ -6,8 +6,15 @@ use std::{
 use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
-    plugin::{NamespacedID, script::api::PluginActionContext},
-    project::{Project, command::CommandRequest, ids::TimelineId},
+    plugin::{
+        NamespacedID, property::ComponentCapability, script::api::PluginActionContext,
+        PluginLoader,
+    },
+    project::{
+        Project,
+        command::{CommandHistory, CommandRequest},
+        ids::TimelineId,
+    },
     requests::{ArchivedRequest, Request},
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt},
@@ -105,10 +112,39 @@ pub fn on_request_receive(
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
+            let loader = state_guard.common.plugin_loader.read_or_err()?;
+
             for (timeline_id, command) in commands.iter() {
                 let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
 
                 log::debug!(target:"core_packet_request","request: {:?}", command);
+
+                // コンポーネント定義から能力ベースでメディアオフセットメンバーのキーを解決する。
+                // プラグインが宣言する `media-offset-provider` 能力からメンバー名を逆引きし、
+                // ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
+                let offset_member_key = match &command {
+                    CommandRequest::ClipsResize { clips } if !clips.is_empty() => {
+                        let clip = project
+                            .timeline_ref(*timeline_id)
+                            .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
+                            .get_clip(clips[0].clip_id)
+                            .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
+                        let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
+                        let comp = runtime_def
+                            .components
+                            .iter()
+                            .find(|c| c.id == clip.kind_id)
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "component definition not found for kind {}",
+                                    clip.kind_id
+                                )
+                            })?;
+                        comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
+                            .map(|k| k.clone())
+                    }
+                    _ => None,
+                };
 
                 match command_to_history(project, *timeline_id, command.clone()) {
                     Ok(command_history) => {
@@ -123,6 +159,7 @@ pub fn on_request_receive(
                             *timeline_id,
                             command_history.clone(),
                             history,
+                            offset_member_key.as_deref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
                         } else {
@@ -145,6 +182,7 @@ pub fn on_request_receive(
                 }
             }
 
+            drop(loader);
             drop(project_guard);
             state_guard.network.notify_dirty();
         }
@@ -312,6 +350,8 @@ pub fn on_request_receive(
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
+                        let loader = state_guard.common.plugin_loader.read_or_err()?;
+
                         let mut histories = state_guard.histories.lock().map_err(|e| {
                             anyhow::Error::from(EsotereelError::LockError(e.to_string()))
                         })?;
@@ -319,7 +359,11 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        undo_command(project, timeline_id, history)?;
+                        let offset_member_key = history
+                            .undo_stack
+                            .last()
+                            .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
+                        undo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
                     Request::Redo { timeline_id } => {
                         let project_arc = &state_guard.project;
@@ -328,6 +372,8 @@ pub fn on_request_receive(
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
+                        let loader = state_guard.common.plugin_loader.read_or_err()?;
+
                         let mut histories = state_guard.histories.lock().map_err(|e| {
                             anyhow::Error::from(EsotereelError::LockError(e.to_string()))
                         })?;
@@ -335,7 +381,11 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        redo_command(project, timeline_id, history)?;
+                        let offset_member_key = history
+                            .redo_stack
+                            .last()
+                            .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
+                        redo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
                     _ => {
                         log::warn!("Unhandled packet type in toolbar action: {:?}", packet);
@@ -359,6 +409,8 @@ pub fn on_request_receive(
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
+            let loader = state_guard.common.plugin_loader.read_or_err()?;
+
             let mut histories = state_guard
                 .histories
                 .lock()
@@ -367,7 +419,13 @@ pub fn on_request_receive(
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            undo_command(project, *timeline_id, history)?;
+            // 履歴の最後のコマンドから能力ベースでオフセットメンバキーを解決する。
+            let offset_member_key = history
+                .undo_stack
+                .last()
+                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+
+            undo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
             // must send to client
             state_guard.network.notify_dirty();
         }
@@ -381,6 +439,8 @@ pub fn on_request_receive(
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
+            let loader = state_guard.common.plugin_loader.read_or_err()?;
+
             let mut histories = state_guard
                 .histories
                 .lock()
@@ -389,12 +449,46 @@ pub fn on_request_receive(
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            redo_command(project, *timeline_id, history)?;
+            let offset_member_key = history
+                .redo_stack
+                .last()
+                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+
+            redo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
             // must send to client
             state_guard.network.notify_dirty();
         }
     }
     Ok(())
+}
+
+/// コマンド履歴からメディアオフセットメンバーのキーを能力ベースで解決する。
+///
+/// 履歴の最初のクリップの種別からコンポーネント定義を引き、
+/// `MediaOffsetProvider` 能力を持つメンバーのキーを返す。
+/// プラグインが宣言する能力からプロパティを参照し、ハードコードを避ける
+/// （AGENTS.md 第9条）。
+fn resolve_offset_member_key(
+    project: &Project,
+    timeline_id: TimelineId,
+    command: &CommandHistory,
+    loader: &PluginLoader,
+) -> Option<String> {
+    match command {
+        CommandHistory::ClipsResize { clips } => clips.first().and_then(|ctx| {
+            let clip = project
+                .timeline_ref(timeline_id)?
+                .get_clip(ctx.clip_id)?;
+            let runtime_def = loader.resolve_component_definition(&clip.kind_id).ok()?;
+            let comp = runtime_def
+                .components
+                .iter()
+                .find(|c| c.id == clip.kind_id)?;
+            comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
+                .cloned()
+        }),
+        _ => None,
+    }
 }
 
 /// コマンドが拒否された場合にクライアントへ送信する `CommandRejected` レスポンスを構築する。

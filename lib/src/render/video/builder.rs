@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, RwLock};
 
 use crate::{
     plugin::{
@@ -7,10 +8,11 @@ use crate::{
         property::{ComponentCapability, value::FieldValue},
         script::api::PluginRenderContext,
     },
-    project::Clip,
+    project::{Clip, Project},
     render::{RenderContext, vertex::Vertex},
 };
 use glam::Mat4;
+use uuid::Uuid;
 
 /// 1 つのテクスチャと変換行列をまとめた頂点バッチです。
 ///
@@ -150,7 +152,16 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         );
 
         if let Some(source) = video_source {
-            render_ctx.set_video_source(source);
+            match resolve_video_source(&source, ctx.project) {
+                Some(resolved) => render_ctx.set_video_source(resolved),
+                None => {
+                    // source が UUID（アセットID）形式だがレジストリに未登録。
+                    // 存在しないパスをストリーム初期化に回さないよう、映像を供給しない。
+                    log::warn!(
+                        "video source `{source}` is not registered in the project asset registry, skipping"
+                    );
+                }
+            }
         }
 
         let instance = ClipInstance {
@@ -184,4 +195,81 @@ fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f6
         return 0.0;
     }
     relative_frame as f64 / global_tps
+}
+
+/// 動画ソース文字列をレンダリング用のファイルパスに解決する。
+///
+/// 文字列が UUID（アセットID）の形式であれば `Project.assets`（アセットレジストリ）
+/// 経由で実パスを解決する。それ以外は従来通り生パスをそのまま返す。
+/// UUID 形式だがレジストリに未登録の場合は `None` を返し、存在しないパスを
+/// ストリーム初期化に回さない。
+fn resolve_video_source(
+    source: &str,
+    project: &Arc<RwLock<Option<Project>>>,
+) -> Option<String> {
+    if let Ok(id) = Uuid::parse_str(source) {
+        let guard = project.read().ok()?;
+        let project = guard.as_ref()?;
+        let path = project.assets().resolve(id).ok()?;
+        return Some(path.to_string_lossy().to_string());
+    }
+    Some(source.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_video_source_resolves_asset_id_through_registry() {
+        let project = Arc::new(RwLock::new(Some(Project::new())));
+        let id = project
+            .write()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .register_asset(Path::new("/tmp/video.mp4"))
+            .unwrap();
+
+        // UUID（アセットID）形式 → アセットレジストリ経由で実パスに解決
+        assert_eq!(
+            resolve_video_source(&id.to_string(), &project),
+            Some("/tmp/video.mp4".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_video_source_passes_through_raw_path() {
+        let project = Arc::new(RwLock::new(Some(Project::new())));
+        // 生パス形式 → そのまま返す（従来と同等の動作）
+        assert_eq!(
+            resolve_video_source("/tmp/video.mp4", &project),
+            Some("/tmp/video.mp4".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_video_source_skips_unregistered_asset_id() {
+        let project = Arc::new(RwLock::new(Some(Project::new())));
+        let unknown = Uuid::new_v4();
+        // 未登録のアセットIDは None を返し、存在しないパスを初期化しない
+        assert_eq!(
+            resolve_video_source(&unknown.to_string(), &project),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_video_source_works_without_project() {
+        let project = Arc::new(RwLock::new(None));
+        // プロジェクトが None でも生パスはそのまま返す
+        assert_eq!(
+            resolve_video_source("/tmp/video.mp4", &project),
+            Some("/tmp/video.mp4".to_string())
+        );
+        assert_eq!(
+            resolve_video_source(&Uuid::new_v4().to_string(), &project),
+            None
+        );
+    }
 }

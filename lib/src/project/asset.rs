@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::{project::ids::AssetId, util::result::EsotereelError};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetFingerprint {
@@ -99,7 +100,98 @@ impl AssetRegistry {
         }
     }
 
+    /// 外部ファイル（プロジェクト外の実パス）をアセットとして登録し、その `AssetId` を返す。
+    ///
+    /// 同一パスが既に登録済みなら既存の ID を返す（重複登録を避ける）。
+    /// 登録は `External` として行い、ファイルの移動は `relink` で付け替える。
+    pub fn get_or_add_external(&mut self, path: &Path) -> anyhow::Result<AssetId> {
+        if let Some(id) = self
+            .iter()
+            .find(|entry| {
+                matches!(
+                    &entry.source,
+                    AssetAvailability::Available(AssetLocation::External { path: p })
+                        | AssetAvailability::Available(AssetLocation::Managed { path: p })
+                        if p == path
+                )
+            })
+            .map(|entry| entry.id)
+        {
+            return Ok(id);
+        }
+
+        let id = Uuid::new_v4();
+        let entry = AssetEntry {
+            id,
+            name: path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            source: AssetAvailability::Available(AssetLocation::External {
+                path: path.to_path_buf(),
+            }),
+            project_path: None,
+            fingerprint: None,
+        };
+        self.add(entry)
+    }
+
+    /// パスからアセットIDを逆引きする。見つからなければ `None` を返す。
+    pub fn resolve_by_path(&self, path: &Path) -> Option<AssetId> {
+        self.iter()
+            .find(|entry| {
+                matches!(
+                    &entry.source,
+                    AssetAvailability::Available(AssetLocation::External { path: p })
+                        | AssetAvailability::Available(AssetLocation::Managed { path: p })
+                        if p == path
+                )
+            })
+            .map(|entry| entry.id)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &AssetEntry> {
         self.order.iter().filter_map(move |id| self.entries.get(id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_or_add_external_deduplicates_by_path() {
+        let mut registry = AssetRegistry::default();
+        let path = Path::new("/tmp/video.mp4");
+
+        let id1 = registry.get_or_add_external(path).unwrap();
+        let id2 = registry.get_or_add_external(path).unwrap();
+        assert_eq!(id1, id2, "同一パスは同じ AssetId を返すべき");
+        assert_eq!(registry.iter().count(), 1, "重複登録されない");
+    }
+
+    #[test]
+    fn get_or_add_external_resolve_roundtrip() {
+        let mut registry = AssetRegistry::default();
+        let path = Path::new("/tmp/video.mp4");
+        let id = registry.get_or_add_external(path).unwrap();
+
+        let resolved = registry.resolve(id).unwrap();
+        assert_eq!(resolved, path);
+    }
+
+    #[test]
+    fn resolve_by_path_returns_none_for_unknown_path() {
+        let registry = AssetRegistry::default();
+        assert!(registry.resolve_by_path(Path::new("/tmp/unknown.mp4")).is_none());
+    }
+
+    #[test]
+    fn resolve_by_path_returns_id_for_registered_path() {
+        let mut registry = AssetRegistry::default();
+        let path = Path::new("/tmp/video.mp4");
+        let id = registry.get_or_add_external(path).unwrap();
+        assert_eq!(registry.resolve_by_path(path), Some(id));
     }
 }

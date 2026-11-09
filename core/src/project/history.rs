@@ -6,8 +6,8 @@ use crate::project::commands::{execute_command, execute_command_undo};
 
 #[derive(Debug)]
 pub struct HistoryStack {
-    undo_stack: Vec<CommandHistory>,
-    redo_stack: Vec<CommandHistory>,
+    pub(crate) undo_stack: Vec<CommandHistory>,
+    pub(crate) redo_stack: Vec<CommandHistory>,
     max_size: usize,
 }
 
@@ -83,9 +83,10 @@ pub fn execute_command_with_history(
     timeline_id: TimelineId,
     mut command: CommandHistory,
     history: &mut HistoryStack,
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     // コマンドを実行
-    crate::project::commands::execute_command(project, timeline_id, &mut command)?;
+    crate::project::commands::execute_command(project, timeline_id, &mut command, offset_member_key)?;
 
     // 履歴に追加
     history.push(command);
@@ -97,10 +98,11 @@ pub fn undo_command(
     project: &mut Project,
     timeline_id: TimelineId,
     history: &mut HistoryStack,
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     if let Some(command) = history.undo_stack.last().cloned() {
         // undo用の逆コマンドを実行
-        execute_command_undo(project, timeline_id, command.clone())?;
+        execute_command_undo(project, timeline_id, command.clone(), offset_member_key)?;
         history.undo_stack.pop();
         history.redo_stack.push(command);
     }
@@ -111,10 +113,11 @@ pub fn redo_command(
     project: &mut Project,
     timeline_id: TimelineId,
     history: &mut HistoryStack,
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     if let Some(mut command) = history.redo_stack.last().cloned() {
         // redo用のコマンドを実行
-        execute_command(project, timeline_id, &mut command)?;
+        execute_command(project, timeline_id, &mut command, offset_member_key)?;
         history.redo_stack.pop();
         history.undo_stack.push(command);
     }

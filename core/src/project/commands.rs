@@ -173,13 +173,14 @@ pub fn execute_command(
     project: &mut Project,
     timeline_id: TimelineId,
     command: &mut CommandHistory,
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     match command {
         CommandHistory::ClipsMove { clips } => {
             clip_move_mul_core(project, timeline_id, clips.as_slice())?
         }
         CommandHistory::ClipsResize { clips } => {
-            clip_resize_core(project, timeline_id, clips.as_slice())?
+            clip_resize_core(project, timeline_id, clips.as_slice(), offset_member_key)?
         }
         CommandHistory::AddClip {
             clip_id,
@@ -270,6 +271,7 @@ pub fn execute_command_undo(
     project: &mut Project,
     timeline_id: TimelineId,
     command: CommandHistory,
+    offset_member_key: Option<&str>,
 ) -> anyhow::Result<()> {
     match command {
         CommandHistory::ClipsMove { clips } => {
@@ -288,7 +290,7 @@ pub fn execute_command_undo(
                 .collect();
 
             let mut undo_command = CommandHistory::ClipsMove { clips: undo_moves };
-            execute_command(project, timeline_id, &mut undo_command)?;
+            execute_command(project, timeline_id, &mut undo_command, offset_member_key)?;
         }
         CommandHistory::ClipsResize { clips } => {
             // クリップリサイズのundoは、古い値に戻す
@@ -309,7 +311,7 @@ pub fn execute_command_undo(
             let mut undo_command = CommandHistory::ClipsResize {
                 clips: undo_resizes,
             };
-            execute_command(project, timeline_id, &mut undo_command)?;
+            execute_command(project, timeline_id, &mut undo_command, offset_member_key)?;
         }
         CommandHistory::AddClip {
             clip_id,
@@ -430,7 +432,7 @@ mod tests {
         };
 
         let mut applied = command.clone();
-        execute_command(&mut project, timeline_id, &mut applied).unwrap();
+        execute_command(&mut project, timeline_id, &mut applied, None).unwrap();
         history.push(command.clone());
 
         let clip = project
@@ -441,7 +443,7 @@ mod tests {
         assert_eq!(clip.position, 200);
         assert_eq!(clip.duration, 80);
 
-        undo_command(&mut project, timeline_id, &mut history).unwrap();
+        undo_command(&mut project, timeline_id, &mut history, None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()
@@ -450,7 +452,7 @@ mod tests {
         assert_eq!(clip.position, 10);
         assert_eq!(clip.duration, 30);
 
-        redo_command(&mut project, timeline_id, &mut history).unwrap();
+        redo_command(&mut project, timeline_id, &mut history, None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()
@@ -506,7 +508,7 @@ mod tests {
 
         history.push(command.clone());
         let mut applied = command.clone();
-        execute_command(&mut project, timeline_id, &mut applied).unwrap();
+        execute_command(&mut project, timeline_id, &mut applied, None).unwrap();
 
         let clip = project
             .timeline_ref(timeline_id)
@@ -526,7 +528,7 @@ mod tests {
                 .any(|&id| id == clip_id)
         );
 
-        undo_command(&mut project, timeline_id, &mut history).unwrap();
+        undo_command(&mut project, timeline_id, &mut history, None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()
@@ -545,7 +547,7 @@ mod tests {
                 .any(|&id| id == clip_id)
         );
 
-        redo_command(&mut project, timeline_id, &mut history).unwrap();
+        redo_command(&mut project, timeline_id, &mut history, None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()
@@ -588,7 +590,7 @@ mod tests {
         };
 
         let mut add_history = add_command.clone();
-        execute_command(&mut project, timeline_id, &mut add_history).unwrap();
+        execute_command(&mut project, timeline_id, &mut add_history, None).unwrap();
         let clip_id = match &add_history {
             CommandHistory::AddClip { clip_id, .. } => clip_id.expect("clip id must exist"),
             _ => panic!("unexpected command"),
@@ -607,17 +609,17 @@ mod tests {
         };
 
         let mut move_history = move_command.clone();
-        execute_command(&mut project, timeline_id, &mut move_history).unwrap();
+        execute_command(&mut project, timeline_id, &mut move_history, None).unwrap();
 
         let mut history = HistoryStack::default();
         history.push(add_history);
         history.push(move_command.clone());
 
-        undo_command(&mut project, timeline_id, &mut history).unwrap();
-        undo_command(&mut project, timeline_id, &mut history).unwrap();
+        undo_command(&mut project, timeline_id, &mut history, None).unwrap();
+        undo_command(&mut project, timeline_id, &mut history, None).unwrap();
 
-        redo_command(&mut project, timeline_id, &mut history).unwrap();
-        redo_command(&mut project, timeline_id, &mut history).unwrap();
+        redo_command(&mut project, timeline_id, &mut history, None).unwrap();
+        redo_command(&mut project, timeline_id, &mut history, None).unwrap();
 
         let clip = project
             .timeline_ref(timeline_id)
@@ -672,7 +674,7 @@ mod tests {
         };
         let (_, request) = commands.pop_front().unwrap();
         let mut history = command_to_history(&mut project, timeline_id, request).unwrap();
-        execute_command(&mut project, timeline_id, &mut history).unwrap();
+        execute_command(&mut project, timeline_id, &mut history, None).unwrap();
         // A second editor changes a sibling after the first history entry was captured.
         project
             .timeline_mut(timeline_id)
@@ -684,7 +686,7 @@ mod tests {
                 ClipBindingValue::Static(FieldValue::Float(36.0)),
             )
             .unwrap();
-        execute_command_undo(&mut project, timeline_id, history.clone()).unwrap();
+        execute_command_undo(&mut project, timeline_id, history.clone(), None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()
@@ -698,7 +700,7 @@ mod tests {
             clip.get_property_path(&PropertyPath::parse("test:text/font_size").unwrap()),
             Some(&FieldValue::Float(36.0))
         );
-        execute_command(&mut project, timeline_id, &mut history).unwrap();
+        execute_command(&mut project, timeline_id, &mut history, None).unwrap();
         let clip = project
             .timeline_ref(timeline_id)
             .unwrap()

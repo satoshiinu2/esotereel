@@ -6,7 +6,14 @@ use std::{
 use dashmap::DashMap;
 use glam::{EulerRot, Mat4, Quat, Vec3};
 
+use std::collections::BTreeMap;
+
 use crate::{
+    plugin::{
+        property::path::PropertyPath,
+        property::value::FieldValue,
+    },
+    project::clip::ClipBindingValue,
     StreamState,
     decode::streamplayer::StreamPlayer,
     network::NetworkHandler,
@@ -71,6 +78,94 @@ impl<N: NetworkHandler> PluginActionContext<N> {
             }
         }
     }
+
+    /// クリップのプロパティをパス指定で設定します。
+    ///
+    /// Rhai スクリプトから `set_property(clip_id, "std:video:media/source_offset", 100)` のように
+    /// 呼び出し、値を型に応じて正規化（int⇄float 相互変換、文字列→数値パース、bool パースなど）
+    /// した上でクリッププロパティに書き込みます。
+    pub fn set_clip_property(
+        &self,
+        clip_id: u64,
+        path: &str,
+        value: rhai::Dynamic,
+    ) -> Result<(), Box<rhai::EvalAltResult>> {
+        let prop_path = PropertyPath::parse(path).map_err(|e| {
+            Box::<rhai::EvalAltResult>::from(format!("invalid property path `{path}`: {e}"))
+        })?;
+
+        let normalized = dynamic_to_field_value(value).map_err(|e| {
+            Box::<rhai::EvalAltResult>::from(format!("value normalization failed: {e}"))
+        })?;
+
+        let mut project_guard = self.project.write().map_err(|_| {
+            Box::<rhai::EvalAltResult>::from("project lock poisoned")
+        })?;
+        let project = project_guard
+            .as_mut()
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from("project not found"))?;
+
+        let timeline = project
+            .timeline_mut(self.timeline_id)
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from("timeline not found"))?;
+
+        let clip = timeline
+            .get_clip_mut(clip_id)
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from(format!("clip {clip_id} not found")))?;
+
+        clip.set_property_path(&prop_path, ClipBindingValue::Static(normalized))
+            .map_err(|e| Box::<rhai::EvalAltResult>::from(format!("failed to set property: {e}")))
+    }
+}
+
+/// Rhai の動的値を `FieldValue` に正規化します。
+///
+/// 型に応じて `Int`/`Float`/`Bool`/`String`/`Array`/`Map` に変換し、
+/// 文字列からの数値パースや int⇄float 相互変換などを行います。
+fn dynamic_to_field_value(
+    value: rhai::Dynamic,
+) -> Result<FieldValue, Box<rhai::EvalAltResult>> {
+    // まず現在の型をチェックし、そのまま変換できる場合はそのまま使う
+    if let Some(b) = value.clone().try_cast::<bool>() {
+        return Ok(FieldValue::Bool(b));
+    }
+    if let Some(i) = value.clone().try_cast::<i64>() {
+        return Ok(FieldValue::Int(i));
+    }
+    if let Some(f) = value.clone().try_cast::<f64>() {
+        return Ok(FieldValue::Float(f));
+    }
+    if let Some(s) = value.clone().try_cast::<String>() {
+        // 文字列の場合：bool / int / float のパースを試行し、すべて失敗したら String として扱う
+        if let Ok(b) = s.parse::<bool>() {
+            return Ok(FieldValue::Bool(b));
+        }
+        if let Ok(i) = s.parse::<i64>() {
+            return Ok(FieldValue::Int(i));
+        }
+        if let Ok(f) = s.parse::<f64>() {
+            return Ok(FieldValue::Float(f));
+        }
+        return Ok(FieldValue::String(s));
+    }
+    if let Some(arr) = value.clone().try_cast::<rhai::Array>() {
+        let mut result = Vec::with_capacity(arr.len());
+        for item in arr {
+            result.push(dynamic_to_field_value(item)?);
+        }
+        return Ok(FieldValue::Array(result));
+    }
+    if let Some(map) = value.clone().try_cast::<rhai::Map>() {
+        let mut result = BTreeMap::new();
+        for (k, v) in map {
+            result.insert(k.to_string(), dynamic_to_field_value(v)?);
+        }
+        return Ok(FieldValue::Map(result));
+    }
+
+    Err(Box::<rhai::EvalAltResult>::from(
+        "unsupported value type for property setting",
+    ))
 }
 
 /// ネットワーク通信（パケット発行）専用のサブコンテキスト
@@ -446,6 +541,18 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
             }
         },
     );
+
+    // `ctx.set_property(clip_id, path, value)` — クリッププロパティを正規化付きで設定
+    engine.register_fn(
+        "set_property",
+        |ctx: &mut PluginActionContext<NetworkHandlerT<T>>,
+         clip_id: u64,
+         path: &str,
+         value: rhai::Dynamic|
+         -> Result<(), Box<rhai::EvalAltResult>> {
+            ctx.set_clip_property(clip_id, path, value)
+        },
+    );
 }
 
 #[cfg(test)]
@@ -619,6 +726,93 @@ mod render_tests {
         assert!(transform_matrix(array(&[0.0]), array(&[0.0; 3]), array(&[1.0; 3])).is_err());
         assert!(
             transform_matrix(array(&[f64::NAN; 3]), array(&[0.0; 3]), array(&[1.0; 3])).is_err()
+        );
+    }
+}
+
+#[cfg(test)]
+mod normalization_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn dynamic_to_field_value_int_stays_int() {
+        assert_eq!(
+            dynamic_to_field_value(42i64.into()).unwrap(),
+            FieldValue::Int(42)
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_float_stays_float() {
+        assert_eq!(
+            dynamic_to_field_value(3.14f64.into()).unwrap(),
+            FieldValue::Float(3.14)
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_bool_stays_bool() {
+        assert_eq!(
+            dynamic_to_field_value(true.into()).unwrap(),
+            FieldValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_string_stays_string() {
+        assert_eq!(
+            dynamic_to_field_value("hello".into()).unwrap(),
+            FieldValue::String("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_numeric_string_parses() {
+        assert_eq!(
+            dynamic_to_field_value("42".into()).unwrap(),
+            FieldValue::Int(42)
+        );
+        assert_eq!(
+            dynamic_to_field_value("3.14".into()).unwrap(),
+            FieldValue::Float(3.14)
+        );
+        assert_eq!(
+            dynamic_to_field_value("true".into()).unwrap(),
+            FieldValue::Bool(true)
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_array() {
+        let arr = rhai::Array::from(vec![
+            rhai::Dynamic::from(1i64),
+            rhai::Dynamic::from(2.5f64),
+            rhai::Dynamic::from("three".to_string()),
+        ]);
+        assert_eq!(
+            dynamic_to_field_value(arr.into()).unwrap(),
+            FieldValue::Array(vec![
+                FieldValue::Int(1),
+                FieldValue::Float(2.5),
+                FieldValue::String("three".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn dynamic_to_field_value_map() {
+        let mut map = rhai::Map::new();
+        map.insert("count".into(), rhai::Dynamic::from(10i64));
+        map.insert("name".into(), rhai::Dynamic::from("test".to_string()));
+        assert_eq!(
+            dynamic_to_field_value(map.into()).unwrap(),
+            FieldValue::Map(
+                BTreeMap::from([
+                    ("count".to_string(), FieldValue::Int(10)),
+                    ("name".to_string(), FieldValue::String("test".to_string())),
+                ])
+            )
         );
     }
 }

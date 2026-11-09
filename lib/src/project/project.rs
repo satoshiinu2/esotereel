@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
 use crate::plugin::NamespacedID;
 use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
-use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
+use crate::project::ids::{AssetId, ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::util::result::EsotereelError;
 
@@ -54,6 +55,24 @@ impl Project {
     /// ID 生成器への可変参照を返します。
     pub fn id_generator_mut(&mut self) -> &mut IdGenerator {
         &mut self.ids
+    }
+
+    /// 保持するアセットレジストリへの不変参照を返す。
+    pub fn assets(&self) -> &AssetRegistry {
+        &self.assets
+    }
+
+    /// 保持するアセットレジストリへの可変参照を返す。
+    pub fn assets_mut(&mut self) -> &mut AssetRegistry {
+        &mut self.assets
+    }
+
+    /// 外部ファイルをプロジェクトのアセットとして登録し、その `AssetId` を返す。
+    ///
+    /// 同一パスが既に登録済みなら既存の ID を返す。クリップが参照する動画リソース
+    /// は、クリップ追加時にここで登録され、`Project.assets` がそのカタログとなる。
+    pub fn register_asset(&mut self, path: &Path) -> anyhow::Result<AssetId> {
+        self.assets.get_or_add_external(path)
     }
 
     /// 指定タイムラインにレイヤー（またはフォルダー）を新規挿入します。

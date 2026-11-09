@@ -415,7 +415,7 @@ mod tests {
             default: Some(toml::Value::String("default.mp4".to_string())),
             capability: None,
             member_capabilities: BTreeMap::new(),
-                        fields: None,
+            fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
         assert_eq!(schema.key.full(), "std:source");
@@ -442,7 +442,7 @@ mod tests {
             default: None,
             capability: None,
             member_capabilities: BTreeMap::new(),
-                        fields: None,
+            fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
         assert_eq!(schema.default, FieldValue::Int(0));
@@ -458,7 +458,7 @@ mod tests {
             default: None,
             capability: None,
             member_capabilities: BTreeMap::new(),
-                        fields: None,
+            fields: None,
         };
         assert!(PropertySchema::parse_one(raw, "std").is_err());
     }
@@ -475,7 +475,7 @@ mod tests {
                 default: FieldValue::String("a".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-                            },
+            },
             PropertySchema {
                 key,
                 category: vec![],
@@ -484,7 +484,7 @@ mod tests {
                 default: FieldValue::String("b".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-                            },
+            },
         ];
         assert!(PropertySchema::validate_properties(&props).is_err());
     }
@@ -503,7 +503,7 @@ mod tests {
             default: FieldValue::Float(24.0),
             capability: None,
             member_capabilities: BTreeMap::new(),
-                    };
+        };
         let group = PropertySchema::group(
             NamespacedID::new("std", "style").unwrap(),
             "Style".to_string(),
@@ -548,7 +548,7 @@ kind = { type = "string" }
             default: FieldValue::Int(1),
             capability: None,
             member_capabilities: BTreeMap::new(),
-                    };
+        };
         let group = PropertySchema::group(
             NamespacedID::new("std", "g").unwrap(),
             "Group".to_string(),

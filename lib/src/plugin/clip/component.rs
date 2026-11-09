@@ -56,6 +56,31 @@ pub struct ComponentDefinition {
     pub children: Vec<NamespacedID>,
 }
 
+impl ComponentDefinition {
+    /// `FrameProvider` 能力を持つプロパティの `member_capabilities` から、
+    /// 指定能力を持つメンバーのキーを逆引きする。
+    ///
+    /// ハードコードされたメンバキー（`"source_offset"` 等）に依存せず、
+    /// コンポーネントが宣言する能力からプロパティを参照する（AGENTS.md 第9条）。
+    ///
+    /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider`
+    /// 能力を宣言している場合、そのメンバーのキーを返す。
+    pub fn member_key_by_capability(
+        &self,
+        capability: &ComponentCapability,
+    ) -> Option<&String> {
+        self.properties
+            .iter()
+            .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
+            .and_then(|p| {
+                p.member_capabilities
+                    .iter()
+                    .find(|(_, cap)| *cap == capability)
+                    .map(|(key, _)| key)
+            })
+    }
+}
+
 /// 読み込み時にフラット化・解決済みの実行時定義。
 ///
 /// `resolve_definition` により階層構造の ComponentDefinition が平坦な実行リスト

@@ -4,7 +4,7 @@ use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
     plugin::PluginLoader,
-    project::{Timeline, TimelineTick, camera::CameraInfo, ids::ResourceId},
+    project::{Project, Timeline, TimelineTick, camera::CameraInfo, ids::ResourceId},
     render::{
         video::{MediaFetchCache, update_timline_clips_texture},
         wgpuutil::OffscreenTarget,
@@ -39,6 +39,9 @@ pub struct RenderContext<'a> {
     /// Rhai スクリプトエンジン。
     pub script_engine: &'a rhai::Engine,
 
+    /// プロジェクト。アセットレジストリ（`Project.assets`）へのアクセスに使用し、
+    /// 動画ソースがアセットID（UUID）形式の場合に実パスを解決する。
+    pub project: &'a Arc<RwLock<Option<Project>>>,
     /// 現在レンダー対象のタイムライン。
     pub timeline: &'a Timeline,
     /// カメラ情報（ビュープロジェクション行列の計算に使用）。
