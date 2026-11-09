@@ -2,6 +2,8 @@
 
 Esotereel is a video editing application with a client-server architecture.
 
+I use AI agents to fix bugs and write tests.
+
 ###### ⚠️ This project is under constructing!
 
 ## Build
