@@ -64,6 +64,9 @@ void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
                 if (this->handleFolderLabelClick(project, mousePos)) {
                     return;
                 }
+            } else {
+                auto err = projectResult.getError();
+                qWarning() << "TimelineCanvasWidget: getProject failed in mousePressEvent:" << QString::fromStdString(*err);
             }
         }
         this->firstClickPos = mousePos;
@@ -98,7 +101,9 @@ void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
 
     auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
-        return; // Handle error appropriately
+        auto err = projectResult.getError();
+        qWarning() << "TimelineCanvasWidget: getProject failed in mouseReleaseEvent:" << QString::fromStdString(*err);
+        return;
     }
     Project project = std::move(projectResult.unwrap());
 
@@ -123,6 +128,8 @@ DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickP
 
     auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "TimelineCanvasWidget: getProject failed in onDragStarted:" << QString::fromStdString(*err);
         return DragOther{};
     }
     Project project = std::move(projectResult.unwrap());
@@ -156,6 +163,8 @@ DragState TimelineCanvasWidget::onDragStarted(QMouseEvent *e, QPoint firstClickP
 void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
     auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "TimelineCanvasWidget: getProject failed in onDragContinue:" << QString::fromStdString(*err);
         return;
     }
     Project project = std::move(projectResult.unwrap());
@@ -185,6 +194,8 @@ void TimelineCanvasWidget::onDragContinue(QMouseEvent *e) {
 void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
     auto projectResult = windowState.state->getProject();
     if (projectResult.isError()) {
+        auto err = projectResult.getError();
+        qWarning() << "TimelineCanvasWidget: getProject failed in onDragEnd:" << QString::fromStdString(*err);
         return;
     }
     Project project = std::move(projectResult.unwrap());

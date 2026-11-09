@@ -31,7 +31,9 @@ pub extern "C" fn internal_server_start(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let plugin_loader_clone = Arc::clone(&state.plugin_loader);
 
         let addr_str = addr.as_str()?;

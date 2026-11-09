@@ -253,9 +253,14 @@ pub fn execute_command(
                 .ok_or(EsotereelError::ClipNotFound(*clip_id))?;
 
             clip.set_property_path(key, value.clone())?;
-            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
-                timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
-            }
+            let root_value = clip
+                .get_property_value(key.root())
+                .ok_or(EsotereelError::AccessError(format!(
+                    "root value not found for key: {}",
+                    key.root()
+                )))?
+                .clone();
+            timeline.touch_property_changed(*clip_id, key.root().clone(), root_value);
         }
     };
     Ok(())
@@ -367,9 +372,14 @@ pub fn execute_command_undo(
 
             // 古い値を設定して通知
             clip.set_property_path(&key, old_value.clone())?;
-            if let Some(root_value) = clip.get_property_value(key.root()).cloned() {
-                timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
-            }
+            let root_value = clip
+                .get_property_value(key.root())
+                .ok_or(EsotereelError::AccessError(format!(
+                    "root value not found for key: {}",
+                    key.root()
+                )))?
+                .clone();
+            timeline.touch_property_changed(clip_id, key.root().clone(), root_value);
         }
     }
     Ok(())

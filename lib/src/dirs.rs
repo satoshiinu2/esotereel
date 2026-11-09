@@ -78,15 +78,18 @@ impl Directories {
 
     pub fn install_dir(&self) -> anyhow::Result<std::path::PathBuf> {
         let exe_dir = std::env::current_exe()
-            .expect("failed to get exe path")
+            .context("failed to get exe path")?
             .parent()
-            .unwrap()
+            .context("exe has no parent directory")?
             .to_path_buf();
 
         #[cfg(target_os = "macos")]
         {
             // Contents/MacOS/exe -> Contents/Resources/
-            Ok(exe_dir.parent().unwrap().join("Resources"))
+            Ok(exe_dir
+                .parent()
+                .context("exe_dir has no parent directory")?
+                .join("Resources"))
         }
 
         #[cfg(target_os = "windows")]

@@ -10,8 +10,12 @@ use esotereel_lib::{
 };
 
 use crate::{
-    ffi::{result::FfiResult, state::ClientStateHandle},
-    render::FrameRenderResult,
+    ffi::{
+        array::FfiArray,
+        result::FfiResult,
+        state::ClientStateHandle,
+    },
+    render::{render_frame_offscreen_ffi, FrameRenderResult},
     state::ClientState,
 };
 
@@ -24,14 +28,7 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
     timeline_id: TimelineId,
     current_frame: i64,
 ) -> FfiResult<FrameRenderResult> {
-    fn inner(
-        ptr_wgpu: *mut WGpuUtil,
-        ptr_offscreen: *mut OffscreenTarget,
-        ptr_state: *const ClientStateHandle,
-        ptr_camera_info: *const CameraInfo,
-        timeline_id: TimelineId,
-        current_frame: i64,
-    ) -> anyhow::Result<FrameRenderResult> {
+    FfiResult::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
         if ptr_wgpu.is_null()
             || ptr_offscreen.is_null()
             || ptr_state.is_null()
@@ -41,7 +38,7 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         }
 
         let raw = ptr_state as *const Mutex<ClientState>;
-        let state: Arc<Mutex<ClientState>> = unsafe {
+        let state_arc: Arc<Mutex<ClientState>> = unsafe {
             Arc::increment_strong_count(raw);
             Arc::from_raw(raw)
         };
@@ -49,26 +46,32 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let offscreen = unsafe { &*ptr_offscreen };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        let state_guard = state.lock().expect("mutex poisoned");
+        // Phase 1: ClientStateロックを保持してGPUレンダリングコマンドを記録（高速）
+        {
+            let state_guard = state_arc
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-        crate::render::render_frame_offscreen_ffi(
-            wgpuutil,
-            offscreen,
-            &state_guard,
-            camera_info,
-            timeline_id,
-            current_frame,
-        )
-    }
+            render_frame_offscreen_ffi(
+                wgpuutil,
+                offscreen,
+                &state_guard,
+                camera_info,
+                timeline_id,
+                current_frame,
+            )?;
+        } // ClientState ロック解放（ブロック終了でガードドロップ）
 
-    FfiResult::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
-        inner(
-            ptr_wgpu,
-            ptr_offscreen,
-            ptr_state,
-            ptr_camera_info,
-            timeline_id,
-            current_frame,
-        )
+        // Phase 2: GPU readbackをClientStateロックなしで実行（低速）。
+        // ここでブロックしてもGUIスレッドはClientStateロックを取得できるためフリーズしない。
+        let bytes = offscreen
+            .readback(&wgpuutil.device)
+            .map_err(|msg| EsotereelError::RenderError(msg))?;
+
+        Ok(FrameRenderResult {
+            data: FfiArray::from_vec(bytes),
+            width: offscreen.width,
+            height: offscreen.height,
+        })
     })))
 }

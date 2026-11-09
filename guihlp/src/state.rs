@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::Range, sync::Arc};
+use std::{collections::BTreeMap, ops::Range, sync::{Arc, Mutex}};
 
 use dashmap::DashMap;
 use esotereel_lib::{
@@ -21,6 +21,7 @@ use esotereel_lib::{
     },
     render::video::MediaFetchCache,
     state::{CommonState, HostState},
+    util::result::LockExt,
 };
 
 use crate::{GuiCallbacks, network::ClientNetworkHandler};
@@ -46,6 +47,10 @@ pub struct ClientState {
     pub toolbar: ToolbarStore,
 
     pub gui_callbacks: GuiCallbacks,
+
+    /// バックグラウンドスレッド（bootstrap / network_run）で発生した非同期エラーを格納。
+    /// C++ 側は `client_state_take_error` で取得・クリアできる。
+    pub async_error: Arc<Mutex<Option<String>>>,
 }
 
 fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
@@ -125,6 +130,7 @@ impl ClientState {
             toolbar: ToolbarStore::default(),
             media_fetch_cache: Arc::new(MediaFetchCache::default()),
             gui_callbacks,
+            async_error: Arc::new(Mutex::new(None)),
         };
         state.apply_logging_settings();
         state
@@ -199,7 +205,7 @@ impl HostState for ClientState {
 
     fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
         let (schemas, toolbar_buttons) = {
-            let loader = self.plugin_loader.read().expect("mutex poisoned");
+            let loader = self.plugin_loader.read_or_err()?;
             (
                 loader.get_settings_schemas().to_vec(),
                 loader.get_toolbar_buttons().to_vec(),

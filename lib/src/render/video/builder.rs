@@ -36,12 +36,14 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        let loader = match ctx.plugin_loader.read() {
-            Ok(loader) => loader,
-            Err(e) => {
-                log::warn!("plugin lock is poisoned: {e}",);
-                continue;
-            }
+        let plugin_id = clip.kind_id.plugin_id();
+
+        let Ok(loader) = ctx.plugin_loader.read() else {
+            log::warn!("plugin_loader lock poisoned, skipping clip");
+            continue;
+        };
+        let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
+            continue;
         };
 
         // clip → kind → components: 能力ベースのレンダリングをスケジューラで実行。

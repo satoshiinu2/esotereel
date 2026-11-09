@@ -10,7 +10,7 @@ use esotereel_lib::{
     project::{Project, command::CommandRequest},
     requests::{ArchivedRequest, Request},
     responces::Response,
-    util::result::{EsotereelError, EsotereelResult},
+    util::result::{EsotereelError, EsotereelResult, LockExt},
 };
 use log::info;
 use rkyv::Deserialize;
@@ -48,7 +48,9 @@ pub fn on_request_receive(
             let timelines = new_project.timelines_meta();
 
             {
-                let mut state = state.lock().expect("mutex poisoned");
+                let mut state = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 for timeline in &timelines {
                     state
                         .network
@@ -58,15 +60,21 @@ pub fn on_request_receive(
                 // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
-                state.histories.lock().expect("mutex poisoned").clear();
+                state
+                    .histories
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
+                    .clear();
 
                 let cmd = Response::ProjectMeta { timelines };
                 state.network.send(client_id, &cmd);
             }
         }
         ArchivedRequest::ProjectAll => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -89,9 +97,11 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::Command { commands } => {
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let project_arc = &state_guard.project;
-            let mut project_guard = project_arc.write().expect("mutex poisoned");
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -102,7 +112,10 @@ pub fn on_request_receive(
                 log::info!("request: {:?}", command);
 
                 let command_history = command_to_history(project, *timeline_id, command)?;
-                let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                let mut histories = state_guard
+                    .histories
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 let history = histories
                     .entry(*timeline_id)
                     .or_insert_with(|| HistoryStack::default());
@@ -126,7 +139,9 @@ pub fn on_request_receive(
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
 
-            let mut state = state.lock().expect("mutex poisoned");
+            let mut state = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
             let resource_id = state.get_or_create_resource_id(path);
 
@@ -157,7 +172,9 @@ pub fn on_request_receive(
 
             let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
             let mut streamer = state_guard
                 .streams
@@ -180,7 +197,9 @@ pub fn on_request_receive(
                 timeline_key,
                 range
             );
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
             let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
 
@@ -190,7 +209,7 @@ pub fn on_request_receive(
                 .update_client_view(client_id, *timeline_key, range.clone());
 
             // 範囲内のクリップ送信
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -214,8 +233,10 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::DebugFetchProjectStruct => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -239,7 +260,9 @@ pub fn on_request_receive(
             let button_id = NamespacedID::parse(button_id.as_ref())?;
             let func_name = func_name.as_ref();
 
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
             let plugin_id = button_id.plugin_id();
 
@@ -253,8 +276,7 @@ pub fn on_request_receive(
             state_guard
                 .common
                 .plugin_loader
-                .read()
-                .expect("lock poisoned")
+                .read_or_err()?
                 .call_script::<()>(
                     &state_guard.common.script_engine,
                     &plugin_id,
@@ -269,12 +291,14 @@ pub fn on_request_receive(
                 match packet {
                     Request::Undo { timeline_id } => {
                         let project_arc = &state_guard.project;
-                        let mut project_guard = project_arc.write().expect("mutex poisoned");
+                        let mut project_guard = project_arc.write_or_err()?;
                         let project = project_guard
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
-                        let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
+                        })?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -283,12 +307,14 @@ pub fn on_request_receive(
                     }
                     Request::Redo { timeline_id } => {
                         let project_arc = &state_guard.project;
-                        let mut project_guard = project_arc.write().expect("mutex poisoned");
+                        let mut project_guard = project_arc.write_or_err()?;
                         let project = project_guard
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
-                        let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
+                        })?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -308,14 +334,19 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::Undo { timeline_id } => {
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let project_arc = &state_guard.project;
-            let mut project_guard = project_arc.write().expect("mutex poisoned");
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+            let mut histories = state_guard
+                .histories
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
@@ -325,14 +356,19 @@ pub fn on_request_receive(
             state_guard.network.notify_dirty();
         }
         ArchivedRequest::Redo { timeline_id } => {
-            let state_guard = state.lock().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let project_arc = &state_guard.project;
-            let mut project_guard = project_arc.write().expect("mutex poisoned");
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let mut histories = state_guard.histories.lock().expect("mutex poisoned");
+            let mut histories = state_guard
+                .histories
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());

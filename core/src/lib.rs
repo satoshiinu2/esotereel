@@ -10,7 +10,7 @@ use esotereel_lib::{
     },
     responces::Response,
     state::HostState,
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -60,10 +60,12 @@ pub async fn server_network_start<F>(
 async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()> {
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
-    let state_guard = state.lock().expect("mutex poisoned");
+    let state_guard = state
+        .lock()
+        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
     let changes = {
-        let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+        let mut project_guard = state_guard.project.write_or_err()?;
         let project = project_guard
             .as_mut()
             .ok_or(EsotereelError::ProjectNotFound)?;
@@ -95,9 +97,11 @@ fn dispatch_changeset(
     changeset: ChangeSet,
 ) -> anyhow::Result<()> {
     // ロックを再度取得してタイムラインデータを取得
-    let state_guard = state.lock().expect("mutex poisoned");
+    let state_guard = state
+        .lock()
+        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
     let network = Arc::clone(&state_guard.network);
-    let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+    let mut project_guard = state_guard.project.write_or_err()?;
     let project = project_guard
         .as_mut()
         .ok_or(EsotereelError::ProjectNotFound)?;

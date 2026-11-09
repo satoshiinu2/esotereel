@@ -88,7 +88,10 @@ impl Timeline {
 
     fn invalidate_index(&self) {
         // Use write lock consistently for index invalidation
-        let mut guard = self.chunk_index.write().unwrap();
+        let Ok(mut guard) = self.chunk_index.write() else {
+            log::warn!("timeline: chunk_index write lock poisoned");
+            return;
+        };
         *guard = None;
     }
 
@@ -428,7 +431,10 @@ impl Timeline {
     pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
         // Single lock strategy: use write lock to handle both check and build
         // This avoids read-write lock upgrade deadlock
-        let mut idx_guard = self.chunk_index.write().unwrap();
+        let Ok(mut idx_guard) = self.chunk_index.write() else {
+            log::warn!("timeline: chunk_index write lock poisoned");
+            return Vec::new();
+        };
 
         if idx_guard.is_none() {
             let entries = self

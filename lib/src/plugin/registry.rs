@@ -1,8 +1,4 @@
-use std::{
-    borrow::Borrow,
-    collections::HashMap,
-    hash::Hash,
-};
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 /// プラグインから供給される定義(ClipKind, CompiledScript, etc.)を
 /// id衝突チェック付きで集約する共通コンテナ。

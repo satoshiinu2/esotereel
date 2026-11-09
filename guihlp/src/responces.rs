@@ -17,7 +17,7 @@ use esotereel_lib::{
         timeline::TimelineMeta,
     },
     responces::ArchivedResponse,
-    util::result::{EsotereelError, EsotereelResult},
+    util::result::{EsotereelError, EsotereelResult, LockExt},
 };
 use log::info;
 use rkyv::Deserialize;
@@ -60,7 +60,9 @@ pub(super) fn on_responce_recveve(
             let timeline_len = real_project.timeline_count();
             let project_arc = Arc::new(RwLock::new(Some(real_project)));
 
-            let mut state_guard = state.lock().expect("mutex poisoned");
+            let mut state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             state_guard.project = project_arc;
             // プロジェクトが再初期化されたため、タイムラインごとの最後の
             // FetchClipsInRange 送信記録をクリアする（新しいプロジェクトでの
@@ -75,8 +77,10 @@ pub(super) fn on_responce_recveve(
             }
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -103,8 +107,10 @@ pub(super) fn on_responce_recveve(
             key,
             value,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -132,8 +138,10 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             clip_ids,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -158,8 +166,10 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layers,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -188,8 +198,10 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layer_ids,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -218,8 +230,10 @@ pub(super) fn on_responce_recveve(
             folders,
             children,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -251,8 +265,10 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             folder_ids,
         } => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let mut project_guard = state_guard.project.write().expect("mutex poisoned");
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let mut project_guard = state_guard.project.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -295,7 +311,9 @@ pub(super) fn on_responce_recveve(
             .map_err(|e| esotereel_lib::util::result::EsotereelError::IoError(e.to_string()))?;
 
             {
-                let state = state.lock().expect("mutex poisoned");
+                let state = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 state.stream_players.insert(*resource_id, player);
                 state
                     .stream_state_map
@@ -325,7 +343,9 @@ pub(super) fn on_responce_recveve(
             let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
 
             {
-                let state = state.lock().expect("mutex poisoned");
+                let state = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 if let Some(mut player) = state.stream_players.get_mut(resource_id) {
                     // パケットをデコードしてフレームを取得
                     player
@@ -342,15 +362,19 @@ pub(super) fn on_responce_recveve(
             let fetched_ranges: Vec<Range<f64>> =
                 fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let state = state.lock().expect("mutex poisoned");
+            let state = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             if let Some(mut player) = state.stream_players.get_mut(resource_id) {
                 player.fetch_state = FetchState::Idle;
                 player.free_no_needed_frames(&fetched_ranges); // Vec対応版
             }
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
-            let state_guard = state.lock().expect("mutex poisoned");
-            let project_guard = state_guard.project.read().unwrap();
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let project_guard = state_guard.project.read_or_err()?;
 
             if let Some(project) = project_guard.as_ref() {
                 let client_str = format!("{:#?}", project);

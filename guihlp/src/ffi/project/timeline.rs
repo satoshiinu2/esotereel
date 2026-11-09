@@ -1,11 +1,8 @@
+use crate::ffi::{option::FfiOption, result::FfiResult};
 use esotereel_lib::project::{
     Clip, Layer, Timeline,
     ids::{ClipId, LayerFolderId, LayerId},
     layer_outline::LayerFolder,
-};
-use crate::ffi::{
-    option::FfiOption,
-    result::FfiResult,
 };
 
 use crate::slice_from_ptr_or_empty;

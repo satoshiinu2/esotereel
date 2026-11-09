@@ -32,6 +32,8 @@ void GpuRenderWorker::initialize(int w, int h) {
     // Rust側 wgpuutil_new(width, height) -> *mut WGpuUtil のFFI呼び出し
     auto result = Result(esotereel_gui_helper::wgpuutil_new(w, h));
     if (!result.isOk()) {
+        auto err = result.getError();
+        qWarning() << "GpuRenderWorker: wgpuutil_new failed:" << QString::fromStdString(*err);
         emit initFailed("failed to init wgpuutil");
         return;
     }
@@ -40,6 +42,8 @@ void GpuRenderWorker::initialize(int w, int h) {
     // OffscreenTargetも同時に作る
     auto result2 = Result(esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h));
     if (!result2.isOk()) {
+        auto err = result2.getError();
+        qWarning() << "GpuRenderWorker: offscreen_target_new failed:" << QString::fromStdString(*err);
         // 中途半端な状態を残さない。残すと再試行時に「wgpuutil_ptr有り」で
         // 早期returnしてしまい、offscreenが永久に作られなくなる。
         releaseWgpu();
@@ -57,6 +61,8 @@ void GpuRenderWorker::resize(int w, int h) {
     releaseOffscreen();
     auto result = Result(esotereel_gui_helper::offscreen_target_new(wgpuutil_ptr, w, h));
     if (!result.isOk()) {
+        auto err = result.getError();
+        qWarning() << "GpuRenderWorker: offscreen_target_new failed on resize:" << QString::fromStdString(*err);
         emit frameFailed("failed to resize offscreen target");
         return;
     }
@@ -92,6 +98,8 @@ void GpuRenderWorker::renderFrame(TimelineId timelineId, CameraInfo camera, int6
         QImage img(frameData.data(), unwrap.width, unwrap.height, unwrap.width * 4, QImage::Format_RGBA8888);
         emit frameReady(img.copy()); // copy()でQt管理のバッファに複製
     } else {
+        auto err = result.getError();
+        qWarning() << "GpuRenderWorker: render frame failed:" << QString::fromStdString(*err);
         emit frameFailed("render failed");
     }
 }

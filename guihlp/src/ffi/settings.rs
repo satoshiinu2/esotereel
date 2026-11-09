@@ -26,7 +26,9 @@ pub unsafe extern "C" fn settings_get_all_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let fields = crate::settings::get_all_fields(&state.settings);
 
@@ -56,7 +58,9 @@ pub unsafe extern "C" fn settings_get_value(
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let value = crate::settings::get_value(&state.settings, key_str)?;
         Ok(value)
     }
@@ -84,7 +88,9 @@ pub unsafe extern "C" fn settings_set_value(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
         let is_core_setting = key_str.starts_with("core:");
-        let mut state = state.lock().expect("mutex poisoned");
+        let mut state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         crate::settings::set_value(&mut state.settings, key_str, value)?;
         state.apply_logging_settings();
 
@@ -114,7 +120,9 @@ pub unsafe extern "C" fn settings_get_categories(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let cats = crate::settings::get_categories(&state.settings);
 

@@ -23,8 +23,18 @@ static LOGGER: LazyLock<QtLogger> = LazyLock::new(|| QtLogger {
 
 impl Log for QtLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        let target_filter = self.filters.read().unwrap().get(metadata.target()).copied();
-        metadata.level() <= target_filter.unwrap_or(*self.default_level.read().unwrap())
+        let target_filter = self
+            .filters
+            .read()
+            .ok()
+            .and_then(|g| g.get(metadata.target()).copied());
+        let default_level = self
+            .default_level
+            .read()
+            .ok()
+            .map(|g| *g)
+            .unwrap_or(LevelFilter::Info);
+        metadata.level() <= target_filter.unwrap_or(default_level)
     }
 
     fn log(&self, record: &Record) {
@@ -50,13 +60,21 @@ pub fn init_logger(callback: OutLogFn) {
 
 pub fn init_logger_with_settings(callback: OutLogFn, settings: &PreBootstrapSettings) {
     LOG_CALLBACK.set(callback).ok();
-    *LOGGER.default_level.write().unwrap() = settings.logging.level.as_filter();
-    *LOGGER.filters.write().unwrap() = settings
-        .logging
-        .filters
-        .iter()
-        .map(|(target, level)| (target.clone(), level.as_filter()))
-        .collect();
+    if let Ok(mut guard) = LOGGER.default_level.write() {
+        *guard = settings.logging.level.as_filter();
+    } else {
+        log::warn!("logger: default_level write lock poisoned");
+    }
+    if let Ok(mut guard) = LOGGER.filters.write() {
+        *guard = settings
+            .logging
+            .filters
+            .iter()
+            .map(|(target, level)| (target.clone(), level.as_filter()))
+            .collect();
+    } else {
+        log::warn!("logger: filters write lock poisoned");
+    }
     log::set_logger(&*LOGGER).unwrap();
     log::set_max_level(LevelFilter::Trace);
 

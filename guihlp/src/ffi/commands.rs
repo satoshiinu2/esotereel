@@ -1,4 +1,4 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::{panic::{AssertUnwindSafe, catch_unwind}, sync::Arc};
 
 use esotereel_lib::{
     project::ids::{LayerFolderId, LayerId, TimelineId},
@@ -50,12 +50,16 @@ pub unsafe extern "C" fn command_queue_send_all(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
-        let network = &state.network;
+        let network = {
+            let guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            Arc::clone(&guard.network)
+        };
 
         catch_unwind(AssertUnwindSafe(|| {
             let queue = unsafe { &mut *ptr_queue };
-            queue.send_all(network);
+            queue.send_all(&network);
         }))
         .map_err(|_| anyhow::anyhow!("panic while sending command queue"))
     }
@@ -158,13 +162,7 @@ pub unsafe extern "C" fn req_cmd_clip_resize_mul(
         let clip_ids = unsafe { slice_from_ptr_or_empty(ptr, len) };
 
         let queue = unsafe { &mut *ptr_queue };
-        queue.req_cmd_clip_resize_mul(
-            project,
-            timeline_id,
-            clip_ids,
-            left_edge,
-            frame_delta,
-        )?;
+        queue.req_cmd_clip_resize_mul(project, timeline_id, clip_ids, left_edge, frame_delta)?;
 
         Ok(())
     }
@@ -206,7 +204,9 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock().expect("mutex poisoned");
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
         let queue = unsafe { &mut *ptr_queue };
         queue.req_cmd_add_clip_dummy(&state_guard, timeline_id, position, layer_id)?;

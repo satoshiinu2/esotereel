@@ -30,7 +30,12 @@ TimelineToolbarWidget::builtinCommands() {
 void TimelineToolbarWidget::dispatch(WindowGState &windowState, TimelineCanvasWidget &canvasTarget,
                                      const ToolbarButton &button) {
     auto mutableButton = button;
-    mutableButton.handleAction(windowState.state, canvasTarget.timelineId).unwrap();
+    auto result = mutableButton.handleAction(windowState.state, canvasTarget.timelineId);
+    if (result.isError()) {
+        auto err = result.getError();
+        qWarning() << "TimelineToolbarWidget: handleAction failed:" << QString::fromStdString(*err);
+        return;
+    }
 }
 
 void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString &target,
@@ -43,7 +48,9 @@ void TimelineToolbarWidget::loadButtons(WindowGState &windowState, const QString
 
     auto buttonsResult = Toolbar::getButtons(windowState.state, target);
     if (buttonsResult.isError()) {
-        qWarning() << "TimelineToolbarWidget: failed to load buttons for target" << target;
+        auto err = buttonsResult.getError();
+        qWarning() << "TimelineToolbarWidget: failed to load buttons for target" << target
+                   << ":" << QString::fromStdString(*err);
         return;
     }
     const auto buttons = std::move(buttonsResult.unwrap());

@@ -5,7 +5,7 @@ use esotereel_lib::{
     project::{TimelineTick, command::CommandRequest, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::ffi::{result::FfiResultVoid, state::ClientStateHandle, stringview::FfiStringView};
@@ -18,7 +18,9 @@ pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = &state.network;
 
         network.send(&Request::Test);
@@ -39,7 +41,9 @@ pub extern "C" fn req_new_project(ptr_state: *const ClientStateHandle) -> FfiRes
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = &state.network;
 
         network.send(&Request::NewProject);
@@ -75,9 +79,11 @@ pub unsafe extern "C" fn req_fetch_frame(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
 
-        let state_guard = state.lock().expect("mutex poisoned");
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-        let project_guard = state_guard.project.read().expect("mutex poisoned");
+        let project_guard = state_guard.project.read_or_err()?;
 
         let project = project_guard
             .as_ref()
@@ -192,7 +198,9 @@ pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) ->
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock().expect("mutex poisoned");
+        let state_guard = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = &state_guard.network;
 
         network.send(&Request::DebugFetchProjectStruct);
@@ -216,7 +224,9 @@ pub extern "C" fn req_load_stream(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state.lock().expect("mutex poisoned");
+        let state = state
+            .lock()
+            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
         let network = &state.network;
 
         let path = path.as_str()?.to_string();

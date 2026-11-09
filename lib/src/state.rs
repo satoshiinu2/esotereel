@@ -7,6 +7,7 @@ use crate::network::NetworkHandler;
 use crate::plugin::script::api::register_fn_for;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
+use crate::util::result::LockExt;
 use crate::{HostRole, StreamState};
 
 pub struct CommonState {
@@ -50,12 +51,12 @@ impl CommonState {
         fn_name: &str,
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<R> {
-        let loader = self.plugin_loader.read().expect("mutex poisoned");
+        let loader = self.plugin_loader.read_or_err()?;
         loader.call_script::<R>(&self.script_engine, plugin_id, fn_name, args)
     }
 
     pub async fn load_plugins(&self) -> anyhow::Result<Vec<PluginLoadedResult>> {
-        let mut loader = self.plugin_loader.write().expect("mutex poisoned");
+        let mut loader = self.plugin_loader.write_or_err()?;
         loader.load_from_disk(&self.dir).await
     }
 }

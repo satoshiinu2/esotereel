@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::plugin::toolbar::{ToolbarAction, RunOn};
+use crate::plugin::toolbar::{RunOn, ToolbarAction};
 
 #[derive(Debug, serde::Deserialize)]
 pub(super) struct ToolbarButtonRaw {
