@@ -86,7 +86,15 @@ impl Layer {
 }
 
 /// `ProjectAll` 等で「構造だけ」を送るための軽量版です。クリップを含みません。
-#[derive(rkyv::Archive, rkyv::Serialize, serde::Serialize, Debug, Clone)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct LayerMeta {
     pub id: LayerId,

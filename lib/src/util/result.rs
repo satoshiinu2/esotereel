@@ -5,7 +5,6 @@ use std::{
 };
 
 use anyhow::Result;
-use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::{
     plugin::NamespacedID,
@@ -23,7 +22,7 @@ use crate::{
 // （AGENTS.md 第9条：パニックの使用制限）。
 
 // TODO: cow
-#[derive(Archive, Serialize, Deserialize, Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum EsotereelError {
     NullPointer(String),
     LockError(String),

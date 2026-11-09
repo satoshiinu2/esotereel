@@ -4,10 +4,7 @@ use std::sync::Arc;
 use crate::{
     plugin::{
         clip::component::{ClipInstance, Scheduler},
-        property::{
-            value::FieldValue,
-            ComponentCapability,
-        },
+        property::{ComponentCapability, value::FieldValue},
         script::api::PluginRenderContext,
     },
     project::Clip,
@@ -57,13 +54,8 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             continue;
         };
 
-        let plugin_id = clip.kind_id.plugin_id();
-
         let Ok(loader) = ctx.plugin_loader.read() else {
             log::warn!("plugin_loader lock poisoned, skipping clip");
-            continue;
-        };
-        let Some(kind) = loader.get_clip_kind(&clip.kind_id) else {
             continue;
         };
 
@@ -89,30 +81,31 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
 
         // メンバキー（"source", "source_offset" 等）もハードコードせず、
         // プロパティ定義の `member_capabilities` から能力ベースで解決する。
-        let media_component_def = runtime_def
-            .components
-            .iter()
-            .find(|c| c.id == clip.kind_id);
+        let media_component_def = runtime_def.components.iter().find(|c| c.id == clip.kind_id);
         let source_member_key = media_component_def
             .and_then(|c| {
-                c.properties.iter().find(|p| {
-                    p.capability == Some(ComponentCapability::FrameProvider)
-                }).and_then(|p| {
-                    p.member_capabilities.iter()
-                        .find(|(_, cap)| **cap == ComponentCapability::MediaSource)
-                        .map(|(key, _)| key.as_str())
-                })
+                c.properties
+                    .iter()
+                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
+                    .and_then(|p| {
+                        p.member_capabilities
+                            .iter()
+                            .find(|(_, cap)| **cap == ComponentCapability::MediaSource)
+                            .map(|(key, _)| key.as_str())
+                    })
             })
             .unwrap_or("source");
         let offset_member_key = media_component_def
             .and_then(|c| {
-                c.properties.iter().find(|p| {
-                    p.capability == Some(ComponentCapability::FrameProvider)
-                }).and_then(|p| {
-                    p.member_capabilities.iter()
-                        .find(|(_, cap)| **cap == ComponentCapability::MediaOffsetProvider)
-                        .map(|(key, _)| key.as_str())
-                })
+                c.properties
+                    .iter()
+                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
+                    .and_then(|p| {
+                        p.member_capabilities
+                            .iter()
+                            .find(|(_, cap)| **cap == ComponentCapability::MediaOffsetProvider)
+                            .map(|(key, _)| key.as_str())
+                    })
             })
             .unwrap_or("source_offset");
 
@@ -120,8 +113,10 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
         let mut video_source: Option<String> = None;
 
         if let Some(media_key) = media_property_key {
-            if let Some(FieldValue::Map(media_map)) =
-                clip.properties.get(&media_key).and_then(|v| v.in_frame_of().cloned())
+            if let Some(FieldValue::Map(media_map)) = clip
+                .properties
+                .get(&media_key)
+                .and_then(|v| v.in_frame_of().cloned())
             {
                 let source_offset = media_map
                     .get(offset_member_key)
@@ -164,11 +159,14 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             state: HashMap::new(),
         };
         let scheduler = Scheduler::new();
-        if let Err(e) = scheduler.run_clip(ctx.script_engine, &*loader, &instance, &runtime_def, &mut render_ctx) {
-            log::warn!(
-                "component scheduler failed for clip {}: {e}",
-                clip.id
-            );
+        if let Err(e) = scheduler.run_clip(
+            ctx.script_engine,
+            &*loader,
+            &instance,
+            &runtime_def,
+            &mut render_ctx,
+        ) {
+            log::warn!("component scheduler failed for clip {}: {e}", clip.id);
         }
 
         let (plugin_batches, requested_paths) = render_ctx.into_parts();

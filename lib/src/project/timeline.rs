@@ -1,5 +1,4 @@
 use rkyv::{CheckBytes, bytecheck};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::RwLock;
@@ -26,7 +25,9 @@ pub const MAX_NESTED_DEPTH: u32 = 32;
 /// - `clips` は Clip 実体の唯一の保持場所で、`Layer.clips` は位置 → `ClipId` の参照のみを保持します。
 /// - `chunk_index` は位置検索用の遅延構築キャッシュで、保存対象外です。
 /// - `changes` は未同期の差分で、ネットワーク同期時に `drain_changes` で取り出されます。
-#[derive(rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, Serialize, Deserialize, Debug)]
+#[derive(
+    rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde:: Deserialize, Debug,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct Timeline {
     pub id: u64,
@@ -605,7 +606,15 @@ impl Timeline {
 }
 
 /// ProjectAll用の軽量版。Clip本体を含まない。
-#[derive(rkyv::Archive, rkyv::Serialize, Serialize, Debug, Clone)]
+#[derive(
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+)]
 #[archive_attr(derive(CheckBytes))]
 pub struct TimelineMeta {
     pub id: u64,
