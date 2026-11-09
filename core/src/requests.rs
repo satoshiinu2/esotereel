@@ -360,8 +360,7 @@ pub fn on_request_receive(
                             .or_insert_with(|| HistoryStack::default());
 
                         let offset_member_key = history
-                            .undo_stack
-                            .last()
+                            .last_undo()
                             .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
                         undo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
@@ -382,8 +381,7 @@ pub fn on_request_receive(
                             .or_insert_with(|| HistoryStack::default());
 
                         let offset_member_key = history
-                            .redo_stack
-                            .last()
+                            .last_redo()
                             .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
                         redo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
@@ -421,8 +419,7 @@ pub fn on_request_receive(
 
             // 履歴の最後のコマンドから能力ベースでオフセットメンバキーを解決する。
             let offset_member_key = history
-                .undo_stack
-                .last()
+                .last_undo()
                 .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
 
             undo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
@@ -450,8 +447,7 @@ pub fn on_request_receive(
                 .or_insert_with(|| HistoryStack::default());
 
             let offset_member_key = history
-                .redo_stack
-                .last()
+                .last_redo()
                 .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
 
             redo_command(project, *timeline_id, history, offset_member_key.as_deref())?;

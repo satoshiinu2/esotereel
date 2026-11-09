@@ -6,8 +6,8 @@ use crate::project::commands::{execute_command, execute_command_undo};
 
 #[derive(Debug)]
 pub struct HistoryStack {
-    pub(crate) undo_stack: Vec<CommandHistory>,
-    pub(crate) redo_stack: Vec<CommandHistory>,
+    undo_stack: Vec<CommandHistory>,
+    redo_stack: Vec<CommandHistory>,
     max_size: usize,
 }
 
@@ -75,6 +75,16 @@ impl HistoryStack {
 
     pub fn redo_count(&self) -> usize {
         self.redo_stack.len()
+    }
+
+    /// 直前の undo 候補コマンドを返す（capability-based オフセット解決用）。
+    pub fn last_undo(&self) -> Option<&CommandHistory> {
+        self.undo_stack.last()
+    }
+
+    /// 直前の redo 候補コマンドを返す（capability-based オフセット解決用）。
+    pub fn last_redo(&self) -> Option<&CommandHistory> {
+        self.redo_stack.last()
     }
 }
 
