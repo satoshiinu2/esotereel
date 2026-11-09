@@ -18,6 +18,7 @@
 //! - `util` - プロジェクト固有のユーティリティ。
 //! - `value` - プロジェクト固有の値型。
 
+pub mod asset;
 pub mod camera;
 pub mod change;
 pub mod chunk_index;

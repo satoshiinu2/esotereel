@@ -11,7 +11,7 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
-        ids::{ClipId, LayerId, ResourceId, TimelineId},
+        ids::{AssetId, ClipId, LayerId, ResourceId, TimelineId},
     },
 };
 
@@ -44,6 +44,8 @@ pub enum EsotereelError {
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
+    AssetNotFound(AssetId),
+    AssetAlreadyExists(AssetId),
 }
 
 impl fmt::Display for EsotereelError {
@@ -68,6 +70,8 @@ impl fmt::Display for EsotereelError {
             EsotereelError::InvalidCommand => write!(f, "Invalid command"),
             EsotereelError::ClipOverlap => write!(f, "Clip overlap"),
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),
+            EsotereelError::AssetNotFound(id) => write!(f, "Asset '{}' not found", id),
+            EsotereelError::AssetAlreadyExists(id) => write!(f, "Asset '{}' already exists", id),
         }
     }
 }

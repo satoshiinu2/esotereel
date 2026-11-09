@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::plugin::NamespacedID;
+use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
@@ -18,6 +19,7 @@ use crate::util::result::EsotereelError;
 pub struct Project {
     timelines: BTreeMap<TimelineId, Timeline>,
     ids: IdGenerator,
+    assets: AssetRegistry,
 }
 
 impl Project {

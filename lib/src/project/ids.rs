@@ -6,6 +6,7 @@ use rkyv::{
     Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
 };
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// タイムライン識別子（`u64`）。
 pub type TimelineId = u64;
@@ -21,6 +22,8 @@ pub type ClipId = u64;
 pub type ScriptId = u64;
 /// リソース識別子（`u32`）。
 pub type ResourceId = u32;
+/// アセット識別子（`Uuid`）。
+pub type AssetId = Uuid;
 
 /// 各種 ID の採番生成器です。
 ///
