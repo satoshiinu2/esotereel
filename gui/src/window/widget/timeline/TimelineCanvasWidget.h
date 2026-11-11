@@ -157,6 +157,11 @@ class TimelineCanvasWidget : public QWidget {
     mutable std::unique_ptr<RenderRows> cachedRows;
     mutable bool rowsDirty = true;
     mutable bool fetchPending = false;
+    // スナップ閾値(px)のキャッシュ。Project の read ガードを保持した状態で
+    // Settings::getValue（State ロックを取る FFI）を呼ぶと、ネットワーク
+    // スレッドの State -> Project と逆順になりデッドロックするため、
+    // ガード取得前に refreshSnapThreshold() で読み直してここに保持する。
+    int snapThresholdPx = 12;
     CommandQueue commandQueue;
 
     // functions
@@ -192,6 +197,8 @@ class TimelineCanvasWidget : public QWidget {
     void handleClipDragContinue(const Project &project, const QPoint &local);
     void handleClipDraggingDrop(const Project &project, const QPoint &local);
 
+    // ガードを保持していないタイミングでスナップ閾値を読み直す
+    void refreshSnapThreshold();
     TimelineTick snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, LayerDelta layerMoved,
                                 std::set<ClipId> checkClips) const;
     // 選択中の全クリップを、指定した移動量(frameMoved/layerMoved)の位置へ

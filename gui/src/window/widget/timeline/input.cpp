@@ -44,6 +44,8 @@ void TimelineCanvasWidget::checkEdgeScroll(const QPoint &mousePos, const QRect &
 }
 
 void TimelineCanvasWidget::mousePressEvent(QMouseEvent *e) {
+    // Project ガード取得前にスナップ閾値をキャッシュする（デッドロック回避）
+    this->refreshSnapThreshold();
     QWidget::mousePressEvent(e);
     auto mousePos = e->pos();
 
