@@ -25,6 +25,34 @@ use rkyv::Deserialize;
 
 use crate::state::ClientState;
 
+/// State Mutex は project の `Arc` とコールバック関数ポインタを取り出す間だけ
+/// 保持し、Project ロックを取得する前に解放する。
+/// ネットワークスレッドが State を保持したまま Project を待つと、Project の
+/// read ガードを保持して State を取りに来る GUI スレッドと AB-BA デッドロック
+/// になるため（docs/architecture/lock-order.md）。
+fn project_and_callback(
+    state: &Mutex<ClientState>,
+) -> EsotereelResult<(Arc<RwLock<Option<Project>>>, extern "C" fn(TimelineId))> {
+    let state_guard = state
+        .lock()
+        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+    Ok((
+        Arc::clone(&state_guard.project),
+        state_guard.gui_callbacks.mark_dirty_timeline,
+    ))
+} // state_guard はここで drop される
+
+/// デコード等の重い処理を State ロックなしで行うため、stream_players の
+/// `Arc` だけを短時間の State ロックで取り出す。
+fn stream_players_of(
+    state: &Mutex<ClientState>,
+) -> EsotereelResult<Arc<dashmap::DashMap<esotereel_lib::project::ids::ResourceId, StreamPlayer>>> {
+    let state_guard = state
+        .lock()
+        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+    Ok(Arc::clone(&state_guard.stream_players))
+}
+
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
     state: &Mutex<ClientState>,
@@ -78,10 +106,8 @@ pub(super) fn on_responce_recveve(
             }
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -106,9 +132,7 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::UpdateClipProperty {
@@ -117,10 +141,8 @@ pub(super) fn on_responce_recveve(
             key,
             value,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -148,19 +170,15 @@ pub(super) fn on_responce_recveve(
                 let _ = project.register_asset(Path::new(&source));
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::RemoveClip {
             timeline_id,
             clip_ids,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -175,9 +193,7 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::CommandRejected {
@@ -188,10 +204,8 @@ pub(super) fn on_responce_recveve(
             current_layer_id: _,
             ..
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -208,8 +222,6 @@ pub(super) fn on_responce_recveve(
             }
 
             drop(project_guard);
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
 
@@ -217,10 +229,8 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layers,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -240,19 +250,15 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
         ArchivedResponse::RemoveLayer {
             timeline_id,
             layer_ids,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -270,9 +276,7 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
 
@@ -281,10 +285,8 @@ pub(super) fn on_responce_recveve(
             folders,
             children,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -306,9 +308,7 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
 
@@ -316,10 +316,8 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             folder_ids,
         } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
+            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
@@ -334,9 +332,7 @@ pub(super) fn on_responce_recveve(
                 }
             }
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
             drop(project_guard);
-            drop(state_guard);
             (fn_ptr)(*timeline_id);
         }
 
@@ -362,6 +358,8 @@ pub(super) fn on_responce_recveve(
             .map_err(|e| esotereel_lib::util::result::EsotereelError::IoError(e.to_string()))?;
 
             {
+                // この State ロックは DashMap への挿入のみで、他のロックを
+                // 取得しないため短時間保持のままにできる
                 let state = state
                     .lock()
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
@@ -394,10 +392,9 @@ pub(super) fn on_responce_recveve(
             let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
 
             {
-                let state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                if let Some(mut player) = state.stream_players.get_mut(resource_id) {
+                // デコードは重い処理のため、State ロックを保持したまま行わない
+                let stream_players = stream_players_of(state)?;
+                if let Some(mut player) = stream_players.get_mut(resource_id) {
                     // パケットをデコードしてフレームを取得
                     player
                         .process_packet(data, pts, dts, *is_key, *discontinuous, *generation)
@@ -413,19 +410,15 @@ pub(super) fn on_responce_recveve(
             let fetched_ranges: Vec<Range<f64>> =
                 fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let state = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            if let Some(mut player) = state.stream_players.get_mut(resource_id) {
+            let stream_players = stream_players_of(state)?;
+            if let Some(mut player) = stream_players.get_mut(resource_id) {
                 player.fetch_state = FetchState::Idle;
                 player.free_no_needed_frames(&fetched_ranges); // Vec対応版
             }
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let project_guard = state_guard.project.read_or_err()?;
+            let (project_arc, _) = project_and_callback(state)?;
+            let project_guard = project_arc.read_or_err()?;
 
             if let Some(project) = project_guard.as_ref() {
                 let client_str = format!("{:#?}", project);
