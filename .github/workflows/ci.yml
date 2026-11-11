@@ -22,7 +22,10 @@ jobs:
             qt_arch: "win64_msvc2022_64"
             rust_target: "x86_64-pc-windows-msvc"
             arch: "x86_64"
-          - os: macos-14
+          # macos-14 runners were retired by GitHub (jobs fail to start with
+          # "The configuration 'macos-14-arm64-us-default' is not supported"),
+          # so the macOS job is pinned to macos-15 (Apple Silicon, arm64).
+          - os: macos-15
             qt_arch: "clang_64"
             rust_target: ""
             arch: "arm64"
