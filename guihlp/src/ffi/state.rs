@@ -18,7 +18,7 @@ use std::{
     ffi::c_void,
     panic::{AssertUnwindSafe, catch_unwind},
     path::PathBuf,
-    sync::{Arc, Mutex, RwLockReadGuard},
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard},
 };
 
 pub struct ClientStateHandle(pub Arc<Mutex<ClientState>>);
@@ -285,7 +285,14 @@ pub struct ProjectReadGuard {
 }
 
 struct ProjectReadGuardInner {
+    // フィールドの宣言順に drop される。先にガードを解放し、その後で
+    // RwLock 本体への最後の参照を手放すため、この順序にすること。
     _guard: RwLockReadGuard<'static, OptionProject>,
+    // ガードが指す RwLock 自体を生かし続けるための所有権。
+    // これが無いと、ProjectMeta 受信で state.project が差し替えられた際に
+    // 旧 RwLock が解放され、C++ 側が保持中のガード経由で use-after-free
+    // になる（ISSUES.md 1.1）。
+    _project_arc: Arc<RwLock<OptionProject>>,
     project_ptr: *const OptionProject,
 }
 
@@ -305,13 +312,18 @@ pub unsafe extern "C" fn client_state_project_lock_read(
         let state_guard = state
             .lock()
             .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let project_guard = state_guard.project.read_or_err()?;
+        // project の Arc を先にクローンし、ガードと一緒に Box へ移す。
+        // state_guard（State Mutex）はこの関数の終了で解放される。
+        let project_arc = Arc::clone(&state_guard.project);
+        let project_guard = project_arc.read_or_err()?;
 
         let project_ptr: *const Option<Project> = &*project_guard;
 
-        // Extend lifetime to 'static - this is safe because:
+        // Extend lifetime to 'static - this is sound here because:
         // 1. The guard is owned by the Box and will only be freed when unlock is called
-        // 2. The project_ptr remains valid as long as the guard is held
+        // 2. The Box also owns an Arc clone of the RwLock the guard borrows from
+        //    (`_project_arc`), so the RwLock outlives the guard even if
+        //    `state.project` is replaced (e.g. by a ProjectMeta response)
         // 3. C++ side is responsible for calling unlock to free the guard
         let extended_guard = unsafe {
             std::mem::transmute::<
@@ -322,6 +334,7 @@ pub unsafe extern "C" fn client_state_project_lock_read(
 
         let inner = ProjectReadGuardInner {
             _guard: extended_guard,
+            _project_arc: project_arc,
             project_ptr,
         };
 
