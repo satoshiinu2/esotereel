@@ -1,4 +1,5 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Arc;
 
 use esotereel_lib::{
     decode::streamplayer::FetchState,
@@ -9,6 +10,18 @@ use esotereel_lib::{
 };
 
 use crate::ffi::{result::FfiResultVoid, state::ClientStateHandle, stringview::FfiStringView};
+use crate::network::ClientNetworkHandler;
+
+/// State Mutex は network の `Arc` を取り出す間だけ保持し、送信前に解放する。
+/// 送信（ネットワーク内部ロック取得）を State 保持中に行わないため
+/// （docs/architecture/lock-order.md）。
+fn network_of(ptr_state: *const ClientStateHandle) -> anyhow::Result<Arc<ClientNetworkHandler>> {
+    let state = ClientStateHandle::from_ptr(ptr_state);
+    let state_guard = state
+        .lock()
+        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+    Ok(Arc::clone(&state_guard.network))
+} // state_guard はここで drop される
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid {
@@ -17,11 +30,7 @@ pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let network = &state.network;
+        let network = network_of(ptr_state)?;
 
         network.send(&Request::Test);
         Ok(())
@@ -40,11 +49,7 @@ pub extern "C" fn req_new_project(ptr_state: *const ClientStateHandle) -> FfiRes
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let network = &state.network;
+        let network = network_of(ptr_state)?;
 
         network.send(&Request::NewProject);
         Ok(())
@@ -79,99 +84,107 @@ pub unsafe extern "C" fn req_fetch_frame(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
 
-        let state_guard = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        // Phase 1: State -> Project の順で取得し、送信すべき要求を組み立てる。
+        // Phase 2: 両ガードを drop してから送信する。送信をロック保持中に行うと
+        // ネットワーク側の処理と競合し、デッドロック/フリーズの原因になる
+        // （docs/architecture/lock-order.md）。
+        let (network, requests_to_send, send_clips, clips_range) = {
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-        let project_guard = state_guard.project.read_or_err()?;
+            let network = Arc::clone(&state_guard.network);
+            let project_guard = state_guard.project.read_or_err()?;
 
-        let project = project_guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("project not found"))?;
+            let project = project_guard
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("project not found"))?;
 
-        let req = {
-            project
-                .timeline_ref(timeline_id)
-                .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
+            let req = {
+                project
+                    .timeline_ref(timeline_id)
+                    .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
 
-            request_stream_packets_for_time(
-                &state_guard.stream_state_map,
-                &state_guard.stream_players,
-                &state_guard.media_fetch_cache,
-            )
-        };
+                request_stream_packets_for_time(
+                    &state_guard.stream_state_map,
+                    &state_guard.stream_players,
+                    &state_guard.media_fetch_cache,
+                )
+            };
 
-        // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
-        // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求
-        // も、可視範囲が変わっていなければ再送しない。
-        let mut requests_to_send = Vec::with_capacity(req.len());
-        for r in req.into_iter() {
-            match r {
-                Request::FetchStreamData {
-                    resource_id,
-                    ranges,
-                } => {
-                    let is_duplicate = state_guard
-                        .last_stream_fetch
-                        .get(&resource_id)
-                        .map_or(false, |last| *last == ranges);
-                    if is_duplicate {
-                        log::debug!(
-                            "Skip duplicate FetchStreamData for resource_id: {} ranges: {:?}",
-                            resource_id,
-                            ranges
-                        );
-                        // 実際には送信しないため、request_stream_packets_for_time が
-                        // 設定したフェッチ中状態をアイドルに戻す
-                        if let Some(mut player) =
-                            state_guard.stream_players.get_mut(&resource_id)
-                        {
-                            player.fetch_state = FetchState::Idle;
-                        }
-                        continue;
-                    }
-                    state_guard
-                        .last_stream_fetch
-                        .insert(resource_id, ranges.clone());
-                    requests_to_send.push(Request::FetchStreamData {
+            // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
+            // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求
+            // も、可視範囲が変わっていなければ再送しない。
+            let mut requests_to_send = Vec::with_capacity(req.len());
+            for r in req.into_iter() {
+                match r {
+                    Request::FetchStreamData {
                         resource_id,
                         ranges,
-                    });
+                    } => {
+                        let is_duplicate = state_guard
+                            .last_stream_fetch
+                            .get(&resource_id)
+                            .map_or(false, |last| *last == ranges);
+                        if is_duplicate {
+                            log::debug!(
+                                "Skip duplicate FetchStreamData for resource_id: {} ranges: {:?}",
+                                resource_id,
+                                ranges
+                            );
+                            // 実際には送信しないため、request_stream_packets_for_time が
+                            // 設定したフェッチ中状態をアイドルに戻す
+                            if let Some(mut player) =
+                                state_guard.stream_players.get_mut(&resource_id)
+                            {
+                                player.fetch_state = FetchState::Idle;
+                            }
+                            continue;
+                        }
+                        state_guard
+                            .last_stream_fetch
+                            .insert(resource_id, ranges.clone());
+                        requests_to_send.push(Request::FetchStreamData {
+                            resource_id,
+                            ranges,
+                        });
+                    }
+                    other => requests_to_send.push(other),
                 }
-                other => requests_to_send.push(other),
             }
-        }
 
-        let clips_range = visible_range_start..visible_range_end;
-        let send_clips = state_guard
-            .last_clips_fetch
-            .get(&timeline_id)
-            .map_or(true, |last| *last != (visible_range_start, visible_range_end));
-        if send_clips {
-            state_guard
+            let clips_range = visible_range_start..visible_range_end;
+            let send_clips = state_guard
                 .last_clips_fetch
-                .insert(timeline_id, (visible_range_start, visible_range_end));
+                .get(&timeline_id)
+                .map_or(true, |last| {
+                    *last != (visible_range_start, visible_range_end)
+                });
+            if send_clips {
+                state_guard
+                    .last_clips_fetch
+                    .insert(timeline_id, (visible_range_start, visible_range_end));
+            }
+
+            (network, requests_to_send, send_clips, clips_range)
+        }; // project_guard / state_guard はここで drop される
+
+        // Phase 2: ロックを保持せずに送信する
+        for r in &requests_to_send {
+            network.send(r);
         }
 
-        {
-            let network = &state_guard.network;
-
-            for r in &requests_to_send {
-                network.send(r);
-            }
-
-            if send_clips {
-                network.send(&Request::FetchClipsInRange {
-                    timeline_id,
-                    range: clips_range,
-                });
-            } else {
-                log::debug!(
-                    "Skip duplicate FetchClipsInRange for timeline_id: {} range: {:?}",
-                    timeline_id,
-                    clips_range
-                );
-            }
+        if send_clips {
+            network.send(&Request::FetchClipsInRange {
+                timeline_id,
+                range: clips_range,
+            });
+        } else {
+            log::debug!(
+                "Skip duplicate FetchClipsInRange for timeline_id: {} range: {:?}",
+                timeline_id,
+                clips_range
+            );
         }
 
         Ok(())
@@ -197,11 +210,7 @@ pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) ->
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let network = &state_guard.network;
+        let network = network_of(ptr_state)?;
 
         network.send(&Request::DebugFetchProjectStruct);
         Ok(())
@@ -223,13 +232,8 @@ pub extern "C" fn req_load_stream(
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        let network = &state.network;
-
         let path = path.as_str()?.to_string();
+        let network = network_of(ptr_state)?;
 
         network.send(&Request::InitStream { path });
         Ok(())
