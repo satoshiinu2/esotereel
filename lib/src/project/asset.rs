@@ -4,27 +4,28 @@ use std::{
 };
 
 use crate::{project::ids::AssetId, util::result::EsotereelError};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssetFingerprint {
     pub size: u64,
     pub hash: Option<[u8; 32]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AssetLocation {
     External { path: PathBuf },
     Managed { path: PathBuf },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AssetAvailability {
     Available(AssetLocation),
     Missing { previous_path: PathBuf },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetEntry {
     pub id: AssetId,
     pub name: String,
@@ -39,7 +40,7 @@ pub struct AssetEntry {
     pub fingerprint: Option<AssetFingerprint>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct AssetRegistry {
     entries: HashMap<AssetId, AssetEntry>,
 

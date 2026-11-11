@@ -8,6 +8,7 @@ use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{AssetId, ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::util::result::EsotereelError;
+use serde::{Deserialize, Serialize};
 
 /// プロジェクトのルートデータモデルです。
 ///
@@ -16,7 +17,7 @@ use crate::util::result::EsotereelError;
 ///
 /// タイムライン・レイヤー・クリップの挿入・取得・削除、タイムラインの
 /// 独立化（ミラーからのコピー）、変更セットの抽出などを提供します。
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Project {
     timelines: BTreeMap<TimelineId, Timeline>,
     ids: IdGenerator,

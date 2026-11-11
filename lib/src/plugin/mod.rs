@@ -53,9 +53,7 @@ pub mod toolbar;
 ///
 /// プロパティ ID やコンポーネント ID など、システム内の識別子はすべてこの型を介して
 /// 表現し、ハードコードされたリテラル ID を使用しないこと（AGENTS.md 第9条）。
-#[derive(
-    Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
-)]
+#[derive(Archive, rkyv::Deserialize, rkyv::Serialize, Debug, Clone)]
 #[archive_attr(derive(CheckBytes))]
 pub struct NamespacedID {
     /// `plugin_id:local_id` 形式のフル ID 文字列。
@@ -64,6 +62,39 @@ pub struct NamespacedID {
     plugin_id: String,
     /// プラグイン内部でのローカル識別子。
     local_id: String,
+}
+
+/// serde では正規形である `plugin_id:local_id` 文字列として表現します。
+///
+/// 構造体のまま直列化すると、JSON のオブジェクトキーとして使われる場面
+/// （`Clip.properties` のキーなど）で "key must be a string" となり保存できないため、
+/// 文字列形式を採用しています。rkyv 形式は従来どおり構造体のままです。
+impl serde::Serialize for NamespacedID {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.full)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NamespacedID {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let full = String::deserialize(deserializer)?;
+        // `new` と同じ検証（区切りの存在と使用可能文字）を通してから構築する。
+        let (plugin_id, local_id) = full
+            .split_once(':')
+            .ok_or_else(|| serde::de::Error::custom(format!("invalid namespaced id (missing ':'): {full}")))?;
+        if !ID_VALIDATION_REGEX.is_match(plugin_id) || !ID_VALIDATION_REGEX.is_match(local_id) {
+            return Err(serde::de::Error::custom(format!(
+                "plugin_id/local_id must contain only ASCII letters, digits, '.', '_' or '-': {full}"
+            )));
+        }
+        let plugin_id = plugin_id.to_string();
+        let local_id = local_id.to_string();
+        Ok(Self {
+            full,
+            plugin_id,
+            local_id,
+        })
+    }
 }
 
 static ID_VALIDATION_REGEX: LazyLock<Regex> =
