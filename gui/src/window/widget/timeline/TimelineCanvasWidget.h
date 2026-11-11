@@ -207,6 +207,12 @@ class TimelineCanvasWidget : public QWidget {
     bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, LayerDelta layerMoved) const;
 
     // selection (select.cpp)
+    // clipSelectionChanged の接続先 (ClipPropertiesPanel::setClips -> rebuild)
+    // は getProject() を呼ぶため、Project ガード保持中に直接 emit すると、
+    // 同一スレッド・同一 RwLock の read を入れ子に取得してしまう
+    // (Qt の同一スレッド接続は同期実行)。イベントループへ遅延させ、
+    // ガード解放後にスロットが走るようにするためのヘルパー。
+    void emitClipSelectionChangedDeferred();
     bool handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);

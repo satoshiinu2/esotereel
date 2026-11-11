@@ -4,14 +4,25 @@
 using ClipId = esotereel_gui_helper::ClipId;
 
 namespace esotereel::window {
+// clipSelectionChanged を次のイベントループ周回へ遅延して emit する。
+// 呼び出し元 (handleSelectClip / handleAreaSelEnd) は Project の read
+// ガードを保持したまま呼ばれる。接続先の ClipPropertiesPanel::setClips
+// -> rebuild() は getProject() を呼ぶため、ここで直接 emit すると
+// ガード保持中のまま同一 RwLock の read を入れ子に取得してしまう。
+// 選択内容は値でキャプチャするので、遅延実行時点の状態には依存しない。
+void TimelineCanvasWidget::emitClipSelectionChangedDeferred() {
+    std::vector<ClipId> clipIds(this->selectedClipIds.begin(), this->selectedClipIds.end());
+    TimelineId tid = this->timelineId;
+    QTimer::singleShot(0, this, [this, tid, clipIds]() { emit clipSelectionChanged(tid, clipIds); });
+}
+
 // return true if selected
 bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl) {
     auto [clip, layerId] = this->findClipAt(project, mousePos);
     if (!clip.isValid()) {
         if (!ctrl) {
             this->selectedClipIds.clear();
-            std::vector<ClipId> empty;
-            emit clipSelectionChanged(timelineId, empty);
+            this->emitClipSelectionChangedDeferred();
             update();
             return false;
         }
@@ -29,8 +40,7 @@ bool TimelineCanvasWidget::handleSelectClip(const Project &project, const QPoint
         this->selectedClipIds.clear();
         this->selectedClipIds.insert(id);
     }
-    std::vector<ClipId> clipIds(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    emit clipSelectionChanged(timelineId, clipIds);
+    this->emitClipSelectionChangedDeferred();
     update();
     return true;
 }
@@ -89,8 +99,7 @@ void TimelineCanvasWidget::handleAreaSelEnd(const Project &project) {
         layerIdx++;
     }
 
-    std::vector<ClipId> clipIds(this->selectedClipIds.begin(), this->selectedClipIds.end());
-    emit clipSelectionChanged(timelineId, clipIds);
+    this->emitClipSelectionChangedDeferred();
     update();
 }
 
