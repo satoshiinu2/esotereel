@@ -308,13 +308,17 @@ pub unsafe extern "C" fn client_state_project_lock_read(
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-        // project の Arc を先にクローンし、ガードと一緒に Box へ移す。
-        // state_guard（State Mutex）はこの関数の終了で解放される。
-        let project_arc = Arc::clone(&state_guard.project);
+        // project の Arc だけを短時間の State ロックで取り出し、State を
+        // 解放してから Project の read ロックを取得する。State を保持した
+        // まま Project を待つと、Project read を保持して State を取りに来る
+        // 他スレッドとデッドロックする（docs/architecture/lock-order.md）。
+        let project_arc = {
+            let state = ClientStateHandle::from_ptr(ptr_state);
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            Arc::clone(&state_guard.project)
+        };
         let project_guard = project_arc.read_or_err()?;
 
         let project_ptr: *const Option<Project> = &*project_guard;

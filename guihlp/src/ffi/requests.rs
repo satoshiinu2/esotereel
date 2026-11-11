@@ -82,35 +82,47 @@ pub unsafe extern "C" fn req_fetch_frame(
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
+        // ロックの取り方（docs/architecture/lock-order.md）:
+        // State と Project を同時に保持しない。
+        // Phase 1: State は Arc の取り出しだけですぐ解放する。
         let state = ClientStateHandle::from_ptr(ptr_state);
-
-        // Phase 1: State -> Project の順で取得し、送信すべき要求を組み立てる。
-        // Phase 2: 両ガードを drop してから送信する。送信をロック保持中に行うと
-        // ネットワーク側の処理と競合し、デッドロック/フリーズの原因になる
-        // （docs/architecture/lock-order.md）。
-        let (network, requests_to_send, send_clips, clips_range) = {
+        let (network, project_arc, stream_state_map, stream_players, media_fetch_cache) = {
             let state_guard = state
                 .lock()
                 .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            (
+                Arc::clone(&state_guard.network),
+                Arc::clone(&state_guard.project),
+                Arc::clone(&state_guard.stream_state_map),
+                Arc::clone(&state_guard.stream_players),
+                Arc::clone(&state_guard.media_fetch_cache),
+            )
+        };
 
-            let network = Arc::clone(&state_guard.network);
-            let project_guard = state_guard.project.read_or_err()?;
-
+        // Phase 2: Project の read ロックだけでフェッチ要求を組み立てる。
+        let req = {
+            let project_guard = project_arc.read_or_err()?;
             let project = project_guard
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("project not found"))?;
 
-            let req = {
-                project
-                    .timeline_ref(timeline_id)
-                    .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
+            project
+                .timeline_ref(timeline_id)
+                .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
 
-                request_stream_packets_for_time(
-                    &state_guard.stream_state_map,
-                    &state_guard.stream_players,
-                    &state_guard.media_fetch_cache,
-                )
-            };
+            request_stream_packets_for_time(
+                &stream_state_map,
+                &stream_players,
+                &media_fetch_cache,
+            )
+        };
+
+        // Phase 3: 重複抑制の記録だけ State を短時間ロックする
+        // （この時点では Project ロックは保持していない）。
+        let (requests_to_send, send_clips, clips_range) = {
+            let state_guard = state
+                .lock()
+                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
             // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
             // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求
@@ -134,8 +146,7 @@ pub unsafe extern "C" fn req_fetch_frame(
                             );
                             // 実際には送信しないため、request_stream_packets_for_time が
                             // 設定したフェッチ中状態をアイドルに戻す
-                            if let Some(mut player) =
-                                state_guard.stream_players.get_mut(&resource_id)
+                            if let Some(mut player) = stream_players.get_mut(&resource_id)
                             {
                                 player.fetch_state = FetchState::Idle;
                             }
@@ -166,10 +177,10 @@ pub unsafe extern "C" fn req_fetch_frame(
                     .insert(timeline_id, (visible_range_start, visible_range_end));
             }
 
-            (network, requests_to_send, send_clips, clips_range)
-        }; // project_guard / state_guard はここで drop される
+            (requests_to_send, send_clips, clips_range)
+        };
 
-        // Phase 2: ロックを保持せずに送信する
+        // Phase 4: ロックを保持せずに送信する
         for r in &requests_to_send {
             network.send(r);
         }
