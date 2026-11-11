@@ -179,6 +179,26 @@ if(ESOTEREEL_ENABLE_GPU_PREVIEW)
     )
 endif()
 
+# MSVC の場合のみ、標準準拠モード (/permissive-) を無効化する。
+# guihlp/include/esotereel_gui_helper.h (cbindgen が Rust の FFI から生成) は、
+# extern "C" 関数が FfiResult<T> テンプレートの実体化型を値で返す宣言を含む。
+# これらの型は bool と POD/ポインタの union からなる trivially copyable な
+# 集約体であり、この戻り値の渡し方自体が Rust 側がエクスポートする ABI で
+# あるため、C++ 側の宣言を変えることはできない。
+# GCC/Clang はこの宣言を受理するが、MSVC は /std:c++latest によって暗黙に
+# 有効になる /permissive- モードでは C2526 (C リンケージ関数は C++ クラス型
+# を返せない) として全宣言を拒否する。なお FfiResultVoid のような非テン
+# プレートの結果型は受理されるため、拒否されているのは ABI そのものでは
+# なくテンプレート実体化型の戻り値である。
+# そのため、このヘッダーを include する唯一のターゲットである
+# esotereel_gui に対してのみ、MSVC の従来モード (/permissive) を使う。
+# これは警告の抑制ではなく、上記の宣言形式 (trivially copyable な構造体を
+# C リンケージ関数が値で返す MSVC 拡張) が利用できる言語モードの選択であり、
+# 他コンパイラの受理挙動に合わせるためのものである。
+if(MSVC)
+    target_compile_options(esotereel_gui PRIVATE /permissive)
+endif()
+
 # windows向けの依存関係の解決
 if(WIN32)
     add_custom_command(TARGET esotereel_gui POST_BUILD  
