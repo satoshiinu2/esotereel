@@ -56,10 +56,18 @@ fi
 
 # linuxdeployqt is distributed as an AppImage. On GitHub-hosted runners it is
 # safer to execute it in extracted mode instead of directly invoking the AppImage.
+#
+# Do NOT add -unsupported-allow-new-glibc here. Current linuxdeployqt builds
+# silently exit(1) right after icon discovery when that flag is passed and
+# glibc is not fully bundled into the AppDir (it checks for
+# usr/share/doc/libc6/copyright as the bundle marker; see linuxdeployqt
+# issue #340). Without the flag it instead refuses to run on hosts with
+# glibc >= 2.36 ("The host system is too new"). The supported combination
+# is therefore to run this on a glibc 2.35 system, so the Linux CI job is
+# pinned to ubuntu-22.04 (see .github/workflows/ci.yml).
 linuxdeployqt --appimage-extract-and-run \
   "$APP_DIR/usr/share/applications/esotereel.desktop" \
   -bundle-non-qt-libs \
-  -unsupported-allow-new-glibc \
   -verbose=2
 
 # 6. AppImage のビルドを実行

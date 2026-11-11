@@ -14,7 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned to ubuntu-22.04 (glibc 2.35): linuxdeployqt aborts on
+          # hosts with glibc >= 2.36 unless glibc is fully bundled into the
+          # AppDir. See installer/linux/build_appimage.sh for details.
+          - os: ubuntu-22.04
             qt_arch: ""
             rust_target: ""
             arch: "x86_64"
