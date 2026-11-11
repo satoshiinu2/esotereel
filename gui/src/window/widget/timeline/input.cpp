@@ -119,7 +119,10 @@ void TimelineCanvasWidget::mouseReleaseEvent(QMouseEvent *e) {
     }
 
     if (e->button() & Qt::LeftButton && !std::holds_alternative<DragNone>(this->dragState)) {
-        this->onDragEnd(e);
+        // ここでは既に Project ガードを保持しているので、再取得する
+        // onDragEnd(e) ではなく、保持済みの project を渡す overload を使う。
+        // 入れ子の read 取得は、間に write がキューされるとデッドロックする。
+        this->onDragEnd(e, project);
         this->dragState = DragNone{};
         update();
     }
@@ -202,6 +205,10 @@ void TimelineCanvasWidget::onDragEnd(QMouseEvent *e) {
     }
     Project project = std::move(projectResult.unwrap());
 
+    this->onDragEnd(e, project);
+}
+
+void TimelineCanvasWidget::onDragEnd(QMouseEvent *e, const Project &project) {
     std::visit(
         [&](auto &&state) {
             using T = std::decay_t<decltype(state)>;

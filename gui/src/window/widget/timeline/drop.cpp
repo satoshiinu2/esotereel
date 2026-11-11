@@ -40,6 +40,13 @@ bool handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event) 
     uint64_t layerId = 0;
     bool canAdd = false;
 
+    // updateSnapshot() は内部で getProject() して自身のガードを取得・解放
+    // する自己完結した関数なので、Project ガードを取得する前に呼ぶ。
+    // ガード保持中に呼ぶと同一 RwLock の read を入れ子に取得することに
+    // なり、間に write がキューされるとデッドロックする。
+    // 行データは読み取りの前に最新化しておく必要があるため、この順序を保つ。
+    canvas->updateSnapshot();
+
     {
         auto projectResult = canvas->windowState.state->getProject();
         if (projectResult.isError()) {
@@ -47,7 +54,6 @@ bool handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event) 
         }
         auto project = std::move(projectResult.unwrap());
 
-        canvas->updateSnapshot();
         auto rr = canvas->cachedRows.get();
         if (!rr) {
             return false;

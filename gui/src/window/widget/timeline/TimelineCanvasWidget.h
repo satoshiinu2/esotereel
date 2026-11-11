@@ -216,6 +216,12 @@ class TimelineCanvasWidget : public QWidget {
     DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
     void onDragEnd(QMouseEvent *e);
+    // 呼び出し側が既に Project ガードを保持している場合の overload。
+    // Project は同じ RwLock の read を同一スレッドで入れ子に取得できない
+    // （間に write がキューされるとデッドロックする）ため、保持済みの
+    // Project を渡して再取得を避ける。handle*Drop 系が const Project& を
+    // 受ける既存のパターンに合わせたもの。
+    void onDragEnd(QMouseEvent *e, const Project &project);
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
 
