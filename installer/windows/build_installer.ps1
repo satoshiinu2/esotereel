@@ -9,7 +9,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$RepoRoot = $PSScriptRoot
+# This script lives in installer\windows, so the repo root is two levels up.
+# Using $PSScriptRoot directly made every path below (scripts, build,
+# installer) resolve inside installer\windows and fail.
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 . (Join-Path $RepoRoot 'scripts\windows-runtime.ps1')
 
 $BuildDir = Join-Path $RepoRoot 'build\win_dist'
