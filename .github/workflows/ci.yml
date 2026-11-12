@@ -26,9 +26,10 @@ jobs:
             rust_target: "x86_64-pc-windows-msvc"
             arch: "x86_64"
           # macos-14 runners were retired by GitHub (jobs fail to start with
-          # "The configuration 'macos-14-arm64-us-default' is not supported"),
-          # so the macOS job is pinned to macos-15 (Apple Silicon, arm64).
-          - os: macos-15
+          # "The configuration 'macos-14-arm64-us-default' is not supported").
+          # Use macos-latest (currently Apple Silicon, arm64) so the job
+          # follows GitHub's supported runner instead of a retiring pin.
+          - os: macos-latest
             qt_arch: "clang_64"
             rust_target: ""
             arch: "arm64"
