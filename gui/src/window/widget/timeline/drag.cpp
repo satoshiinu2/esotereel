@@ -200,6 +200,17 @@ void TimelineCanvasWidget::drawDragGhost(const Project &project, QPainter &p, co
     }
 }
 
+/// スナップ閾値を設定から読み直してキャッシュする。
+/// Project の read ガードを取得する前（mousePressEvent / paintEvent の
+/// 先頭）でだけ呼ぶこと。ガード保持中に呼ぶと State ロックとの逆順取得に
+/// なりデッドロックする。
+void TimelineCanvasWidget::refreshSnapThreshold() {
+    this->snapThresholdPx = Settings::getValue(windowState.state, "std::snap_threshold_px")
+                                .map([](auto v) { return v.asInt(); })
+                                .flatten()
+                                .value_or(12);
+}
+
 /// ドラッグ位置を決めたあとに、重なっているクリップがあれば、その隣にぴったり付く位置へ補正する処理(スナップ)
 TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, LayerDelta layerMoved,
                                                   std::set<ClipId> checkClips) const {
@@ -207,11 +218,10 @@ TimelineTick TimelineCanvasWidget::snapFrameMoved(const Timeline &timeline, Time
         return frameMoved;
     }
     const auto &rows = *this->cachedRows;
-    int snap_threshold_px = Settings::getValue(windowState.state, "std::snap_threshold_px")
-                                .map([](auto v) { return v.asInt(); })
-                                .flatten()
-                                .value_or(12);
-    const TimelineTick threshold = XToFrame(snap_threshold_px);
+    // ここは呼び出し元が Project の read ガードを保持しているため、
+    // Settings::getValue（State ロック取得）を直接呼んではいけない。
+    // refreshSnapThreshold() で事前にキャッシュした値を使う。
+    const TimelineTick threshold = XToFrame(this->snapThresholdPx);
 
     std::optional<TimelineTick> best;
     for (ClipId clipId : checkClips) {

@@ -7,8 +7,7 @@ use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        NamespacedID, property::ComponentCapability, script::api::PluginActionContext,
-        PluginLoader,
+        NamespacedID, PluginLoader, property::ComponentCapability, script::api::PluginActionContext,
     },
     project::{
         Project,
@@ -53,17 +52,12 @@ pub fn on_request_receive(
 
             let timelines = new_project.timelines_meta();
 
-            {
+            // State ロック中は project の差し替えと履歴クリアだけを行い、
+            // ビュー更新と送信はロック解放後に行う（lock-order.md）
+            let network = {
                 let mut state = state
                     .lock()
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                for timeline in &timelines {
-                    state
-                        .network
-                        .update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
-                }
-
-                // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
                 state
@@ -72,47 +66,69 @@ pub fn on_request_receive(
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
                     .clear();
 
-                let cmd = Response::ProjectMeta { timelines };
-                state.network.send(client_id, &cmd);
+                Arc::clone(&state.network)
+            };
+
+            // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
+            for timeline in &timelines {
+                network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
             }
+
+            let cmd = Response::ProjectMeta { timelines };
+            network.send(client_id, &cmd);
         }
         ArchivedRequest::ProjectAll => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
-            let project = project_guard
-                .as_mut()
-                .ok_or(EsotereelError::ProjectNotFound)?;
+            // 読み取り専用なので write ではなく read ロックでよい。
+            // State は Arc の取り出しだけ、送信は全ガード解放後に行う。
+            let (project_arc, network) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                )
+            };
 
-            let timelines = project.timelines_meta();
+            let timelines = {
+                let project_guard = project_arc.read_or_err()?;
+                let project = project_guard
+                    .as_ref()
+                    .ok_or(EsotereelError::ProjectNotFound)?;
+                project.timelines_meta()
+            };
 
-            {
-                // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
-                for timeline in &timelines {
-                    state_guard.network.update_client_view(
-                        client_id,
-                        timeline.id,
-                        i64::MIN..i64::MAX,
-                    );
-                }
-
-                let cmd = Response::ProjectMeta { timelines };
-
-                state_guard.network.send(client_id, &cmd);
+            // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
+            for timeline in &timelines {
+                network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
             }
+
+            let cmd = Response::ProjectMeta { timelines };
+            network.send(client_id, &cmd);
         }
         ArchivedRequest::Command { commands } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let project_arc = &state_guard.project;
+            // 必要な Arc を取り出したら State ロックは即座に解放し、
+            // コマンド実行中は State を保持しない（lock-order.md）
+            let (project_arc, network, histories_arc, loader_arc) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.histories),
+                    Arc::clone(&state_guard.common.plugin_loader),
+                )
+            };
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let loader = state_guard.common.plugin_loader.read_or_err()?;
+            let loader = loader_arc.read_or_err()?;
+
+            // 拒否レスポンスはその場で送らず、全ガード解放後にまとめて送る
+            let mut pending_rejections: Vec<Response> = Vec::new();
 
             for (timeline_id, command) in commands.iter() {
                 let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
@@ -148,7 +164,7 @@ pub fn on_request_receive(
 
                 match command_to_history(project, *timeline_id, command.clone()) {
                     Ok(command_history) => {
-                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                        let mut histories = histories_arc.lock().map_err(|e| {
                             anyhow::Error::from(EsotereelError::LockError(e.to_string()))
                         })?;
                         let history = histories
@@ -175,16 +191,18 @@ pub fn on_request_receive(
                             client_id,
                             &command,
                         );
-                        for resp in rejections {
-                            state_guard.network.send(client_id, &resp);
-                        }
+                        pending_rejections.extend(rejections);
                     }
                 }
             }
 
             drop(loader);
             drop(project_guard);
-            state_guard.network.notify_dirty();
+
+            for resp in &pending_rejections {
+                network.send(client_id, resp);
+            }
+            network.notify_dirty();
         }
         ArchivedRequest::InitStream { path } => {
             let path = path.as_ref();
@@ -193,20 +211,25 @@ pub fn on_request_receive(
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
 
-            let mut state = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            // 登録までは State ロックが必要だが、送信は解放後に行う
+            let (network, res, resource_id) = {
+                let mut state = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-            let resource_id = state.get_or_create_resource_id(path);
+                let resource_id = state.get_or_create_resource_id(path);
 
-            let res = streamer.get_init_packet(path, resource_id);
+                let res = streamer.get_init_packet(path, resource_id);
 
-            state.streams.insert(resource_id, streamer);
-            state
-                .stream_state_map
-                .insert(path.to_owned(), StreamState::Loaded(resource_id));
+                state.streams.insert(resource_id, streamer);
+                state
+                    .stream_state_map
+                    .insert(path.to_owned(), StreamState::Loaded(resource_id));
 
-            state.network.send(client_id, &res);
+                (Arc::clone(&state.network), res, resource_id)
+            };
+
+            network.send(client_id, &res);
 
             log::debug!(target: "core_stream_packet_handler",
                 "Sent StreamMetadata for resource_id: {} ({})",
@@ -226,20 +249,24 @@ pub fn on_request_receive(
 
             let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
 
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            let (network, to_send) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-            let mut streamer = state_guard
-                .streams
-                .get_mut(resource_id)
-                .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
+                let mut streamer = state_guard
+                    .streams
+                    .get_mut(resource_id)
+                    .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
 
-            let generation = streamer.next_generation();
+                let generation = streamer.next_generation();
 
-            let to_send = streamer.fetch_stream_data_batch(*resource_id, ranges, generation)?;
-            for res in to_send {
-                state_guard.network.send(client_id, &res);
+                let to_send = streamer.fetch_stream_data_batch(*resource_id, ranges, generation)?;
+                (Arc::clone(&state_guard.network), to_send)
+            };
+
+            for res in &to_send {
+                network.send(client_id, res);
             }
         }
         ArchivedRequest::FetchClipsInRange {
@@ -251,34 +278,41 @@ pub fn on_request_receive(
                 timeline_key,
                 range
             );
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-
             let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
 
+            // State は Arc の取り出しだけ。query_range は読み取り専用なので
+            // Project は read ロックでよい。送信は全ガード解放後に行う。
+            let (project_arc, network) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                )
+            };
+
             // クライアントの表示範囲をサーバーに記憶させる
-            state_guard
-                .network
-                .update_client_view(client_id, *timeline_key, range.clone());
+            network.update_client_view(client_id, *timeline_key, range.clone());
 
-            // 範囲内のクリップ送信
-            let mut project_guard = state_guard.project.write_or_err()?;
-            let project = project_guard
-                .as_mut()
-                .ok_or(EsotereelError::ProjectNotFound)?;
+            let clips = {
+                let project_guard = project_arc.read_or_err()?;
+                let project = project_guard
+                    .as_ref()
+                    .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let timeline = project
-                .timeline_ref(*timeline_key)
-                .ok_or(EsotereelError::TimelineNotFound(*timeline_key))?;
+                let timeline = project
+                    .timeline_ref(*timeline_key)
+                    .ok_or(EsotereelError::TimelineNotFound(*timeline_key))?;
 
-            let clips = timeline
-                .query_range(range)
-                .into_iter()
-                .map(|(layer, clip)| (layer.id, clip.clone()))
-                .collect();
+                timeline
+                    .query_range(range)
+                    .into_iter()
+                    .map(|(layer, clip)| (layer.id, clip.clone()))
+                    .collect::<Vec<_>>()
+            };
 
-            state_guard.network.send(
+            network.send(
                 client_id,
                 &Response::UpdateClip {
                     timeline_id: *timeline_key,
@@ -287,23 +321,27 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::DebugFetchProjectStruct => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let mut project_guard = state_guard.project.write_or_err()?;
-            let project = project_guard
-                .as_mut()
-                .ok_or(EsotereelError::ProjectNotFound)?;
+            // 読み取り専用なので read ロックでよい。送信は解放後に行う。
+            let (project_arc, network) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                )
+            };
 
-            state_guard
-                .network
-                .send(client_id, &Response::DebugProjectStruct(None));
+            let str = {
+                let project_guard = project_arc.read_or_err()?;
+                let project = project_guard
+                    .as_ref()
+                    .ok_or(EsotereelError::ProjectNotFound)?;
+                format!("{:#?}", project)
+            };
 
-            let str = format!("{:#?}", project);
-
-            state_guard
-                .network
-                .send(client_id, &&Response::DebugProjectStruct(Some(str)));
+            network.send(client_id, &Response::DebugProjectStruct(None));
+            network.send(client_id, &&Response::DebugProjectStruct(Some(str)));
         }
         ArchivedRequest::ToolbarAction {
             button_id,
@@ -314,75 +352,93 @@ pub fn on_request_receive(
             let button_id = NamespacedID::parse(button_id.as_ref())?;
             let func_name = func_name.as_ref();
 
+            let plugin_id = button_id.plugin_id();
+
+            // Phase 1: State ロック中は必要な Arc の取り出しと、実行する
+            // スクリプトのクローンだけを行う（lock-order.md）
             let state_guard = state
                 .lock()
                 .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
 
-            let plugin_id = button_id.plugin_id();
+            let network = Arc::clone(&state_guard.network);
+            let project_arc = Arc::clone(&state_guard.project);
+            let histories_arc = Arc::clone(&state_guard.histories);
+            let loader_arc = Arc::clone(&state_guard.common.plugin_loader);
 
-            // PluginActionContextを作成
-            let project = Arc::clone(&state_guard.project);
+            let context = PluginActionContext::new(
+                Arc::clone(&network),
+                Arc::clone(&project_arc),
+                *timeline_id,
+            );
 
-            let context =
-                PluginActionContext::new(Arc::clone(&state_guard.network), project, *timeline_id);
+            // スクリプトはクローンして所有し、PluginLoader の read ガードは
+            // 実行前に drop する。スクリプトは set_clip_property 経由で
+            // Project の write ロックを取りうるため、Loader ロック保持中の
+            // 実行は禁止（lock-order.md）。
+            let script = {
+                let loader = loader_arc.read_or_err()?;
+                loader
+                    .get_script(&plugin_id)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?
+            }; // loader ガードはここで drop される
 
-            // スクリプト実行
-            state_guard
-                .common
-                .plugin_loader
-                .read_or_err()?
-                .call_script::<()>(
+            // 注意: script_engine は CommonState が直接所有する値（Arc 化
+            // されていない）ため、エンジン参照が要る間は State ロックを
+            // 解放できない。パケット処理は解放後に回す。
+            script
+                .call::<()>(
                     &state_guard.common.script_engine,
-                    &plugin_id,
                     func_name,
                     (context.clone(),),
                 )
                 .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
 
-            // スクリプト内で積まれた Request を回収して処理
+            // スクリプト内で積まれた Request を回収して処理する。
+            // ここからは State ロックなしで、クローンした Arc だけで処理する。
             let packets = context.take_packets();
+            drop(state_guard);
+
             for packet in packets {
                 match packet {
                     Request::Undo { timeline_id } => {
-                        let project_arc = &state_guard.project;
                         let mut project_guard = project_arc.write_or_err()?;
                         let project = project_guard
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
-                        let loader = state_guard.common.plugin_loader.read_or_err()?;
+                        let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                        let mut histories = histories_arc.lock().map_err(|e| {
                             anyhow::Error::from(EsotereelError::LockError(e.to_string()))
                         })?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history
-                            .last_undo()
-                            .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
+                        let offset_member_key = history.last_undo().and_then(|cmd| {
+                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
+                        });
                         undo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
                     Request::Redo { timeline_id } => {
-                        let project_arc = &state_guard.project;
                         let mut project_guard = project_arc.write_or_err()?;
                         let project = project_guard
                             .as_mut()
                             .ok_or(EsotereelError::ProjectNotFound)?;
 
-                        let loader = state_guard.common.plugin_loader.read_or_err()?;
+                        let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = state_guard.histories.lock().map_err(|e| {
+                        let mut histories = histories_arc.lock().map_err(|e| {
                             anyhow::Error::from(EsotereelError::LockError(e.to_string()))
                         })?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history
-                            .last_redo()
-                            .and_then(|cmd| resolve_offset_member_key(project, timeline_id, cmd, &loader));
+                        let offset_member_key = history.last_redo().and_then(|cmd| {
+                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
+                        });
                         redo_command(project, timeline_id, history, offset_member_key.as_deref())?;
                     }
                     _ => {
@@ -398,19 +454,26 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::Undo { timeline_id } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let project_arc = &state_guard.project;
+            // State は Arc の取り出しだけ。実行は解放後に行う。
+            let (project_arc, network, histories_arc, loader_arc) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.histories),
+                    Arc::clone(&state_guard.common.plugin_loader),
+                )
+            };
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let loader = state_guard.common.plugin_loader.read_or_err()?;
+            let loader = loader_arc.read_or_err()?;
 
-            let mut histories = state_guard
-                .histories
+            let mut histories = histories_arc
                 .lock()
                 .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let history = histories
@@ -423,23 +486,31 @@ pub fn on_request_receive(
                 .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
 
             undo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            drop(project_guard);
             // must send to client
-            state_guard.network.notify_dirty();
+            network.notify_dirty();
         }
         ArchivedRequest::Redo { timeline_id } => {
-            let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-            let project_arc = &state_guard.project;
+            // State は Arc の取り出しだけ。実行は解放後に行う。
+            let (project_arc, network, histories_arc, loader_arc) = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.histories),
+                    Arc::clone(&state_guard.common.plugin_loader),
+                )
+            };
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let loader = state_guard.common.plugin_loader.read_or_err()?;
+            let loader = loader_arc.read_or_err()?;
 
-            let mut histories = state_guard
-                .histories
+            let mut histories = histories_arc
                 .lock()
                 .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
             let history = histories
@@ -451,8 +522,9 @@ pub fn on_request_receive(
                 .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
 
             redo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            drop(project_guard);
             // must send to client
-            state_guard.network.notify_dirty();
+            network.notify_dirty();
         }
     }
     Ok(())

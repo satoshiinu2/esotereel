@@ -159,6 +159,9 @@ void TimelineCanvasWidget::drawRuler(QPainter &p, const QRect &r) const {
 void TimelineCanvasWidget::paintEvent(QPaintEvent *e) {
     QWidget::paintEvent(e);
 
+    // Project ガード取得前にスナップ閾値をキャッシュする（デッドロック回避）
+    this->refreshSnapThreshold();
+
     this->postRender();
 
     QPainter p(this);

@@ -157,6 +157,11 @@ class TimelineCanvasWidget : public QWidget {
     mutable std::unique_ptr<RenderRows> cachedRows;
     mutable bool rowsDirty = true;
     mutable bool fetchPending = false;
+    // スナップ閾値(px)のキャッシュ。Project の read ガードを保持した状態で
+    // Settings::getValue（State ロックを取る FFI）を呼ぶと、ネットワーク
+    // スレッドの State -> Project と逆順になりデッドロックするため、
+    // ガード取得前に refreshSnapThreshold() で読み直してここに保持する。
+    int snapThresholdPx = 12;
     CommandQueue commandQueue;
 
     // functions
@@ -192,6 +197,8 @@ class TimelineCanvasWidget : public QWidget {
     void handleClipDragContinue(const Project &project, const QPoint &local);
     void handleClipDraggingDrop(const Project &project, const QPoint &local);
 
+    // ガードを保持していないタイミングでスナップ閾値を読み直す
+    void refreshSnapThreshold();
     TimelineTick snapFrameMoved(const Timeline &timeline, TimelineTick frameMoved, LayerDelta layerMoved,
                                 std::set<ClipId> checkClips) const;
     // 選択中の全クリップを、指定した移動量(frameMoved/layerMoved)の位置へ
@@ -200,6 +207,12 @@ class TimelineCanvasWidget : public QWidget {
     bool canDropSelectedClipsAt(const Timeline &timeline, int64_t frameMoved, LayerDelta layerMoved) const;
 
     // selection (select.cpp)
+    // clipSelectionChanged の接続先 (ClipPropertiesPanel::setClips -> rebuild)
+    // は getProject() を呼ぶため、Project ガード保持中に直接 emit すると、
+    // 同一スレッド・同一 RwLock の read を入れ子に取得してしまう
+    // (Qt の同一スレッド接続は同期実行)。イベントループへ遅延させ、
+    // ガード解放後にスロットが走るようにするためのヘルパー。
+    void emitClipSelectionChangedDeferred();
     bool handleSelectClip(const Project &project, const QPoint &mousePos, bool ctrl);
     std::optional<DragAreaSel> handleAreaSelStart(const QPoint &mousePos, bool ctrl);
     void handleAreaSelContinue(const QPoint &mousePos);
@@ -209,6 +222,12 @@ class TimelineCanvasWidget : public QWidget {
     DragState onDragStarted(QMouseEvent *e, QPoint firstClickPos);
     void onDragContinue(QMouseEvent *e);
     void onDragEnd(QMouseEvent *e);
+    // 呼び出し側が既に Project ガードを保持している場合の overload。
+    // Project は同じ RwLock の read を同一スレッドで入れ子に取得できない
+    // （間に write がキューされるとデッドロックする）ため、保持済みの
+    // Project を渡して再取得を避ける。handle*Drop 系が const Project& を
+    // 受ける既存のパターンに合わせたもの。
+    void onDragEnd(QMouseEvent *e, const Project &project);
     void handleCtrlPlayhead(const QPoint &mousePos);
     void checkEdgeScroll(const QPoint &mousePos, const QRect &r);
 

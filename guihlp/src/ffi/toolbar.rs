@@ -167,45 +167,55 @@ pub unsafe extern "C" fn toolbar_handle_action(
             .get_button_by(&button_id)
             .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
 
+        let network = Arc::clone(&state.network);
+
         // run_onをチェック
         if matches!(button.action.run_on, RunOn::Server) {
-            // サーバーで実行するリクエストを送信
+            // サーバーで実行するリクエストを送信。
+            // 送信は State ロックを解放してから行う（lock-order.md）。
             let request = Request::ToolbarAction {
                 button_id: button_id.to_string(),
                 func_name: button.action.func_name.clone(),
                 run_on: Some(timeline_id),
                 timeline_id,
             };
-            state.network.send(&request);
+            drop(state);
+            network.send(&request);
             return Ok(());
         }
 
         // clientまたは指定なしの場合はローカルで実行
         // PluginActionContextを作成
         let project = state.project.clone();
-        let context = PluginActionContext::new(Arc::clone(&state.network), project, timeline_id);
+        let context = PluginActionContext::new(Arc::clone(&network), project, timeline_id);
 
-        // スクリプト実行（ボタン専用の個別スクリプトから実行。script は必須）
-        let loader = state
-            .common
-            .plugin_loader
-            .read()
-            .expect("lock poisoned");
-        let script = loader
-            .get_toolbar_button_script(&button_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!("script for toolbar button `{}` not found", button_id.full())
-            })?;
+        // スクリプトはクローンして所有し、PluginLoader の read ガードは
+        // 実行前に必ず drop する。スクリプトは
+        // PluginActionContext::set_clip_property 経由で Project の write
+        // ロック等を取りうるため、Loader ロック保持中の実行は禁止
+        // （docs/architecture/lock-order.md）。
+        let script = {
+            let loader = state.common.plugin_loader.read_or_err()?;
+            loader
+                .get_toolbar_button_script(&button_id)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("script for toolbar button `{}` not found", button_id.full())
+                })?
+        }; // loader ガードはここで drop される
+        let func_name = button.action.func_name.clone();
+
+        // 注意: script_engine は CommonState が直接所有する値（Arc 化されて
+        // いない）ため、エンジンへの参照が要る間は State ロックを解放できない。
+        // ロック保持を増やさないため、実行以外の処理（送信）は解放後に回す。
         script
-            .call::<()>(
-                &state.common.script_engine,
-                &button.action.func_name,
-                (context.clone(),),
-            )
+            .call::<()>(&state.common.script_engine, &func_name, (context.clone(),))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
-        for req in context.take_packets() {
-            state.network.send(&req);
+        let packets = context.take_packets();
+        drop(state);
+        for req in &packets {
+            network.send(req);
         }
 
         Ok(())
