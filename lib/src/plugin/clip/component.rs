@@ -543,7 +543,7 @@ properties = [
     }
 
     #[test]
-    fn custom_capability_is_preserved_lowercase() {
+    fn unknown_capability_is_rejected() {
         let text = r#"
 [[components]]
 id = "custom"
@@ -551,14 +551,7 @@ name = "Custom"
 kind = "custom-kind"
 capabilities = ["my-custom-cap"]
 "#;
-        let map = parse_component_definitions(text, "std").unwrap();
-        let def = map
-            .get(&NamespacedID::new("std", "custom").unwrap())
-            .unwrap();
-        assert_eq!(def.kind.full(), "std:custom-kind");
-        assert!(def.capabilities.contains(&ComponentCapability::Custom(
-            "my-custom-cap".to_string()
-        )));
+        assert!(parse_component_definitions(text, "std").is_err());
     }
 
     #[test]
@@ -570,10 +563,6 @@ capabilities = ["my-custom-cap"]
         assert_eq!(
             ComponentCapability::Prefetchable.as_str(),
             "prefetchable"
-        );
-        assert_eq!(
-            ComponentCapability::Custom("foo-bar".to_string()).as_str(),
-            "foo-bar"
         );
     }
 
@@ -590,10 +579,6 @@ capabilities = ["my-custom-cap"]
         assert_eq!(
             ComponentCapability::Transformable.standard_fn(),
             Some("get_transform")
-        );
-        assert_eq!(
-            ComponentCapability::Custom("foo".to_string()).standard_fn(),
-            None
         );
     }
 
