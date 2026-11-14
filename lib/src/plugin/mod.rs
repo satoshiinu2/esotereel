@@ -1,7 +1,7 @@
 //! プラグインシステムのモジュールです。
 //!
-//! プラグインは `manifest.toml`、`settings.toml`、`clips/`、`components/`、`toolbars.toml`、
-//! `script.rhai` で構成され、`PluginLoader` によりディスクから読み込まれます。
+//! プラグインは `manifest.toml`、`settings.toml`、`clips/`、`components/`、`mixins/`、
+//! `toolbars.toml`、`script.rhai` で構成され、`PluginLoader` によりディスクから読み込まれます。
 //! 各プラグインは `ClipKind`（クリップ種別）、`ComponentDefinition`（コンポーネント定義）、
 //! `PropertySchema`（プロパティスキーマ）、Rhai スクリプトを登録します。
 //!
@@ -12,7 +12,7 @@
 //!   1 つのプラグインの失敗が全体を止めません（`load_from_disk`）。
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -32,6 +32,7 @@ use crate::{
                 parse_component_definitions,
             },
         },
+        mixin::{MixinDeclaration, MixinIndex, parse_mixin_declarations},
         property::PropertySchema,
         script::CompiledScript,
         toolbar::ToolbarButtonSpec,
@@ -173,6 +174,7 @@ pub struct Plugin {
     pub clip_kinds: HashMap<NamespacedID, ClipKind>,
     pub component_definitions: HashMap<NamespacedID, ComponentDefinition>,
     pub component_scripts: HashMap<NamespacedID, CompiledScript>,
+    pub mixin_declarations: Vec<MixinDeclaration>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub toolbar_button_scripts: HashMap<NamespacedID, CompiledScript>,
     pub script: Option<CompiledScript>,
@@ -189,6 +191,7 @@ impl Plugin {
         let clip_kinds = Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
         let (component_definitions, mut component_scripts) =
             Self::load_components(&manifest, &dir.join("components"))?;
+        let mixin_declarations = Self::load_mixins(&manifest, &dir.join("mixins"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
         let mut toolbar_button_scripts = HashMap::new();
         for button in &toolbar_buttons {
@@ -206,6 +209,7 @@ impl Plugin {
             clip_kinds,
             component_definitions,
             component_scripts,
+            mixin_declarations,
             toolbar_buttons,
             toolbar_button_scripts,
             script,
@@ -383,6 +387,69 @@ impl Plugin {
 
         Ok((all_components, all_scripts))
     }
+
+    /// mixins/ 配下の全 TOML から mixin 宣言を集める。
+    ///
+    /// 読み込みフェーズ（フェーズ 0）では宣言のパース・検証のみを行い、
+    /// ハンドラスクリプトのコンパイルは行いません（dispatch は未実装）。
+    /// ただし宣言の `script` は必須フィールドであり、指すファイルが
+    /// 存在しない宣言は読み込みエラーとします（コンポーネントの任意の
+    /// `script` とは扱いが異なる点に注意）。
+    fn load_mixins(
+        manifest: &PluginManifest,
+        mixins_dir: &Path,
+    ) -> anyhow::Result<Vec<MixinDeclaration>> {
+        if !mixins_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(mixins_dir)
+            .with_context(|| format!("failed to read mixins directory {}", mixins_dir.display()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .collect();
+
+        toml_paths.sort();
+
+        let mut all_declarations = Vec::new();
+        let mut seen_ids: HashSet<NamespacedID> = HashSet::new();
+        for path in toml_paths {
+            let text = std::fs::read_to_string(&path).with_context(|| {
+                format!("failed to read mixin declaration file at {}", path.display())
+            })?;
+            let declarations =
+                parse_mixin_declarations(&text, &manifest.id).with_context(|| {
+                    format!(
+                        "failed parse mixins in `{}` for plugin `{}`",
+                        path.display(),
+                        manifest.id
+                    )
+                })?;
+
+            for declaration in declarations {
+                if !seen_ids.insert(declaration.id.clone()) {
+                    anyhow::bail!(
+                        "duplicate mixin declaration id `{}` across files in `{}`",
+                        declaration.id,
+                        manifest.id
+                    );
+                }
+                let script_path = mixins_dir.join(&declaration.script);
+                if !script_path.exists() {
+                    anyhow::bail!(
+                        "mixin declaration `{}` in plugin `{}` refers to missing script `{}`",
+                        declaration.id,
+                        manifest.id,
+                        declaration.script
+                    );
+                }
+                all_declarations.push(declaration);
+            }
+        }
+
+        Ok(all_declarations)
+    }
 }
 
 // 内部で使う読み込みのための結果
@@ -413,6 +480,8 @@ pub struct PluginLoader {
     clip_kinds: ClipKindStore,
     component_registry: ComponentRegistry,
 
+    mixin_index: MixinIndex,
+
     // インデックスで検索コストを最小化
     scripts_index: HashMap<String, CompiledScript>,
     component_scripts_index: HashMap<NamespacedID, CompiledScript>,
@@ -428,6 +497,7 @@ impl PluginLoader {
             is_loaded: false,
             clip_kinds: ClipKindStore::new(),
             component_registry: ComponentRegistry::default(),
+            mixin_index: MixinIndex::default(),
             scripts_index: HashMap::new(),
             component_scripts_index: HashMap::new(),
             toolbar_button_scripts_index: HashMap::new(),
@@ -607,6 +677,14 @@ impl PluginLoader {
             .context("clip kind conflict during rebuild_indices")?;
         self.clip_kinds = clip_kinds;
 
+        // 全プラグインの mixin 宣言からフック表を構築する。
+        // 宣言 ID の衝突はコンポーネント定義と同様にエラーとする。
+        self.mixin_index = MixinIndex::build(
+            self.plugins
+                .iter()
+                .flat_map(|plugin| plugin.mixin_declarations.iter().cloned()),
+        )?;
+
         for plugin in &self.plugins {
             // scripts index (プラグイン共通 script.rhai)
             if let Some(script) = plugin.script.as_ref() {
@@ -637,11 +715,12 @@ impl PluginLoader {
         }
 
         log::info!(
-            "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}",
+            "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}, mixins={}",
             self.clip_kinds.registry.iter().count(),
             self.scripts_index.len(),
             self.schemas_index.len(),
-            self.toolbars_index.len()
+            self.toolbars_index.len(),
+            self.mixin_index.len()
         );
 
         Ok(())
@@ -729,6 +808,15 @@ impl PluginLoader {
     /// 指定 ID の `ComponentDefinition` を返します。
     pub fn get_component(&self, id: &NamespacedID) -> Option<&ComponentDefinition> {
         self.component_registry.get(id)
+    }
+
+    /// 解決済みの mixin フック表を返します。
+    ///
+    /// 現在は読み込みのみが実装されており、dispatch は未実装です。
+    /// フック表は将来の dispatch が参照するための保持であり、
+    /// 宣言があっても実行時の挙動は変わりません。
+    pub fn mixin_index(&self) -> &MixinIndex {
+        &self.mixin_index
     }
 
     /// ルートコンポーネント ID から階層を解決し、フラットな `RuntimeDefinition` を返します。
