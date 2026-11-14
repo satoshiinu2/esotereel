@@ -576,9 +576,11 @@ dependencies = [
  "dashmap",
  "esotereel_lib",
  "log",
+ "rhai",
  "rkyv",
  "send_wrapper",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

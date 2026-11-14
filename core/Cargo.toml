@@ -15,4 +15,6 @@ colored = "3.0"
 chrono = "0.4"
 send_wrapper = "0.6"
 dashmap = "6.1"
+uuid = "1"
+rhai = { version = "1.26.0", features = ["sync"] }
 tokio = { version = "1", features = ["full"] }
