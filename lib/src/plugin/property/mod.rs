@@ -23,7 +23,7 @@ use crate::plugin::{
 ///
 /// 文字列表現（TOML/API 側）は小文字の kebab-case を用いる
 /// （例: `frame-provider`, `prefetchable`）。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ComponentCapability {
     /// 時刻に対応する映像フレームを供給する。
     FrameProvider,

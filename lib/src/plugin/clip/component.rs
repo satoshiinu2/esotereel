@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use anyhow::Context;
 use rhai::{Dynamic, Engine};
@@ -39,7 +39,7 @@ pub struct ComponentDefinition {
     /// このコンポーネントの種別を参照する NamespacedID。
     /// Capability 経由でのアクセスが基本のため、ここでは単なる参照として保持する。
     pub kind: NamespacedID,
-    pub capabilities: HashSet<ComponentCapability>,
+    pub capabilities: BTreeSet<ComponentCapability>,
     pub editor: Option<String>,
     /// このコンポーネント専用の Rhai スクリプトファイルパス（プラグインディレクトリからの相対パス）。
     /// プラグイン共通の script.rhai ではなく、コンポーネントごとに個別のスクリプトを持つ。
@@ -249,7 +249,7 @@ impl ComponentDefinitionRaw {
             .with_context(|| format!("invalid component id `{}` in plugin `{}`", self.id, plugin_id))?;
         let kind = resolve_namespaced(&self.kind, plugin_id)
             .with_context(|| format!("invalid component kind `{}`", self.kind))?;
-        let mut capabilities = HashSet::new();
+        let mut capabilities = BTreeSet::new();
         for cap in &self.capabilities {
             capabilities.insert(cap.parse().with_context(|| {
                 format!("invalid component capability `{cap}` in `{}`", id.full())
@@ -394,7 +394,7 @@ mod tests {
             id: NamespacedID::new("std", id_local).unwrap(),
             name: id_local.to_string(),
             kind: NamespacedID::new("std", "transform").unwrap(),
-            capabilities: HashSet::from([ComponentCapability::Transformable]),
+            capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: Some("transform".to_string()),
             script: None,
             properties: Vec::new(),
@@ -424,7 +424,7 @@ mod tests {
             id: NamespacedID::new("std", "video").unwrap(),
             name: "Video".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
-            capabilities: HashSet::from([
+            capabilities: BTreeSet::from([
                 ComponentCapability::FrameProvider,
                 ComponentCapability::Prefetchable,
             ]),
@@ -589,7 +589,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "video").unwrap(),
             name: "Video".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
-            capabilities: HashSet::from([ComponentCapability::FrameProvider]),
+            capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -602,7 +602,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "decoder").unwrap(),
             name: "Decoder".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
-            capabilities: HashSet::from([ComponentCapability::FrameProvider]),
+            capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -612,7 +612,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "frame-buffer").unwrap(),
             name: "FrameBuffer".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -622,7 +622,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "transform").unwrap(),
             name: "Transform".to_string(),
             kind: NamespacedID::new("std", "transform").unwrap(),
-            capabilities: HashSet::from([ComponentCapability::Transformable]),
+            capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -662,7 +662,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "a").unwrap(),
             name: "A".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -672,7 +672,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "b").unwrap(),
             name: "B".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -696,7 +696,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "root").unwrap(),
             name: "Root".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: Vec::new(),
@@ -724,7 +724,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "video").unwrap(),
             name: "Video".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
-            capabilities: HashSet::from([ComponentCapability::FrameProvider]),
+            capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
             properties: vec![
@@ -775,7 +775,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "a").unwrap(),
             name: "A".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: vec![PropertySchema {
@@ -793,7 +793,7 @@ capabilities = ["my-custom-cap"]
             id: NamespacedID::new("std", "b").unwrap(),
             name: "B".to_string(),
             kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: HashSet::new(),
+            capabilities: BTreeSet::new(),
             editor: None,
             script: None,
             properties: vec![PropertySchema {
@@ -908,7 +908,7 @@ script = "video.rhai"
                 id: NamespacedID::new("sched-test", "video").unwrap(),
                 name: "Video".to_string(),
                 kind: NamespacedID::new("sched-test", "media-provider").unwrap(),
-                capabilities: HashSet::from([ComponentCapability::FrameProvider]),
+                capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
                 editor: None,
                 script: Some("video.rhai".to_string()),
                 properties: Vec::new(),
