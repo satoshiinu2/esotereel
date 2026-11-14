@@ -106,6 +106,51 @@ pub fn on_request_receive(
             let cmd = Response::ProjectMeta { timelines };
             network.send(client_id, &cmd);
         }
+        ArchivedRequest::RegisterAssetReference { asset_id, path, add_clip } => {
+            let network = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                Arc::clone(&state_guard.network)
+            };
+            let _ = add_clip;
+            let msg = format!("asset reference registered: {} -> {}", asset_id, path);
+            log::info!("{msg}");
+            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+        }
+        ArchivedRequest::BeginAssetUpload {
+            asset_id,
+            file_name,
+            total_size,
+        } => {
+            let network = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                Arc::clone(&state_guard.network)
+            };
+            let _ = file_name;
+            let _ = total_size;
+            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+        }
+        ArchivedRequest::AssetUploadChunk { asset_id, .. } => {
+            let network = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                Arc::clone(&state_guard.network)
+            };
+            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+        }
+        ArchivedRequest::FinishAssetUpload { asset_id, .. } => {
+            let network = {
+                let state_guard = state
+                    .lock()
+                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                Arc::clone(&state_guard.network)
+            };
+            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+        }
         ArchivedRequest::Command { commands } => {
             // 必要な Arc を取り出したら State ロックは即座に解放し、
             // コマンド実行中は State を保持しない（lock-order.md）

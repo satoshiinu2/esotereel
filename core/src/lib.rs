@@ -18,6 +18,7 @@ pub mod network;
 pub mod project;
 pub mod requests;
 pub mod state;
+pub mod assets;
 
 pub async fn server_network_start<F>(
     addr: &str,

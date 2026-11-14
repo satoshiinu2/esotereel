@@ -416,6 +416,12 @@ pub(super) fn on_responce_recveve(
                 player.free_no_needed_frames(&fetched_ranges); // Vec対応版
             }
         }
+        ArchivedResponse::AssetImported { asset_id } => {
+            info!("asset import succeeded: {asset_id}");
+        }
+        ArchivedResponse::AssetImportFailed { asset_id, message } => {
+            info!("asset import failed: {asset_id}: {message}");
+        }
         ArchivedResponse::DebugProjectStruct(server_str) => {
             let (project_arc, _) = project_and_callback(state)?;
             let project_guard = project_arc.read_or_err()?;

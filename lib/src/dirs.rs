@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// 指定されていない場合はプラットフォーム固有の標準パス（`directories` クレート経由）を使用します。
 ///
 /// All rights reserved.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Directories {
     /// 標準プラグインディレクトリの明示指定（未指定時はインストールディレクトリから導出）
     pub std_plugin_dir: Option<PathBuf>,

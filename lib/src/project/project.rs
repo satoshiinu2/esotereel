@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::plugin::NamespacedID;
 use crate::project::asset::AssetRegistry;
@@ -73,6 +73,41 @@ impl Project {
     /// は、クリップ追加時にここで登録され、`Project.assets` がそのカタログとなる。
     pub fn register_asset(&mut self, path: &Path) -> anyhow::Result<AssetId> {
         self.assets.get_or_add_external(path)
+    }
+
+    /// ID を指定して外部ファイル参照を登録します。
+    pub fn register_external_asset(
+        &mut self,
+        id: AssetId,
+        path: &Path,
+    ) -> anyhow::Result<AssetId> {
+        if self.assets.get(id).is_some() {
+            if let Ok(existing_path) = self.assets.resolve(id) {
+                if existing_path == path {
+                    return Ok(id);
+                }
+            }
+            anyhow::bail!("asset ID `{id}` is already registered to another file");
+        }
+        self.assets.add_external(id, path)
+    }
+
+    /// ID を指定して管理対象ファイルを登録します。
+    pub fn register_managed_asset(
+        &mut self,
+        id: AssetId,
+        name: String,
+        path: PathBuf,
+    ) -> anyhow::Result<AssetId> {
+        if self.assets.get(id).is_some() {
+            if let Ok(existing_path) = self.assets.resolve(id) {
+                if existing_path == path.as_path() {
+                    return Ok(id);
+                }
+            }
+            anyhow::bail!("asset ID `{id}` is already registered to another file");
+        }
+        self.assets.add_managed(id, name, path)
     }
 
     /// 指定タイムラインにレイヤー（またはフォルダー）を新規挿入します。

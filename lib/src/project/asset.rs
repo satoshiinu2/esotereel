@@ -52,7 +52,7 @@ impl AssetRegistry {
         self.entries.get(&id)
     }
 
-    pub fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetId> {
+    fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetId> {
         let id = entry.id;
 
         match self.entries.entry(id) {
@@ -63,6 +63,39 @@ impl AssetRegistry {
                 Ok(id)
             }
         }
+    }
+
+    /// 指定 ID で外部ファイル参照を登録します。
+    pub fn add_external(&mut self, id: AssetId, path: &Path) -> anyhow::Result<AssetId> {
+        self.add(AssetEntry {
+            id,
+            name: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_string(),
+            source: AssetAvailability::Available(AssetLocation::External {
+                path: path.to_path_buf(),
+            }),
+            project_path: None,
+            fingerprint: None,
+        })
+    }
+
+    /// 指定 ID でプロジェクト管理下のファイルを登録します。
+    pub fn add_managed(
+        &mut self,
+        id: AssetId,
+        name: String,
+        path: PathBuf,
+    ) -> anyhow::Result<AssetId> {
+        self.add(AssetEntry {
+            id,
+            name,
+            source: AssetAvailability::Available(AssetLocation::Managed { path }),
+            project_path: None,
+            fingerprint: None,
+        })
     }
 
     pub fn remove(&mut self, id: AssetId) -> anyhow::Result<AssetEntry> {
@@ -184,7 +217,11 @@ mod tests {
     #[test]
     fn resolve_by_path_returns_none_for_unknown_path() {
         let registry = AssetRegistry::default();
-        assert!(registry.resolve_by_path(Path::new("/tmp/unknown.mp4")).is_none());
+        assert!(
+            registry
+                .resolve_by_path(Path::new("/tmp/unknown.mp4"))
+                .is_none()
+        );
     }
 
     #[test]

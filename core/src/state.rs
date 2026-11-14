@@ -20,6 +20,7 @@ use tokio::sync::Notify;
 
 use crate::network::ServerNetworkHandler;
 use crate::project::history::HistoryStack;
+use crate::assets::AssetsManager;
 
 pub struct ServerState {
     pub common: CommonState,
@@ -33,6 +34,8 @@ pub struct ServerState {
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
+
+    pub assets_manager: AssetsManager,
 }
 
 impl ServerState {
@@ -43,12 +46,13 @@ impl ServerState {
         let dirty_signal = Arc::new(Notify::new());
 
         Self {
-            common: CommonState::new::<ServerState>(dirs_def, shared_plugin_loader),
+            common: CommonState::new::<ServerState>(dirs_def.clone(), shared_plugin_loader),
             network: Arc::new(ServerNetworkHandler::new(Arc::clone(&dirty_signal))),
             streams: DashMap::new(),
             histories: Arc::new(std::sync::Mutex::new(HashMap::new())),
             next_resource_id: AtomicU32::new(0),
             dirty_signal,
+            assets_manager: AssetsManager::new(dirs_def),
         }
     }
 

@@ -50,6 +50,13 @@ pub enum Response {
         current_duration: TimelineTick,
         current_layer_id: LayerId,
     },
+    /// Asset の参照登録またはアップロードが完了しました。
+    AssetImported { asset_id: String },
+    /// Asset の参照登録またはアップロードが失敗しました。
+    AssetImportFailed {
+        asset_id: String,
+        message: String,
+    },
     /// レイヤーの更新。
     UpdateLayer {
         timeline_id: TimelineId,

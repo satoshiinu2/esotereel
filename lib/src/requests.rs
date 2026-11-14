@@ -5,8 +5,20 @@ use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 use crate::project::{
     MediaSec, TimelineTick,
     command::CommandRequest,
-    ids::{ResourceId, TimelineId},
+    ids::{LayerId, ResourceId, TimelineId},
 };
+use crate::plugin::NamespacedID;
+
+/// Asset を利用して新しいクリップを作成するための情報です。
+#[derive(Debug, Archive, Deserialize, Serialize)]
+#[archive_attr(derive(CheckBytes))]
+pub struct AddClipFromAsset {
+    pub timeline_id: TimelineId,
+    pub layer_id: LayerId,
+    pub position: TimelineTick,
+    pub duration: TimelineTick,
+    pub kind_id: NamespacedID,
+}
 
 /// クライアントからサーバーへ送信されるリクエストの種類です。
 ///
@@ -25,6 +37,29 @@ pub enum Request {
     /// 複数のコマンドをキュー付きで実行。
     Command {
         commands: VecDeque<(TimelineId, CommandRequest)>,
+    },
+    /// サーバー上にあるファイルを外部参照として登録します。
+    RegisterAssetReference {
+        asset_id: String,
+        path: String,
+        add_clip: Option<AddClipFromAsset>,
+    },
+    /// 管理対象 Asset のアップロードを開始します。
+    BeginAssetUpload {
+        asset_id: String,
+        file_name: String,
+        total_size: u64,
+    },
+    /// 管理対象 Asset の一部を送信します。
+    AssetUploadChunk {
+        asset_id: String,
+        offset: u64,
+        data: Vec<u8>,
+    },
+    /// アップロードを完了し、必要ならその Asset からクリップを追加します。
+    FinishAssetUpload {
+        asset_id: String,
+        add_clip: Option<AddClipFromAsset>,
     },
     /// メディアストリームの初期化。
     InitStream {

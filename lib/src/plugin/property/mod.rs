@@ -17,13 +17,7 @@ use crate::plugin::{
 };
 
 /// `ComponentCapability` の全バリアントを1つの表から生成するマクロ。
-///
-/// 各行の形式は `バリアント名: kebab-case 文字列, 標準関数名, フックタイミング` で、
-/// 行頭の doc コメントはそのままバリアントの doc になる。この表から enum 本体と
 /// `as_str` / `standard_fn` / `hook_timing` / `FromStr` をすべて生成する。
-///
-/// バリアントの宣言順は `Ord`（BTreeSet での実行順）と serde 表現を決めるため、
-/// 既存バリアントの並びは変更しないこと。
 macro_rules! component_capabilities {
     ($(
         $(#[$doc:meta])*
@@ -46,8 +40,6 @@ macro_rules! component_capabilities {
 
         impl ComponentCapability {
             /// 小文字の kebab-case 文字列表現を返す（API / TOML 向け）。
-            ///
-            /// 例: `FrameProvider` → `"frame-provider"`。
             pub fn as_str(&self) -> String {
                 match self {
                     $(ComponentCapability::$variant => $name.to_string(),)*
@@ -55,9 +47,7 @@ macro_rules! component_capabilities {
             }
 
             /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
-            ///
             /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
-            /// 例: `FrameProvider` → `"render_frame"`、`Prefetchable` → `"prefetch"`。
             pub fn standard_fn(&self) -> Option<&'static str> {
                 match self {
                     $(ComponentCapability::$variant => $standard_fn,)*
@@ -65,9 +55,7 @@ macro_rules! component_capabilities {
             }
 
             /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
-            ///
             /// `Scheduler` はこのタイミング順に標準関数を呼び出します。
-            /// 順序: `Prepare` < `Prefetch` < `Evaluate` < `Process` < `Finalize`。
             pub fn hook_timing(&self) -> ComponentHook {
                 match self {
                     $(ComponentCapability::$variant => ComponentHook::$hook,)*
@@ -106,8 +94,9 @@ component_capabilities! {
     /// メディアオフセット（ティック単位のソース時間オフセット）を提供する（マップ型プロパティのメンバーとして）。
     MediaOffsetProvider: "media-offset-provider", None, Evaluate;
     /// ドラッグドロップでファイルパスを書き込む宛先メンバー。
-    /// コンポーネントが提供する能力ではなく、GUI からの入力を受け付けるマーカーとして使用する。
     Droppable: "droppable", None, Evaluate;
+    /// ファイルのドロップ時に初期プロパティを生成する。
+    FileDropHandler: "file-drop-handler", None, Prepare;
 }
 
 pub mod parse;
