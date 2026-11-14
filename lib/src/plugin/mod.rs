@@ -40,6 +40,7 @@ use crate::{
 };
 
 pub mod clip;
+pub mod mixin;
 pub mod property;
 pub mod registry;
 pub mod script;
