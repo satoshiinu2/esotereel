@@ -16,108 +16,98 @@ use crate::plugin::{
     },
 };
 
-/// コンポーネントが何を提供できるか（能力）。
+/// `ComponentCapability` の全バリアントを1つの表から生成するマクロ。
 ///
-/// 本体はこの能力を参照して、Preview・GUI・Timeline・Scheduler などの各システムと
-/// 連携する。個々の実装を知らなくても、能力さえ合致すれば利用可能。
+/// 各行の形式は `バリアント名: kebab-case 文字列, 標準関数名, フックタイミング` で、
+/// 行頭の doc コメントはそのままバリアントの doc になる。この表から enum 本体と
+/// `as_str` / `standard_fn` / `hook_timing` / `FromStr` をすべて生成する。
 ///
-/// 文字列表現（TOML/API 側）は小文字の kebab-case を用いる
-/// （例: `frame-provider`, `prefetchable`）。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum ComponentCapability {
+/// バリアントの宣言順は `Ord`（BTreeSet での実行順）と serde 表現を決めるため、
+/// 既存バリアントの並びは変更しないこと。
+macro_rules! component_capabilities {
+    ($(
+        $(#[$doc:meta])*
+        $variant:ident: $name:literal, $standard_fn:expr, $hook:ident;
+    )*) => {
+        /// コンポーネントが何を提供できるか（能力）。
+        ///
+        /// 本体はこの能力を参照して、Preview・GUI・Timeline・Scheduler などの各システムと
+        /// 連携する。個々の実装を知らなくても、能力さえ合致すれば利用可能。
+        ///
+        /// 文字列表現（TOML/API 側）は小文字の kebab-case を用いる
+        /// （例: `frame-provider`, `prefetchable`）。
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+        pub enum ComponentCapability {
+            $(
+                $(#[$doc])*
+                $variant,
+            )*
+        }
+
+        impl ComponentCapability {
+            /// 小文字の kebab-case 文字列表現を返す（API / TOML 向け）。
+            ///
+            /// 例: `FrameProvider` → `"frame-provider"`。
+            pub fn as_str(&self) -> String {
+                match self {
+                    $(ComponentCapability::$variant => $name.to_string(),)*
+                }
+            }
+
+            /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
+            ///
+            /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
+            /// 例: `FrameProvider` → `"render_frame"`、`Prefetchable` → `"prefetch"`。
+            pub fn standard_fn(&self) -> Option<&'static str> {
+                match self {
+                    $(ComponentCapability::$variant => $standard_fn,)*
+                }
+            }
+
+            /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
+            ///
+            /// `Scheduler` はこのタイミング順に標準関数を呼び出します。
+            /// 順序: `Prepare` < `Prefetch` < `Evaluate` < `Process` < `Finalize`。
+            pub fn hook_timing(&self) -> ComponentHook {
+                match self {
+                    $(ComponentCapability::$variant => ComponentHook::$hook,)*
+                }
+            }
+        }
+
+        impl FromStr for ComponentCapability {
+            type Err = anyhow::Error;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s {
+                    $($name => ComponentCapability::$variant,)*
+                    other => anyhow::bail!("unknown component capability `{other}`"),
+                })
+            }
+        }
+    };
+}
+
+component_capabilities! {
     /// 時刻に対応する映像フレームを供給する。
-    FrameProvider,
+    FrameProvider: "frame-provider", Some("render_frame"), Evaluate;
     /// 音声データを供給する。
-    AudioProvider,
+    AudioProvider: "audio-provider", Some("render_audio"), Evaluate;
     /// 位置・回転・拡大縮小を提供する。
-    Transformable,
+    Transformable: "transformable", Some("get_transform"), Process;
     /// タイムライン上での位置・長さ編集を提供する。
-    TimelinePositionable,
+    TimelinePositionable: "timeline-positionable", Some("get_timeline_position"), Process;
     /// データの先読みを提供する。
-    Prefetchable,
+    Prefetchable: "prefetchable", Some("prefetch"), Prefetch;
     /// キーフレーム編集を提供する。
-    Keyframeable,
+    Keyframeable: "keyframeable", Some("get_keyframes"), Process;
     /// メディアソースファイルパスを提供する（マップ型プロパティのメンバーとして）。
-    MediaSource,
+    MediaSource: "media-source", None, Evaluate;
     /// メディアオフセット（ティック単位のソース時間オフセット）を提供する（マップ型プロパティのメンバーとして）。
-    MediaOffsetProvider,
+    MediaOffsetProvider: "media-offset-provider", None, Evaluate;
     /// ドラッグドロップでファイルパスを書き込む宛先メンバー。
     /// コンポーネントが提供する能力ではなく、GUI からの入力を受け付けるマーカーとして使用する。
-    Droppable,
-}
-
-impl ComponentCapability {
-    /// 小文字の kebab-case 文字列表現を返す（API / TOML 向け）。
-    ///
-    /// 例: `FrameProvider` → `"frame-provider"`。
-    pub fn as_str(&self) -> String {
-        match self {
-            ComponentCapability::FrameProvider => "frame-provider".to_string(),
-            ComponentCapability::AudioProvider => "audio-provider".to_string(),
-            ComponentCapability::Transformable => "transformable".to_string(),
-            ComponentCapability::TimelinePositionable => "timeline-positionable".to_string(),
-            ComponentCapability::Prefetchable => "prefetchable".to_string(),
-            ComponentCapability::Keyframeable => "keyframeable".to_string(),
-            ComponentCapability::MediaSource => "media-source".to_string(),
-            ComponentCapability::MediaOffsetProvider => "media-offset-provider".to_string(),
-            ComponentCapability::Droppable => "droppable".to_string(),
-        }
-    }
-
-    /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
-    ///
-    /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
-    /// 例: `FrameProvider` → `"render_frame"`、`Prefetchable` → `"prefetch"`。
-    pub fn standard_fn(&self) -> Option<&'static str> {
-        match self {
-            ComponentCapability::FrameProvider => Some("render_frame"),
-            ComponentCapability::AudioProvider => Some("render_audio"),
-            ComponentCapability::Transformable => Some("get_transform"),
-            ComponentCapability::TimelinePositionable => Some("get_timeline_position"),
-            ComponentCapability::Prefetchable => Some("prefetch"),
-            ComponentCapability::Keyframeable => Some("get_keyframes"),
-            ComponentCapability::MediaSource => None,
-            ComponentCapability::MediaOffsetProvider => None,
-            ComponentCapability::Droppable => None,
-        }
-    }
-
-    /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
-    ///
-    /// `Scheduler` はこのタイミング順に標準関数を呼び出します。
-    /// 順序: `Prepare` < `Prefetch` < `Evaluate` < `Process` < `Finalize`。
-    pub fn hook_timing(&self) -> ComponentHook {
-        match self {
-            ComponentCapability::Prefetchable => ComponentHook::Prefetch,
-            ComponentCapability::FrameProvider => ComponentHook::Evaluate,
-            ComponentCapability::AudioProvider => ComponentHook::Evaluate,
-            ComponentCapability::Transformable => ComponentHook::Process,
-            ComponentCapability::TimelinePositionable => ComponentHook::Process,
-            ComponentCapability::Keyframeable => ComponentHook::Process,
-            ComponentCapability::MediaSource => ComponentHook::Evaluate,
-            ComponentCapability::MediaOffsetProvider => ComponentHook::Evaluate,
-            ComponentCapability::Droppable => ComponentHook::Evaluate,
-        }
-    }
-}
-
-impl FromStr for ComponentCapability {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "frame-provider" => ComponentCapability::FrameProvider,
-            "audio-provider" => ComponentCapability::AudioProvider,
-            "transformable" => ComponentCapability::Transformable,
-            "timeline-positionable" => ComponentCapability::TimelinePositionable,
-            "prefetchable" => ComponentCapability::Prefetchable,
-            "keyframeable" => ComponentCapability::Keyframeable,
-            "media-source" => ComponentCapability::MediaSource,
-            "media-offset-provider" => ComponentCapability::MediaOffsetProvider,
-            "droppable" => ComponentCapability::Droppable,
-            other => anyhow::bail!("unknown component capability `{other}`"),
-        })
-    }
+    Droppable: "droppable", None, Evaluate;
 }
 
 pub mod parse;
