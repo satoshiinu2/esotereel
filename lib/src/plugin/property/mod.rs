@@ -23,7 +23,7 @@ use crate::plugin::{
 ///
 /// 文字列表現（TOML/API 側）は小文字の kebab-case を用いる
 /// （例: `frame-provider`, `prefetchable`）。
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ComponentCapability {
     /// 時刻に対応する映像フレームを供給する。
     FrameProvider,
@@ -44,8 +44,6 @@ pub enum ComponentCapability {
     /// ドラッグドロップでファイルパスを書き込む宛先メンバー。
     /// コンポーネントが提供する能力ではなく、GUI からの入力を受け付けるマーカーとして使用する。
     Droppable,
-    /// プラグイン独自の能力。
-    Custom(String),
 }
 
 impl ComponentCapability {
@@ -63,7 +61,6 @@ impl ComponentCapability {
             ComponentCapability::MediaSource => "media-source".to_string(),
             ComponentCapability::MediaOffsetProvider => "media-offset-provider".to_string(),
             ComponentCapability::Droppable => "droppable".to_string(),
-            ComponentCapability::Custom(s) => s.clone(),
         }
     }
 
@@ -71,7 +68,6 @@ impl ComponentCapability {
     ///
     /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
     /// 例: `FrameProvider` → `"render_frame"`、`Prefetchable` → `"prefetch"`。
-    /// `Custom` の場合は `None`（従来の hooks 仕組みは廃止）。
     pub fn standard_fn(&self) -> Option<&'static str> {
         match self {
             ComponentCapability::FrameProvider => Some("render_frame"),
@@ -83,7 +79,6 @@ impl ComponentCapability {
             ComponentCapability::MediaSource => None,
             ComponentCapability::MediaOffsetProvider => None,
             ComponentCapability::Droppable => None,
-            ComponentCapability::Custom(_) => None,
         }
     }
 
@@ -102,7 +97,6 @@ impl ComponentCapability {
             ComponentCapability::MediaSource => ComponentHook::Evaluate,
             ComponentCapability::MediaOffsetProvider => ComponentHook::Evaluate,
             ComponentCapability::Droppable => ComponentHook::Evaluate,
-            ComponentCapability::Custom(_) => ComponentHook::Evaluate,
         }
     }
 }
@@ -121,7 +115,7 @@ impl FromStr for ComponentCapability {
             "media-source" => ComponentCapability::MediaSource,
             "media-offset-provider" => ComponentCapability::MediaOffsetProvider,
             "droppable" => ComponentCapability::Droppable,
-            other => ComponentCapability::Custom(other.to_string()),
+            other => anyhow::bail!("unknown component capability `{other}`"),
         })
     }
 }
