@@ -1,123 +1,34 @@
-# プロパティのドロップターゲット設計メモ
+# プロパティのファイルドロップ設計
 
 ## 概要
 
-タイムラインへの動画ファイルドラッグドロップ時に、ドロップされたファイルパスをどのプロパティメンバーに書き込むかを、`ComponentCapability::Droppable` によって解決する設計。プロパティの**識別**は `member_capabilities` マップ内の `Droppable` 能力で行い、実際のプロパティ**書き込み**は `guihlp` 側で `AddClip` コマンドのプロパティ初期化時に行う。
+ファイルドロップ時、GUI はパスを含む `AddClipFromFile` をサーバーへ送ります。サーバーはクリップ定義から `FileDropHandler` を持つコンポーネントを解決して `handle_file_drop(source_path)` を呼び出し、戻り値のプロパティを検証して初期値に適用します。その後は通常の `AddClip` として処理します。
 
-## 背景と問題
+プロパティの初期値はプラグインが決め、検証・適用とクリップ作成はサーバーが担当します。プラグインは既存プロパティを直接変更しません。
 
-現在の `guihlp/src/commands.rs` `req_cmd_add_clip_with_source` は、`std:video:media` / `"source"` をハードコードしている。
+## Handler の契約
 
-```rust
-let media_key = NamespacedID::parse("std:video:media")?;
-media_map.insert("source".to_string(), FieldValue::String(source_path.to_string()));
-```
+Handler はプロパティ ID をキー、プロパティ値を値とする Rhai map を返します。キーは `NamespacedID` の文字列表現です。値は `FieldValue` に変換可能な値で、グループ／マップの部分指定もできます。指定しなかったプロパティやメンバーはスキーマのデフォルト値を保ちます。
 
-これは既存設計 (`docs/architecture/clip-properties.md` 行9) に違反：
-
-> プロパティID（`std:video:media` など）をコード中にハードコードしてはならない。
-
-また `ComponentCapability::MediaSource` をドロップ書き込み先に流用するのは不適切。`MediaSource` は「レンダラーが動画ソースを**読み取る**」ための能力であり、「GUI からドロップされたファイルパスを受け取ってプロパティを**書き込む**」責務とは別物。能力に違う仕事をさせるべきではない。
-
-## 方針：Droppable 能力による識別
-
-### 1. ドロップターゲットの識別（スキーマ側）
-
-`ComponentCapability::Droppable` を `member_capabilities` マップの値として使用し、どのプロパティメンバーがドラッグドロップ書き込み宛先かを宣言する。
-
-`PropertySchema` の `member_capabilities` フィールド（既存）：
-
-```rust
-pub struct PropertySchema {
-    // ...既存フィールド...
-    #[serde(default)]
-    pub member_capabilities: BTreeMap<String, ComponentCapability>,
+```rhai
+fn handle_file_drop(source_path) {
+    #{
+        "std:video:media": #{
+            source: source_path,
+        },
+    }
 }
 ```
 
-`Droppable` は `ComponentCapability` enum のバリアントとして定義済み（`as_str()` → `"droppable"`、`from_str()` → `"droppable"`、`standard_fn()` → `None`、`hook_timing()` → `ComponentHook::Evaluate`）。
+Video コンポーネントの定義では `file-drop-handler` を宣言し、`script` に対応するコンポーネントスクリプトを指定します。標準 Video のソースメンバーは引き続き `media-source` capability で宣言し、レンダラーが値を読むために使います。`media-offset-provider` も編集・描画時に参照する能力であり、ドロップ時の書き込み先指定ではありません。
 
-TOML 宣言例：
+## サーバー側の検証
 
-```toml
-[[components]]
-id = "video"
-properties = [
-  { key = "video:media", label = "Media",
-    kind = { type = "group", reference = "video:media" },
-    fields = [
-      { key = "source", label = "Source", kind = { type = "string" }, default = "" },
-      { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
-    ],
-    capability = "frame-provider",
-    member_capabilities = { source = "droppable", source_offset = "media-offset-provider" },
-    default = { source = "", source_offset = "0" } },
-]
-```
+`Scheduler::file_drop_properties` は、コンポーネント階層内に Handler がちょうど一つあることを要求します。戻り値に含まれるプロパティ ID はクリップ定義で宣言済みでなければなりません。グループ／マップに未知のメンバーが含まれる場合や、戻り値の型がデフォルト値と合わない場合はエラーにします。空の戻り値も失敗として扱います。
 
-`member_capabilities` の `source` は `"droppable"`（GUI からのドロップ書き込み宛先マーカー）。`source_offset` は `"media-offset-provider"`（レンダラー用読み取り能力）。これにより「ドロップ書き込み宛先」と「レンダラー読み取り能力」が能力レベルで分離される。
+これにより、`Droppable` のような書き込み先専用 capability は不要です。Handler が設定するプロパティと値を返すため、プラグインごとに異なる初期化ロジックを表現できます。
 
-### 2. プロパティ書き込み（guihlp 側）
+## 現在の制約
 
-識別されたドロップターゲットメンバーへのファイルパス書き込みは、`guihlp/src/commands.rs` の `req_cmd_add_clip_with_source` で `AddClip` コマンドのプロパティ初期化時に行う。
-
-### コマンド側の解決ロジック
-
-```rust
-// member_capabilities 内の ComponentCapability::Droppable なメンバーを探す
-let (prop_key, member_key) = property_schema
-    .iter()
-    .find_map(|prop| {
-        prop.member_capabilities.iter()
-            .find(|(_, cap)| **cap == ComponentCapability::Droppable)
-            .map(|(member, _)| (prop.key.clone(), member.clone()))
-    })
-    .ok_or_else(|| anyhow::anyhow!("no drop-target property found"))?;
-```
-
-見つかった `(prop_key, member_key)` に対して、`source_path` を `FieldValue::String` としてプロパティマップに挿入する。
-
-## Map vs Group について
-
-`video:media` は `known_keys = ["source", "source_offset"]` で固定キーであり、実行時に動的にキーが増えることはない。Map より **Group** の方が自然。
-
-| 比較項目 | Map | Group |
-|---|---|---|
-| キーの固定性 | 動的追加可能 | 固定（スキーマで定義） |
-| 値の型 | すべて同じ `value_kind` | メンバーごとに異なる型を指定可能 |
-| スキーマ厳格さ | `known_keys` で制限（緩やか） | フィールド定義で厳格 |
-| GUI 表示 | メンバーを動的に列挙 | フィールド定義から静的に列挙 |
-| スキーマ上の入れ子 | フラット | フィールド定義で入れ子構造を表現可能 |
-
-Group の方が「スキーマ上は入れ子、ランタイムはフラット」という設計方針と整合する。`video:media` を Map から Group に変更する。
-
-※ `PropertySchema::group()` はランタイムデフォルトを `FieldValue::Map` で構築するため、ランタイム値構造は Map と互換。
-
-## ランタイムのフラット化と入れ子
-
-スキーマ上は入れ子（グループ/マップ）で定義できるが、ランタイムのプロパティストレージはフラットに保つ。
-
-- スキーマ: `std:video/media`（Group）→ `source`, `source_offset`
-- ランタイム: フラットなキー値ストア。パスは `PropertyPath` (`std:video/media/source`) で指定
-- マングリング: `PropertyPath` のセグメントを `/` で連結した文字列を内部キーとして使用、または `NamespacedID` の階層をそのまま保持
-
-内部マングリングの仕様をここで決めておくことが重要。通信時のキー型は `NamespacedID` から `PropertyPath` に移行予定（既存設計 doc 行112-113 参照）。
-
-## 実装ステップ
-
-1. **`lib/src/plugin/property/mod.rs`** — `ComponentCapability::Droppable` バリアントを追加、`as_str()` / `from_str()` で `"droppable"` を処理、`PropertySchema` から `drop_target_members` フィールドを削除
-2. **`lib/src/plugin/property/parse.rs`** — `PropertySchemaRaw` から `drop_target_members` フィールドを削除
-3. **`plugins/std/components/video.toml`** — `video:media` を Map から Group に変更、`member_capabilities = { source = "droppable", source_offset = "media-offset-provider" }` を設定、`drop_target_members` を削除
-4. **`guihlp/src/commands.rs`** — `req_cmd_add_clip_with_source` をハードコードから `member_capabilities` 内の `ComponentCapability::Droppable` ベースの逆引きに変更
-5. **全テスト構築サイト** — `drop_target_members: BTreeMap::new(),` を削除
-6. **ビルド確認** — `cargo build` でコンパイル通るか確認
-7. **GUI ドラッグドロップ動作確認** — 既に実装済みの `drop.cpp` / `TimelineCanvasWidget.cpp` を動かす
-
-## 関連ファイル
-
-- `guihlp/src/commands.rs` - `req_cmd_add_clip_with_source` のドロップターゲット解決部分
-- `guihlp/include/esotereel_gui_helper.h` - cbindgen 生成ヘッダ
-- `lib/src/plugin/property/mod.rs` - `ComponentCapability` enum、`PropertySchema` 定義
-- `lib/src/plugin/property/parse.rs` - `PropertySchemaRaw` 定義、`FieldTypeKind::from_toml_value`
-- `plugins/std/components/video.toml` - `video:media` のスキーマ定義
-- `docs/architecture/clip-properties.md` - 既存のプロパティ設計
+- `AddClipFromFile` はファイルパスをサーバーへ送ります。リモートクライアントからのアップロードはまだこの経路に接続されていません。
+- `FieldValue::Color` や `FieldValue::Path` などの一部の値形式は、Rhai 戻り値との型変換を今後拡張する必要があります。

@@ -1,8 +1,5 @@
 use esotereel_lib::{
-    plugin::property::{
-        value::FieldValue,
-        PropertyPath,
-    },
+    plugin::property::{PropertyPath, value::FieldValue},
     project::{
         Project,
         clip::ClipBindingValue,
@@ -108,6 +105,9 @@ pub fn command_to_history(
                 kind_id,
                 properties,
             }
+        }
+        CommandRequest::AddClipFromFile { .. } => {
+            anyhow::bail!("file-drop commands must be resolved by the server before execution")
         }
         CommandRequest::AddLayer {
             parent_folder_id: parent_layer_id,

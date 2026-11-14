@@ -7,3 +7,11 @@ fn render_frame(ctx, props) {
 fn prefetch(ctx, props) {
     // TODO
 }
+
+fn handle_file_drop(source_path) {
+    #{
+        "std:video:media": #{
+            source: source_path,
+        },
+    }
+}

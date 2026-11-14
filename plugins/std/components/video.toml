@@ -2,7 +2,7 @@
 id = "video"
 name = "Video"
 kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable"]
+capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
 editor = "video"
 script = "video.rhai"
 children = ["video-transform"]
@@ -14,7 +14,7 @@ properties = [
       { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
     ],
     capability = "frame-provider",
-    member_capabilities = { source = "droppable", source_offset = "media-offset-provider" },
+    member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
   { key = "video:transform", label = "Transform",
     kind = { type = "map", value_kind = { type = "array", item_kind = { type = "float", step = 0.1 } },

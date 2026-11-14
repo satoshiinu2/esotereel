@@ -31,7 +31,7 @@ pub struct CommonState {
     pub plugin_loader: Arc<RwLock<PluginLoader>>,
 
     /// Rhai スクリプトエンジン。内部サーバー間では共有されず、各ホストが個別に保持。
-    pub script_engine: rhai::Engine,
+    pub script_engine: Arc<rhai::Engine>,
 }
 
 impl CommonState {
@@ -55,7 +55,7 @@ impl CommonState {
             dir: dirs_def,
             stream_state_map: Arc::new(DashMap::new()),
             plugin_loader,
-            script_engine,
+            script_engine: Arc::new(script_engine),
         }
     }
 

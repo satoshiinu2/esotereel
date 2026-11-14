@@ -93,10 +93,8 @@ component_capabilities! {
     MediaSource: "media-source", None, Evaluate;
     /// メディアオフセット（ティック単位のソース時間オフセット）を提供する（マップ型プロパティのメンバーとして）。
     MediaOffsetProvider: "media-offset-provider", None, Evaluate;
-    /// ドラッグドロップでファイルパスを書き込む宛先メンバー。
-    Droppable: "droppable", None, Evaluate;
     /// ファイルのドロップ時に初期プロパティを生成する。
-    FileDropHandler: "file-drop-handler", None, Prepare;
+    FileDropHandler: "file-drop-handler", Some("handle_file_drop"), Prepare;
 }
 
 pub mod parse;

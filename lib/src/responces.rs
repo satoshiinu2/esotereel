@@ -22,9 +22,7 @@ pub enum Response {
     /// 接続テスト用レスポンス。
     Test,
     /// プロジェクト全体のメタ情報。
-    ProjectMeta {
-        timelines: Vec<TimelineMeta>,
-    },
+    ProjectMeta { timelines: Vec<TimelineMeta> },
     /// クリップの更新。
     UpdateClip {
         timeline_id: TimelineId,
@@ -53,8 +51,10 @@ pub enum Response {
     /// Asset の参照登録またはアップロードが完了しました。
     AssetImported { asset_id: String },
     /// Asset の参照登録またはアップロードが失敗しました。
-    AssetImportFailed {
-        asset_id: String,
+    AssetImportFailed { asset_id: String, message: String },
+    /// FileDropHandler の実行または戻り値の適用が失敗しました。
+    FileDropFailed {
+        source_path: String,
         message: String,
     },
     /// レイヤーの更新。

@@ -7,7 +7,8 @@ use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        NamespacedID, PluginLoader, property::ComponentCapability, script::api::PluginActionContext,
+        NamespacedID, PluginLoader, clip::component::Scheduler, property::ComponentCapability,
+        script::api::PluginActionContext,
     },
     project::{
         Project,
@@ -106,7 +107,11 @@ pub fn on_request_receive(
             let cmd = Response::ProjectMeta { timelines };
             network.send(client_id, &cmd);
         }
-        ArchivedRequest::RegisterAssetReference { asset_id, path, add_clip } => {
+        ArchivedRequest::RegisterAssetReference {
+            asset_id,
+            path,
+            add_clip,
+        } => {
             let network = {
                 let state_guard = state
                     .lock()
@@ -116,7 +121,12 @@ pub fn on_request_receive(
             let _ = add_clip;
             let msg = format!("asset reference registered: {} -> {}", asset_id, path);
             log::info!("{msg}");
-            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+            network.send(
+                client_id,
+                &Response::AssetImported {
+                    asset_id: asset_id.to_string(),
+                },
+            );
         }
         ArchivedRequest::BeginAssetUpload {
             asset_id,
@@ -131,7 +141,12 @@ pub fn on_request_receive(
             };
             let _ = file_name;
             let _ = total_size;
-            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+            network.send(
+                client_id,
+                &Response::AssetImported {
+                    asset_id: asset_id.to_string(),
+                },
+            );
         }
         ArchivedRequest::AssetUploadChunk { asset_id, .. } => {
             let network = {
@@ -140,7 +155,12 @@ pub fn on_request_receive(
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 Arc::clone(&state_guard.network)
             };
-            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+            network.send(
+                client_id,
+                &Response::AssetImported {
+                    asset_id: asset_id.to_string(),
+                },
+            );
         }
         ArchivedRequest::FinishAssetUpload { asset_id, .. } => {
             let network = {
@@ -149,12 +169,17 @@ pub fn on_request_receive(
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
                 Arc::clone(&state_guard.network)
             };
-            network.send(client_id, &Response::AssetImported { asset_id: asset_id.to_string() });
+            network.send(
+                client_id,
+                &Response::AssetImported {
+                    asset_id: asset_id.to_string(),
+                },
+            );
         }
         ArchivedRequest::Command { commands } => {
             // 必要な Arc を取り出したら State ロックは即座に解放し、
             // コマンド実行中は State を保持しない（lock-order.md）
-            let (project_arc, network, histories_arc, loader_arc) = {
+            let (project_arc, network, histories_arc, loader_arc, script_engine) = {
                 let state_guard = state
                     .lock()
                     .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
@@ -163,6 +188,7 @@ pub fn on_request_receive(
                     Arc::clone(&state_guard.network),
                     Arc::clone(&state_guard.histories),
                     Arc::clone(&state_guard.common.plugin_loader),
+                    state_guard.common.script_engine.clone(),
                 )
             };
             let mut project_guard = project_arc.write_or_err()?;
@@ -174,9 +200,44 @@ pub fn on_request_receive(
 
             // 拒否レスポンスはその場で送らず、全ガード解放後にまとめて送る
             let mut pending_rejections: Vec<Response> = Vec::new();
+            let mut pending_file_drop_failures: Vec<Response> = Vec::new();
 
             for (timeline_id, command) in commands.iter() {
                 let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
+                let command = match command {
+                    CommandRequest::AddClipFromFile {
+                        layer_id,
+                        position,
+                        duration,
+                        kind_id,
+                        source_path,
+                    } => {
+                        let properties = match Scheduler::new().file_drop_properties(
+                            &script_engine,
+                            &loader,
+                            &kind_id,
+                            &source_path,
+                        ) {
+                            Ok(properties) => properties,
+                            Err(error) => {
+                                log::error!("File drop handler failed: {error:#}");
+                                pending_file_drop_failures.push(Response::FileDropFailed {
+                                    source_path,
+                                    message: format!("{error:#}"),
+                                });
+                                continue;
+                            }
+                        };
+                        CommandRequest::AddClip {
+                            layer_id,
+                            position,
+                            duration,
+                            kind_id,
+                            properties,
+                        }
+                    }
+                    command => command,
+                };
 
                 log::debug!(target:"core_packet_request","request: {:?}", command);
 
@@ -245,6 +306,9 @@ pub fn on_request_receive(
             drop(project_guard);
 
             for resp in &pending_rejections {
+                network.send(client_id, resp);
+            }
+            for resp in &pending_file_drop_failures {
                 network.send(client_id, resp);
             }
             network.notify_dirty();
@@ -589,9 +653,7 @@ fn resolve_offset_member_key(
 ) -> Option<String> {
     match command {
         CommandHistory::ClipsResize { clips } => clips.first().and_then(|ctx| {
-            let clip = project
-                .timeline_ref(timeline_id)?
-                .get_clip(ctx.clip_id)?;
+            let clip = project.timeline_ref(timeline_id)?.get_clip(ctx.clip_id)?;
             let runtime_def = loader.resolve_component_definition(&clip.kind_id).ok()?;
             let comp = runtime_def
                 .components

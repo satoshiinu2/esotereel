@@ -23,7 +23,7 @@ properties = [
       { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
     ],
     capability = "frame-provider",
-    member_capabilities = { source = "droppable", source_offset = "media-offset-provider" },
+    member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
   { key = "video:transform", label = "Transform",
     kind = { type = "map", value_kind = { type = "array", item_kind = { type = "float", step = 0.1 } },
@@ -69,7 +69,7 @@ capability は「コンポーネントが何を提供できるか」の宣言で
 | `keyframeable` | キーフレーム編集を提供する | `get_keyframes` | Process |
 | `media-source` | メディアソースのファイルパスを提供する（主にマップ型プロパティのメンバーに対して使う） | ― | Evaluate |
 | `media-offset-provider` | メディアオフセット（ソース時間オフセット）を提供する（主にメンバーに対して使う） | ― | Evaluate |
-| `droppable` | ドラッグ & ドロップでファイルパスを書き込む宛先メンバーであることを示すマーカー | ― | Evaluate |
+| `file-drop-handler` | ファイルドロップ時に初期プロパティを返す | `handle_file_drop` | Prepare |
 
 - **標準関数がある capability を宣言した場合、スクリプトに対応する関数を実装する必要があります**。未実装だとスケジューラの呼び出しがエラーになり、そのクリップは描画されません
 - 標準関数のない capability は、プロパティやメンバーへの目印として使います（第 5 節の `capability` / `member_capabilities`）
@@ -159,7 +159,7 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 `plugins/std` の video コンポーネントの例:
 
 - プロパティ `video:media`（group）に `capability = "frame-provider"` を宣言し、このプロパティがメディア情報の提供者であることを示す
-- そのメンバーには `member_capabilities = { source = "droppable", source_offset = "media-offset-provider" }` を宣言する
+- そのメンバーには `member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }` を宣言する
 - プロパティ `video:transform`（map）には `capability = "transformable"` を宣言する
 
 レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `member_capabilities` の `media-source` から解決され、宣言がない場合はメンバー名 `source` にフォールバックします。同様にオフセットは `media-offset-provider` から解決され、なければ `source_offset` にフォールバックします。

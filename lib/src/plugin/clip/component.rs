@@ -1,15 +1,15 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::Context;
 use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
-use crate::plugin::{NamespacedID, PluginLoader};
 pub use crate::plugin::property::{
-    parse::PropertySchemaRaw, value::FieldValue, ComponentCapability, PropertySchema,
+    ComponentCapability, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
 };
 use crate::plugin::script::api::PluginRenderContext;
 use crate::plugin::script::bridge::field_values_to_rhai_map;
+use crate::plugin::{NamespacedID, PluginLoader};
 use crate::project::clip::ClipBindingValue;
 
 /// コンポーネントが実行する処理のタイミング（フック）。
@@ -65,10 +65,7 @@ impl ComponentDefinition {
     ///
     /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider`
     /// 能力を宣言している場合、そのメンバーのキーを返す。
-    pub fn member_key_by_capability(
-        &self,
-        capability: &ComponentCapability,
-    ) -> Option<&String> {
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
         self.properties
             .iter()
             .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
@@ -245,8 +242,12 @@ pub(crate) struct ComponentDefinitionRaw {
 
 impl ComponentDefinitionRaw {
     pub fn resolve(self, plugin_id: &str) -> anyhow::Result<ComponentDefinition> {
-        let id = NamespacedID::new(plugin_id, &self.id)
-            .with_context(|| format!("invalid component id `{}` in plugin `{}`", self.id, plugin_id))?;
+        let id = NamespacedID::new(plugin_id, &self.id).with_context(|| {
+            format!(
+                "invalid component id `{}` in plugin `{}`",
+                self.id, plugin_id
+            )
+        })?;
         let kind = resolve_namespaced(&self.kind, plugin_id)
             .with_context(|| format!("invalid component kind `{}`", self.kind))?;
         let mut capabilities = BTreeSet::new();
@@ -290,7 +291,11 @@ pub fn parse_component_definitions(
     }
 
     let parsed: ComponentsFile = toml::from_str(text).map_err(|e| {
-        anyhow::anyhow!("failed to parse component definitions TOML in {}: {}", plugin_id, e)
+        anyhow::anyhow!(
+            "failed to parse component definitions TOML in {}: {}",
+            plugin_id,
+            e
+        )
     })?;
 
     let mut map = HashMap::new();
@@ -333,6 +338,91 @@ impl Scheduler {
         Ok(())
     }
 
+    /// FileDropHandler の戻り値を初期プロパティとして適用します。
+    pub fn file_drop_properties(
+        &self,
+        engine: &Engine,
+        loader: &PluginLoader,
+        kind_id: &NamespacedID,
+        source_path: &str,
+    ) -> anyhow::Result<HashMap<NamespacedID, ClipBindingValue>> {
+        let definition = loader.resolve_component_definition(kind_id)?;
+        let handlers: Vec<_> = definition
+            .components
+            .iter()
+            .filter(|component| {
+                component
+                    .capabilities
+                    .contains(&ComponentCapability::FileDropHandler)
+            })
+            .collect();
+        let [handler] = handlers.as_slice() else {
+            anyhow::bail!(
+                "clip kind `{}` must define exactly one file-drop-handler capability",
+                kind_id.full()
+            );
+        };
+
+        let fn_name = ComponentCapability::FileDropHandler
+            .standard_fn()
+            .context("file-drop-handler capability has no function mapping")?;
+        let script = loader.get_component_script(&handler.id).with_context(|| {
+            format!(
+                "file-drop-handler component `{}` has no script",
+                handler.id.full()
+            )
+        })?;
+        let result = script
+            .call::<Dynamic>(engine, fn_name, (source_path.to_owned(),))
+            .with_context(|| format!("file-drop-handler `{}` failed", handler.id.full()))?;
+        let FieldValue::Map(returned_properties) = dynamic_to_field_value(result)? else {
+            anyhow::bail!(
+                "file-drop-handler `{}` must return a map of property IDs to values",
+                handler.id.full()
+            );
+        };
+
+        let schemas: HashMap<_, _> = definition
+            .components
+            .iter()
+            .flat_map(|component| component.properties.iter())
+            .map(|schema| (schema.key.clone(), schema))
+            .collect();
+        let mut properties = ClipBindingValue::default_properties(
+            &schemas
+                .values()
+                .map(|schema| (*schema).clone())
+                .collect::<Vec<_>>(),
+        );
+        if returned_properties.is_empty() {
+            anyhow::bail!(
+                "file-drop-handler `{}` returned no property values",
+                handler.id.full()
+            );
+        }
+
+        for (property_id, value) in returned_properties {
+            let property_id = NamespacedID::parse(&property_id).with_context(|| {
+                format!("invalid property ID returned by `{}`", handler.id.full())
+            })?;
+            let schema = schemas.get(&property_id).with_context(|| {
+                format!(
+                    "file-drop-handler `{}` returned undeclared property `{property_id}`",
+                    handler.id.full()
+                )
+            })?;
+            let Some(ClipBindingValue::Static(default_value)) = properties.get_mut(&property_id)
+            else {
+                anyhow::bail!(
+                    "default value for property `{property_id}` is missing or unsupported"
+                );
+            };
+            merge_field_value(default_value, value, &schema.key.to_string())?;
+        }
+
+        Ok(properties)
+    }
+
     fn run_component(
         &self,
         engine: &Engine,
@@ -347,11 +437,8 @@ impl Scheduler {
         };
 
         // コンポーネントが宣言したプロパティだけを抽出して渡す（カプセル化）。
-        let component_prop_keys: HashSet<NamespacedID> = component
-            .properties
-            .iter()
-            .map(|p| p.key.clone())
-            .collect();
+        let component_prop_keys: HashSet<NamespacedID> =
+            component.properties.iter().map(|p| p.key.clone()).collect();
         let component_props: HashMap<NamespacedID, ClipBindingValue> = instance
             .properties
             .iter()
@@ -364,6 +451,9 @@ impl Scheduler {
         // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
         let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
         for cap in &component.capabilities {
+            if *cap == ComponentCapability::FileDropHandler {
+                continue;
+            }
             if let Some(fn_name) = cap.standard_fn() {
                 calls.push((cap.hook_timing(), fn_name));
             }
@@ -384,8 +474,113 @@ impl Scheduler {
     }
 }
 
+fn merge_field_value(
+    default: &mut FieldValue,
+    returned: FieldValue,
+    property_path: &str,
+) -> anyhow::Result<()> {
+    match (default, returned) {
+        (FieldValue::Map(default_values), FieldValue::Map(returned_values)) => {
+            for (key, returned_value) in returned_values {
+                let default_value = default_values.get_mut(&key).with_context(|| {
+                    format!("handler returned undeclared field `{property_path}/{key}`")
+                })?;
+                merge_field_value(
+                    default_value,
+                    returned_value,
+                    &format!("{property_path}/{key}"),
+                )?;
+            }
+        }
+        (FieldValue::Array(default_values), FieldValue::Array(returned_values)) => {
+            if let Some(default_item) = default_values.first() {
+                for (index, returned_item) in returned_values.iter().cloned().enumerate() {
+                    let mut expected_item = default_item.clone();
+                    merge_field_value(
+                        &mut expected_item,
+                        returned_item,
+                        &format!("{property_path}/{index}"),
+                    )?;
+                }
+            }
+            *default_values = returned_values;
+        }
+        (FieldValue::Bool(default_value), FieldValue::Bool(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (FieldValue::Int(default_value), FieldValue::Int(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (FieldValue::Float(default_value), FieldValue::Float(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (FieldValue::Enum(default_value), FieldValue::Enum(returned_value))
+        | (FieldValue::String(default_value), FieldValue::String(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (FieldValue::Path(default_value), FieldValue::Path(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (FieldValue::Color(default_value), FieldValue::Color(returned_value)) => {
+            *default_value = returned_value;
+        }
+        (default, returned) => anyhow::bail!(
+            "handler returned incompatible value for `{property_path}`: expected {}, got {}",
+            field_value_kind(default),
+            field_value_kind(&returned)
+        ),
+    }
+    Ok(())
+}
+
+fn field_value_kind(value: &FieldValue) -> &'static str {
+    match value {
+        FieldValue::Bool(_) => "bool",
+        FieldValue::Int(_) => "int",
+        FieldValue::Float(_) => "float",
+        FieldValue::Enum(_) => "enum",
+        FieldValue::String(_) => "string",
+        FieldValue::Path(_) => "path",
+        FieldValue::Color(_) => "color",
+        FieldValue::Array(_) => "array",
+        FieldValue::Map(_) => "map",
+    }
+}
+
+fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
+    if let Some(value) = value.clone().try_cast::<bool>() {
+        return Ok(FieldValue::Bool(value));
+    }
+    if let Some(value) = value.clone().try_cast::<i64>() {
+        return Ok(FieldValue::Int(value));
+    }
+    if let Some(value) = value.clone().try_cast::<f64>() {
+        return Ok(FieldValue::Float(value));
+    }
+    if let Some(value) = value.clone().try_cast::<String>() {
+        return Ok(FieldValue::String(value));
+    }
+    if let Some(values) = value.clone().try_cast::<rhai::Array>() {
+        return values
+            .into_iter()
+            .map(dynamic_to_field_value)
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map(FieldValue::Array);
+    }
+    if let Some(values) = value.try_cast::<rhai::Map>() {
+        return values
+            .into_iter()
+            .map(|(key, value)| Ok((key.to_string(), dynamic_to_field_value(value)?)))
+            .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()
+            .map(FieldValue::Map);
+    }
+    anyhow::bail!("file-drop-handler returned an unsupported value type")
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::plugin::property::value::FieldTypeKind;
 
@@ -464,9 +659,11 @@ mod tests {
         registry
             .merge_component_definitions(HashMap::from([(id.clone(), def)]))
             .unwrap();
-        assert!(registry
-            .merge_component_definitions(HashMap::from([(id.clone(), make_def("transform"))]))
-            .is_err());
+        assert!(
+            registry
+                .merge_component_definitions(HashMap::from([(id.clone(), make_def("transform"))]))
+                .is_err()
+        );
     }
 
     #[test]
@@ -494,10 +691,22 @@ editor = "transform"
             .get(&NamespacedID::new("std", "video").unwrap())
             .unwrap();
         assert_eq!(video.kind.full(), "std:media-provider");
-        assert!(video.capabilities.contains(&ComponentCapability::FrameProvider));
-        assert!(video.capabilities.contains(&ComponentCapability::Prefetchable));
+        assert!(
+            video
+                .capabilities
+                .contains(&ComponentCapability::FrameProvider)
+        );
+        assert!(
+            video
+                .capabilities
+                .contains(&ComponentCapability::Prefetchable)
+        );
         assert_eq!(
-            video.capabilities.iter().find(|c| matches!(c, ComponentCapability::FrameProvider)).map(|_| "render_frame"),
+            video
+                .capabilities
+                .iter()
+                .find(|c| matches!(c, ComponentCapability::FrameProvider))
+                .map(|_| "render_frame"),
             Some("render_frame")
         );
         assert_eq!(video.editor.as_deref(), Some("video"));
@@ -510,7 +719,11 @@ editor = "transform"
             .get(&NamespacedID::new("std", "video-transform").unwrap())
             .unwrap();
         assert_eq!(transform.kind.full(), "std:transform");
-        assert!(transform.capabilities.contains(&ComponentCapability::Transformable));
+        assert!(
+            transform
+                .capabilities
+                .contains(&ComponentCapability::Transformable)
+        );
     }
 
     #[test]
@@ -532,12 +745,20 @@ properties = [
             .unwrap();
         assert_eq!(video.properties.len(), 2);
 
-        let source = video.properties.iter().find(|p| p.key.full() == "std:source").unwrap();
+        let source = video
+            .properties
+            .iter()
+            .find(|p| p.key.full() == "std:source")
+            .unwrap();
         assert_eq!(source.label, "Source");
         assert!(matches!(source.kind, FieldTypeKind::String));
         assert_eq!(source.default, FieldValue::String(String::new()));
 
-        let volume = video.properties.iter().find(|p| p.key.full() == "std:volume").unwrap();
+        let volume = video
+            .properties
+            .iter()
+            .find(|p| p.key.full() == "std:volume")
+            .unwrap();
         assert_eq!(volume.label, "Volume");
         assert_eq!(volume.default, FieldValue::Float(1.0));
     }
@@ -560,10 +781,7 @@ capabilities = ["my-custom-cap"]
             ComponentCapability::FrameProvider.as_str(),
             "frame-provider"
         );
-        assert_eq!(
-            ComponentCapability::Prefetchable.as_str(),
-            "prefetchable"
-        );
+        assert_eq!(ComponentCapability::Prefetchable.as_str(), "prefetchable");
     }
 
     #[test]
@@ -579,6 +797,92 @@ capabilities = ["my-custom-cap"]
         assert_eq!(
             ComponentCapability::Transformable.standard_fn(),
             Some("get_transform")
+        );
+        assert_eq!(
+            ComponentCapability::FileDropHandler.standard_fn(),
+            Some("handle_file_drop")
+        );
+    }
+
+    #[test]
+    fn file_drop_values_merge_into_defaults_and_reject_unknown_fields() {
+        let mut defaults = FieldValue::Map(std::collections::BTreeMap::from([
+            ("source".to_string(), FieldValue::String(String::new())),
+            (
+                "source_offset".to_string(),
+                FieldValue::String("0".to_string()),
+            ),
+        ]));
+        let returned = FieldValue::Map(std::collections::BTreeMap::from([(
+            "source".to_string(),
+            FieldValue::String("/media/clip.mp4".to_string()),
+        )]));
+
+        merge_field_value(&mut defaults, returned, "std:video:media").unwrap();
+
+        assert_eq!(
+            defaults,
+            FieldValue::Map(std::collections::BTreeMap::from([
+                (
+                    "source".to_string(),
+                    FieldValue::String("/media/clip.mp4".to_string()),
+                ),
+                (
+                    "source_offset".to_string(),
+                    FieldValue::String("0".to_string())
+                ),
+            ]))
+        );
+
+        let unknown_field = FieldValue::Map(std::collections::BTreeMap::from([(
+            "missing".to_string(),
+            FieldValue::String("value".to_string()),
+        )]));
+        assert!(
+            merge_field_value(&mut defaults, unknown_field, "std:video:media")
+                .unwrap_err()
+                .to_string()
+                .contains("undeclared field")
+        );
+    }
+
+    #[test]
+    fn file_drop_handler_returns_property_map() {
+        let engine = Engine::new();
+        let ast = engine
+            .compile(
+                r#"
+                    fn handle_file_drop(source_path) {
+                        #{
+                            "std:video:media": #{
+                                source: source_path,
+                            },
+                        }
+                    }
+                "#,
+            )
+            .unwrap();
+        let script = crate::plugin::script::CompiledScript {
+            ast,
+            available_functions: vec!["handle_file_drop".to_string()],
+        };
+
+        let result = script
+            .call::<Dynamic>(
+                &engine,
+                "handle_file_drop",
+                ("/media/clip.mp4".to_string(),),
+            )
+            .unwrap();
+        let FieldValue::Map(properties) = dynamic_to_field_value(result).unwrap() else {
+            panic!("handler should return a property map");
+        };
+        let FieldValue::Map(media) = properties.get("std:video:media").unwrap() else {
+            panic!("media property should be a map");
+        };
+        assert_eq!(
+            media.get("source"),
+            Some(&FieldValue::String("/media/clip.mp4".to_string()))
         );
     }
 
@@ -630,10 +934,7 @@ capabilities = ["my-custom-cap"]
         };
         registry
             .merge_component_definitions(HashMap::from([
-                (
-                    video.id.clone(),
-                    video,
-                ),
+                (video.id.clone(), video),
                 (decoder.id.clone(), decoder),
                 (frame_buffer.id.clone(), frame_buffer),
                 (transform.id.clone(), transform),
@@ -679,14 +980,13 @@ capabilities = ["my-custom-cap"]
             children: vec![NamespacedID::new("std", "a").unwrap()],
         };
         registry
-            .merge_component_definitions(HashMap::from([
-                (a.id.clone(), a),
-                (b.id.clone(), b),
-            ]))
+            .merge_component_definitions(HashMap::from([(a.id.clone(), a), (b.id.clone(), b)]))
             .unwrap();
-        assert!(registry
-            .resolve_definition(&NamespacedID::new("std", "a").unwrap())
-            .is_err());
+        assert!(
+            registry
+                .resolve_definition(&NamespacedID::new("std", "a").unwrap())
+                .is_err()
+        );
     }
 
     #[test]
@@ -705,9 +1005,11 @@ capabilities = ["my-custom-cap"]
         registry
             .merge_component_definitions(HashMap::from([(root.id.clone(), root)]))
             .unwrap();
-        assert!(registry
-            .resolve_definition(&NamespacedID::new("std", "root").unwrap())
-            .is_err());
+        assert!(
+            registry
+                .resolve_definition(&NamespacedID::new("std", "root").unwrap())
+                .is_err()
+        );
     }
 
     #[test]
@@ -736,7 +1038,7 @@ capabilities = ["my-custom-cap"]
                     default: FieldValue::String("default.mp4".to_string()),
                     capability: None,
                     member_capabilities: BTreeMap::new(),
-                                    },
+                },
                 PropertySchema {
                     key: NamespacedID::new("std", "volume").unwrap(),
                     category: vec![],
@@ -749,13 +1051,12 @@ capabilities = ["my-custom-cap"]
                     default: FieldValue::Float(1.0),
                     capability: None,
                     member_capabilities: BTreeMap::new(),
-                                    },
+                },
             ],
             children: Vec::new(),
         };
 
-        let instance =
-            ClipInstance::new(NamespacedID::new("std", "video").unwrap(), &[video_def]);
+        let instance = ClipInstance::new(NamespacedID::new("std", "video").unwrap(), &[video_def]);
         assert_eq!(instance.properties.len(), 2);
 
         assert!(matches!(
@@ -786,7 +1087,7 @@ capabilities = ["my-custom-cap"]
                 default: FieldValue::String("a".to_string()),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-                            }],
+            }],
             children: Vec::new(),
         };
         let b = ComponentDefinition {
@@ -800,16 +1101,18 @@ capabilities = ["my-custom-cap"]
                 key: NamespacedID::new("std", "prop_b").unwrap(),
                 category: vec![],
                 label: "Prop B".to_string(),
-                kind: FieldTypeKind::Int { min: None, max: None },
+                kind: FieldTypeKind::Int {
+                    min: None,
+                    max: None,
+                },
                 default: FieldValue::Int(42),
                 capability: None,
                 member_capabilities: BTreeMap::new(),
-                            }],
+            }],
             children: Vec::new(),
         };
 
-        let instance =
-            ClipInstance::new(NamespacedID::new("std", "clip").unwrap(), &[a, b]);
+        let instance = ClipInstance::new(NamespacedID::new("std", "clip").unwrap(), &[a, b]);
         assert_eq!(instance.properties.len(), 2);
 
         assert!(matches!(
@@ -892,9 +1195,11 @@ script = "video.rhai"
 
         let mut loader = PluginLoader::new();
         loader.load_additional_plugin(&dir).unwrap();
-        assert!(loader
-            .get_component_script(&NamespacedID::new("sched-test", "video").unwrap())
-            .is_some());
+        assert!(
+            loader
+                .get_component_script(&NamespacedID::new("sched-test", "video").unwrap())
+                .is_some()
+        );
 
         let engine = Engine::new();
         let instance = ClipInstance {
@@ -918,8 +1223,8 @@ script = "video.rhai"
 
         use crate::render::video::MediaFetchCache;
         use dashmap::DashMap;
-        use std::sync::Arc;
         use glam::Mat4;
+        use std::sync::Arc;
         let mut ctx = PluginRenderContext::new(
             0,
             0.0,
@@ -930,7 +1235,10 @@ script = "video.rhai"
         );
         let scheduler = Scheduler::new();
         let result = scheduler.run_clip(&engine, &loader, &instance, &def, &mut ctx);
-        assert!(result.is_ok(), "scheduler should run the Rhai capability function: {result:?}");
+        assert!(
+            result.is_ok(),
+            "scheduler should run the Rhai capability function: {result:?}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

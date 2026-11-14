@@ -81,7 +81,7 @@ video クリップは、次のファイルの組み合わせでできていま�
          { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
        ],
        capability = "frame-provider",
-       member_capabilities = { source = "droppable", source_offset = "media-offset-provider" },
+       member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
        default = { source = "", source_offset = "0" } },
      { key = "photo:transform", label = "Transform",
        kind = { type = "map", value_kind = { type = "array", item_kind = { type = "float", step = 0.1 } },

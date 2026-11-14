@@ -203,10 +203,7 @@ fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f6
 /// 経由で実パスを解決する。それ以外は従来通り生パスをそのまま返す。
 /// UUID 形式だがレジストリに未登録の場合は `None` を返し、存在しないパスを
 /// ストリーム初期化に回さない。
-fn resolve_video_source(
-    source: &str,
-    project: &Arc<RwLock<Option<Project>>>,
-) -> Option<String> {
+fn resolve_video_source(source: &str, project: &Arc<RwLock<Option<Project>>>) -> Option<String> {
     if let Ok(id) = Uuid::parse_str(source) {
         let guard = project.read().ok()?;
         let project = guard.as_ref()?;
@@ -253,10 +250,7 @@ mod tests {
         let project = Arc::new(RwLock::new(Some(Project::new())));
         let unknown = Uuid::new_v4();
         // 未登録のアセットIDは None を返し、存在しないパスを初期化しない
-        assert_eq!(
-            resolve_video_source(&unknown.to_string(), &project),
-            None
-        );
+        assert_eq!(resolve_video_source(&unknown.to_string(), &project), None);
     }
 
     #[test]

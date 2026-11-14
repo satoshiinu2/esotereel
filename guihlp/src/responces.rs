@@ -420,7 +420,13 @@ pub(super) fn on_responce_recveve(
             info!("asset import succeeded: {asset_id}");
         }
         ArchivedResponse::AssetImportFailed { asset_id, message } => {
-            info!("asset import failed: {asset_id}: {message}");
+            log::error!("asset import failed: {asset_id}: {message}");
+        }
+        ArchivedResponse::FileDropFailed {
+            source_path,
+            message,
+        } => {
+            log::error!("file drop failed: {source_path}: {message}");
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
             let (project_arc, _) = project_and_callback(state)?;
@@ -495,8 +501,7 @@ mod lock_order_stress_tests {
         requests::req_fetch_frame,
         settings::settings_get_value,
         state::{
-            ClientStateHandle, client_state_project_lock_read,
-            client_state_project_unlock_read,
+            ClientStateHandle, client_state_project_lock_read, client_state_project_unlock_read,
         },
         stringview::FfiStringView,
     };
@@ -531,7 +536,9 @@ mod lock_order_stress_tests {
     /// on_responce_recveve）でレスポンスを1件処理する。
     fn handle_response(state: &Arc<Mutex<ClientState>>, resp: &Response) {
         let mut serializer = AllocSerializer::<8192>::default();
-        serializer.serialize_value(resp).expect("serialize response");
+        serializer
+            .serialize_value(resp)
+            .expect("serialize response");
         let bytes = serializer.into_serializer().into_inner();
         let archived = rkyv::check_archived_root::<Response>(&bytes).expect("archive check");
         on_responce_recveve(archived, state).expect("response handling must succeed");
@@ -542,12 +549,7 @@ mod lock_order_stress_tests {
         let timeline_id = project.insert_timeline(60.0);
         let metas = project.timelines_meta();
         let layer_id = metas[0].layers[0].id;
-        handle_response(
-            state,
-            &Response::ProjectMeta {
-                timelines: metas,
-            },
-        );
+        handle_response(state, &Response::ProjectMeta { timelines: metas });
         (timeline_id, layer_id)
     }
 
@@ -601,9 +603,7 @@ mod lock_order_stress_tests {
 
                 // ガード保持中に State ロックを取る FFI を呼ぶ
                 let key = "core:log.level";
-                let value = unsafe {
-                    settings_get_value(raw, FfiStringView::from_str(key))
-                };
+                let value = unsafe { settings_get_value(raw, FfiStringView::from_str(key)) };
                 assert!(value.is_ok, "settings_get_value must succeed");
 
                 let unlock = unsafe { client_state_project_unlock_read(guard_ptr) };
@@ -618,8 +618,7 @@ mod lock_order_stress_tests {
         std::thread::spawn(move || {
             let raw = raw_addr as *const ClientStateHandle;
             for _ in 0..100 {
-                let result =
-                    unsafe { req_fetch_frame(raw, timeline_id, 0, 0, 1000) };
+                let result = unsafe { req_fetch_frame(raw, timeline_id, 0, 0, 1000) };
                 assert!(result.is_ok, "req_fetch_frame must succeed");
             }
             let _ = c_tx.send("fetch-frame");

@@ -81,13 +81,9 @@ pub struct ClipResizeHistoryCtx {
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandRequest {
     /// 複数クリップを一括移動します。
-    ClipsMove {
-        clips: Vec<ClipMoveCtx>,
-    },
+    ClipsMove { clips: Vec<ClipMoveCtx> },
     /// 複数クリップを一括リサイズします。
-    ClipsResize {
-        clips: Vec<ClipResizeCtx>,
-    },
+    ClipsResize { clips: Vec<ClipResizeCtx> },
     /// 新しいクリップを追加します。
     AddClip {
         layer_id: LayerId,
@@ -96,6 +92,15 @@ pub enum CommandRequest {
 
         kind_id: NamespacedID,
         properties: HashMap<NamespacedID, ClipBindingValue>,
+    },
+    /// ファイルドロップからクリップを追加します。サーバーがプラグインの
+    /// FileDropHandler を実行してから通常の AddClip に変換します。
+    AddClipFromFile {
+        layer_id: LayerId,
+        position: TimelineTick,
+        duration: TimelineTick,
+        kind_id: NamespacedID,
+        source_path: String,
     },
     /// 新しいレイヤーを追加します。
     AddLayer {
@@ -122,13 +127,9 @@ pub enum CommandRequest {
 #[archive_attr(derive(CheckBytes))]
 pub enum CommandHistory {
     /// クリップ移動の履歴。
-    ClipsMove {
-        clips: Vec<ClipMoveHistoryCtx>,
-    },
+    ClipsMove { clips: Vec<ClipMoveHistoryCtx> },
     /// クリップリサイズの履歴。
-    ClipsResize {
-        clips: Vec<ClipResizeHistoryCtx>,
-    },
+    ClipsResize { clips: Vec<ClipResizeHistoryCtx> },
     /// クリップ追加の履歴。
     AddClip {
         clip_id: Option<ClipId>,
