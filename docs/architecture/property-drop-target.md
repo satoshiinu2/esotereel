@@ -30,5 +30,5 @@ Video コンポーネントの定義では `file-drop-handler` を宣言し、`s
 
 ## 現在の制約
 
-- `AddClipFromFile` はファイルパスをサーバーへ送ります。リモートクライアントからのアップロードはまだこの経路に接続されていません。
+- `AddClipFromFile` はファイルパスをサーバーへ送ります。リモートクライアント向けには、参照登録（`RegisterAssetReference`）とアップロード（`BeginAssetUpload` 〜 `FinishAssetUpload`）のリクエストがあり、サーバー側でプロジェクトの `AssetRegistry` へ登録します。`add_clip` を伴う場合は登録後に同じ FileDropHandler でクリップを追加します。GUI からこれらを開始する導線はまだありません。
 - `FieldValue::Color` や `FieldValue::Path` などの一部の値形式は、Rhai 戻り値との型変換を今後拡張する必要があります。
