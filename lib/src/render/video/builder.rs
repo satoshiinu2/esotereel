@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
@@ -8,7 +9,7 @@ use crate::{
         property::{ComponentCapability, value::FieldValue},
         script::api::PluginRenderContext,
     },
-    project::{Clip, Project},
+    project::{Clip, Project, clip::ShaderStackEntry},
     render::{RenderContext, vertex::Vertex},
 };
 use glam::Mat4;
@@ -23,10 +24,35 @@ pub struct VertexBatch {
     pub transform: Mat4,
 }
 
+/// `build_vertices` の結果です。
+///
+/// `batches` が描画対象の頂点バッチ列、`deformations` がそのうち
+/// シェーダスタックを持つクリップのバッチ範囲と変形入力です。
+/// スタックが空のクリップは `deformations` に現れず、従来どおり描画されます。
+pub struct VertexBuildOutput {
+    pub batches: Vec<VertexBatch>,
+    pub deformations: Vec<ClipDeformation>,
+}
+
+/// クリップ 1 件分の頂点変形入力です。
+///
+/// `batch_range` は `VertexBuildOutput::batches` のうちこのクリップが
+/// 生成した範囲を指します。変形は常にこのフレームで構築された元の
+/// 頂点列を入力とするため、フレームをまたいだ累積は起きません。
+pub struct ClipDeformation {
+    pub batch_range: Range<usize>,
+    /// クリップのメディア時刻（秒）。`core:time` の供給値です。
+    pub media_time: f64,
+    /// クリップのシェーダスタック（適用順）。
+    pub shader_stack: Vec<ShaderStackEntry>,
+}
+
 /// レンダリングコンテキストから頂点バッチを構築します。
 ///
 /// 各レイヤーの実行順序を走査し、有効なレイヤーに配置されたクリップについて
 /// コンポーネントスケジューラを実行し、プラグインから頂点バッチを取得します。
+/// シェーダスタックを持つクリップについては、そのバッチ範囲とメディア時刻を
+/// `VertexBuildOutput::deformations` に記録し、描画側で compute 変形を適用します。
 ///
 /// # 能力ベースプロパティ参照
 ///
@@ -41,8 +67,9 @@ pub struct VertexBatch {
 /// 宣言する能力（`frame-provider`, `prefetchable`, `transformable` 等）に基づき、
 /// 各標準関数（`render_frame`, `prefetch`, `get_transform` …）をフックタイミング順に
 /// 呼び出します。
-pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
+pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
     let mut batches = vec![];
+    let mut deformations = vec![];
 
     for layer in ctx.timeline.iter_execution_order() {
         if !layer.enabled {
@@ -180,13 +207,26 @@ pub fn build_vertices(ctx: &RenderContext) -> Vec<VertexBatch> {
             log::warn!("component scheduler failed for clip {}: {e}", clip.id);
         }
 
+        let batch_start = batches.len();
         let (plugin_batches, requested_paths) = render_ctx.into_parts();
         batches.extend(plugin_batches);
         for path in requested_paths {
             ctx.media_fetch_cache.record_init_request(path);
         }
+
+        // シェーダスタックを持つクリップは、生成したバッチ範囲を変形対象として記録する。
+        if !clip.shader_stack.is_empty() && batches.len() > batch_start {
+            deformations.push(ClipDeformation {
+                batch_range: batch_start..batches.len(),
+                media_time,
+                shader_stack: clip.shader_stack.clone(),
+            });
+        }
     }
-    batches
+    VertexBuildOutput {
+        batches,
+        deformations,
+    }
 }
 
 fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f64 {

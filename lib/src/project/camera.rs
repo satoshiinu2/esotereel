@@ -222,7 +222,7 @@ mod preview_tests {
     #[test]
     fn video_properties_override_legacy_size_and_project_into_view() {
         with_preview(|ctx| {
-            let batches = build_vertices(ctx);
+            let batches = build_vertices(ctx).batches;
             assert_eq!(batches.len(), 1);
             let model = batches[0].transform;
             assert_eq!(
