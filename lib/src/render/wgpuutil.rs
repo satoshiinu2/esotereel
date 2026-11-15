@@ -37,7 +37,7 @@ impl WGpuUtil {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+            required_limits: wgpu::Limits::defaults(),
             memory_hints: Default::default(),
             experimental_features: ExperimentalFeatures::disabled(),
             trace: wgpu::Trace::Off,
