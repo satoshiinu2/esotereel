@@ -2,9 +2,9 @@
 id = "media"
 name = "Media"
 kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
-script = "video.rhai"
+script = "media.rhai"
 properties = [
   { key = "media", label = "Media",
     kind = { type = "group" },
@@ -16,8 +16,3 @@ properties = [
     member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
 ]
-
-[[components.requires]]
-name = "transform"
-capability = "transformable"
-required = true

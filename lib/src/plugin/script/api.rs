@@ -583,6 +583,10 @@ mod render_tests {
             .component_definitions
             .get(&crate::plugin::NamespacedID::new("std", "transform").unwrap())
             .unwrap();
+        let video_component = plugin
+            .component_definitions
+            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .unwrap();
         let fields: Vec<_> = media_component
             .properties
             .iter()
@@ -652,11 +656,16 @@ mod render_tests {
         transform_map.insert("rotation".into(), vec([0.0, 0.0, 0.0]));
         transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
 
-        // Scheduler と同じ経路で props を構築する: media の自プロパティと、
-        // [[requires]] で宣言した transform 依存だけがローカル名で解決できる。
+        // Scheduler と同じ経路で props を構築する: 描画役の video コンポーネントは
+        // 自プロパティを持たず、[[requires]] で宣言した media / transform 依存だけが
+        // ローカル名で解決できる。
         let definition = RuntimeDefinition {
             kind_id: crate::plugin::NamespacedID::new("std", "video").unwrap(),
-            components: vec![media_component.clone(), transform_component.clone()],
+            components: vec![
+                media_component.clone(),
+                transform_component.clone(),
+                video_component.clone(),
+            ],
         };
         let mut instance = ClipInstance {
             kind_id: definition.kind_id.clone(),
@@ -680,7 +689,7 @@ mod render_tests {
         register_render_api(&mut engine);
         let script = plugin
             .component_scripts
-            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
             .unwrap();
         script
             .call::<()>(
@@ -688,7 +697,7 @@ mod render_tests {
                 "render_frame",
                 (
                     context.clone(),
-                    ComponentProps::build(&definition, &instance, media_component).unwrap(),
+                    ComponentProps::build(&definition, &instance, video_component).unwrap(),
                 ),
             )
             .unwrap();
@@ -745,7 +754,7 @@ mod render_tests {
                     "render_frame",
                     (
                         context.clone(),
-                        ComponentProps::build(&definition, &instance, media_component).unwrap(),
+                        ComponentProps::build(&definition, &instance, video_component).unwrap(),
                     ),
                 )
                 .unwrap();

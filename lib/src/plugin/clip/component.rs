@@ -587,7 +587,7 @@ impl Scheduler {
         };
 
         // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
-        // 依存だけが解決できる（例: media の描画スクリプトは requires 経由で
+        // 依存だけが解決できる（例: video の描画スクリプトは requires 経由で
         // transform の変換プロパティを読む）。
         let props = ComponentProps::build(definition, instance, component)?;
 
