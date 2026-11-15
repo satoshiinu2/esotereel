@@ -13,14 +13,15 @@ video クリップは、次のファイルの組み合わせでできていま�
 | ファイル | 役割 |
 |----------|------|
 | `plugins/std/manifest.toml` | プラグイン `std` の宣言 |
-| `plugins/std/clips/video.toml` | クリップ種別 `std:video` の宣言 |
-| `plugins/std/components/video.toml` | コンポーネント `std:video` と子 `std:video-transform` の定義 |
-| `plugins/std/components/video.rhai` | `std:video` の描画スクリプト |
+| `plugins/std/clips/video.toml` | クリップ種別 `std:video` の宣言（構成コンポーネントの指定を含む） |
+| `plugins/std/components/media.toml` | コンポーネント `std:media` の定義 |
+| `plugins/std/components/transform.toml` | コンポーネント `std:transform` の定義 |
+| `plugins/std/components/video.rhai` | `std:media` の描画スクリプト |
 
 ポイントは 2 つです。
 
-1. **クリップ種別とコンポーネントが同じ ID（`std:video`）で結びつく**こと。プロパティと描画はコンポーネント側が持ちます
-2. **描画は capability ベース**であること。video コンポーネントは `frame-provider` を宣言し、Scheduler が標準関数 `render_frame` を呼びます。スクリプトは `ctx.get_video_texture()` でテクスチャを受け取り、`ctx.render_video(...)` で描画します
+1. **クリップ種別が `components` で構成コンポーネントを宣言する**こと。種別 `std:video` は `components = ["media", "transform"]` と宣言し、プロパティと描画は各コンポーネント側が持ちます。コンポーネントは種別から独立した部品で、他の種別からも再利用できます
+2. **描画は capability ベース**であること。media コンポーネントは `frame-provider` を宣言し、Scheduler が標準関数 `render_frame` を呼びます。スクリプトは `ctx.get_video_texture()` でテクスチャを受け取り、`ctx.render_video(...)` で描画します
 
 ## 2. 新しいプラグインを作る
 
@@ -59,11 +60,12 @@ video クリップは、次のファイルの組み合わせでできていま�
    id = "photo"
    render_script = "render_clip_photo"
    tags = ["media"]
+   components = ["photo", "photo-transform"]
    ```
 
-4. ルートコンポーネントを定義する（`components/photo.toml`）
-   - クリップ種別と**同じローカル ID**（`photo`）にします
-   - メディアを扱うので `frame-provider` と `prefetchable` を宣言し、video と同じパターンでメディアプロパティと変換プロパティを持たせます
+4. コンポーネントを定義する（`components/photo.toml`）
+   - video と同じパターンで、メディア担当（`photo`）と変換担当（`photo-transform`）の 2 つのコンポーネントに分けます。手順 3 の `components` でこの 2 つを宣言しています
+   - メディア担当は `frame-provider` と `prefetchable` を宣言しメディアプロパティを持ち、変換担当は `transformable` を宣言し変換プロパティを持ちます
 
    ```toml
    [[components]]
@@ -75,7 +77,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    script = "photo.rhai"
    properties = [
      { key = "photo:media", label = "Media",
-       kind = { type = "group", reference = "photo:media" },
+       kind = { type = "group" },
        fields = [
          { key = "source", label = "Source", kind = { type = "string" }, default = "" },
          { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
@@ -83,9 +85,22 @@ video クリップは、次のファイルの組み合わせでできていま�
        capability = "frame-provider",
        member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
        default = { source = "", source_offset = "0" } },
+   ]
+
+   [[components]]
+   id = "photo-transform"
+   name = "Photo Transform"
+   kind = "transform"
+   capabilities = ["transformable"]
+   editor = "transform"
+   properties = [
      { key = "photo:transform", label = "Transform",
-       kind = { type = "map", value_kind = { type = "array", item_kind = { type = "float", step = 0.1 } },
-              known_keys = ["position", "rotation", "scale"] },
+       kind = { type = "group" },
+       fields = [
+         { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] },
+         { key = "rotation", label = "Rotation", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] },
+         { key = "scale", label = "Scale", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [1.0, 1.0, 1.0] },
+       ],
        capability = "transformable",
        default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
    ]
@@ -107,7 +122,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    }
    ```
 
-   `props` のキーには**自分のプラグイン ID を含む完全な名前空間付き ID**を使う点に注意してください。
+   `props` のキーには**自分のプラグイン ID を含む完全な名前空間付き ID**を使う点に注意してください。スクリプトにはクリップを構成する全コンポーネントのプロパティが渡されるため、兄弟コンポーネント（この例では `photo-transform`）が宣言したプロパティも参照できます。
 
 6. アプリを起動し、プラグインが読み込まれることを確認する
    - 起動ログに `Loaded X/Y plugins successfully` と `Plugin indices rebuilt` が出力されます
@@ -116,14 +131,14 @@ video クリップは、次のファイルの組み合わせでできていま�
 
 ## 3. よくあるつまずき
 
-- **クリップは追加できるが描画されない**: クリップ種別と同 ID のコンポーネントがあるか、`frame-provider` を宣言しているか、標準関数 `render_frame` を実装しているかを確認してください
+- **クリップは追加できるが描画されない**: クリップ種別の `components` にメディア担当コンポーネントが含まれているか、そのコンポーネントが `frame-provider` を宣言しているか、標準関数 `render_frame` を実装しているかを確認してください
 - **スクリプトの関数が見つからないとエラーになる**: capability に対応する標準関数はすべて実装が必要です。使わない場合も `prefetch` のように空の関数を置いてください
 - **読み込み時に重複エラーになる**: ID は全プラグインを通じて一意です。クリップ種別・コンポーネント・プロパティキー・ツールバーボタンの重複を確認してください
 - **関数の重複エラーになる**: 同じ基準ディレクトリ（`components/` やプラグインルート）配下の `.rhai` ファイルはすべてマージされます。同名・同引数の関数の重複を避けてください
-- **`props` にキーが見つからない**: `props` にはそのコンポーネントが宣言したプロパティだけが、完全な名前空間付き ID をキーとして渡されます
+- **`props` にキーが見つからない**: `props` にはクリップを構成する全コンポーネントのプロパティが、完全な名前空間付き ID をキーとして渡されます。キーがそのクリップ種別の構成コンポーネントのいずれかで宣言されているかを確認してください
 
 ## 4. 次のステップ
 
 - 設定項目を追加したい場合: `settings.toml` に `[[fields]]` を書きます（[スクリプト API リファレンス](script-api.md) 第 5 節）
 - ツールバーボタンを追加したい場合: `toolbars.toml` とボタン用スクリプトを用意します（同第 5 節）
-- コンポーネントを階層化したい場合: `children` で子コンポーネントを参照します（[コンポーネント定義リファレンス](components.md) 第 4 節）
+- コンポーネントを組み合わせたい場合: クリップ種別の `components` にコンポーネント ID を並べて合成します（[コンポーネント定義リファレンス](components.md) 第 4 節）
