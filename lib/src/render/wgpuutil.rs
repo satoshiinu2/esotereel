@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use wgpu::ExperimentalFeatures;
 
-use crate::render::pipeline::WgpuRenderResources;
+use crate::{plugin::shader::ComputeStackRunner, render::pipeline::WgpuRenderResources};
 
 /// wgpu のデバイス・キュー・リソースをまとめたユーティリティ構造体です。
 ///
@@ -17,6 +17,8 @@ pub struct WGpuUtil {
     pub config_height: u32,
     pub resources: WgpuRenderResources,
     pub textures: HashMap<u32, (wgpu::Texture, wgpu::BindGroup)>,
+    /// シェーダスタック実行ランナー。パイプラインキャッシュをフレーム間で保持します。
+    pub compute_runner: ComputeStackRunner,
 }
 
 impl WGpuUtil {
@@ -37,7 +39,7 @@ impl WGpuUtil {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+            required_limits: wgpu::Limits::defaults(),
             memory_hints: Default::default(),
             experimental_features: ExperimentalFeatures::disabled(),
             trace: wgpu::Trace::Off,
@@ -56,6 +58,7 @@ impl WGpuUtil {
             config_height: height,
             resources,
             textures: HashMap::new(),
+            compute_runner: ComputeStackRunner::new(),
         }
     }
 }

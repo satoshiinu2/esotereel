@@ -70,9 +70,13 @@ bool handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event) 
     }
 
     if (canAdd) {
-        canvas->commandQueue
-            .addVideoClipAt(canvas->timelineId, frame, layerId, filePath.toStdString())
-            .unwrap();
+        auto addResult = canvas->commandQueue.addVideoClipAt(canvas->timelineId, frame, layerId,
+                                                             filePath.toStdString());
+        if (addResult.isError()) {
+            auto err = addResult.getError();
+            qWarning() << "TimelineCanvasWidget: addVideoClipAt failed:" << QString::fromStdString(*err);
+            return false;
+        }
         canvas->markRowsDirty();
         canvas->update();
         return true;

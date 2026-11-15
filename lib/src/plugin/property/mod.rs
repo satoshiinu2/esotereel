@@ -132,14 +132,9 @@ pub struct PropertySchema {
 impl PropertySchema {
     /// グループ型（複数フィールドをまとめる）プロパティスキーマを構築します。
     ///
-    /// `reference` はグループを参照する `NamespacedID`、`fields` は子フィールドの一覧です。
-    /// デフォルト値は子フィールドのデフォルトを `Map` として展開します。
-    pub fn group(
-        key: NamespacedID,
-        label: String,
-        reference: NamespacedID,
-        fields: Vec<Self>,
-    ) -> Self {
+    /// `fields` は子フィールドの一覧です。グループはフィールド宣言だけで
+    /// 構成され、デフォルト値は子フィールドのデフォルトを `Map` として展開します。
+    pub fn group(key: NamespacedID, label: String, fields: Vec<Self>) -> Self {
         let default = FieldValue::Map(
             fields
                 .iter()
@@ -150,7 +145,7 @@ impl PropertySchema {
             key,
             category: Vec::new(),
             label,
-            kind: FieldTypeKind::Group { reference, fields },
+            kind: FieldTypeKind::Group { fields },
             default,
             capability: None,
             member_capabilities: BTreeMap::new(),
@@ -478,12 +473,14 @@ mod tests {
         let group = PropertySchema::group(
             NamespacedID::new("std", "style").unwrap(),
             "Style".to_string(),
-            NamespacedID::new("std", "style-ref").unwrap(),
             vec![child],
         );
+        // グループはフィールド宣言だけで構成され、デフォルト値は
+        // 子フィールドのデフォルトを集めた Map になる。
         assert!(matches!(
             group.kind,
-            FieldTypeKind::Group { ref reference, .. } if reference.full() == "std:style-ref"
+            FieldTypeKind::Group { ref fields, .. }
+                if fields.len() == 1 && fields[0].key.full() == "std:font_size"
         ));
         assert!(matches!(
             group.default,
@@ -523,7 +520,6 @@ kind = { type = "string" }
         let group = PropertySchema::group(
             NamespacedID::new("std", "g").unwrap(),
             "Group".to_string(),
-            NamespacedID::new("std", "g-ref").unwrap(),
             vec![inner],
         );
         let leaves = PropertySchema::leaf_fields(&[group]).unwrap();

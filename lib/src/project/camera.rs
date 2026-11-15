@@ -119,7 +119,11 @@ mod preview_tests {
             NamespacedID, PluginLoader, property::value::FieldValue,
             script::api::register_render_api,
         },
-        project::{Timeline, clip::ClipBindingValue, ids::IdGenerator},
+        project::{
+            Timeline,
+            clip::{ClipBindingValue, ShaderStackEntry},
+            ids::IdGenerator,
+        },
         render::{
             RenderContext, render_frame_offscreen,
             video::{MediaFetchCache, builder::build_vertices},
@@ -127,6 +131,7 @@ mod preview_tests {
         },
     };
     use dashmap::DashMap;
+    use std::collections::HashMap;
     use std::sync::{Arc, RwLock};
 
     fn with_preview(test: impl FnOnce(&RenderContext)) {
@@ -139,7 +144,7 @@ mod preview_tests {
             .unwrap();
         let kind = NamespacedID::new("std", "video").unwrap();
         let mut properties =
-            ClipBindingValue::default_properties(loader.get_clip_properties(&kind).unwrap());
+            ClipBindingValue::default_properties(&loader.get_clip_properties(&kind).unwrap());
         // コンポーネントが提供するプロパティはフラットなキーで配置される:
         // std:video:media, std:video:transform など
         let media_value = properties
@@ -222,7 +227,7 @@ mod preview_tests {
     #[test]
     fn video_properties_override_legacy_size_and_project_into_view() {
         with_preview(|ctx| {
-            let batches = build_vertices(ctx);
+            let batches = build_vertices(ctx).batches;
             assert_eq!(batches.len(), 1);
             let model = batches[0].transform;
             assert_eq!(
@@ -257,6 +262,44 @@ mod preview_tests {
             assert_eq!(pixel(0, 0), [26, 26, 26, 255]);
         });
     }
+    #[test]
+    #[ignore = "requires a wgpu adapter; run explicitly to verify compute deform reaches the render loop"]
+    fn video_preview_with_shader_stack_deforms_pixels() {
+        with_preview(|ctx| {
+            let mut gpu = WGpuUtil::new(64, 64);
+            let target = OffscreenTarget::new(&gpu.device, gpu.format, 64, 64);
+
+            // スタック無し（従来どおり）の描画を基準にする。
+            render_frame_offscreen(&mut gpu, &target, ctx).unwrap();
+            let baseline = target.readback(&gpu.device).unwrap();
+
+            // 同じクリップに std:wave_compute のスタックを付けてもう一度描く。
+            let mut timeline = ctx.timeline.clone();
+            let clip = timeline.get_clip_mut(0).unwrap();
+            clip.set_shader_stack(vec![ShaderStackEntry {
+                shader_id: NamespacedID::new("std", "wave_compute").unwrap(),
+                properties: HashMap::new(),
+            }]);
+            let context = RenderContext {
+                timeline: &timeline,
+                ..*ctx
+            };
+            render_frame_offscreen(&mut gpu, &target, &context).unwrap();
+            let deformed = target.readback(&gpu.device).unwrap();
+
+            // 変形が描画結果へ反映され、ピクセルが有意に変わることを確認する。
+            let differing = baseline
+                .chunks_exact(4)
+                .zip(deformed.chunks_exact(4))
+                .filter(|(a, b)| a != b)
+                .count();
+            assert!(
+                differing > 100,
+                "expected the wave deform to change many pixels, only {differing} differed"
+            );
+        });
+    }
+
     #[test]
     #[ignore = "requires ESOTEREEL_TEST_VIDEO and a wgpu adapter"]
     fn video_file_preview_matches_decoded_frame() {

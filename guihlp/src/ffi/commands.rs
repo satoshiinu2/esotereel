@@ -2,7 +2,7 @@ use std::{panic::{AssertUnwindSafe, catch_unwind}, sync::Arc};
 
 use esotereel_lib::{
     project::ids::{LayerFolderId, LayerId, TimelineId},
-    util::result::EsotereelError,
+    util::result::{EsotereelError, MutexExt},
 };
 
 use crate::{
@@ -52,8 +52,7 @@ pub unsafe extern "C" fn command_queue_send_all(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let network = {
             let guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             Arc::clone(&guard.network)
         };
 
@@ -205,8 +204,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_guard = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
 
         let queue = unsafe { &mut *ptr_queue };
         queue.req_cmd_add_clip_dummy(&state_guard, timeline_id, position, layer_id)?;
@@ -244,7 +242,7 @@ pub unsafe extern "C" fn req_cmd_add_clip_with_source(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock().expect("mutex poisoned");
+        let state_guard = state.lock_or_err()?;
 
         let queue = unsafe { &mut *ptr_queue };
         queue.req_cmd_add_clip_with_source(

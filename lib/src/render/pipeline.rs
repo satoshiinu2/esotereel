@@ -277,14 +277,18 @@ impl WgpuRenderResources {
         );
 
         // 頂点バッファ更新
+        // `gpu_vertices` を持つバッチは CPU からアップロードせず、呼び出し側が
+        // エンコーダで変形済みバッファを同じオフセットへコピーします。
         let mut offset = 0;
         for batch in batches {
             let byte_offset = (offset * std::mem::size_of::<Vertex>()) as u64;
-            queue.write_buffer(
-                &self.vertex_buffer,
-                byte_offset,
-                bytemuck::cast_slice(batch.vertices.as_slice()),
-            );
+            if batch.gpu_vertices.is_none() {
+                queue.write_buffer(
+                    &self.vertex_buffer,
+                    byte_offset,
+                    bytemuck::cast_slice(batch.vertices.as_slice()),
+                );
+            }
             offset += batch.vertices.len();
         }
 

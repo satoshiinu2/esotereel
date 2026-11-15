@@ -49,7 +49,6 @@ pub enum FieldTypeKind {
         item_kind: Box<FieldTypeKind>,
     },
     Group {
-        reference: crate::plugin::NamespacedID,
         fields: Vec<super::PropertySchema>,
     },
     Map {

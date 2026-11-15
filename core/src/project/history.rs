@@ -2,6 +2,7 @@ use esotereel_lib::project::Project;
 use esotereel_lib::project::command::CommandHistory;
 use esotereel_lib::project::ids::TimelineId;
 
+use crate::project::MediaPropertyPaths;
 use crate::project::commands::{execute_command, execute_command_undo};
 
 #[derive(Debug)]
@@ -77,12 +78,12 @@ impl HistoryStack {
         self.redo_stack.len()
     }
 
-    /// 直前の undo 候補コマンドを返す（capability-based オフセット解決用）。
+    /// 直前の undo 候補コマンドを返す（能力ベースのメディアパス解決用）。
     pub fn last_undo(&self) -> Option<&CommandHistory> {
         self.undo_stack.last()
     }
 
-    /// 直前の redo 候補コマンドを返す（capability-based オフセット解決用）。
+    /// 直前の redo 候補コマンドを返す（能力ベースのメディアパス解決用）。
     pub fn last_redo(&self) -> Option<&CommandHistory> {
         self.redo_stack.last()
     }
@@ -93,10 +94,10 @@ pub fn execute_command_with_history(
     timeline_id: TimelineId,
     mut command: CommandHistory,
     history: &mut HistoryStack,
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     // コマンドを実行
-    crate::project::commands::execute_command(project, timeline_id, &mut command, offset_member_key)?;
+    crate::project::commands::execute_command(project, timeline_id, &mut command, media_paths)?;
 
     // 履歴に追加
     history.push(command);
@@ -108,11 +109,11 @@ pub fn undo_command(
     project: &mut Project,
     timeline_id: TimelineId,
     history: &mut HistoryStack,
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     if let Some(command) = history.undo_stack.last().cloned() {
         // undo用の逆コマンドを実行
-        execute_command_undo(project, timeline_id, command.clone(), offset_member_key)?;
+        execute_command_undo(project, timeline_id, command.clone(), media_paths)?;
         history.undo_stack.pop();
         history.redo_stack.push(command);
     }
@@ -123,11 +124,11 @@ pub fn redo_command(
     project: &mut Project,
     timeline_id: TimelineId,
     history: &mut HistoryStack,
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     if let Some(mut command) = history.redo_stack.last().cloned() {
         // redo用のコマンドを実行
-        execute_command(project, timeline_id, &mut command, offset_member_key)?;
+        execute_command(project, timeline_id, &mut command, media_paths)?;
         history.redo_stack.pop();
         history.undo_stack.push(command);
     }

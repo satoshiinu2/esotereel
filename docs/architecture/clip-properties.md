@@ -2,33 +2,50 @@
 
 ## 1. 名前付きプロパティ
 
-`clips/` 直下の TOML ファイルにクリップ種別とプロパティ定義を配置する。
-同じファイルへの同居と、プロパティ定義だけの別ファイルの両方に対応する。
+クリップ種別は `clips/` 直下の TOML ファイルに宣言し、プロパティ定義は
+`components/` 直下のコンポーネントが持つ。クリップ種別は `components` フィールドで
+構成コンポーネントを宣言し、プロパティは構成全体から合成される。
 全プラグインの読み込み後に参照を解決するため、ファイルの読み込み順には依存しない。
 プロパティはコンポーネントが宣言する能力（`ComponentCapability`）から参照し、
 プロパティID（`std:video:media` など）をコード中にハードコードしてはならない。
 
 ```toml
+# components/media.toml
 [[components]]
-id = "video"
-name = "Video"
+id = "media"
+name = "Media"
 kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable"]
+capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
 editor = "video"
 script = "video.rhai"
-children = ["video-transform"]
 properties = [
-  { key = "video:source", label = "Source", kind = { type = "string" } },
-  { key = "video:media", label = "Media", kind = { type = "group", reference = "video:media" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" } },
-  { key = "video:transform", label = "Transform", kind = { type = "map", value_kind = { type = "float", step = 0.1 }, known_keys = ["position", "rotation", "scale"] }, capability = "transformable" },
+  { key = "video:media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }, default = { source = "", source_offset = "0" } },
 ]
+
+# components/transform.toml
+[[components]]
+id = "transform"
+name = "Transform"
+kind = "transform"
+capabilities = ["transformable"]
+editor = "transform"
+properties = [
+  { key = "video:transform", label = "Transform", kind = { type = "group" }, fields = [ { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "rotation", label = "Rotation", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "scale", label = "Scale", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [1.0, 1.0, 1.0] } ], capability = "transformable", default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
+]
+
+# clips/video.toml
+[[kinds]]
+id = "video"
+render_script = "render_clip_video"
+tags = ["media"]
+components = ["media", "transform"]
 ```
 
 `capability` フィールドは、このプロパティがどのコンポーネント能力に紐付くかを示す。
 レンダラー等は `FrameProvider` 能力を持つプロパティからメディア情報を、
 `Transformable` 能力を持つプロパティから変換情報を逆引きする。
 
-マップ型プロパティのメンバー（`source`, `source_offset` 等）もまた、`member_capabilities`
+グループ型プロパティのメンバー（`source`, `source_offset` 等）もまた、`member_capabilities`
 で能力を紐付けられる。レンダラーはハードコードされたメンバキー文字列ではなく、
 `member_capabilities` から能力ベースでメンバキーを逆引きする。これによりプラグインは
 任意のメンバー名を宣言できる。
@@ -36,7 +53,8 @@ properties = [
 グループ内のキーはローカル名で扱う。異なるグループには同じキーを配置できるが、
 同じグループ内の重複は拒否する。未定義参照、参照の循環、32グループを超える深さも拒否する。
 未使用の定義も読み込み時に検証する。
-並びは種別の `properties` の順、その後に各定義の `fields` の順となる。
+並びは種別が宣言するコンポーネントの順、各コンポーネントの `properties` の順、
+その後に各定義の `fields` の順となる。
 
 ### 入れ子の定義参照
 
@@ -89,7 +107,7 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 
 ### 保存・編集・GUI
 
-スキーマは `FieldTypeKind::Group { reference, fields }` と
+スキーマは `FieldTypeKind::Group { fields }` と
 `FieldTypeKind::Map { value_kind, known_keys }` のツリーとして保持し、
 値は `FieldValue::Map` を使って同じ階層で保存する。
 ルートの ID は名前空間付き、グループ内のメンバーはローカル名となる。

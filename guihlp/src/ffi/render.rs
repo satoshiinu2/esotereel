@@ -6,7 +6,7 @@ use std::{
 use esotereel_lib::{
     project::{camera::CameraInfo, ids::TimelineId},
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
-    util::result::EsotereelError,
+    util::result::{EsotereelError, MutexExt},
 };
 
 use crate::{
@@ -49,8 +49,7 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         // Phase 1: ClientStateロックを保持してGPUレンダリングコマンドを記録（高速）
         {
             let state_guard = state_arc
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
 
             render_frame_offscreen_ffi(
                 wgpuutil,

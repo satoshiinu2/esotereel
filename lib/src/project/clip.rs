@@ -12,11 +12,39 @@ use crate::{
     },
 };
 
+/// クリップに適用する compute シェーダ 1 件分のスタックエントリです。
+///
+/// `shader_id` でシェーダ定義（例: `std:wave_compute`）を参照し、`properties` に
+/// そのシェーダ固有プロパティの値を保持します。キーはシェーダ定義側で宣言された
+/// ローカルキーで、`pack_params` の固有プロパティ値としてそのまま渡されます。
+/// 値が無いプロパティはシェーダ定義の `default` が使われます。
+///
+/// スタックはクリップ種別やコンポーネントのプロパティではなく lib が所有する
+/// 汎用データであり、特定プラグインのプロパティ ID には依存しません。
+#[derive(
+    Archive,
+    rkyv::Deserialize,
+    rkyv::Serialize,
+    serde::Serialize,
+    serde::Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+)]
+#[archive_attr(derive(CheckBytes))]
+pub struct ShaderStackEntry {
+    pub shader_id: NamespacedID,
+    pub properties: HashMap<String, FieldValue>,
+}
+
 /// タイムライン上のクリップ実体です。
 ///
 /// `id` で識別され、`position`/`duration` で配置範囲を持ち、`kind_id` で
 /// クリップ種別（`NamespacedID`）を参照します。プロパティ値は
 /// `properties` マップに `ClipBindingValue` として保持されます。
+///
+/// `shader_stack` はクリップへ適用する compute シェーダ（エフェクト）の
+/// 順序付きリストで、描画時に先頭から順に頂点へ適用されます。
 ///
 /// Clip 実体は `Timeline.clips` にのみ存在し、`Layer.clips` は位置 → `ClipId`
 /// の参照のみを保持します。
@@ -31,6 +59,11 @@ pub struct Clip {
 
     pub kind_id: NamespacedID,
     pub properties: HashMap<NamespacedID, ClipBindingValue>,
+
+    /// 適用する compute シェーダのスタック。空なら変形なし（従来どおり描画）。
+    /// 旧形式の保存データには存在しないため、serde では空リストを既定とします。
+    #[serde(default)]
+    pub shader_stack: Vec<ShaderStackEntry>,
 }
 
 impl Clip {
@@ -48,7 +81,18 @@ impl Clip {
             duration,
             kind_id,
             properties,
+            shader_stack: Vec::new(),
         }
+    }
+
+    /// シェーダスタック（適用順）への参照を返します。
+    pub fn shader_stack(&self) -> &[ShaderStackEntry] {
+        &self.shader_stack
+    }
+
+    /// シェーダスタックを丸ごと差し替えます。
+    pub fn set_shader_stack(&mut self, stack: Vec<ShaderStackEntry>) {
+        self.shader_stack = stack;
     }
 
     /// 配置開始位置（タイムラインティック）を返します。
@@ -74,14 +118,7 @@ impl Clip {
     /// グループ型プロパティのメンバー値にアクセスする際に使用します。
     /// パスを辿れない場合（グループでない、メンバーが不在など）は `None` を返します。
     pub fn get_property_path(&self, path: &PropertyPath) -> Option<&FieldValue> {
-        let mut value = self.properties.get(path.root())?.in_frame_of()?;
-        for member in path.members() {
-            let FieldValue::Map(values) = value else {
-                return None;
-            };
-            value = values.get(member)?;
-        }
-        Some(value)
+        get_property_path_from_map(&self.properties, path)
     }
 
     /// プロパティパスを辿って値を設定します。
@@ -130,10 +167,16 @@ impl Clip {
 ///
 /// プラグインが `clips/` ディレクトリ下の TOML で宣言し、
 /// `ClipKindRegistry` に登録されます。
+///
+/// `components` はこの種別のクリップを構成するコンポーネントの列で、
+/// クリップの初期構成を担保します。コンポーネントは独立した部品として
+/// 定義され、複数のクリップ種別から再利用できます。
 #[derive(Debug, Clone)]
 pub struct ClipKind {
     pub render_script: String,
     pub tags: HashSet<String>,
+    /// このクリップ種別を構成するコンポーネント（宣言順 = 実行順）。
+    pub components: Vec<NamespacedID>,
 }
 
 /// クリッププロパティの値です。
@@ -173,6 +216,24 @@ impl ClipBindingValue {
             })
             .collect()
     }
+}
+
+/// プロパティマップから `PropertyPath` を辿って値を取り出します。
+///
+/// `Clip::get_property_path` と同じ辿り方を、まだ `Clip` になっていない
+/// プロパティマップに対して行います。
+pub fn get_property_path_from_map<'a>(
+    properties: &'a HashMap<NamespacedID, ClipBindingValue>,
+    path: &PropertyPath,
+) -> Option<&'a FieldValue> {
+    let mut value = properties.get(path.root())?.in_frame_of()?;
+    for member in path.members() {
+        let FieldValue::Map(values) = value else {
+            return None;
+        };
+        value = values.get(member)?;
+    }
+    Some(value)
 }
 
 /// タイムラインへの参照種別です。
@@ -301,6 +362,61 @@ mod tests {
     }
 
     #[test]
+    fn clip_shader_stack_serde_roundtrip() {
+        let mut clip = Clip::new(
+            1u64,
+            0,
+            60,
+            NamespacedID::new("std", "video").unwrap(),
+            HashMap::new(),
+        );
+        clip.set_shader_stack(vec![
+            ShaderStackEntry {
+                shader_id: NamespacedID::new("std", "wave_compute").unwrap(),
+                properties: HashMap::from([(
+                    "amplitude".to_string(),
+                    FieldValue::Float(20.0),
+                )]),
+            },
+            ShaderStackEntry {
+                shader_id: NamespacedID::new("std", "twist_compute").unwrap(),
+                properties: HashMap::new(),
+            },
+        ]);
+
+        let json = serde_json::to_string(&clip).unwrap();
+        let restored: Clip = serde_json::from_str(&json).unwrap();
+
+        // スタックの順序とプロパティ値が保存・復元で保持される。
+        assert_eq!(restored.shader_stack(), clip.shader_stack());
+        assert_eq!(
+            restored.shader_stack()[0].shader_id,
+            NamespacedID::new("std", "wave_compute").unwrap()
+        );
+    }
+
+    #[test]
+    fn clip_serde_without_shader_stack_defaults_to_empty() {
+        // `shader_stack` フィールドが無い旧形式の JSON も読み込める。
+        let clip = Clip::new(
+            1u64,
+            0,
+            60,
+            NamespacedID::new("std", "video").unwrap(),
+            HashMap::new(),
+        );
+        let mut value = serde_json::to_value(&clip).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("shader_stack")
+            .expect("serialized clip must contain shader_stack");
+
+        let restored: Clip = serde_json::from_value(value).unwrap();
+        assert!(restored.shader_stack().is_empty());
+    }
+
+    #[test]
     fn clip_get_set_property_path() {
         let mut clip = Clip::new(
             1u64,
@@ -311,7 +427,6 @@ mod tests {
                 PropertySchema::group(
                     NamespacedID::new("std", "transform").unwrap(),
                     "Transform".to_string(),
-                    NamespacedID::new("std", "transform-ref").unwrap(),
                     vec![PropertySchema {
                         key: NamespacedID::new("std", "x").unwrap(),
                         category: vec![],

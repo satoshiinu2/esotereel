@@ -6,7 +6,7 @@ use esotereel_lib::{
     project::{TimelineTick, command::CommandRequest, ids::TimelineId},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
-    util::result::{EsotereelError, LockExt},
+    util::result::{EsotereelError, LockExt, MutexExt},
 };
 
 use crate::ffi::{result::FfiResultVoid, state::ClientStateHandle, stringview::FfiStringView};
@@ -18,8 +18,7 @@ use crate::network::ClientNetworkHandler;
 fn network_of(ptr_state: *const ClientStateHandle) -> anyhow::Result<Arc<ClientNetworkHandler>> {
     let state = ClientStateHandle::from_ptr(ptr_state);
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
     Ok(Arc::clone(&state_guard.network))
 } // state_guard はここで drop される
 
@@ -88,8 +87,7 @@ pub unsafe extern "C" fn req_fetch_frame(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let (network, project_arc, stream_state_map, stream_players, media_fetch_cache) = {
             let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             (
                 Arc::clone(&state_guard.network),
                 Arc::clone(&state_guard.project),
@@ -121,8 +119,7 @@ pub unsafe extern "C" fn req_fetch_frame(
         // （この時点では Project ロックは保持していない）。
         let (requests_to_send, send_clips, clips_range) = {
             let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
 
             // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
             // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求

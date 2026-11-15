@@ -1,10 +1,11 @@
 use std::{
     any::Any,
     fmt,
-    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use anyhow::Result;
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
     plugin::NamespacedID,
@@ -12,6 +13,7 @@ use crate::{
         TimelineTick,
         ids::{AssetId, ClipId, LayerId, ResourceId, TimelineId},
     },
+    util::rkyv_with::UuidAsBytes,
 };
 
 // Esotereel コア全体で共通に使用するエラー型と結果型です。
@@ -22,7 +24,8 @@ use crate::{
 // （AGENTS.md 第9条：パニックの使用制限）。
 
 // TODO: cow
-#[derive(Debug, thiserror::Error)]
+#[derive(Archive, Deserialize, Serialize, Debug, thiserror::Error)]
+#[archive_attr(derive(CheckBytes))]
 pub enum EsotereelError {
     NullPointer(String),
     LockError(String),
@@ -43,8 +46,10 @@ pub enum EsotereelError {
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
-    AssetNotFound(AssetId),
-    AssetAlreadyExists(AssetId),
+    AssetNotFound(#[with(UuidAsBytes)] AssetId),
+    AssetAlreadyExists(#[with(UuidAsBytes)] AssetId),
+    UploadFailed(String),
+    FileDropFailed(String),
 }
 
 impl fmt::Display for EsotereelError {
@@ -71,6 +76,8 @@ impl fmt::Display for EsotereelError {
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),
             EsotereelError::AssetNotFound(id) => write!(f, "Asset '{}' not found", id),
             EsotereelError::AssetAlreadyExists(id) => write!(f, "Asset '{}' already exists", id),
+            EsotereelError::UploadFailed(message) => write!(f, "Upload failed: {message}"),
+            EsotereelError::FileDropFailed(message) => write!(f, "File drop failed: {message}"),
         }
     }
 }
@@ -92,24 +99,57 @@ pub fn format_any_error(error: Box<dyn Any + Send>) -> String {
     }
 }
 
-/// `RwLock<T>` の取得に失敗した際に `EsotereelError::LockError` に変換する拡張トレイトです。
+/// ロック取得時のミューテックスポイズン（スレッドがパニックを起こしながら
+/// ロックを保持していた状態）から回復するための拡張トレイトです。
 ///
-/// ミューテックスポイズン（スレッドがパニックを起こしながらロックを保持していた状態）
-/// は回復不能な状態とみなし、`LockError` としてエラーを返します。
+/// 毒性は「パニックしたスレッドがデータを不整合な状態で残したかもしれない」
+/// という印であり、ロック機構自体の故障ではありません。そのため毒性時は
+/// `into_inner` でガードを回復し、`log::error` に回復した事実を残して処理を
+/// 継続します。毒性をエラーとして伝播させると、1 回のパニックでそのロックを
+/// 使う全操作がプロセス終了まで恒久的に失敗してしまうため、それを避けます。
 pub trait LockExt<T> {
-    /// 書き込みロックを取得し、失敗時は `EsotereelError::LockError` を返します。
+    /// 書き込みロックを取得します。毒性時は回復してガードを返します。
     fn write_or_err(&self) -> Result<RwLockWriteGuard<'_, T>>;
-    /// 読み取りロックを取得し、失敗時は `EsotereelError::LockError` を返します。
+    /// 読み取りロックを取得します。毒性時は回復してガードを返します。
     fn read_or_err(&self) -> Result<RwLockReadGuard<'_, T>>;
 }
 
 impl<T> LockExt<T> for RwLock<T> {
     fn write_or_err(&self) -> Result<RwLockWriteGuard<'_, T>> {
-        self.write()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))
+        Ok(match self.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                log::error!("RwLock write poisoned; recovering guard via into_inner");
+                poisoned.into_inner()
+            }
+        })
     }
+
     fn read_or_err(&self) -> Result<RwLockReadGuard<'_, T>> {
-        self.read()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))
+        Ok(match self.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                log::error!("RwLock read poisoned; recovering guard via into_inner");
+                poisoned.into_inner()
+            }
+        })
+    }
+}
+
+/// `Mutex<T>` 版の毒性回復トレイトです。方針は `LockExt` と同じです。
+pub trait MutexExt<T> {
+    /// ロックを取得します。毒性時は回復してガードを返します。
+    fn lock_or_err(&self) -> Result<MutexGuard<'_, T>>;
+}
+
+impl<T> MutexExt<T> for Mutex<T> {
+    fn lock_or_err(&self) -> Result<MutexGuard<'_, T>> {
+        Ok(match self.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                log::error!("Mutex poisoned; recovering guard via into_inner");
+                poisoned.into_inner()
+            }
+        })
     }
 }

@@ -2,3 +2,4 @@
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
+components = ["media", "transform"]

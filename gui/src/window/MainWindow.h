@@ -4,6 +4,7 @@
 #include <DockManager.h>
 #include <QAction>
 #include <QMainWindow>
+#include <QTimer>
 #include <cstddef>
 
 namespace esotereel_gui_helper {
@@ -50,6 +51,7 @@ class MainWindow : public QMainWindow {
 
   private slots:
     void openSettingsDialog();
+    void checkAsyncError();
 
   private:
     void setupWindowState();
@@ -59,6 +61,7 @@ class MainWindow : public QMainWindow {
     void setupMenus(WidgetManager &widgetManager);
 
     ads::CDockManager *dockManager;
+    QTimer *asyncErrorTimer;
     TimelineWidget *timelineWidget;
     DebugStreamsWidget *debugStreamsWidget;
     ClipPropertiesPanel *clipPropertiesPanel;

@@ -12,7 +12,7 @@ use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
-use crate::util::result::{EsotereelError, EsotereelResult};
+use crate::util::result::{EsotereelError, EsotereelResult, LockExt};
 
 /// Composite / Script / Mirror の入れ子実行を無限ループさせないための上限。
 pub const MAX_NESTED_DEPTH: u32 = 32;
@@ -99,7 +99,7 @@ impl Timeline {
 
     fn invalidate_index(&self) {
         // Use write lock consistently for index invalidation
-        let Ok(mut guard) = self.chunk_index.write() else {
+        let Ok(mut guard) = self.chunk_index.write_or_err() else {
             log::warn!("timeline: chunk_index write lock poisoned");
             return;
         };
@@ -450,7 +450,7 @@ impl Timeline {
     pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
         // Single lock strategy: use write lock to handle both check and build
         // This avoids read-write lock upgrade deadlock
-        let Ok(mut idx_guard) = self.chunk_index.write() else {
+        let Ok(mut idx_guard) = self.chunk_index.write_or_err() else {
             log::warn!("timeline: chunk_index write lock poisoned");
             return Vec::new();
         };

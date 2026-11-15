@@ -15,6 +15,7 @@ use glam::Mat4;
 
 use crate::render::{vertex::Vertex, video::builder::build_vertices, wgpuutil::WGpuUtil};
 
+pub mod deform;
 pub mod pipeline;
 pub mod uniform;
 pub mod vertex;
@@ -59,6 +60,12 @@ pub struct RenderBatch {
     pub vertices: Vec<Vertex>,
     pub texture_bind_group: wgpu::BindGroup,
     pub transform: Mat4,
+    /// compute シェーダで変形済みの頂点バッファです。
+    ///
+    /// `Some` の場合、`vertices`（元の頂点列）は CPU からアップロードされず、
+    /// このバッファが共有頂点バッファの該当範囲へコピーされて描画されます。
+    /// 頂点数とサイズは `vertices` と一致します。
+    pub gpu_vertices: Option<wgpu::Buffer>,
 }
 
 /// オフスクリーンテクスチャへ 1 フレームをレンダーします。
@@ -66,6 +73,8 @@ pub struct RenderBatch {
 /// ウィンドウサイズが 0 の場合はエラーを返します。カメラのビュープロジェクション行列を
 /// 計算し、頂点を構築してテクスチャを更新し、wgpu のレンダーパスで描画後、
 /// 結果を `offscreen.buffer` にコピーして GPU 読み戻しの準備を行います。
+/// シェーダスタックを持つクリップの頂点は、描画前に compute シェーダで
+/// 変形されます（`deform` モジュール参照）。
 ///
 /// GPU 読み戻しの前には `ClientState` ロックを解放することで GUI フリーズを防ぎます
 ///（コミット `67b6d06` 参照）。
@@ -87,29 +96,38 @@ pub fn render_frame_offscreen(
     let view_projection_matrix = proj_matrix * view_matrix;
 
     // スクリプトで必要なフレームを記録してから、テクスチャを更新する。
-    let vertices = build_vertices(ctx);
+    let built = build_vertices(ctx);
     update_timline_clips_texture(util, ctx);
 
-    let batches: Vec<RenderBatch> = if !vertices.is_empty() {
-        vertices
-            .into_iter()
-            .map(|b| {
-                let bind_group = util
-                    .textures
-                    .get(&b.texture_id)
-                    .map(|(_, bg)| bg.clone())
-                    .unwrap_or_else(|| util.resources.dummy_bind_group.clone());
+    let mut batches: Vec<RenderBatch> = built
+        .batches
+        .into_iter()
+        .map(|b| {
+            let bind_group = util
+                .textures
+                .get(&b.texture_id)
+                .map(|(_, bg)| bg.clone())
+                .unwrap_or_else(|| util.resources.dummy_bind_group.clone());
 
-                RenderBatch {
-                    vertices: b.vertices,
-                    texture_bind_group: bind_group,
-                    transform: b.transform,
-                }
-            })
-            .collect()
-    } else {
-        vec![]
-    };
+            RenderBatch {
+                vertices: b.vertices,
+                texture_bind_group: bind_group,
+                transform: b.transform,
+                gpu_vertices: None,
+            }
+        })
+        .collect();
+
+    // シェーダスタックを持つクリップのバッチへ compute 変形を適用する。
+    // スタックが無いクリップはこの呼び出しで何も変わらない。
+    deform::apply_shader_stacks(
+        util,
+        ctx,
+        &mut batches,
+        &built.deformations,
+        screen_size,
+        view_projection_matrix,
+    );
 
     // バッファの更新（RenderPass開始前に行う）
     if !batches.is_empty() {
@@ -128,6 +146,25 @@ pub fn render_frame_offscreen(
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Encoder"),
         });
+
+    // 変形済み頂点バッファを共有頂点バッファの該当範囲へコピーする。
+    // バッチ順の累積オフセットは `update_buffers` の配置と一致します。
+    {
+        let mut vertex_offset = 0u64;
+        for batch in &batches {
+            let byte_len = (batch.vertices.len() * std::mem::size_of::<Vertex>()) as u64;
+            if let Some(gpu_vertices) = &batch.gpu_vertices {
+                encoder.copy_buffer_to_buffer(
+                    gpu_vertices,
+                    0,
+                    &util.resources.vertex_buffer,
+                    vertex_offset,
+                    byte_len,
+                );
+            }
+            vertex_offset += byte_len;
+        }
+    }
 
     {
         // RenderPass の作成

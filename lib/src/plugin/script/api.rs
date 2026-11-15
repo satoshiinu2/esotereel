@@ -27,6 +27,7 @@ use crate::{
     },
     requests::Request,
     state::HostState,
+    util::result::{LockExt, MutexExt},
 };
 
 /// プラグインスクリプトからアクションを呼び出すためのコンテキスト
@@ -70,7 +71,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
     }
 
     pub fn take_packets(&self) -> Vec<Request> {
-        match self.packets.lock() {
+        match self.packets.lock_or_err() {
             Ok(mut guard) => std::mem::take(&mut *guard),
             Err(_) => {
                 log::warn!("packets lock poisoned");
@@ -98,7 +99,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
             Box::<rhai::EvalAltResult>::from(format!("value normalization failed: {e}"))
         })?;
 
-        let mut project_guard = self.project.write().map_err(|_| {
+        let mut project_guard = self.project.write_or_err().map_err(|_| {
             Box::<rhai::EvalAltResult>::from("project lock poisoned")
         })?;
         let project = project_guard
@@ -253,7 +254,7 @@ impl PluginRenderContext {
                 self.path_to_stream
                     .insert(path.to_string(), StreamState::Loading);
                 self.requested_paths
-                    .lock()
+                    .lock_or_err()
                     .map(|mut g| g.push(path.to_string()))
                     .unwrap_or_else(|_| log::warn!("requested_paths lock poisoned"));
                 -1
@@ -284,7 +285,7 @@ impl PluginRenderContext {
         if texture_id < 0 {
             return;
         }
-        if let Ok(mut guard) = self.batches.lock() {
+        if let Ok(mut guard) = self.batches.lock_or_err() {
             guard.push(VertexBatch {
                 vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
                 texture_id: resource_id,
@@ -301,7 +302,7 @@ impl PluginRenderContext {
         if texture_id < 0 {
             return;
         }
-        if let Ok(mut guard) = self.batches.lock() {
+        if let Ok(mut guard) = self.batches.lock_or_err() {
             guard.push(VertexBatch {
                 vertices: Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec(),
                 texture_id: texture_id as u32,
@@ -318,12 +319,12 @@ impl PluginRenderContext {
         // Rhai may retain a cloned context; drain shared output without requiring unique ownership.
         let batches = self
             .batches
-            .lock()
+            .lock_or_err()
             .map(|mut g| std::mem::take(&mut *g))
             .unwrap_or_default();
         let paths = self
             .requested_paths
-            .lock()
+            .lock_or_err()
             .map(|mut g| std::mem::take(&mut *g))
             .unwrap_or_default();
         (batches, paths)
@@ -499,7 +500,7 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
 
     // NetworkContextのメソッド（オーバーロード）
     engine.register_fn("undo", |net: &mut PluginNetworkContext<Request>| {
-        if let Ok(mut guard) = net.packets.lock() {
+        if let Ok(mut guard) = net.packets.lock_or_err() {
             guard.push(Request::Undo {
                 timeline_id: net.timeline_id,
             });
@@ -510,7 +511,7 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
     engine.register_fn(
         "undo",
         |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
-            if let Ok(mut guard) = net.packets.lock() {
+            if let Ok(mut guard) = net.packets.lock_or_err() {
                 guard.push(Request::Undo {
                     timeline_id: timeline_id as u64,
                 });
@@ -521,7 +522,7 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
     );
 
     engine.register_fn("redo", |net: &mut PluginNetworkContext<Request>| {
-        if let Ok(mut guard) = net.packets.lock() {
+        if let Ok(mut guard) = net.packets.lock_or_err() {
             guard.push(Request::Redo {
                 timeline_id: net.timeline_id,
             });
@@ -532,7 +533,7 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
     engine.register_fn(
         "redo",
         |net: &mut PluginNetworkContext<Request>, timeline_id: i64| {
-            if let Ok(mut guard) = net.packets.lock() {
+            if let Ok(mut guard) = net.packets.lock_or_err() {
                 guard.push(Request::Redo {
                     timeline_id: timeline_id as u64,
                 });
@@ -568,13 +569,24 @@ mod render_tests {
             "/../plugins/std"
         )))
         .unwrap();
-        // コンポーネントがプロパティを提供する。ルートコンポーネント std:video の
-        // プロパティスキーマを取得し、core:media / core:transform 特別プロパティを含むことを確認する。
-        let component = plugin
+        // プロパティはコンポーネントが提供する。クリップ種別 std:video を構成する
+        // std:media と std:transform のスキーマを合成し、media / transform
+        // プロパティを含むことを確認する。
+        let media_component = plugin
             .component_definitions
-            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
             .unwrap();
-        let fields = &component.properties;
+        let transform_component = plugin
+            .component_definitions
+            .get(&crate::plugin::NamespacedID::new("std", "transform").unwrap())
+            .unwrap();
+        let fields: Vec<_> = media_component
+            .properties
+            .iter()
+            .chain(transform_component.properties.iter())
+            .cloned()
+            .collect();
+        let fields = &fields;
         let media = fields
             .iter()
             .find(|f| f.key.local_id() == "video:media")
@@ -587,9 +599,9 @@ mod render_tests {
         else {
             panic!("media property must be a group")
         };
-        let crate::plugin::property::value::FieldTypeKind::Map { .. } = &transform.kind
+        let crate::plugin::property::value::FieldTypeKind::Group { .. } = &transform.kind
         else {
-            panic!("transform property must be a map")
+            panic!("transform property must be a group")
         };
         assert!(
             !fields
@@ -602,7 +614,13 @@ mod render_tests {
                 .iter()
                 .map(|(path, _)| path.to_string())
                 .collect::<Vec<_>>(),
-            ["std:video:media/source", "std:video:media/source_offset", "std:video:transform"]
+            [
+                "std:video:media/source",
+                "std:video:media/source_offset",
+                "std:video:transform/position",
+                "std:video:transform/rotation",
+                "std:video:transform/scale"
+            ]
         );
         let mut props = ClipBindingValue::default_properties(fields);
         // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。
@@ -641,7 +659,7 @@ mod render_tests {
         register_render_api(&mut engine);
         let script = plugin
             .component_scripts
-            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
             .unwrap();
         script
             .call::<()>(

@@ -106,6 +106,20 @@ Result<void> ClientState::logDirectoriesInfo() const {
     return Result<void>::ok();
 }
 
+Result<void> ClientState::takeAsyncError() const {
+    if (!isValid()) {
+        return Result<void>::err("Invalid network handler");
+    }
+
+    auto result = esotereel_gui_helper::client_state_take_error(network_ptr);
+
+    if (!result.is_ok) {
+        return Result<void>::err(OwnedString::intoStdString(result.err));
+    }
+
+    return Result<void>::ok();
+}
+
 Requests ClientState::requests() const {
     return Requests(this);
 }

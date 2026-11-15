@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, RwLock,
+        Arc, Mutex, RwLock,
         atomic::{AtomicU32, Ordering},
     },
 };
@@ -18,9 +18,9 @@ use esotereel_lib::{
 };
 use tokio::sync::Notify;
 
+use crate::assets::UploadManager;
 use crate::network::ServerNetworkHandler;
 use crate::project::history::HistoryStack;
-use crate::assets::AssetsManager;
 
 pub struct ServerState {
     pub common: CommonState,
@@ -29,13 +29,13 @@ pub struct ServerState {
 
     pub streams: DashMap<ResourceId, VideoStreamer>,
 
-    pub histories: Arc<std::sync::Mutex<HashMap<TimelineId, HistoryStack>>>,
+    pub histories: Arc<Mutex<HashMap<TimelineId, HistoryStack>>>,
 
     pub next_resource_id: AtomicU32,
 
     pub dirty_signal: Arc<Notify>,
 
-    pub assets_manager: AssetsManager,
+    pub uploads: Arc<Mutex<UploadManager>>,
 }
 
 impl ServerState {
@@ -49,10 +49,10 @@ impl ServerState {
             common: CommonState::new::<ServerState>(dirs_def.clone(), shared_plugin_loader),
             network: Arc::new(ServerNetworkHandler::new(Arc::clone(&dirty_signal))),
             streams: DashMap::new(),
-            histories: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            histories: Arc::new(Mutex::new(HashMap::new())),
             next_resource_id: AtomicU32::new(0),
             dirty_signal,
-            assets_manager: AssetsManager::new(dirs_def),
+            uploads: Arc::new(Mutex::new(UploadManager::new(&dirs_def))),
         }
     }
 

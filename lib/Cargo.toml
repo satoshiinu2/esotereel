@@ -31,6 +31,8 @@ toml_edit = "0.25.13"
 rhai = { version = "1.26.0", features = ["sync"] }
 regex = "1.13.1"
 walkdir = "2.5.0"
+wesl = "0.6"
+naga = { version = "29", features = ["wgsl-in"] }
 thiserror = "2.0.20"
 
 [target.'cfg(windows)'.dependencies]

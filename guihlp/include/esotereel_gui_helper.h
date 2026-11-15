@@ -81,6 +81,9 @@ struct ClientStateHandle;
 /// クリップ種別（`NamespacedID`）を参照します。プロパティ値は
 /// `properties` マップに `ClipBindingValue` として保持されます。
 ///
+/// `shader_stack` はクリップへ適用する compute シェーダ（エフェクト）の
+/// 順序付きリストで、描画時に先頭から順に頂点へ適用されます。
+///
 /// Clip 実体は `Timeline.clips` にのみ存在し、`Layer.clips` は位置 → `ClipId`
 /// の参照のみを保持します。
 struct Clip;

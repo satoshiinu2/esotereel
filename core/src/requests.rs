@@ -7,22 +7,25 @@ use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        NamespacedID, PluginLoader, clip::component::Scheduler, property::ComponentCapability,
-        script::api::PluginActionContext,
+        NamespacedID, PluginLoader, clip::component::Scheduler, script::api::PluginActionContext,
     },
     project::{
         Project,
         command::{CommandHistory, CommandRequest},
         ids::TimelineId,
     },
-    requests::{ArchivedRequest, Request},
+    requests::{AddClipFromAsset, ArchivedAddClipFromAsset, ArchivedRequest, Request},
     responces::Response,
-    util::result::{EsotereelError, EsotereelResult, LockExt},
+    util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
 };
 use rkyv::Deserialize;
 
+use uuid::Uuid;
+
 use crate::{
+    network::ServerNetworkHandler,
     project::{
+        MediaPropertyPaths, clip_add_core,
         commands::command_to_history,
         history::{HistoryStack, execute_command_with_history, redo_command, undo_command},
     },
@@ -57,14 +60,12 @@ pub fn on_request_receive(
             // ビュー更新と送信はロック解放後に行う（lock-order.md）
             let network = {
                 let mut state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
                 state
                     .histories
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
+                    .lock_or_err()?
                     .clear();
 
                 Arc::clone(&state.network)
@@ -83,8 +84,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ、送信は全ガード解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -112,77 +112,169 @@ pub fn on_request_receive(
             path,
             add_clip,
         } => {
-            let network = {
+            // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
+            let (project_arc, network, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                Arc::clone(&state_guard.network)
+                    .lock_or_err()?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.common.plugin_loader),
+                    state_guard.common.script_engine.clone(),
+                )
             };
-            let _ = add_clip;
-            let msg = format!("asset reference registered: {} -> {}", asset_id, path);
-            log::info!("{msg}");
-            network.send(
-                client_id,
-                &Response::AssetImported {
-                    asset_id: asset_id.to_string(),
-                },
-            );
+            let asset_id_raw: &str = asset_id;
+            let path_str: &str = path;
+            let result = (|| -> anyhow::Result<bool> {
+                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let source_path = std::path::Path::new(path_str);
+                if !source_path.is_file() {
+                    anyhow::bail!("asset source `{path_str}` is not an existing file");
+                }
+                let add_clip = deserialize_add_clip(add_clip)?;
+                let mut project_guard = project_arc.write_or_err()?;
+                let project = project_guard
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("no active project"))?;
+                project.register_external_asset(asset_uuid, source_path)?;
+                let mut clip_added = false;
+                if let Some(add_clip) = add_clip {
+                    add_clip_from_asset(
+                        project,
+                        &loader_arc,
+                        &script_engine,
+                        &add_clip,
+                        path_str,
+                    )?;
+                    clip_added = true;
+                }
+                Ok(clip_added)
+            })();
+            match result {
+                Ok(clip_added) => {
+                    log::info!("asset reference registered: {asset_id_raw} -> {path_str}");
+                    network.send(
+                        client_id,
+                        &Response::AssetImported {
+                            asset_id: asset_id_raw.to_string(),
+                        },
+                    );
+                    if clip_added {
+                        network.notify_dirty();
+                    }
+                }
+                Err(error) => send_asset_import_failed(&network, client_id, asset_id_raw, &error),
+            }
         }
         ArchivedRequest::BeginAssetUpload {
             asset_id,
             file_name,
             total_size,
         } => {
-            let network = {
+            let (network, uploads) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                Arc::clone(&state_guard.network)
+                    .lock_or_err()?;
+                (
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.uploads),
+                )
             };
-            let _ = file_name;
-            let _ = total_size;
-            network.send(
-                client_id,
-                &Response::AssetImported {
-                    asset_id: asset_id.to_string(),
-                },
-            );
+            let asset_id_raw: &str = asset_id;
+            let file_name_str: &str = file_name;
+            let result = (|| -> anyhow::Result<()> {
+                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let mut uploads = uploads
+                    .lock_or_err()?;
+                uploads.begin(asset_uuid, file_name_str, *total_size)
+            })();
+            if let Err(error) = result {
+                send_asset_import_failed(&network, client_id, asset_id_raw, &error);
+            }
         }
-        ArchivedRequest::AssetUploadChunk { asset_id, .. } => {
-            let network = {
+        ArchivedRequest::AssetUploadChunk {
+            asset_id,
+            offset,
+            data,
+        } => {
+            let (network, uploads) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                Arc::clone(&state_guard.network)
+                    .lock_or_err()?;
+                (
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.uploads),
+                )
             };
-            network.send(
-                client_id,
-                &Response::AssetImported {
-                    asset_id: asset_id.to_string(),
-                },
-            );
+            let asset_id_raw: &str = asset_id;
+            let result = (|| -> anyhow::Result<()> {
+                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let mut uploads = uploads
+                    .lock_or_err()?;
+                uploads.write_chunk(asset_uuid, *offset, data)
+            })();
+            if let Err(error) = result {
+                send_asset_import_failed(&network, client_id, asset_id_raw, &error);
+            }
         }
-        ArchivedRequest::FinishAssetUpload { asset_id, .. } => {
-            let network = {
+        ArchivedRequest::FinishAssetUpload { asset_id, add_clip } => {
+            // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
+            let (project_arc, network, uploads, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
-                Arc::clone(&state_guard.network)
+                    .lock_or_err()?;
+                (
+                    Arc::clone(&state_guard.project),
+                    Arc::clone(&state_guard.network),
+                    Arc::clone(&state_guard.uploads),
+                    Arc::clone(&state_guard.common.plugin_loader),
+                    state_guard.common.script_engine.clone(),
+                )
             };
-            network.send(
-                client_id,
-                &Response::AssetImported {
-                    asset_id: asset_id.to_string(),
-                },
-            );
+            let asset_id_raw: &str = asset_id;
+            let result = (|| -> anyhow::Result<bool> {
+                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let add_clip = deserialize_add_clip(add_clip)?;
+                // 先にアップロード側で完了を検証してセッションを閉じ、
+                // その後でプロジェクトの台帳へ登録する（ロックの保持範囲を分ける）。
+                let (name, path) = {
+                    let mut uploads = uploads
+                        .lock_or_err()?;
+                    uploads.complete(asset_uuid)?
+                };
+                let mut project_guard = project_arc.write_or_err()?;
+                let project = project_guard
+                    .as_mut()
+                    .ok_or_else(|| anyhow::anyhow!("no active project"))?;
+                project.register_managed_asset(asset_uuid, name, path.clone())?;
+                let mut clip_added = false;
+                if let Some(add_clip) = add_clip {
+                    let source = path
+                        .to_str()
+                        .ok_or_else(|| anyhow::anyhow!("asset path is not valid UTF-8"))?;
+                    add_clip_from_asset(project, &loader_arc, &script_engine, &add_clip, source)?;
+                    clip_added = true;
+                }
+                Ok(clip_added)
+            })();
+            match result {
+                Ok(clip_added) => {
+                    network.send(
+                        client_id,
+                        &Response::AssetImported {
+                            asset_id: asset_id_raw.to_string(),
+                        },
+                    );
+                    if clip_added {
+                        network.notify_dirty();
+                    }
+                }
+                Err(error) => send_asset_import_failed(&network, client_id, asset_id_raw, &error),
+            }
         }
         ArchivedRequest::Command { commands } => {
             // 必要な Arc を取り出したら State ロックは即座に解放し、
             // コマンド実行中は State を保持しない（lock-order.md）
             let (project_arc, network, histories_arc, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -221,9 +313,10 @@ pub fn on_request_receive(
                             Ok(properties) => properties,
                             Err(error) => {
                                 log::error!("File drop handler failed: {error:#}");
-                                pending_file_drop_failures.push(Response::FileDropFailed {
-                                    source_path,
-                                    message: format!("{error:#}"),
+                                pending_file_drop_failures.push(Response::Failed {
+                                    error: EsotereelError::FileDropFailed(format!(
+                                        "file drop `{source_path}`: {error:#}"
+                                    )),
                                 });
                                 continue;
                             }
@@ -241,10 +334,10 @@ pub fn on_request_receive(
 
                 log::debug!(target:"core_packet_request","request: {:?}", command);
 
-                // コンポーネント定義から能力ベースでメディアオフセットメンバーのキーを解決する。
-                // プラグインが宣言する `media-offset-provider` 能力からメンバー名を逆引きし、
-                // ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
-                let offset_member_key = match &command {
+                // コンポーネント定義から能力ベースでメディアプロパティのパスを解決する。
+                // プラグインが宣言する能力（`frame-provider` とそのメンバー能力）から
+                // 逆引きし、ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
+                let media_paths = match &command {
                     CommandRequest::ClipsResize { clips } if !clips.is_empty() => {
                         let clip = project
                             .timeline_ref(*timeline_id)
@@ -252,27 +345,18 @@ pub fn on_request_receive(
                             .get_clip(clips[0].clip_id)
                             .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
                         let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
-                        let comp = runtime_def
-                            .components
-                            .iter()
-                            .find(|c| c.id == clip.kind_id)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "component definition not found for kind {}",
-                                    clip.kind_id
-                                )
-                            })?;
-                        comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
-                            .map(|k| k.clone())
+                        Some(MediaPropertyPaths::resolve(&runtime_def))
                     }
+                    CommandRequest::AddClip { kind_id, .. } => loader
+                        .resolve_component_definition(kind_id)
+                        .map(|def| MediaPropertyPaths::resolve(&def))
+                        .ok(),
                     _ => None,
                 };
 
                 match command_to_history(project, *timeline_id, command.clone()) {
                     Ok(command_history) => {
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(*timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -281,7 +365,7 @@ pub fn on_request_receive(
                             *timeline_id,
                             command_history.clone(),
                             history,
-                            offset_member_key.as_deref(),
+                            media_paths.as_ref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
                         } else {
@@ -323,8 +407,7 @@ pub fn on_request_receive(
             // 登録までは State ロックが必要だが、送信は解放後に行う
             let (network, res, resource_id) = {
                 let mut state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 let resource_id = state.get_or_create_resource_id(path);
 
@@ -360,8 +443,7 @@ pub fn on_request_receive(
 
             let (network, to_send) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 let mut streamer = state_guard
                     .streams
@@ -393,8 +475,7 @@ pub fn on_request_receive(
             // Project は read ロックでよい。送信は全ガード解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -433,8 +514,7 @@ pub fn on_request_receive(
             // 読み取り専用なので read ロックでよい。送信は解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -466,8 +546,7 @@ pub fn on_request_receive(
             // Phase 1: State ロック中は必要な Arc の取り出しと、実行する
             // スクリプトのクローンだけを行う（lock-order.md）
             let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
 
             let network = Arc::clone(&state_guard.network);
             let project_arc = Arc::clone(&state_guard.project);
@@ -518,17 +597,15 @@ pub fn on_request_receive(
 
                         let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history.last_undo().and_then(|cmd| {
-                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
-                        });
-                        undo_command(project, timeline_id, history, offset_member_key.as_deref())?;
+                        let media_paths = history
+                            .last_undo()
+                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        undo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     Request::Redo { timeline_id } => {
                         let mut project_guard = project_arc.write_or_err()?;
@@ -538,17 +615,15 @@ pub fn on_request_receive(
 
                         let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history.last_redo().and_then(|cmd| {
-                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
-                        });
-                        redo_command(project, timeline_id, history, offset_member_key.as_deref())?;
+                        let media_paths = history
+                            .last_redo()
+                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        redo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     _ => {
                         log::warn!("Unhandled packet type in toolbar action: {:?}", packet);
@@ -566,8 +641,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ。実行は解放後に行う。
             let (project_arc, network, histories_arc, loader_arc) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -583,18 +657,17 @@ pub fn on_request_receive(
             let loader = loader_arc.read_or_err()?;
 
             let mut histories = histories_arc
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            // 履歴の最後のコマンドから能力ベースでオフセットメンバキーを解決する。
-            let offset_member_key = history
+            // 履歴の最後のコマンドから能力ベースでメディアプロパティのパスを解決する。
+            let media_paths = history
                 .last_undo()
-                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+                .and_then(|cmd| resolve_media_paths(project, *timeline_id, cmd, &loader));
 
-            undo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            undo_command(project, *timeline_id, history, media_paths.as_ref())?;
             drop(project_guard);
             // must send to client
             network.notify_dirty();
@@ -603,8 +676,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ。実行は解放後に行う。
             let (project_arc, network, histories_arc, loader_arc) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -620,17 +692,16 @@ pub fn on_request_receive(
             let loader = loader_arc.read_or_err()?;
 
             let mut histories = histories_arc
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            let offset_member_key = history
+            let media_paths = history
                 .last_redo()
-                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+                .and_then(|cmd| resolve_media_paths(project, *timeline_id, cmd, &loader));
 
-            redo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            redo_command(project, *timeline_id, history, media_paths.as_ref())?;
             drop(project_guard);
             // must send to client
             network.notify_dirty();
@@ -639,31 +710,29 @@ pub fn on_request_receive(
     Ok(())
 }
 
-/// コマンド履歴からメディアオフセットメンバーのキーを能力ベースで解決する。
+/// コマンド履歴からメディアプロパティのパスを能力ベースで解決する。
 ///
-/// 履歴の最初のクリップの種別からコンポーネント定義を引き、
-/// `MediaOffsetProvider` 能力を持つメンバーのキーを返す。
-/// プラグインが宣言する能力からプロパティを参照し、ハードコードを避ける
-/// （AGENTS.md 第9条）。
-fn resolve_offset_member_key(
+/// 履歴コマンドの対象クリップ（または追加されるクリップ）の種別から
+/// コンポーネント定義を引き、`FrameProvider` 能力とそのメンバー能力から
+/// パスを逆引きする。プラグインが宣言する能力からプロパティを参照し、
+/// ハードコードを避ける（AGENTS.md 第9条）。
+fn resolve_media_paths(
     project: &Project,
     timeline_id: TimelineId,
     command: &CommandHistory,
     loader: &PluginLoader,
-) -> Option<String> {
-    match command {
-        CommandHistory::ClipsResize { clips } => clips.first().and_then(|ctx| {
+) -> Option<MediaPropertyPaths> {
+    let kind_id = match command {
+        CommandHistory::ClipsResize { clips } => {
+            let ctx = clips.first()?;
             let clip = project.timeline_ref(timeline_id)?.get_clip(ctx.clip_id)?;
-            let runtime_def = loader.resolve_component_definition(&clip.kind_id).ok()?;
-            let comp = runtime_def
-                .components
-                .iter()
-                .find(|c| c.id == clip.kind_id)?;
-            comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
-                .cloned()
-        }),
-        _ => None,
-    }
+            clip.kind_id.clone()
+        }
+        CommandHistory::AddClip { kind_id, .. } => kind_id.clone(),
+        _ => return None,
+    };
+    let runtime_def = loader.resolve_component_definition(&kind_id).ok()?;
+    Some(MediaPropertyPaths::resolve(&runtime_def))
 }
 
 /// コマンドが拒否された場合にクライアントへ送信する `CommandRejected` レスポンスを構築する。
@@ -730,4 +799,71 @@ log::warn!(
             .collect(),
         _ => vec![],
     }
+}
+
+/// ワイヤ形式のアセット ID を `AssetId`（UUID）として解釈する。
+fn parse_asset_id(asset_id: &str) -> anyhow::Result<Uuid> {
+    Uuid::parse_str(asset_id).map_err(|_| anyhow::anyhow!("invalid asset id `{asset_id}`"))
+}
+
+fn deserialize_add_clip(
+    add_clip: &rkyv::option::ArchivedOption<ArchivedAddClipFromAsset>,
+) -> anyhow::Result<Option<AddClipFromAsset>> {
+    match add_clip.as_ref() {
+        None => Ok(None),
+        Some(archived) => match archived.deserialize(&mut rkyv::Infallible) {
+            Ok(value) => Ok(Some(value)),
+            Err(error) => match error {},
+        },
+    }
+}
+
+/// FileDropHandler で初期プロパティを生成し、アセットを指すクリップを追加する。
+fn add_clip_from_asset(
+    project: &mut Project,
+    loader_arc: &Arc<RwLock<PluginLoader>>,
+    script_engine: &rhai::Engine,
+    add_clip: &AddClipFromAsset,
+    source_path: &str,
+) -> anyhow::Result<()> {
+    let loader_guard = loader_arc.read_or_err()?;
+    let properties = Scheduler::new().file_drop_properties(
+        script_engine,
+        &loader_guard,
+        &add_clip.kind_id,
+        source_path,
+    )?;
+    let media_paths = loader_guard
+        .resolve_component_definition(&add_clip.kind_id)
+        .map(|def| MediaPropertyPaths::resolve(&def))
+        .ok();
+    clip_add_core(
+        project,
+        add_clip.timeline_id,
+        add_clip.layer_id,
+        add_clip.position,
+        add_clip.duration,
+        add_clip.kind_id.clone(),
+        properties,
+        media_paths.as_ref(),
+        None,
+    )?;
+    Ok(())
+}
+
+fn send_asset_import_failed(
+    network: &ServerNetworkHandler,
+    client_id: u32,
+    asset_id: &str,
+    error: &anyhow::Error,
+) {
+    log::error!("asset import failed for `{asset_id}`: {error:#}");
+    network.send(
+        client_id,
+        &Response::Failed {
+            error: EsotereelError::UploadFailed(format!(
+                "asset import `{asset_id}`: {error:#}"
+            )),
+        },
+    );
 }
