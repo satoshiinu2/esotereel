@@ -177,6 +177,56 @@ jobs:
         if: runner.os == 'macOS'
         run: bash installer/macos/build_dmg.sh
 
+      # Launch smoke test: the packaged .app must stay alive for 15s.
+      # Catches launch-path crashes (dylib load failures, plugin load
+      # panics, MainWindow construction) that build+test cannot see.
+      # Post-launch interaction crashes and launch deadlocks (process
+      # stays alive) are out of scope for this step.
+      - name: Smoke test macOS app launch
+        if: runner.os == 'macOS'
+        run: |
+          set -u
+          APP="build/macOS/Esotereel.app/Contents/MacOS/esotereel_gui"
+          LOG="$RUNNER_TEMP/esotereel-smoke.log"
+          CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
+          ls "$CRASH_DIR" > "$RUNNER_TEMP/crash-before.txt" 2>/dev/null || true
+
+          "$APP" >"$LOG" 2>&1 &
+          PID=$!
+          sleep 15
+
+          if ! kill -0 "$PID" 2>/dev/null; then
+            CODE=0
+            wait "$PID" || CODE=$?
+            echo "::error::esotereel_gui exited within 15s (code $CODE)"
+            cat "$LOG"
+            exit 1
+          fi
+
+          screencapture -x "$RUNNER_TEMP/esotereel-smoke.png" || true
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+
+          # Fail if a new crash report for the app appeared during launch
+          NEW=$(comm -13 <(sort "$RUNNER_TEMP/crash-before.txt") \
+                         <(ls "$CRASH_DIR" 2>/dev/null | sort) \
+                 | grep -i esotereel || true)
+          if [ -n "$NEW" ]; then
+            echo "::error::crash report generated: $NEW"
+            exit 1
+          fi
+          echo "smoke OK: alive after 15s, no crash report"
+
+      - name: Upload smoke log (on failure)
+        if: failure() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: esotereel-macos-smoke-log
+          path: |
+            ${{ runner.temp }}/esotereel-smoke.log
+            ${{ runner.temp }}/esotereel-smoke.png
+          if-no-files-found: ignore
+
       # ========== Artifact Upload ==========
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
