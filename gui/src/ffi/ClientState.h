@@ -47,6 +47,9 @@ class ClientState {
     Result<Project> getProject() const;
     Result<void> bootstrap() const;
     Result<void> logDirectoriesInfo() const;
+    // バックグラウンドスレッド（bootstrap / network）が記録した非同期エラーを取得・クリアする。
+    // 記録されていた場合は、そのメッセージを保持する Error を返す。無ければ Ok。
+    Result<void> takeAsyncError() const;
 
     Requests requests() const;
 };

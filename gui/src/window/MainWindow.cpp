@@ -15,6 +15,7 @@
 #include <QAction>
 #include <QLabel>
 #include <QMenuBar>
+#include <QStatusBar>
 #include <QTimer>
 #include <QVector3D>
 #include <QWidget>
@@ -112,6 +113,12 @@ MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(pare
     setupWidgets(widgetManager);
     setupConnections();
     setupMenus(widgetManager);
+
+    // バックグラウンドスレッドの非同期エラーを定期的に回収し、無言で
+    // 失敗し続ける状態を避ける（checkAsyncError 参照）。
+    asyncErrorTimer = new QTimer(this);
+    connect(asyncErrorTimer, &QTimer::timeout, this, &MainWindow::checkAsyncError);
+    asyncErrorTimer->start(1000);
 }
 
 MainWindow::~MainWindow() {
@@ -129,5 +136,14 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
 void MainWindow::openSettingsDialog() {
     dialog::SettingsDialog settingsDialog(windowState, this);
     settingsDialog.exec();
+}
+
+void MainWindow::checkAsyncError() {
+    auto result = windowState.state->takeAsyncError();
+    if (result.isError()) {
+        auto err = result.getError();
+        qWarning() << "MainWindow: async error:" << QString::fromStdString(*err);
+        statusBar()->showMessage(QString::fromStdString(*err));
+    }
 }
 } // namespace esotereel::window
