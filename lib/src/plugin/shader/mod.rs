@@ -5,7 +5,8 @@
 //! 読み込み時に wesl でモジュール解決（`core::common` などの lib 提供モジュールを含む）
 //! を行い、naga で検証したコンパイル済み WGSL を定義に保持します。
 //!
-//! 実行時 dispatch（描画・compute の実行）は未実装で、本モジュールは読み込みの土台のみです。
+//! compute については Params パッキングとスタック実行ランナーの基盤がありますが、
+//! 実レンダーループへの接続は未実装です。render 用シェーダの実行配線も未実装です。
 
 use std::{collections::HashMap, path::Path};
 
