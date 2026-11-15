@@ -1,0 +1,10 @@
+[package]
+name = "stream-while-upload-proto"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ffmpeg-next = "9.0"
+
+# Esotereel 本体のワークスペースには含めない独立した試作用クレート
+[workspace]
