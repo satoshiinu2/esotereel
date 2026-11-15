@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, bail};
-use rhai::{Dynamic, Engine};
+use rhai::{Dynamic, Engine, Map};
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
@@ -9,7 +9,7 @@ pub use crate::plugin::property::{
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
-use crate::plugin::script::bridge::field_values_to_rhai_map;
+use crate::plugin::script::bridge::{binding_value_to_dynamic, field_value_to_dynamic};
 use crate::plugin::{NamespacedID, PluginLoader};
 use crate::project::clip::ClipBindingValue;
 
@@ -49,9 +49,9 @@ pub struct ComponentDefinition {
     pub script: Option<String>,
     /// このコンポーネントが提供するプロパティスキーマの一覧。
     /// コンポーネントが自身のプロパティを宣言し、ClipInstance は各コンポーネントの
-    /// プロパティを保持・渡す。スケジューラはフック実行時にクリップインスタンスの
-    /// プロパティ全体をスクリプトに渡すため、兄弟コンポーネントが宣言した
-    /// プロパティも参照できる。
+    /// プロパティを保持する。スケジューラがスクリプトへ渡す props は
+    /// サンドボックス化されており、自コンポーネントのプロパティ（ローカル名）と、
+    /// `[[requires]]` で宣言した依存先の capability に紐づくプロパティだけが入る。
     #[serde(default)]
     pub properties: Vec<PropertySchema>,
     /// 他コンポーネントへの依存宣言（`[[requires]]`）。
@@ -479,9 +479,65 @@ impl Scheduler {
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
         for component in &definition.components {
-            self.run_component(engine, loader, instance, component, ctx)?;
+            self.run_component(engine, loader, instance, definition, component, ctx)?;
         }
         Ok(())
+    }
+
+    /// スクリプトへ渡す props を構築する。
+    ///
+    /// 自コンポーネントのプロパティをローカル名で入れ、`[[requires]]` で宣言した
+    /// 依存先は capability に紐づくプロパティだけを依存名で混ぜる（依存先の
+    /// 全プロパティは渡らない）。任意依存が満たせない場合はそのキーが現れない。
+    /// 必須依存は定義解決時に検証されるのが原則だが、実行時に満たせないことが
+    /// 判明した場合も黙って進めずエラーにする。
+    pub fn build_props(
+        definition: &RuntimeDefinition,
+        instance: &ClipInstance,
+        component: &ComponentDefinition,
+    ) -> anyhow::Result<Map> {
+        let mut props = Map::new();
+        for schema in &component.properties {
+            if let Some(value) = instance.properties.get(&schema.key) {
+                props.insert(schema.key.name().into(), binding_value_to_dynamic(value));
+            }
+        }
+        for require in &component.requires {
+            match definition.resolve_requirement(component, require) {
+                Some(RequirementResolution::Property { schema, .. }) => {
+                    if let Some(value) = instance.properties.get(&schema.key) {
+                        props.insert(
+                            require.name.clone().into(),
+                            binding_value_to_dynamic(value),
+                        );
+                    }
+                }
+                Some(RequirementResolution::Member { schema, member, .. }) => {
+                    if let Some(ClipBindingValue::Static(FieldValue::Map(values))) =
+                        instance.properties.get(&schema.key)
+                    {
+                        if let Some(value) = values.get(member) {
+                            props.insert(
+                                require.name.clone().into(),
+                                field_value_to_dynamic(value),
+                            );
+                        }
+                    }
+                }
+                Some(RequirementResolution::DeclaredOnly { .. }) => {}
+                None => {
+                    if require.required {
+                        bail!(
+                            "component `{}` requires capability `{:?}` as `{}` but it is not satisfied",
+                            component.id.full(),
+                            require.capability,
+                            require.name
+                        );
+                    }
+                }
+            }
+        }
+        Ok(props)
     }
 
     /// FileDropHandler の戻り値を初期プロパティとして適用します。
@@ -577,6 +633,7 @@ impl Scheduler {
         engine: &Engine,
         loader: &PluginLoader,
         instance: &ClipInstance,
+        definition: &RuntimeDefinition,
         component: &ComponentDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
@@ -585,11 +642,10 @@ impl Scheduler {
             return Ok(());
         };
 
-        // クリップインスタンスのプロパティ全体を渡す。コンポーネントはクリップ
-        // 種別の中で組み合わされる独立部品であり、ある部品のスクリプトが兄弟部品の
-        // 宣言したプロパティを参照するのは正規の使い方である（例: media の描画
-        // スクリプトが transform コンポーネントの変換プロパティを読む）。
-        let props = field_values_to_rhai_map(&instance.properties);
+        // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
+        // 依存だけが入る（例: media の描画スクリプトは requires 経由で
+        // transform の変換プロパティを読む）。
+        let props = Self::build_props(definition, instance, component)?;
         let props_dynamic = Dynamic::from_map(props);
 
         // 能力をフックタイミング順にソートし、各標準関数を呼び出す。

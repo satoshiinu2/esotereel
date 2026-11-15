@@ -559,7 +559,8 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
 #[cfg(test)]
 mod render_tests {
     use super::*;
-    use crate::plugin::{Plugin, script::bridge::field_values_to_rhai_map};
+    use crate::plugin::Plugin;
+    use crate::plugin::clip::component::{ClipInstance, RuntimeDefinition, Scheduler};
     use crate::project::clip::ClipBindingValue;
 
     #[test]
@@ -649,6 +650,18 @@ mod render_tests {
         transform_map.insert("rotation".into(), vec([0.0, 0.0, 0.0]));
         transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
 
+        // Scheduler と同じ経路で props を構築する: media の自プロパティと、
+        // [[requires]] で宣言した transform 依存だけがローカル名で渡る。
+        let definition = RuntimeDefinition {
+            kind_id: crate::plugin::NamespacedID::new("std", "video").unwrap(),
+            components: vec![media_component.clone(), transform_component.clone()],
+        };
+        let mut instance = ClipInstance {
+            kind_id: definition.kind_id.clone(),
+            properties: props,
+            state: std::collections::HashMap::new(),
+        };
+
         let cache = Arc::new(MediaFetchCache::default());
         let path_to_stream = Arc::new(DashMap::new());
         let streams = Arc::new(DashMap::new());
@@ -671,7 +684,10 @@ mod render_tests {
             .call::<()>(
                 &engine,
                 "render_frame",
-                (context.clone(), field_values_to_rhai_map(&props)),
+                (
+                    context.clone(),
+                    Scheduler::build_props(&definition, &instance, media_component).unwrap(),
+                ),
             )
             .unwrap();
         let (_, paths) = context.clone().into_parts();
@@ -687,7 +703,8 @@ mod render_tests {
         path_to_stream.insert("test.mp4".into(), StreamState::Loaded(7));
         streams.insert(7, player);
         for factor in [1.0, 0.5, 2.0] {
-            let transform_value = props
+            let transform_value = instance
+                .properties
                 .get_mut(
                 &crate::plugin::property::PropertyKey::new(
                     crate::plugin::NamespacedID::new("std", "transform").unwrap(),
@@ -724,7 +741,10 @@ mod render_tests {
                 .call::<()>(
                     &engine,
                     "render_frame",
-                    (context.clone(), field_values_to_rhai_map(&props)),
+                    (
+                        context.clone(),
+                        Scheduler::build_props(&definition, &instance, media_component).unwrap(),
+                    ),
                 )
                 .unwrap();
             let (batches, _) = context.clone().into_parts();
