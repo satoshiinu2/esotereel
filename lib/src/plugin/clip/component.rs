@@ -30,8 +30,9 @@ pub enum ComponentHook {
 /// プラグインが TOML で宣言し、Component Registry に登録される。
 /// `kind` は `NamespacedID`（例: `std:media-provider`）であり、ネイティブ側では
 /// 種別判定より `capabilities` を通じた能力ベースのアクセスを原則とする。
-/// `children` で他コンポーネントを参照でき、読み込み時に `RuntimeDefinition` へ
-/// フラット化される。定義は Kind ごとに1つ、状態（Runtime State）は Clip Instance ごとに独立する。
+/// コンポーネントは独立した部品であり、どのクリップ種別がどのコンポーネントで
+/// 構成されるかはクリップ種別（`ClipKind`）側が宣言する。定義は Kind ごとに1つ、
+/// 状態（Runtime State）は Clip Instance ごとに独立する。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComponentDefinition {
     pub id: NamespacedID,
@@ -51,9 +52,6 @@ pub struct ComponentDefinition {
     /// プロパティだけをスクリプトに渡す。
     #[serde(default)]
     pub properties: Vec<PropertySchema>,
-    /// このコンポーネントが内部で使う子コンポーネントの id。
-    #[serde(default)]
-    pub children: Vec<NamespacedID>,
 }
 
 impl ComponentDefinition {
@@ -78,13 +76,13 @@ impl ComponentDefinition {
     }
 }
 
-/// 読み込み時にフラット化・解決済みの実行時定義。
+/// 読み込み時に解決済みの実行時定義。
 ///
-/// `resolve_definition` により階層構造の ComponentDefinition が平坦な実行リスト
-/// に展開される。Scheduler はこのリストの順にフックを実行する。
+/// `resolve_definition` により、クリップ種別が宣言するコンポーネント列が
+/// 実行リストに展開される。Scheduler はこのリストの順にフックを実行する。
 #[derive(Debug, Clone)]
 pub struct RuntimeDefinition {
-    pub root_id: NamespacedID,
+    pub kind_id: NamespacedID,
     pub components: Vec<ComponentDefinition>,
 }
 
@@ -170,51 +168,35 @@ impl ComponentRegistry {
             .collect()
     }
 
-    /// 階層構造の ComponentDefinition をルートから辿ってフラットな `RuntimeDefinition` に解決する。
+    /// クリップ種別が宣言するコンポーネント列を `RuntimeDefinition` に解決する。
     ///
-    /// 親 → 子の順（深さ優先）で展開し、同じコンポーネントは二度出さない。
-    /// 循環参照や未定義の子参照はエラーとする。
-    pub fn resolve_definition(&self, root_id: &NamespacedID) -> anyhow::Result<RuntimeDefinition> {
+    /// 宣言順に展開し、同じコンポーネントは二度出さない。
+    /// 未定義のコンポーネント参照はエラーとする。
+    pub fn resolve_definition(
+        &self,
+        kind_id: &NamespacedID,
+        component_ids: &[NamespacedID],
+    ) -> anyhow::Result<RuntimeDefinition> {
         let mut components = Vec::new();
         let mut visited = HashSet::new();
-        let mut path = HashSet::new();
-        self.resolve_definition_inner(root_id, &mut components, &mut visited, &mut path)?;
+        for id in component_ids {
+            if !visited.insert(id.clone()) {
+                continue;
+            }
+            let def = self
+                .get(id)
+                .with_context(|| format!("component definition `{}` not found", id.full()))?;
+            components.push(def.clone());
+        }
         Ok(RuntimeDefinition {
-            root_id: root_id.clone(),
+            kind_id: kind_id.clone(),
             components,
         })
-    }
-
-    fn resolve_definition_inner(
-        &self,
-        id: &NamespacedID,
-        components: &mut Vec<ComponentDefinition>,
-        visited: &mut HashSet<NamespacedID>,
-        path: &mut HashSet<NamespacedID>,
-    ) -> anyhow::Result<()> {
-        if path.contains(id) {
-            anyhow::bail!("cyclic component reference detected at `{}`", id.full());
-        }
-        if visited.contains(id) {
-            return Ok(()); // 他の枝ですでに展開済み
-        }
-
-        path.insert(id.clone());
-        let def = self
-            .get(id)
-            .with_context(|| format!("component definition `{}` not found", id.full()))?;
-        components.push(def.clone());
-        for child in &def.children {
-            self.resolve_definition_inner(child, components, visited, path)?;
-        }
-        path.remove(id);
-        visited.insert(id.clone());
-        Ok(())
     }
 }
 
 /// `plugin:local` 形式、またはプラグイン下のローカル ID を NamespacedID に解決する。
-fn resolve_namespaced(value: &str, plugin_id: &str) -> anyhow::Result<NamespacedID> {
+pub(crate) fn resolve_namespaced(value: &str, plugin_id: &str) -> anyhow::Result<NamespacedID> {
     if value.contains(':') {
         NamespacedID::parse(value)
     } else {
@@ -230,8 +212,6 @@ pub(crate) struct ComponentDefinitionRaw {
     pub kind: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
-    #[serde(default)]
-    pub children: Vec<String>,
     #[serde(default)]
     pub editor: Option<String>,
     #[serde(default)]
@@ -256,12 +236,6 @@ impl ComponentDefinitionRaw {
                 format!("invalid component capability `{cap}` in `{}`", id.full())
             })?);
         }
-        let mut children = Vec::new();
-        for child in &self.children {
-            children.push(resolve_namespaced(child, plugin_id).with_context(|| {
-                format!("invalid component child id `{child}` in `{}`", id.full())
-            })?);
-        }
         let mut properties = Vec::new();
         for raw in &self.properties {
             properties.push(PropertySchema::parse_one(raw.clone(), plugin_id)?);
@@ -274,7 +248,6 @@ impl ComponentDefinitionRaw {
             editor: self.editor,
             script: self.script,
             properties,
-            children,
         })
     }
 }
@@ -436,16 +409,11 @@ impl Scheduler {
             return Ok(());
         };
 
-        // コンポーネントが宣言したプロパティだけを抽出して渡す（カプセル化）。
-        let component_prop_keys: HashSet<NamespacedID> =
-            component.properties.iter().map(|p| p.key.clone()).collect();
-        let component_props: HashMap<NamespacedID, ClipBindingValue> = instance
-            .properties
-            .iter()
-            .filter(|(k, _)| component_prop_keys.contains(k))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        let props = field_values_to_rhai_map(&component_props);
+        // クリップインスタンスのプロパティ全体を渡す。コンポーネントはクリップ
+        // 種別の中で組み合わされる独立部品であり、ある部品のスクリプトが兄弟部品の
+        // 宣言したプロパティを参照するのは正規の使い方である（例: media の描画
+        // スクリプトが transform コンポーネントの変換プロパティを読む）。
+        let props = field_values_to_rhai_map(&instance.properties);
         let props_dynamic = Dynamic::from_map(props);
 
         // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
@@ -593,7 +561,6 @@ mod tests {
             editor: Some("transform".to_string()),
             script: None,
             properties: Vec::new(),
-            children: Vec::new(),
         }
     }
 
@@ -626,7 +593,6 @@ mod tests {
             editor: Some("video".to_string()),
             script: None,
             properties: Vec::new(),
-            children: Vec::new(),
         };
         let media_id = media.id.clone();
         registry
@@ -670,15 +636,14 @@ mod tests {
     fn parse_component_definitions_from_toml() {
         let text = r#"
 [[components]]
-id = "video"
-name = "Video"
+id = "media"
+name = "Media"
 kind = "media-provider"
 capabilities = ["frame-provider", "prefetchable"]
 editor = "video"
-children = ["video-transform"]
 
 [[components]]
-id = "video-transform"
+id = "transform"
 name = "Transform"
 kind = "transform"
 capabilities = ["transformable"]
@@ -687,36 +652,32 @@ editor = "transform"
         let map = parse_component_definitions(text, "std").unwrap();
         assert_eq!(map.len(), 2);
 
-        let video = map
-            .get(&NamespacedID::new("std", "video").unwrap())
+        let media = map
+            .get(&NamespacedID::new("std", "media").unwrap())
             .unwrap();
-        assert_eq!(video.kind.full(), "std:media-provider");
+        assert_eq!(media.kind.full(), "std:media-provider");
         assert!(
-            video
+            media
                 .capabilities
                 .contains(&ComponentCapability::FrameProvider)
         );
         assert!(
-            video
+            media
                 .capabilities
                 .contains(&ComponentCapability::Prefetchable)
         );
         assert_eq!(
-            video
+            media
                 .capabilities
                 .iter()
                 .find(|c| matches!(c, ComponentCapability::FrameProvider))
                 .map(|_| "render_frame"),
             Some("render_frame")
         );
-        assert_eq!(video.editor.as_deref(), Some("video"));
-        assert_eq!(
-            video.children,
-            vec![NamespacedID::new("std", "video-transform").unwrap()]
-        );
+        assert_eq!(media.editor.as_deref(), Some("video"));
 
         let transform = map
-            .get(&NamespacedID::new("std", "video-transform").unwrap())
+            .get(&NamespacedID::new("std", "transform").unwrap())
             .unwrap();
         assert_eq!(transform.kind.full(), "std:transform");
         assert!(
@@ -887,40 +848,16 @@ capabilities = ["my-custom-cap"]
     }
 
     #[test]
-    fn resolve_definition_flattens_hierarchy_depth_first() {
+    fn resolve_definition_expands_kind_components_in_order() {
         let mut registry = ComponentRegistry::default();
-        let video = ComponentDefinition {
-            id: NamespacedID::new("std", "video").unwrap(),
-            name: "Video".to_string(),
+        let media = ComponentDefinition {
+            id: NamespacedID::new("std", "media").unwrap(),
+            name: "Media".to_string(),
             kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
             properties: Vec::new(),
-            children: vec![
-                NamespacedID::new("std", "decoder").unwrap(),
-                NamespacedID::new("std", "transform").unwrap(),
-            ],
-        };
-        let decoder = ComponentDefinition {
-            id: NamespacedID::new("std", "decoder").unwrap(),
-            name: "Decoder".to_string(),
-            kind: NamespacedID::new("std", "media-provider").unwrap(),
-            capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
-            editor: None,
-            script: None,
-            properties: Vec::new(),
-            children: vec![NamespacedID::new("std", "frame-buffer").unwrap()],
-        };
-        let frame_buffer = ComponentDefinition {
-            id: NamespacedID::new("std", "frame-buffer").unwrap(),
-            name: "FrameBuffer".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: BTreeSet::new(),
-            editor: None,
-            script: None,
-            properties: Vec::new(),
-            children: Vec::new(),
         };
         let transform = ComponentDefinition {
             id: NamespacedID::new("std", "transform").unwrap(),
@@ -930,84 +867,46 @@ capabilities = ["my-custom-cap"]
             editor: None,
             script: None,
             properties: Vec::new(),
-            children: Vec::new(),
         };
         registry
             .merge_component_definitions(HashMap::from([
-                (video.id.clone(), video),
-                (decoder.id.clone(), decoder),
-                (frame_buffer.id.clone(), frame_buffer),
+                (media.id.clone(), media),
                 (transform.id.clone(), transform),
             ]))
             .unwrap();
 
+        let kind_id = NamespacedID::new("std", "video").unwrap();
         let def = registry
-            .resolve_definition(&NamespacedID::new("std", "video").unwrap())
+            .resolve_definition(
+                &kind_id,
+                &[
+                    NamespacedID::new("std", "media").unwrap(),
+                    NamespacedID::new("std", "transform").unwrap(),
+                    // 重複した宣言は1回だけ現れる。
+                    NamespacedID::new("std", "media").unwrap(),
+                ],
+            )
             .unwrap();
+        assert_eq!(def.kind_id, kind_id);
         let ids: Vec<_> = def.components.iter().map(|c| c.id.clone()).collect();
         assert_eq!(
             ids,
             vec![
-                NamespacedID::new("std", "video").unwrap(),
-                NamespacedID::new("std", "decoder").unwrap(),
-                NamespacedID::new("std", "frame-buffer").unwrap(),
+                NamespacedID::new("std", "media").unwrap(),
                 NamespacedID::new("std", "transform").unwrap(),
             ]
         );
     }
 
     #[test]
-    fn resolve_definition_rejects_cycle() {
-        let mut registry = ComponentRegistry::default();
-        let a = ComponentDefinition {
-            id: NamespacedID::new("std", "a").unwrap(),
-            name: "A".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: BTreeSet::new(),
-            editor: None,
-            script: None,
-            properties: Vec::new(),
-            children: vec![NamespacedID::new("std", "b").unwrap()],
-        };
-        let b = ComponentDefinition {
-            id: NamespacedID::new("std", "b").unwrap(),
-            name: "B".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: BTreeSet::new(),
-            editor: None,
-            script: None,
-            properties: Vec::new(),
-            children: vec![NamespacedID::new("std", "a").unwrap()],
-        };
-        registry
-            .merge_component_definitions(HashMap::from([(a.id.clone(), a), (b.id.clone(), b)]))
-            .unwrap();
+    fn resolve_definition_rejects_missing_component() {
+        let registry = ComponentRegistry::default();
         assert!(
             registry
-                .resolve_definition(&NamespacedID::new("std", "a").unwrap())
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn resolve_definition_rejects_missing_child() {
-        let mut registry = ComponentRegistry::default();
-        let root = ComponentDefinition {
-            id: NamespacedID::new("std", "root").unwrap(),
-            name: "Root".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
-            capabilities: BTreeSet::new(),
-            editor: None,
-            script: None,
-            properties: Vec::new(),
-            children: vec![NamespacedID::new("std", "missing").unwrap()],
-        };
-        registry
-            .merge_component_definitions(HashMap::from([(root.id.clone(), root)]))
-            .unwrap();
-        assert!(
-            registry
-                .resolve_definition(&NamespacedID::new("std", "root").unwrap())
+                .resolve_definition(
+                    &NamespacedID::new("std", "video").unwrap(),
+                    &[NamespacedID::new("std", "missing").unwrap()],
+                )
                 .is_err()
         );
     }
@@ -1053,7 +952,6 @@ capabilities = ["my-custom-cap"]
                     member_capabilities: BTreeMap::new(),
                 },
             ],
-            children: Vec::new(),
         };
 
         let instance = ClipInstance::new(NamespacedID::new("std", "video").unwrap(), &[video_def]);
@@ -1088,7 +986,6 @@ capabilities = ["my-custom-cap"]
                 capability: None,
                 member_capabilities: BTreeMap::new(),
             }],
-            children: Vec::new(),
         };
         let b = ComponentDefinition {
             id: NamespacedID::new("std", "b").unwrap(),
@@ -1109,7 +1006,6 @@ capabilities = ["my-custom-cap"]
                 capability: None,
                 member_capabilities: BTreeMap::new(),
             }],
-            children: Vec::new(),
         };
 
         let instance = ClipInstance::new(NamespacedID::new("std", "clip").unwrap(), &[a, b]);
@@ -1208,7 +1104,7 @@ script = "video.rhai"
             state: HashMap::new(),
         };
         let def = RuntimeDefinition {
-            root_id: NamespacedID::new("sched-test", "video").unwrap(),
+            kind_id: NamespacedID::new("sched-test", "video").unwrap(),
             components: vec![ComponentDefinition {
                 id: NamespacedID::new("sched-test", "video").unwrap(),
                 name: "Video".to_string(),
@@ -1217,7 +1113,6 @@ script = "video.rhai"
                 editor: None,
                 script: Some("video.rhai".to_string()),
                 properties: Vec::new(),
-                children: Vec::new(),
             }],
         };
 

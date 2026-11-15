@@ -144,7 +144,7 @@ mod preview_tests {
             .unwrap();
         let kind = NamespacedID::new("std", "video").unwrap();
         let mut properties =
-            ClipBindingValue::default_properties(loader.get_clip_properties(&kind).unwrap());
+            ClipBindingValue::default_properties(&loader.get_clip_properties(&kind).unwrap());
         // コンポーネントが提供するプロパティはフラットなキーで配置される:
         // std:video:media, std:video:transform など
         let media_value = properties

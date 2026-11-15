@@ -97,46 +97,29 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         };
 
         // コンポーネントが宣言する能力から、どのプロパティを参照すべきかを解決する。
-        let media_property_key = runtime_def
+        // メディアプロパティはクリップ種別を構成するいずれかのコンポーネントが
+        // 提供するため、構成全体から `FrameProvider` 能力を持つプロパティを逆引きする。
+        let media_property = runtime_def
             .components
             .iter()
-            .find(|c| c.id == clip.kind_id)
-            .and_then(|c| {
-                c.properties
-                    .iter()
-                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
-                    .map(|p| p.key.clone())
-            });
+            .flat_map(|c| c.properties.iter())
+            .find(|p| p.capability == Some(ComponentCapability::FrameProvider));
+        let media_property_key = media_property.map(|p| p.key.clone());
 
         // メンバキー（"source", "source_offset" 等）もハードコードせず、
         // プロパティ定義の `member_capabilities` から能力ベースで解決する。
-        let media_component_def = runtime_def.components.iter().find(|c| c.id == clip.kind_id);
-        let source_member_key = media_component_def
-            .and_then(|c| {
-                c.properties
+        let member_key = |capability: ComponentCapability| -> Option<&str> {
+            media_property.and_then(|p| {
+                p.member_capabilities
                     .iter()
-                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
-                    .and_then(|p| {
-                        p.member_capabilities
-                            .iter()
-                            .find(|(_, cap)| **cap == ComponentCapability::MediaSource)
-                            .map(|(key, _)| key.as_str())
-                    })
+                    .find(|(_, cap)| **cap == capability)
+                    .map(|(key, _)| key.as_str())
             })
-            .unwrap_or("source");
-        let offset_member_key = media_component_def
-            .and_then(|c| {
-                c.properties
-                    .iter()
-                    .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
-                    .and_then(|p| {
-                        p.member_capabilities
-                            .iter()
-                            .find(|(_, cap)| **cap == ComponentCapability::MediaOffsetProvider)
-                            .map(|(key, _)| key.as_str())
-                    })
-            })
-            .unwrap_or("source_offset");
+        };
+        let source_member_key =
+            member_key(ComponentCapability::MediaSource).unwrap_or("source");
+        let offset_member_key =
+            member_key(ComponentCapability::MediaOffsetProvider).unwrap_or("source_offset");
 
         let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
         let mut video_source: Option<String> = None;

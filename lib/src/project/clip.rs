@@ -174,10 +174,16 @@ impl Clip {
 ///
 /// プラグインが `clips/` ディレクトリ下の TOML で宣言し、
 /// `ClipKindRegistry` に登録されます。
+///
+/// `components` はこの種別のクリップを構成するコンポーネントの列で、
+/// クリップの初期構成を担保します。コンポーネントは独立した部品として
+/// 定義され、複数のクリップ種別から再利用できます。
 #[derive(Debug, Clone)]
 pub struct ClipKind {
     pub render_script: String,
     pub tags: HashSet<String>,
+    /// このクリップ種別を構成するコンポーネント（宣言順 = 実行順）。
+    pub components: Vec<NamespacedID>,
 }
 
 /// クリッププロパティの値です。

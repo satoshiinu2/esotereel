@@ -130,7 +130,7 @@ pub unsafe extern "C" fn clip_get_all_fields(
             .get_clip_properties(&clip.kind_id)
             .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
 
-        let fields: Vec<FfiPropertySchema> = FfiPropertySchema::from_clip_fields(schema)?;
+        let fields: Vec<FfiPropertySchema> = FfiPropertySchema::from_clip_fields(&schema)?;
 
         Ok(FfiArray::from_vec(fields))
     }
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn clip_get_common_fields(
             .ok_or(EsotereelError::ClipKindNotFound(first_clip.kind_id.clone()))?;
 
         // Find common fields across all clips
-        let mut common_fields = PropertySchema::leaf_fields(base_schema)?;
+        let mut common_fields = PropertySchema::leaf_fields(&base_schema)?;
 
         for &clip_ptr in &clips[1..] {
             let clip = unsafe { &*clip_ptr };
@@ -186,7 +186,7 @@ pub unsafe extern "C" fn clip_get_common_fields(
                 .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
 
             // Compare member paths, so compatible leaves survive even if sibling schemas differ.
-            let other_fields = PropertySchema::leaf_fields(clip_schema)?;
+            let other_fields = PropertySchema::leaf_fields(&clip_schema)?;
             common_fields.retain(|(path, field)| {
                 other_fields
                     .iter()
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn clip_get_categories(
             .ok_or(EsotereelError::ClipKindNotFound(clip.kind_id.clone()))?;
 
         let mut categories = HashSet::new();
-        for (_, field) in PropertySchema::leaf_fields(schema)? {
+        for (_, field) in PropertySchema::leaf_fields(&schema)? {
             for cat in &field.category {
                 categories.insert(cat.clone());
             }

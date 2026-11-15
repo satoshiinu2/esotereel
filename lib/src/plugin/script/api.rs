@@ -568,13 +568,24 @@ mod render_tests {
             "/../plugins/std"
         )))
         .unwrap();
-        // コンポーネントがプロパティを提供する。ルートコンポーネント std:video の
-        // プロパティスキーマを取得し、core:media / core:transform 特別プロパティを含むことを確認する。
-        let component = plugin
+        // プロパティはコンポーネントが提供する。クリップ種別 std:video を構成する
+        // std:media と std:transform のスキーマを合成し、media / transform
+        // プロパティを含むことを確認する。
+        let media_component = plugin
             .component_definitions
-            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
             .unwrap();
-        let fields = &component.properties;
+        let transform_component = plugin
+            .component_definitions
+            .get(&crate::plugin::NamespacedID::new("std", "transform").unwrap())
+            .unwrap();
+        let fields: Vec<_> = media_component
+            .properties
+            .iter()
+            .chain(transform_component.properties.iter())
+            .cloned()
+            .collect();
+        let fields = &fields;
         let media = fields
             .iter()
             .find(|f| f.key.local_id() == "video:media")
@@ -641,7 +652,7 @@ mod render_tests {
         register_render_api(&mut engine);
         let script = plugin
             .component_scripts
-            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
             .unwrap();
         script
             .call::<()>(

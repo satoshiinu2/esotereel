@@ -820,13 +820,19 @@ impl PluginLoader {
         self.clip_kinds.get(id)
     }
 
-    /// 指定 ID のクリップ（ルートコンポーネント）のプロパティスキーマを返します。
+    /// 指定 ID のクリップ種別が提供するプロパティスキーマを返します。
     ///
-    /// プロパティはクリップ側ではなく、ルートコンポーネントが提供します。
-    pub fn get_clip_properties(&self, id: &NamespacedID) -> Option<&[PropertySchema]> {
-        self.component_registry
-            .get(id)
-            .map(|c| c.properties.as_slice())
+    /// プロパティはクリップ種別側ではなく、その種別を構成する各コンポーネントが
+    /// 提供します。種別の宣言順にコンポーネントをたどり、スキーマを合成します。
+    /// 種別または構成コンポーネントが存在しない場合は `None` を返します。
+    pub fn get_clip_properties(&self, id: &NamespacedID) -> Option<Vec<PropertySchema>> {
+        let kind = self.clip_kinds.get(id)?;
+        let mut schemas = Vec::new();
+        for component_id in &kind.components {
+            let component = self.component_registry.get(component_id)?;
+            schemas.extend(component.properties.iter().cloned());
+        }
+        Some(schemas)
     }
 
     /// 指定 ID の `ComponentDefinition` を返します。
@@ -839,12 +845,18 @@ impl PluginLoader {
         self.shader_registry.get(id)
     }
 
-    /// ルートコンポーネント ID から階層を解決し、フラットな `RuntimeDefinition` を返します。
+    /// クリップ種別 ID から、その種別が宣言するコンポーネント列を解決し、
+    /// フラットな `RuntimeDefinition` を返します。
     pub fn resolve_component_definition(
         &self,
-        root_id: &NamespacedID,
+        kind_id: &NamespacedID,
     ) -> anyhow::Result<RuntimeDefinition> {
-        self.component_registry.resolve_definition(root_id)
+        let kind = self
+            .clip_kinds
+            .get(kind_id)
+            .with_context(|| format!("clip kind `{}` not found", kind_id.full()))?;
+        self.component_registry
+            .resolve_definition(kind_id, &kind.components)
     }
 
     /// 指定 `Capability` を提供する `ComponentDefinition` をすべて返します。

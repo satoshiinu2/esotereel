@@ -1,8 +1,13 @@
 use std::collections::HashMap;
 
+use anyhow::Context;
+
 use crate::{
     plugin::{
-        clip::component::{ComponentCapability, ComponentDefinition, parse_component_definitions},
+        clip::component::{
+            ComponentCapability, ComponentDefinition, parse_component_definitions,
+            resolve_namespaced,
+        },
         NamespacedID,
     },
     project::clip::ClipKind,
@@ -14,6 +19,8 @@ struct ClipKindRaw {
     render_script: String,
     #[serde(default)]
     tags: Vec<String>,
+    #[serde(default)]
+    components: Vec<String>,
 }
 
 #[derive(Debug, serde::Deserialize, Default)]
@@ -47,9 +54,19 @@ impl ClipKind {
         let mut kinds = HashMap::new();
         for raw in raw_kinds {
             let id = NamespacedID::new(plugin_id, &raw.id)?;
+            let mut components = Vec::new();
+            for component in &raw.components {
+                components.push(resolve_namespaced(component, plugin_id).with_context(|| {
+                    format!(
+                        "invalid component id `{component}` in clip kind `{}`",
+                        id.full()
+                    )
+                })?);
+            }
             let kind = ClipKind {
                 render_script: raw.render_script,
                 tags: raw.tags.into_iter().collect(),
+                components,
             };
             if kinds.insert(id.clone(), kind).is_some() {
                 anyhow::bail!("duplicate clip kind id `{}`", id);
@@ -68,6 +85,7 @@ mod tests {
 id = "video"
 render_script = "render"
 tags = ["media"]
+components = ["media", "other:transform"]
 "#;
 
     #[test]
@@ -80,6 +98,14 @@ tags = ["media"]
             .unwrap();
         assert_eq!(video.render_script, "render");
         assert!(video.tags.contains("media"));
+        // ローカル ID は自プラグインの名前空間で、`plugin:local` 形式はそのまま解決される。
+        assert_eq!(
+            video.components,
+            vec![
+                NamespacedID::new("std", "media").unwrap(),
+                NamespacedID::new("other", "transform").unwrap(),
+            ]
+        );
     }
 
     #[test]

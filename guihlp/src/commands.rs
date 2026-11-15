@@ -131,7 +131,7 @@ impl CommandQueue {
             .get_clip_properties(&kind_id)
             .ok_or(EsotereelError::ClipKindNotFound(kind_id.clone()))?;
 
-        let properties = ClipBindingValue::default_properties(property_schema);
+        let properties = ClipBindingValue::default_properties(&property_schema);
         drop(loader);
 
         let command = CommandRequest::AddClip {

@@ -356,18 +356,15 @@ pub fn on_request_receive(
                             .get_clip(clips[0].clip_id)
                             .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
                         let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
-                        let comp = runtime_def
+                        runtime_def
                             .components
                             .iter()
-                            .find(|c| c.id == clip.kind_id)
-                            .ok_or_else(|| {
-                                anyhow::anyhow!(
-                                    "component definition not found for kind {}",
-                                    clip.kind_id
+                            .find_map(|c| {
+                                c.member_key_by_capability(
+                                    &ComponentCapability::MediaOffsetProvider,
                                 )
-                            })?;
-                        comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
-                            .map(|k| k.clone())
+                            })
+                            .cloned()
                     }
                     _ => None,
                 };
@@ -759,12 +756,10 @@ fn resolve_offset_member_key(
         CommandHistory::ClipsResize { clips } => clips.first().and_then(|ctx| {
             let clip = project.timeline_ref(timeline_id)?.get_clip(ctx.clip_id)?;
             let runtime_def = loader.resolve_component_definition(&clip.kind_id).ok()?;
-            let comp = runtime_def
-                .components
-                .iter()
-                .find(|c| c.id == clip.kind_id)?;
-            comp.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
-                .cloned()
+            runtime_def.components.iter().find_map(|c| {
+                c.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
+                    .cloned()
+            })
         }),
         _ => None,
     }
