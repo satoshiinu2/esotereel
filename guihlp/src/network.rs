@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use esotereel_lib::network::NetworkHandler;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
+use esotereel_lib::util::result::{LockExt, MutexExt};
 use rkyv::ser::Serializer;
 use rkyv::ser::serializers::AllocSerializer;
 use rkyv::{AlignedVec, check_archived_root};
@@ -43,7 +44,7 @@ impl ClientNetworkHandler {
         let (tx, mut rx) = mpsc::unbounded_channel::<AlignedVec>();
 
         // 送信チャンネルを保存
-        if let Ok(mut guard) = self.tx.write() {
+        if let Ok(mut guard) = self.tx.write_or_err() {
             *guard = Some(tx);
         }
 
@@ -81,7 +82,7 @@ impl ClientNetworkHandler {
         // クリーンアップ
         log::info!("Client: Server disconnected");
         send_task.abort(); // 送信ループを強制終了
-        if let Ok(mut guard) = instance.tx.write() {
+        if let Ok(mut guard) = instance.tx.write_or_err() {
             *guard = None; // 送信チャンネルをクリア
         }
 
@@ -116,7 +117,7 @@ impl ClientNetworkHandler {
     }
 
     fn send_bytes(&self, bytes: AlignedVec) {
-        if let Ok(guard) = self.tx.read() {
+        if let Ok(guard) = self.tx.read_or_err() {
             if let Some(tx) = guard.as_ref() {
                 if let Err(_) = tx.send(bytes) {
                     log::error!("Failed to send to server: channel closed");
@@ -134,7 +135,7 @@ impl ClientNetworkHandler {
         // コールバック内（例：req_new_project）で同じ Mutex を再取得しようとして
         // 再入デッドロックになる。コールバック呼び出し前にロックを解放する。
         let fn_ptr = {
-            let guard = match state.lock() {
+            let guard = match state.lock_or_err() {
                 Ok(g) => g,
                 Err(_) => return,
             };

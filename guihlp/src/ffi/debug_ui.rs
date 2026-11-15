@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use esotereel_lib::util::result::EsotereelError;
+use esotereel_lib::util::result::{EsotereelError, MutexExt};
 
 use crate::{
     ffi::{result::FfiResultVoid, state::ClientStateHandle},
@@ -13,10 +13,10 @@ pub extern "C" fn launch_debug_window(ptr_state: *const ClientStateHandle) -> Ff
     }
 
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let stream_state_map = match state.lock() {
+    let stream_state_map = match state.lock_or_err() {
         Ok(state_guard) => Arc::clone(&state_guard.stream_state_map),
         Err(error) => {
-            return FfiResultVoid::err(EsotereelError::LockError(error.to_string()).into());
+            return FfiResultVoid::err(error);
         }
     };
 

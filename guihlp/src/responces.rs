@@ -22,7 +22,7 @@ use esotereel_lib::{
         timeline::TimelineMeta,
     },
     responces::ArchivedResponse,
-    util::result::{EsotereelError, EsotereelResult, LockExt},
+    util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
 };
 use log::info;
 use rkyv::Deserialize;
@@ -38,8 +38,7 @@ fn project_and_callback(
     state: &Mutex<ClientState>,
 ) -> EsotereelResult<(Arc<RwLock<Option<Project>>>, extern "C" fn(TimelineId))> {
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
     Ok((
         Arc::clone(&state_guard.project),
         state_guard.gui_callbacks.mark_dirty_timeline,
@@ -50,8 +49,7 @@ fn project_and_callback(
 /// 短時間の State ロックで取り出す。
 fn plugin_loader_of(state: &Mutex<ClientState>) -> EsotereelResult<Arc<RwLock<PluginLoader>>> {
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
     Ok(Arc::clone(&state_guard.common.plugin_loader))
 }
 
@@ -61,8 +59,7 @@ fn stream_players_of(
     state: &Mutex<ClientState>,
 ) -> EsotereelResult<Arc<dashmap::DashMap<esotereel_lib::project::ids::ResourceId, StreamPlayer>>> {
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
     Ok(Arc::clone(&state_guard.stream_players))
 }
 
@@ -103,8 +100,7 @@ pub(super) fn on_responce_recveve(
             let project_arc = Arc::new(RwLock::new(Some(real_project)));
 
             let mut state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             state_guard.project = project_arc;
             // プロジェクトが再初期化されたため、タイムラインごとの最後の
             // FetchClipsInRange 送信記録をクリアする（新しいプロジェクトでの
@@ -127,7 +123,7 @@ pub(super) fn on_responce_recveve(
             // ハードコードしない（AGENTS.md 第9条）。
             let mut deserialized: Vec<(LayerId, Clip)> = Vec::new();
             let mut sources = Vec::new();
-            let loader_guard = loader.read().ok();
+            let loader_guard = loader.read_or_err().ok();
             for (layer_id, archived_clip) in clips.iter() {
                 let clip: Clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
                 if let Some(loader_guard) = loader_guard.as_ref() {
@@ -193,7 +189,7 @@ pub(super) fn on_responce_recveve(
                 // クリップ種別の能力宣言から解決する（AGENTS.md 第9条）。
                 // ロック順序は Project → PluginLoader（docs/architecture/lock-order.md）。
                 if let Some(clip) = timeline.get_clip(clip_id) {
-                    if let Ok(loader_guard) = loader.read() {
+                    if let Ok(loader_guard) = loader.read_or_err() {
                         if let Ok(definition) =
                             loader_guard.resolve_component_definition(&clip.kind_id)
                         {
@@ -402,8 +398,7 @@ pub(super) fn on_responce_recveve(
                 // この State ロックは DashMap への挿入のみで、他のロックを
                 // 取得しないため短時間保持のままにできる
                 let state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 state.stream_players.insert(*resource_id, player);
                 state
                     .stream_state_map

@@ -2,6 +2,7 @@ use esotereel_lib::network::NetworkHandler;
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
+use esotereel_lib::util::result::LockExt;
 use rkyv::ser::Serializer;
 use rkyv::ser::serializers::AllocSerializer;
 use rkyv::{AlignedVec, check_archived_root};
@@ -74,7 +75,7 @@ impl ServerNetworkHandler {
             let (tx, mut rx) = mpsc::unbounded_channel::<AlignedVec>();
 
             // CLIENTSに登録
-            let Ok(mut guard) = self.clients.write() else {
+            let Ok(mut guard) = self.clients.write_or_err() else {
                 log::warn!("network: clients write lock poisoned, skipping client");
                 continue;
             };
@@ -121,7 +122,7 @@ impl ServerNetworkHandler {
                     log::info!("Client {} disconnected", client_id);
                     send_task.abort(); // 送信タスクを終了させる
 
-                    if let Ok(mut guard) = instance.clients.write() {
+                    if let Ok(mut guard) = instance.clients.write_or_err() {
                         guard.remove(&client_id);
                     }
                 });
@@ -147,7 +148,7 @@ impl ServerNetworkHandler {
 
     /// FetchClipsInRange受信時に呼び出し、クライアントの表示範囲を更新する
     pub fn update_client_view(&self, client_id: u32, timeline_id: TimelineId, range: Range<i64>) {
-        if let Ok(mut views) = self.client_views.write() {
+        if let Ok(mut views) = self.client_views.write_or_err() {
             views
                 .entry(client_id)
                 .or_default()
@@ -161,7 +162,7 @@ impl ServerNetworkHandler {
         timeline_id: TimelineId,
         position_range: &Range<i64>,
     ) -> Vec<u32> {
-        let Ok(views) = self.client_views.read() else {
+        let Ok(views) = self.client_views.read_or_err() else {
             return vec![];
         };
         views
@@ -178,7 +179,7 @@ impl ServerNetworkHandler {
 
     /// 指定したtimelineを見ているクライアントID一覧を返す
     pub fn clients_watching_timeline(&self, timeline_id: TimelineId) -> Vec<u32> {
-        let Ok(views) = self.client_views.read() else {
+        let Ok(views) = self.client_views.read_or_err() else {
             return vec![];
         };
         views
@@ -188,7 +189,7 @@ impl ServerNetworkHandler {
     }
 
     fn remove_client_view(&self, client_id: u32) {
-        if let Ok(mut views) = self.client_views.write() {
+        if let Ok(mut views) = self.client_views.write_or_err() {
             views.remove(&client_id);
         }
     }
@@ -232,7 +233,7 @@ impl ServerNetworkHandler {
             }
         };
 
-        if let Ok(clients) = self.clients.read() {
+        if let Ok(clients) = self.clients.read_or_err() {
             for id in client_ids {
                 if let Some(tx) = clients.get(id) {
                     if let Err(_) = tx.send(bytes.clone()) {
@@ -244,7 +245,7 @@ impl ServerNetworkHandler {
     }
 
     fn send_bytes_all(&self, bytes: AlignedVec) {
-        if let Ok(clients) = self.clients.read() {
+        if let Ok(clients) = self.clients.read_or_err() {
             for (client_id, tx) in clients.iter() {
                 if let Err(_) = tx.send(bytes.clone()) {
                     log::error!("Failed to send to client {}: channel closed", client_id);
@@ -254,7 +255,7 @@ impl ServerNetworkHandler {
     }
 
     fn send_bytes(&self, client_id: u32, bytes: AlignedVec) {
-        if let Ok(clients) = self.clients.read() {
+        if let Ok(clients) = self.clients.read_or_err() {
             if let Some(tx) = clients.get(&client_id) {
                 if let Err(_) = tx.send(bytes) {
                     log::error!("Failed to send to client {}: channel closed", client_id);

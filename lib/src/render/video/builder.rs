@@ -11,6 +11,7 @@ use crate::{
     },
     project::{Clip, Project, clip::ShaderStackEntry},
     render::{RenderContext, vertex::Vertex},
+    util::result::LockExt,
 };
 use glam::Mat4;
 use uuid::Uuid;
@@ -83,7 +84,7 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
             continue;
         };
 
-        let Ok(loader) = ctx.plugin_loader.read() else {
+        let Ok(loader) = ctx.plugin_loader.read_or_err() else {
             log::warn!("plugin_loader lock poisoned, skipping clip");
             continue;
         };
@@ -235,7 +236,7 @@ fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f6
 /// ストリーム初期化に回さない。
 fn resolve_video_source(source: &str, project: &Arc<RwLock<Option<Project>>>) -> Option<String> {
     if let Ok(id) = Uuid::parse_str(source) {
-        let guard = project.read().ok()?;
+        let guard = project.read_or_err().ok()?;
         let project = guard.as_ref()?;
         let path = project.assets().resolve(id).ok()?;
         return Some(path.to_string_lossy().to_string());

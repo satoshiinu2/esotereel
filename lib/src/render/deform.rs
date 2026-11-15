@@ -23,6 +23,7 @@ use crate::{
     },
     project::clip::ShaderStackEntry,
     render::{RenderBatch, RenderContext, video::builder::ClipDeformation, wgpuutil::WGpuUtil},
+    util::result::LockExt,
 };
 
 /// クリップのシェーダスタックを、そのクリップの全バッチへ適用します。
@@ -45,7 +46,7 @@ pub fn apply_shader_stacks(
 
     // 参照されるシェーダ定義への `Arc` を集め、ロックを解放してから GPU 処理する。
     let definitions: HashMap<NamespacedID, Arc<ShaderDefinition>> = {
-        let Ok(loader) = ctx.plugin_loader.read() else {
+        let Ok(loader) = ctx.plugin_loader.read_or_err() else {
             log::warn!("plugin_loader lock poisoned, skipping shader stacks");
             return;
         };

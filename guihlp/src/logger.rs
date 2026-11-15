@@ -1,3 +1,4 @@
+use esotereel_lib::util::result::LockExt;
 use log::{LevelFilter, Log, Metadata, Record};
 use std::{
     collections::HashMap,
@@ -64,7 +65,7 @@ pub fn level_filter_from_name(name: &str) -> Option<LevelFilter> {
 }
 
 pub fn set_default_log_level(level: LevelFilter) {
-    if let Ok(mut guard) = LOGGER.default_level.write() {
+    if let Ok(mut guard) = LOGGER.default_level.write_or_err() {
         *guard = level;
     } else {
         log::warn!("gui logger: default_level write lock poisoned");
@@ -72,7 +73,7 @@ pub fn set_default_log_level(level: LevelFilter) {
 }
 
 pub fn replace_log_filters(filters: HashMap<String, LevelFilter>) {
-    if let Ok(mut guard) = LOGGER.filters.write() {
+    if let Ok(mut guard) = LOGGER.filters.write_or_err() {
         *guard = filters;
     } else {
         log::warn!("gui logger: filters write lock poisoned");
@@ -86,7 +87,7 @@ pub fn init_rust_logger(callback: LogOutCStrFn) {
 }
 
 pub fn set_log_level(target: &str, level: CLogLevel) {
-    if let Ok(mut guard) = LOGGER.filters.write() {
+    if let Ok(mut guard) = LOGGER.filters.write_or_err() {
         guard.insert(target.to_string(), level.into());
     } else {
         log::warn!("gui logger: filters write lock poisoned");

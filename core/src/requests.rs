@@ -16,7 +16,7 @@ use esotereel_lib::{
     },
     requests::{AddClipFromAsset, ArchivedAddClipFromAsset, ArchivedRequest, Request},
     responces::Response,
-    util::result::{EsotereelError, EsotereelResult, LockExt},
+    util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
 };
 use rkyv::Deserialize;
 
@@ -60,14 +60,12 @@ pub fn on_request_receive(
             // ビュー更新と送信はロック解放後に行う（lock-order.md）
             let network = {
                 let mut state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 state.project = Arc::new(RwLock::new(Some(new_project)));
                 state
                     .histories
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
+                    .lock_or_err()?
                     .clear();
 
                 Arc::clone(&state.network)
@@ -86,8 +84,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ、送信は全ガード解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -118,8 +115,7 @@ pub fn on_request_receive(
             // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
             let (project_arc, network, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -177,8 +173,7 @@ pub fn on_request_receive(
         } => {
             let (network, uploads) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.network),
                     Arc::clone(&state_guard.uploads),
@@ -189,8 +184,7 @@ pub fn on_request_receive(
             let result = (|| -> anyhow::Result<()> {
                 let asset_uuid = parse_asset_id(asset_id_raw)?;
                 let mut uploads = uploads
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("upload manager lock poisoned: {e}"))?;
+                    .lock_or_err()?;
                 uploads.begin(asset_uuid, file_name_str, *total_size)
             })();
             if let Err(error) = result {
@@ -204,8 +198,7 @@ pub fn on_request_receive(
         } => {
             let (network, uploads) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.network),
                     Arc::clone(&state_guard.uploads),
@@ -215,8 +208,7 @@ pub fn on_request_receive(
             let result = (|| -> anyhow::Result<()> {
                 let asset_uuid = parse_asset_id(asset_id_raw)?;
                 let mut uploads = uploads
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("upload manager lock poisoned: {e}"))?;
+                    .lock_or_err()?;
                 uploads.write_chunk(asset_uuid, *offset, data)
             })();
             if let Err(error) = result {
@@ -227,8 +219,7 @@ pub fn on_request_receive(
             // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
             let (project_arc, network, uploads, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -245,8 +236,7 @@ pub fn on_request_receive(
                 // その後でプロジェクトの台帳へ登録する（ロックの保持範囲を分ける）。
                 let (name, path) = {
                     let mut uploads = uploads
-                        .lock()
-                        .map_err(|e| anyhow::anyhow!("upload manager lock poisoned: {e}"))?;
+                        .lock_or_err()?;
                     uploads.complete(asset_uuid)?
                 };
                 let mut project_guard = project_arc.write_or_err()?;
@@ -284,8 +274,7 @@ pub fn on_request_receive(
             // コマンド実行中は State を保持しない（lock-order.md）
             let (project_arc, network, histories_arc, loader_arc, script_engine) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -366,9 +355,7 @@ pub fn on_request_receive(
 
                 match command_to_history(project, *timeline_id, command.clone()) {
                     Ok(command_history) => {
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(*timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -419,8 +406,7 @@ pub fn on_request_receive(
             // 登録までは State ロックが必要だが、送信は解放後に行う
             let (network, res, resource_id) = {
                 let mut state = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 let resource_id = state.get_or_create_resource_id(path);
 
@@ -456,8 +442,7 @@ pub fn on_request_receive(
 
             let (network, to_send) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
 
                 let mut streamer = state_guard
                     .streams
@@ -489,8 +474,7 @@ pub fn on_request_receive(
             // Project は read ロックでよい。送信は全ガード解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -529,8 +513,7 @@ pub fn on_request_receive(
             // 読み取り専用なので read ロックでよい。送信は解放後に行う。
             let (project_arc, network) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -562,8 +545,7 @@ pub fn on_request_receive(
             // Phase 1: State ロック中は必要な Arc の取り出しと、実行する
             // スクリプトのクローンだけを行う（lock-order.md）
             let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
 
             let network = Arc::clone(&state_guard.network);
             let project_arc = Arc::clone(&state_guard.project);
@@ -614,9 +596,7 @@ pub fn on_request_receive(
 
                         let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -634,9 +614,7 @@ pub fn on_request_receive(
 
                         let loader = loader_arc.read_or_err()?;
 
-                        let mut histories = histories_arc.lock().map_err(|e| {
-                            anyhow::Error::from(EsotereelError::LockError(e.to_string()))
-                        })?;
+                        let mut histories = histories_arc.lock_or_err()?;
                         let history = histories
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
@@ -662,8 +640,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ。実行は解放後に行う。
             let (project_arc, network, histories_arc, loader_arc) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -679,8 +656,7 @@ pub fn on_request_receive(
             let loader = loader_arc.read_or_err()?;
 
             let mut histories = histories_arc
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
@@ -699,8 +675,7 @@ pub fn on_request_receive(
             // State は Arc の取り出しだけ。実行は解放後に行う。
             let (project_arc, network, histories_arc, loader_arc) = {
                 let state_guard = state
-                    .lock()
-                    .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                    .lock_or_err()?;
                 (
                     Arc::clone(&state_guard.project),
                     Arc::clone(&state_guard.network),
@@ -716,8 +691,7 @@ pub fn on_request_receive(
             let loader = loader_arc.read_or_err()?;
 
             let mut histories = histories_arc
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());

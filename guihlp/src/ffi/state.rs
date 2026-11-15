@@ -2,7 +2,7 @@ use esotereel_lib::{
     dirs::Directories,
     project::Project,
     state::HostState,
-    util::result::{EsotereelError, LockExt},
+    util::result::{EsotereelError, LockExt, MutexExt},
 };
 
 use crate::{
@@ -93,8 +93,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let async_error = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?
+            .lock_or_err()?
             .async_error
             .clone();
 
@@ -104,7 +103,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
                         return;
                     }
                 };
@@ -113,10 +112,10 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                 // Phase 1: プラグインローダーとディレクトリを取得し、ClientState ロックを即座に解放
                 // （ブロックの終了と同時にガードがドロップされ、ロック解放される）
                 let (plugin_loader, dir) = {
-                    let guard = match state_arc.lock() {
+                    let guard = match state_arc.lock_or_err() {
                         Ok(g) => g,
                         Err(e) => {
-                            let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to lock state: {e}")));
+                            let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to lock state: {e}")));
                             return;
                         }
                     };
@@ -142,7 +141,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                     }
 
                     // Phase 3: プラグインフィールド適用（ClientState ロックを短時間保持）
-                    match state_arc.lock() {
+                    match state_arc.lock_or_err() {
                         Ok(mut guard) => {
                             if let Err(e) = guard.apply_extra_plugin_fields() {
                                 log::error!("Failed to apply settings: {:?}", e);
@@ -156,7 +155,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
             }));
 
             if let Err(ref panic) = result {
-                let _ = async_error.lock().map(|mut g| *g = Some(format!("bootstrap thread panicked: {:?}", panic)));
+                let _ = async_error.lock_or_err().map(|mut g| *g = Some(format!("bootstrap thread panicked: {:?}", panic)));
             }
             log_if_panicked(result, "Client bootstrap thread");
             // ここで state (Arc) がドロップされ、参照カウントが1つ減る
@@ -186,8 +185,7 @@ pub extern "C" fn client_state_network_run(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_clone = Arc::clone(&state);
         let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
         let network = Arc::clone(&state.network);
         let async_error = state.async_error.clone();
 
@@ -201,20 +199,20 @@ pub extern "C" fn client_state_network_run(
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
                         return;
                     }
                 };
                 runtime.block_on(async {
                     log::info!("Client worker thread started for: {}", addr);
                     if let Err(e) = network.run(state_clone, &addr).await {
-                        let _ = async_error_inner.lock().map(|mut g| *g = Some(format!("network run error: {e}")));
+                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("network run error: {e}")));
                     }
                 });
             }));
 
             if let Err(ref panic) = result {
-                let _ = async_error.lock().map(|mut g| *g = Some(format!("network thread panicked: {:?}", panic)));
+                let _ = async_error.lock_or_err().map(|mut g| *g = Some(format!("network thread panicked: {:?}", panic)));
             }
             log_if_panicked(result, "Client worker thread");
 
@@ -259,12 +257,10 @@ pub unsafe extern "C" fn client_state_take_error(ptr_state: *const ClientStateHa
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_guard = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
         let mut error = state_guard
             .async_error
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
         if let Some(msg) = error.take() {
             return Err(anyhow::Error::msg(msg));
         }
@@ -315,8 +311,7 @@ pub unsafe extern "C" fn client_state_project_lock_read(
         let project_arc = {
             let state = ClientStateHandle::from_ptr(ptr_state);
             let state_guard = state
-                .lock()
-                .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+                .lock_or_err()?;
             Arc::clone(&state_guard.project)
         };
         let project_guard = project_arc.read_or_err()?;
@@ -411,8 +406,7 @@ pub unsafe extern "C" fn client_state_log_directories_info(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
 
         state.dir.log_info();
 

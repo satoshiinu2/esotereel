@@ -3,7 +3,7 @@ use crate::ffi::state::ClientStateHandle;
 use crate::ffi::stringview::FfiStringView;
 use esotereel_core::server_network_start;
 use esotereel_lib::dirs::Directories;
-use esotereel_lib::util::result::EsotereelError;
+use esotereel_lib::util::result::{EsotereelError, MutexExt};
 use std::f32::consts::E;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -32,8 +32,7 @@ pub extern "C" fn internal_server_start(
 
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state = state
-            .lock()
-            .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+            .lock_or_err()?;
         let plugin_loader_clone = Arc::clone(&state.plugin_loader);
 
         let addr_str = addr.as_str()?;

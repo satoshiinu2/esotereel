@@ -6,6 +6,7 @@ use std::{
 use log::{LevelFilter, Log, Metadata, Record};
 
 use crate::prebootstrap::PreBootstrapSettings;
+use crate::util::result::LockExt;
 
 /// 外部へログを出力するためのコールバック関数型です。
 ///
@@ -75,12 +76,12 @@ pub fn init_logger(callback: OutLogFn) {
 /// 設定し、パニック発生時にコールバック経由でメッセージを送信します。
 pub fn init_logger_with_settings(callback: OutLogFn, settings: &PreBootstrapSettings) {
     LOG_CALLBACK.set(callback).ok();
-    if let Ok(mut guard) = LOGGER.default_level.write() {
+    if let Ok(mut guard) = LOGGER.default_level.write_or_err() {
         *guard = settings.logging.level.as_filter();
     } else {
         log::warn!("logger: default_level write lock poisoned");
     }
-    if let Ok(mut guard) = LOGGER.filters.write() {
+    if let Ok(mut guard) = LOGGER.filters.write_or_err() {
         *guard = settings
             .logging
             .filters

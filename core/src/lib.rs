@@ -10,7 +10,7 @@ use esotereel_lib::{
     },
     responces::Response,
     state::HostState,
-    util::result::{EsotereelError, LockExt},
+    util::result::{EsotereelError, LockExt, MutexExt},
 };
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -62,8 +62,7 @@ async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()>
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
 
     let changes = {
         let mut project_guard = state_guard.project.write_or_err()?;
@@ -99,8 +98,7 @@ fn dispatch_changeset(
 ) -> anyhow::Result<()> {
     // ロックを再度取得してタイムラインデータを取得
     let state_guard = state
-        .lock()
-        .map_err(|e| anyhow::Error::from(EsotereelError::LockError(e.to_string())))?;
+        .lock_or_err()?;
     let network = Arc::clone(&state_guard.network);
     let mut project_guard = state_guard.project.write_or_err()?;
     let project = project_guard
