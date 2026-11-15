@@ -7,7 +7,7 @@ editor = "video"
 script = "video.rhai"
 properties = [
   { key = "video:media", label = "Media",
-    kind = { type = "group", reference = "video:media" },
+    kind = { type = "group" },
     fields = [
       { key = "source", label = "Source", kind = { type = "string" }, default = "" },
       { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },

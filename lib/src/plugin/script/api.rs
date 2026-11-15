@@ -598,9 +598,9 @@ mod render_tests {
         else {
             panic!("media property must be a group")
         };
-        let crate::plugin::property::value::FieldTypeKind::Map { .. } = &transform.kind
+        let crate::plugin::property::value::FieldTypeKind::Group { .. } = &transform.kind
         else {
-            panic!("transform property must be a map")
+            panic!("transform property must be a group")
         };
         assert!(
             !fields
@@ -613,7 +613,13 @@ mod render_tests {
                 .iter()
                 .map(|(path, _)| path.to_string())
                 .collect::<Vec<_>>(),
-            ["std:video:media/source", "std:video:media/source_offset", "std:video:transform"]
+            [
+                "std:video:media/source",
+                "std:video:media/source_offset",
+                "std:video:transform/position",
+                "std:video:transform/rotation",
+                "std:video:transform/scale"
+            ]
         );
         let mut props = ClipBindingValue::default_properties(fields);
         // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。

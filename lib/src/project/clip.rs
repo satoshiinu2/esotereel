@@ -416,7 +416,6 @@ mod tests {
                 PropertySchema::group(
                     NamespacedID::new("std", "transform").unwrap(),
                     "Transform".to_string(),
-                    NamespacedID::new("std", "transform-ref").unwrap(),
                     vec![PropertySchema {
                         key: NamespacedID::new("std", "x").unwrap(),
                         category: vec![],

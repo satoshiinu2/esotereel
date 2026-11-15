@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use anyhow::{Context, Result, bail};
 
 use crate::plugin::property::{FieldTypeKind, value::FieldValue};
-use crate::plugin::NamespacedID;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PropertySchemaRaw {
@@ -108,17 +107,7 @@ impl FieldTypeKind {
                 }
             }
 
-            "group" => {
-                let reference_str = table
-                    .get("reference")
-                    .and_then(|t| t.as_str())
-                    .context("Group `kind` is missing a string `reference` field")?;
-                let reference = NamespacedID::parse(reference_str)?;
-                FieldTypeKind::Group {
-                    reference,
-                    fields: Vec::new(),
-                }
-            }
+            "group" => FieldTypeKind::Group { fields: Vec::new() },
 
             other => bail!("unknown settings field kind `{other}`"),
         };
