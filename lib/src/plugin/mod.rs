@@ -659,15 +659,9 @@ impl PluginLoader {
     /// 全プラグインの `clip_kinds` と `component_definitions` をマージし、インデックスを再構築します。
     ///
     /// ID 衝突がある場合はエラーとなり、どのプラグインがどの ID を所有するかを明確にします。
+    /// 新しいインデックス一式はローカルに構築し、全部成功した場合にだけ現在の
+    /// インデックスと差し替えます。失敗時は既存のインデックスが無傷で残ります。
     fn rebuild_indices(&mut self) -> anyhow::Result<()> {
-        self.scripts_index.clear();
-        self.component_scripts_index.clear();
-        self.toolbar_button_scripts_index.clear();
-        self.schemas_index.clear();
-        self.toolbars_index.clear();
-        self.component_registry = ComponentRegistry::default();
-        self.shader_registry = ShaderRegistry::default();
-
         // 1段階目: 全プラグインのkindsをマージ
         let mut merged_kinds: HashMap<NamespacedID, ClipKind> = HashMap::new();
         for plugin in &self.plugins {
@@ -689,8 +683,8 @@ impl PluginLoader {
                 }
             }
         }
-        self.component_registry
-            .merge_component_definitions(merged_components)?;
+        let mut component_registry = ComponentRegistry::default();
+        component_registry.merge_component_definitions(merged_components)?;
 
         // 全プラグインのshader_definitionsをマージする。id 衝突があればエラー。
         let mut merged_shaders: HashMap<NamespacedID, Arc<ShaderDefinition>> = HashMap::new();
@@ -701,42 +695,55 @@ impl PluginLoader {
                 }
             }
         }
-        self.shader_registry.merge_shader_definitions(merged_shaders)?;
+        let mut shader_registry = ShaderRegistry::default();
+        shader_registry.merge_shader_definitions(merged_shaders)?;
 
         let mut clip_kinds = ClipKindStore::new();
         clip_kinds
             .merge_plugin_kinds(merged_kinds)
             .context("clip kind conflict during rebuild_indices")?;
-        self.clip_kinds = clip_kinds;
+
+        let mut scripts_index: HashMap<String, CompiledScript> = HashMap::new();
+        let mut component_scripts_index: HashMap<NamespacedID, CompiledScript> = HashMap::new();
+        let mut toolbar_button_scripts_index: HashMap<NamespacedID, CompiledScript> =
+            HashMap::new();
+        let mut schemas_index: Vec<PropertySchema> = Vec::new();
+        let mut toolbars_index: Vec<(String, ToolbarButtonSpec)> = Vec::new();
 
         for plugin in &self.plugins {
             // scripts index (プラグイン共通 script.rhai)
             if let Some(script) = plugin.script.as_ref() {
-                self.scripts_index
-                    .insert(plugin.manifest.id.clone(), script.clone());
+                scripts_index.insert(plugin.manifest.id.clone(), script.clone());
             }
             // コンポーネントごとの個別スクリプト
             for (id, script) in &plugin.component_scripts {
-                self.component_scripts_index
-                    .insert(id.clone(), script.clone());
+                component_scripts_index.insert(id.clone(), script.clone());
             }
             // ツールバーボタンごとの個別スクリプト
             for (id, script) in &plugin.toolbar_button_scripts {
-                self.toolbar_button_scripts_index
-                    .insert(id.clone(), script.clone());
+                toolbar_button_scripts_index.insert(id.clone(), script.clone());
             }
 
             // schemas index
             for schema in plugin.setting_schemas.iter() {
-                self.schemas_index.push(schema.clone());
+                schemas_index.push(schema.clone());
             }
 
             // toolbars index
             for button in plugin.toolbar_buttons.iter() {
-                self.toolbars_index
-                    .push((plugin.manifest.id.clone(), button.clone()));
+                toolbars_index.push((plugin.manifest.id.clone(), button.clone()));
             }
         }
+
+        // 全部成功した場合にだけ、現在のインデックスと差し替える
+        self.clip_kinds = clip_kinds;
+        self.component_registry = component_registry;
+        self.shader_registry = shader_registry;
+        self.scripts_index = scripts_index;
+        self.component_scripts_index = component_scripts_index;
+        self.toolbar_button_scripts_index = toolbar_button_scripts_index;
+        self.schemas_index = schemas_index;
+        self.toolbars_index = toolbars_index;
 
         log::info!(
             "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}, shaders={}",
