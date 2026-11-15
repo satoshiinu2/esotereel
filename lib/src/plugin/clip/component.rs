@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +54,25 @@ pub struct ComponentDefinition {
     /// プロパティも参照できる。
     #[serde(default)]
     pub properties: Vec<PropertySchema>,
+    /// 他コンポーネントへの依存宣言（`[[requires]]`）。
+    /// スクリプトへ渡る props には、自プロパティに加えて、ここで宣言した依存先の
+    /// capability に紐づくプロパティだけが `name` をキーに混ざる。
+    #[serde(default)]
+    pub requires: Vec<ComponentRequire>,
+}
+
+/// コンポーネントが他のコンポーネントへ宣言する依存。
+///
+/// 依存先はコンポーネント ID ではなく capability で解決する（AGENTS.md §9）。
+/// デフォルトは任意依存で、満たせない場合は props に現れない。
+/// `required = true` の依存が kind の構成で満たせなければ定義解決時にエラーになる。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentRequire {
+    /// 依存先の値を props に混ぜるときのローカル名。
+    pub name: String,
+    pub capability: ComponentCapability,
+    #[serde(default)]
+    pub required: bool,
 }
 
 impl ComponentDefinition {
@@ -126,6 +145,61 @@ impl RuntimeDefinition {
             .map(|(key, _)| key)?;
         PropertyPath::from(property.key.clone()).child(member).ok()
     }
+
+    /// `[[requires]]` の依存先を capability で解決する単一の規則。
+    ///
+    /// 構成コンポーネントを宣言順に（依存元自身を除いて）探し、最初に一致したものを
+    /// 返す。Scheduler の props 構築と、必須依存の検証（`resolve_definition`）は
+    /// この規則を共有する。満たせない場合は `None`。
+    pub fn resolve_requirement<'a>(
+        &'a self,
+        owner: &ComponentDefinition,
+        require: &ComponentRequire,
+    ) -> Option<RequirementResolution<'a>> {
+        for component in &self.components {
+            if component.id == owner.id {
+                continue;
+            }
+            for schema in &component.properties {
+                if schema.capability.as_ref() == Some(&require.capability) {
+                    return Some(RequirementResolution::Property { component, schema });
+                }
+                if let Some((member, _)) = schema
+                    .member_capabilities
+                    .iter()
+                    .find(|(_, cap)| **cap == require.capability)
+                {
+                    return Some(RequirementResolution::Member {
+                        component,
+                        schema,
+                        member: member.as_str(),
+                    });
+                }
+            }
+            if component.capabilities.contains(&require.capability) {
+                return Some(RequirementResolution::DeclaredOnly { component });
+            }
+        }
+        None
+    }
+}
+
+/// `[[requires]]` の解決結果。依存先コンポーネントと、capability に紐づく対象を示す。
+pub enum RequirementResolution<'a> {
+    /// プロパティ自体が capability を宣言している。値全体が依存先として渡る。
+    Property {
+        component: &'a ComponentDefinition,
+        schema: &'a PropertySchema,
+    },
+    /// グループプロパティのメンバーが capability を宣言している。
+    /// そのメンバーの値だけが依存先として渡る。
+    Member {
+        component: &'a ComponentDefinition,
+        schema: &'a PropertySchema,
+        member: &'a str,
+    },
+    /// コンポーネント自体が capability を持つ。渡す値はないが必須依存は満たす。
+    DeclaredOnly { component: &'a ComponentDefinition },
 }
 
 /// コンポーネントの実行時インスタンス。
@@ -230,10 +304,26 @@ impl ComponentRegistry {
                 .with_context(|| format!("component definition `{}` not found", id.full()))?;
             components.push(def.clone());
         }
-        Ok(RuntimeDefinition {
+        let definition = RuntimeDefinition {
             kind_id: kind_id.clone(),
             components,
-        })
+        };
+        for component in &definition.components {
+            for require in &component.requires {
+                if require.required
+                    && definition.resolve_requirement(component, require).is_none()
+                {
+                    bail!(
+                        "component `{}` requires capability `{:?}` as `{}` but no component of kind `{}` provides it",
+                        component.id.full(),
+                        require.capability,
+                        require.name,
+                        kind_id.full()
+                    );
+                }
+            }
+        }
+        Ok(definition)
     }
 }
 
@@ -260,6 +350,17 @@ pub(crate) struct ComponentDefinitionRaw {
     pub script: Option<String>,
     #[serde(default)]
     pub properties: Vec<PropertySchemaRaw>,
+    #[serde(default)]
+    pub requires: Vec<ComponentRequireRaw>,
+}
+
+/// TOML の `[[requires]]` の中間表現。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct ComponentRequireRaw {
+    pub name: String,
+    pub capability: String,
+    #[serde(default)]
+    pub required: bool,
 }
 
 impl ComponentDefinitionRaw {
@@ -282,6 +383,35 @@ impl ComponentDefinitionRaw {
         for raw in &self.properties {
             properties.push(PropertySchema::parse_for_component(raw.clone(), &id)?);
         }
+        let mut requires = Vec::new();
+        let mut require_names = HashSet::new();
+        for raw in &self.requires {
+            crate::plugin::property::validate_local_name(&raw.name).with_context(|| {
+                format!("invalid require name `{}` in `{}`", raw.name, id.full())
+            })?;
+            if properties.iter().any(|p| p.key.name() == raw.name) {
+                bail!(
+                    "require name `{}` collides with a property of `{}`",
+                    raw.name,
+                    id.full()
+                );
+            }
+            if !require_names.insert(raw.name.clone()) {
+                bail!("duplicate require name `{}` in `{}`", raw.name, id.full());
+            }
+            let capability = raw.capability.parse().with_context(|| {
+                format!(
+                    "invalid require capability `{}` in `{}`",
+                    raw.capability,
+                    id.full()
+                )
+            })?;
+            requires.push(ComponentRequire {
+                name: raw.name.clone(),
+                capability,
+                required: raw.required,
+            });
+        }
         Ok(ComponentDefinition {
             id,
             name: self.name,
@@ -290,6 +420,7 @@ impl ComponentDefinitionRaw {
             editor: self.editor,
             script: self.script,
             properties,
+            requires,
         })
     }
 }
@@ -605,6 +736,7 @@ mod tests {
             capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: Some("transform".to_string()),
             script: None,
+            requires: Vec::new(),
             properties: Vec::new(),
         }
     }
@@ -637,6 +769,7 @@ mod tests {
             ]),
             editor: Some("video".to_string()),
             script: None,
+            requires: Vec::new(),
             properties: Vec::new(),
         };
         let media_id = media.id.clone();
@@ -902,6 +1035,7 @@ capabilities = ["my-custom-cap"]
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
+            requires: Vec::new(),
             properties: Vec::new(),
         };
         let transform = ComponentDefinition {
@@ -911,6 +1045,7 @@ capabilities = ["my-custom-cap"]
             capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: None,
             script: None,
+            requires: Vec::new(),
             properties: Vec::new(),
         };
         registry
@@ -973,6 +1108,7 @@ capabilities = ["my-custom-cap"]
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
+            requires: Vec::new(),
             properties: vec![
                 PropertySchema {
                     key: PropertyKey::from_namespaced(NamespacedID::new("std", "source").unwrap()),
@@ -1026,6 +1162,7 @@ capabilities = ["my-custom-cap"]
             capabilities: BTreeSet::new(),
             editor: None,
             script: None,
+            requires: Vec::new(),
             properties: vec![PropertySchema {
                 key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_a").unwrap()),
                 category: vec![],
@@ -1043,6 +1180,7 @@ capabilities = ["my-custom-cap"]
             capabilities: BTreeSet::new(),
             editor: None,
             script: None,
+            requires: Vec::new(),
             properties: vec![PropertySchema {
                 key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_b").unwrap()),
                 category: vec![],
@@ -1165,6 +1303,7 @@ script = "video.rhai"
                 capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
                 editor: None,
                 script: Some("video.rhai".to_string()),
+                requires: Vec::new(),
                 properties: Vec::new(),
             }],
         };

@@ -110,7 +110,7 @@ impl PropertyKey {
 /// プロパティや依存のローカル名を検証します。
 ///
 /// アドレス文法の区切り（`:` `#` `/`）と衝突しない文字種のみを許可します。
-pub(crate) fn validate_local_name(name: &str) -> anyhow::Result<()> {
+pub fn validate_local_name(name: &str) -> anyhow::Result<()> {
     if name.is_empty()
         || !name
             .chars()

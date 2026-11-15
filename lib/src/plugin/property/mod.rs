@@ -100,7 +100,7 @@ component_capabilities! {
 pub mod key;
 pub mod parse;
 pub mod path;
-pub use key::PropertyKey;
+pub use key::{PropertyKey, validate_local_name};
 pub use path::PropertyPath;
 pub mod value;
 
