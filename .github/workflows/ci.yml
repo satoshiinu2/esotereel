@@ -169,9 +169,51 @@ jobs:
         shell: pwsh
         run: .\installer\windows\build_installer.ps1
 
+      # Launch smoke test (Windows): the staged win_dist layout is what
+      # the installer ships, so launch the exe from there.
+      - name: Smoke test Windows app launch
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = "build\win_dist\esotereel_gui.exe"
+          $log = Join-Path $env:RUNNER_TEMP "esotereel-smoke.log"
+          $err = Join-Path $env:RUNNER_TEMP "esotereel-smoke.err.log"
+          $p = Start-Process -FilePath $exe -WorkingDirectory "build\win_dist" -PassThru -RedirectStandardOutput $log -RedirectStandardError $err
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) {
+            Write-Host "::error::esotereel_gui exited within 15s (code $($p.ExitCode))"
+            if (Test-Path $log) { Get-Content $log }
+            if (Test-Path $err) { Get-Content $err }
+            exit 1
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "smoke OK: alive after 15s"
+
       - name: Package Linux AppImage
         if: runner.os == 'Linux'
         run: bash installer/linux/build_appimage.sh
+
+      # Launch smoke test (Linux): run the packaged AppImage headlessly
+      # under Xvfb. --appimage-extract-and-run avoids needing FUSE.
+      - name: Smoke test Linux app launch
+        if: runner.os == 'Linux'
+        run: |
+          set -u
+          LOG="$RUNNER_TEMP/esotereel-smoke.log"
+          sudo apt-get install -y xvfb
+          xvfb-run -a dist/esotereel.AppImage --appimage-extract-and-run >"$LOG" 2>&1 &
+          PID=$!
+          sleep 15
+          if ! kill -0 "$PID" 2>/dev/null; then
+            CODE=0
+            wait "$PID" || CODE=$?
+            echo "::error::esotereel exited within 15s (code $CODE)"
+            cat "$LOG"
+            exit 1
+          fi
+          kill "$PID" 2>/dev/null || true
+          pkill -f esotereel 2>/dev/null || true
+          echo "smoke OK: alive after 15s"
 
       - name: Package macOS DMG
         if: runner.os == 'macOS'
@@ -218,12 +260,13 @@ jobs:
           echo "smoke OK: alive after 15s, no crash report"
 
       - name: Upload smoke log (on failure)
-        if: failure() && runner.os == 'macOS'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: esotereel-macos-smoke-log
+          name: esotereel-${{ matrix.os }}-smoke-log
           path: |
             ${{ runner.temp }}/esotereel-smoke.log
+            ${{ runner.temp }}/esotereel-smoke.err.log
             ${{ runner.temp }}/esotereel-smoke.png
           if-no-files-found: ignore
 
