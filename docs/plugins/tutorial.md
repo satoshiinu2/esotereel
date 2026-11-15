@@ -16,12 +16,14 @@ video クリップは、次のファイルの組み合わせでできていま�
 | `plugins/std/clips/video.toml` | クリップ種別 `std:video` の宣言（構成コンポーネントの指定を含む） |
 | `plugins/std/components/media.toml` | コンポーネント `std:media` の定義 |
 | `plugins/std/components/transform.toml` | コンポーネント `std:transform` の定義 |
-| `plugins/std/components/video.rhai` | `std:media` の描画スクリプト |
+| `plugins/std/components/video.toml` | コンポーネント `std:video` の定義（描画役） |
+| `plugins/std/components/media.rhai` | `std:media` のスクリプト（素材系の標準関数） |
+| `plugins/std/components/video.rhai` | `std:video` の描画スクリプト |
 
 ポイントは 2 つです。
 
-1. **クリップ種別が `components` で構成コンポーネントを宣言する**こと。種別 `std:video` は `components = ["media", "transform"]` と宣言し、プロパティと描画は各コンポーネント側が持ちます。コンポーネントは種別から独立した部品で、他の種別からも再利用できます
-2. **描画は capability ベース**であること。media コンポーネントは `frame-provider` を宣言し、Scheduler が標準関数 `render_frame` を呼びます。スクリプトは `ctx.get_video_texture()` でテクスチャを受け取り、`ctx.render_video(...)` で描画します
+1. **クリップ種別が `components` で構成コンポーネントを宣言する**こと。種別 `std:video` は `components = ["media", "transform", "video"]` と宣言し、プロパティは media / transform が、描画は video が持ちます。コンポーネントは種別から独立した部品で、他の種別からも再利用できます
+2. **描画は capability ベース**であること。描画役の video コンポーネントは `frame-provider` を宣言し、Scheduler が標準関数 `render_frame` を呼びます。フレームの供給元は media コンポーネント（プロパティに `frame-provider` を宣言）で、video は `[[requires]]` で media と transform に依存します。スクリプトは `ctx.get_video_texture()` でテクスチャを受け取り、`ctx.render_video(...)` で描画します
 
 ## 2. 新しいプラグインを作る
 
@@ -64,7 +66,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    ```
 
 4. コンポーネントを定義する（`components/photo.toml`）
-   - video と同じパターンで、メディア担当（`photo`）と変換担当（`photo-transform`）の 2 つのコンポーネントに分けます。手順 3 の `components` でこの 2 つを宣言しています
+   - メディア担当（`photo`）と変換担当（`photo-transform`）の 2 つのコンポーネントに分けます。手順 3 の `components` でこの 2 つを宣言しています（std の video では、メディア担当と描画役を `media` / `video` の別コンポーネントに分けて 3 部品にしています）
    - メディア担当は `frame-provider` と `prefetchable` を宣言しメディアプロパティを持ち、変換担当は `transformable` を宣言し変換プロパティを持ちます
 
    ```toml

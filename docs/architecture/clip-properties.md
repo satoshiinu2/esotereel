@@ -20,17 +20,12 @@
 id = "media"
 name = "Media"
 kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
-script = "video.rhai"
+script = "media.rhai"
 properties = [
   { key = "media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }, default = { source = "", source_offset = "0" } },
 ]
-
-[[components.requires]]
-name = "transform"
-capability = "transformable"
-required = true
 
 # components/transform.toml
 [[components]]
@@ -43,12 +38,30 @@ properties = [
   { key = "transform", label = "Transform", kind = { type = "group" }, fields = [ { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "rotation", label = "Rotation", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "scale", label = "Scale", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [1.0, 1.0, 1.0] } ], capability = "transformable", default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
 ]
 
+# components/video.toml
+[[components]]
+id = "video"
+name = "Video"
+kind = "renderer"
+capabilities = ["frame-provider"]
+script = "video.rhai"
+
+[[components.requires]]
+name = "media"
+capability = "frame-provider"
+required = true
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
+
 # clips/video.toml
 [[kinds]]
 id = "video"
 render_script = "render_clip_video"
 tags = ["media"]
-components = ["media", "transform"]
+components = ["media", "transform", "video"]
 ```
 
 `capability` フィールドは、このプロパティがどのコンポーネント能力に紐付くかを示す。

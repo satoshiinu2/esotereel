@@ -31,7 +31,7 @@
 
 コンポーネントが capability を宣言すると、Scheduler が対応する標準関数を `(ctx, props)` の 2 引数で呼び出します（capability と標準関数の対応は [コンポーネント定義リファレンス](components.md) を参照）。
 
-標準プラグインの `components/video.rhai`:
+標準プラグインの `components/video.rhai`（描画役の `std:video` コンポーネント）:
 
 ```rhai
 fn render_frame(ctx, props) {
@@ -39,18 +39,16 @@ fn render_frame(ctx, props) {
     let transform = props["transform"];
     ctx.render_video(tex, transform.as_mat4());
 }
-
-fn prefetch(ctx, props) {
-    // TODO
-}
 ```
+
+素材側の標準関数（`prefetch`、`handle_file_drop`）は、media コンポーネントの `components/media.rhai` に定義されています。
 
 ### 2.1 引数
 
 - `ctx`: 描画コンテキスト（RenderContext、第 3 節）。描画はこのオブジェクトへのメソッド呼び出しで行います
 - `props`: そのコンポーネントから見えるプロパティへのアクセス口。マップではなく、キーアクセスのたびに値が解決されます。キーの形式は参照先で決まります（自プロパティは `:#` 形式、依存は宣言名）
 
-`props` で参照できるのは、自コンポーネントのプロパティと、`[[requires]]` で宣言した依存先の capability に紐づく値だけです。他コンポーネントの値が必要な場合は `[[requires]]` で依存を宣言してください（[コンポーネント定義リファレンス](components.md) 第 4.1 節）。上の例の `transform` は、media コンポーネントが `transformable` への依存を `name = "transform"` で宣言しているために見えています。
+`props` で参照できるのは、自コンポーネントのプロパティと、`[[requires]]` で宣言した依存先の capability に紐づく値だけです。他コンポーネントの値が必要な場合は `[[requires]]` で依存を宣言してください（[コンポーネント定義リファレンス](components.md) 第 4.1 節）。上の例の `transform` は、video コンポーネントが `transformable` への依存を `name = "transform"` で宣言しているために見えています。
 
 - 自コンポーネントのプロパティは、`props[":#media"]` のように `:#` を付けた形式でのみ参照できます。自プロパティを裸の名前で引くと、`:#` 形式へ誘導するエラーになります
 - 依存は、`props["transform"]` のように宣言名（裸の名前）で参照します

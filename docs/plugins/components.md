@@ -4,7 +4,7 @@
 
 コンポーネントは、クリップの描画・振る舞いとプロパティを定義する部品です。`components/` ディレクトリ配下の TOML ファイルに `[[components]]` として宣言し、あわせて Rhai スクリプトで振る舞いを実装します。1 ファイルに複数のコンポーネントを書くこともできますが、標準プラグインでは再利用しやすいよう 1 ファイル 1 コンポーネントに分割しています。
 
-標準プラグインの `components/media.toml` と `components/transform.toml` を例に、各要素を解説します。
+標準プラグインの `components/media.toml`、`components/transform.toml`、`components/video.toml` を例に、各要素を解説します。
 
 ```toml
 # components/media.toml
@@ -12,9 +12,9 @@
 id = "media"
 name = "Media"
 kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
-script = "video.rhai"
+script = "media.rhai"
 properties = [
   { key = "media", label = "Media",
     kind = { type = "group" },
@@ -26,11 +26,6 @@ properties = [
     member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
 ]
-
-[[components.requires]]
-name = "transform"
-capability = "transformable"
-required = true
 
 # components/transform.toml
 [[components]]
@@ -50,6 +45,24 @@ properties = [
     capability = "transformable",
     default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
 ]
+
+# components/video.toml
+[[components]]
+id = "video"
+name = "Video"
+kind = "renderer"
+capabilities = ["frame-provider"]
+script = "video.rhai"
+
+[[components.requires]]
+name = "media"
+capability = "frame-provider"
+required = true
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 ```
 
 ## 1. コンポーネント定義のフィールド
@@ -112,7 +125,7 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 - 同じコンポーネントが複数回書かれても、実行リストには 1 回だけ現れます（最初の出現位置が優先されます）
 - 存在しないコンポーネントを書いた場合、解決時にエラーになります
 
-`plugins/std` の例では、クリップ種別 `video` が `components = ["media", "transform"]` を宣言します。`transform` コンポーネント自体はスクリプトを持たず、`transformable` 能力と GUI エディタ（`transform`）の宣言、および変換プロパティを提供します。コンポーネントは特定のクリップ種別に属さない独立した部品なので、他のクリップ種別からも同じコンポーネントを構成に含めて再利用できます。
+`plugins/std` の例では、クリップ種別 `video` が `components = ["media", "transform", "video"]` を宣言します。`video` コンポーネントは自プロパティを持たず、描画スクリプトと `frame-provider` 能力を持ち、`[[requires]]` で media と transform に依存します。`transform` コンポーネント自体はスクリプトを持たず、`transformable` 能力と GUI エディタ（`transform`）の宣言、および変換プロパティを提供します。コンポーネントは特定のクリップ種別に属さない独立した部品なので、他のクリップ種別からも同じコンポーネントを構成に含めて再利用できます。
 
 ### 4.1 依存宣言（`[[requires]]`）
 
@@ -212,7 +225,7 @@ required = true
 ```toml
 [[kinds]]
 id = "video"
-components = ["media", "transform"]
+components = ["media", "transform", "video"]
 render_script = "render_clip_video"
 tags = ["media"]
 ```
