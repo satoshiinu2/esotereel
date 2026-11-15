@@ -29,7 +29,7 @@ pub struct PropertyPath {
 impl PropertyPath {
     /// 絶対形のアドレスをパースします。
     ///
-    /// 所有者を省略した相対形（`#property/...`）は受理しません。文脈となる
+    /// 所有者を省略した相対形（`:#property/...`）は受理しません。文脈となる
     /// 所有者がある場所では `parse_in_context` を使ってください。
     pub fn parse(text: &str) -> anyhow::Result<Self> {
         Self::parse_with(text, None)
@@ -37,7 +37,7 @@ impl PropertyPath {
 
     /// 文脈となる所有者を補ってアドレスをパースします。
     ///
-    /// 所有者を省略した相対形（`#property/...`）も受理します。
+    /// 所有者を省略した相対形（`:#property/...`）も受理します。
     pub fn parse_in_context(text: &str, owner: &NamespacedID) -> anyhow::Result<Self> {
         Self::parse_with(text, Some(owner))
     }
@@ -119,14 +119,17 @@ mod tests {
 
     #[test]
     fn parse_rejects_relative_form_without_context() {
+        assert!(PropertyPath::parse(":#media/source").is_err());
         assert!(PropertyPath::parse("#media/source").is_err());
     }
 
     #[test]
     fn parse_in_context_accepts_relative_form() {
         let owner = NamespacedID::new("std", "media").unwrap();
-        let path = PropertyPath::parse_in_context("#media/source", &owner).unwrap();
+        let path = PropertyPath::parse_in_context(":#media/source", &owner).unwrap();
         assert_eq!(path.to_string(), "std:media#media/source");
+        // `:` を欠いた `#property/...` は相対形として受理しない。
+        assert!(PropertyPath::parse_in_context("#media/source", &owner).is_err());
         // 絶対形もそのまま受理する。
         let absolute =
             PropertyPath::parse_in_context("std:transform#transform/position", &owner).unwrap();

@@ -605,7 +605,7 @@ impl Scheduler {
 
         for (property_id, value) in returned_properties {
             // 戻り値のキーはプロパティアドレス。ハンドラ自身のプロパティは
-            // 所有者を省略した相対形（`#name`）でも書ける。
+            // 所有者を省略した相対形（`:#name`）でも書ける。
             let property_id = PropertyKey::parse_in_context(&property_id, &handler.id)
                 .with_context(|| {
                     format!("invalid property ID returned by `{}`", handler.id.full())

@@ -51,6 +51,13 @@ impl PropertyKey {
     /// （`NamespacedID::parse` は文字種を検証しないため、全体を渡すと
     /// `#name` までローカル ID として黙って取り込んでしまう）。
     pub fn parse(text: &str) -> anyhow::Result<Self> {
+        // 相対形（`:#name`）は文脈となる所有者がなければ解決できないため、
+        // ここでは受理しない（所有者 ":" のキーとして黙って通さない）。
+        if text.starts_with(":#") {
+            anyhow::bail!(
+                "relative property key `{text}` requires a context owner; use parse_in_context"
+            );
+        }
         match text.split_once('#') {
             Some((owner, name)) => Self::new(
                 NamespacedID::parse(owner)
@@ -63,9 +70,11 @@ impl PropertyKey {
 
     /// 文脈となる所有者を補ってアドレス文字列をパースします。
     ///
-    /// 所有者を省略した相対形 `#name` は、ここでのみ受理します。
+    /// 所有者を省略した相対形 `:#name` は、ここでのみ受理します。先頭の `:`
+    /// が「所有者が省略されている（＝文脈となる所有者自身）」ことの明示で、
+    /// `:` を欠いた `#name` の形は受理しません。
     pub fn parse_in_context(text: &str, owner: &NamespacedID) -> anyhow::Result<Self> {
-        match text.strip_prefix('#') {
+        match text.strip_prefix(":#") {
             Some(name) => Self::new(owner.clone(), name),
             None => Self::parse(text),
         }
@@ -191,8 +200,10 @@ mod tests {
     #[test]
     fn parse_in_context_accepts_relative_form() {
         let owner = NamespacedID::new("std", "media").unwrap();
-        let key = PropertyKey::parse_in_context("#media", &owner).unwrap();
+        let key = PropertyKey::parse_in_context(":#media", &owner).unwrap();
         assert_eq!(key.address(), "std:media#media");
+        // `:` を欠いた `#name` は相対形として受理しない。
+        assert!(PropertyKey::parse_in_context("#media", &owner).is_err());
         // 絶対形もそのまま受理する。
         assert_eq!(
             PropertyKey::parse_in_context("std:transform#transform", &owner).unwrap(),
