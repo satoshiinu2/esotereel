@@ -5,7 +5,7 @@ kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
-  { key = "video:transform", label = "Transform",
+  { key = "transform", label = "Transform",
     kind = { type = "group" },
     fields = [
       { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] },

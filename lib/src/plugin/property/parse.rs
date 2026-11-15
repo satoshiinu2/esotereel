@@ -158,7 +158,7 @@ impl FieldTypeKind {
             FieldTypeKind::Group { fields, .. } => FieldValue::Map(
                 fields
                     .iter()
-                    .map(|field| (field.key.local_id().to_owned(), field.default.clone()))
+                    .map(|field| (field.key.local_name().to_owned(), field.default.clone()))
                     .collect(),
             ),
         };

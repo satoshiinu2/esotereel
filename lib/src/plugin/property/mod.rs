@@ -97,8 +97,10 @@ component_capabilities! {
     FileDropHandler: "file-drop-handler", Some("handle_file_drop"), Prepare;
 }
 
+pub mod key;
 pub mod parse;
 pub mod path;
+pub use key::PropertyKey;
 pub use path::PropertyPath;
 pub mod value;
 
@@ -110,7 +112,7 @@ struct SchemaFile {
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PropertySchema {
-    pub key: NamespacedID,
+    pub key: PropertyKey,
     pub category: Vec<String>,
     pub label: String,
     pub kind: FieldTypeKind,
@@ -129,16 +131,42 @@ pub struct PropertySchema {
     pub member_capabilities: BTreeMap<String, ComponentCapability>,
 }
 
+/// プロパティキーの名前空間スコープ。パース時にキーの所有者を決めます。
+enum KeyScope<'a> {
+    /// プラグイン名前空間直下（設定スキーマ等）。
+    Namespaced { plugin_id: &'a str },
+    /// コンポーネント所有。
+    Component { owner: &'a NamespacedID },
+}
+
+impl KeyScope<'_> {
+    fn plugin_id(&self) -> &str {
+        match self {
+            KeyScope::Namespaced { plugin_id } => plugin_id,
+            KeyScope::Component { owner } => owner.plugin_id(),
+        }
+    }
+
+    fn key(&self, raw_key: &str) -> anyhow::Result<PropertyKey> {
+        match self {
+            KeyScope::Namespaced { plugin_id } => Ok(PropertyKey::from_namespaced(
+                NamespacedID::new(plugin_id, raw_key)?,
+            )),
+            KeyScope::Component { owner } => PropertyKey::new((*owner).clone(), raw_key),
+        }
+    }
+}
+
 impl PropertySchema {
     /// グループ型（複数フィールドをまとめる）プロパティスキーマを構築します。
     ///
     /// `fields` は子フィールドの一覧です。グループはフィールド宣言だけで
     /// 構成され、デフォルト値は子フィールドのデフォルトを `Map` として展開します。
-    pub fn group(key: NamespacedID, label: String, fields: Vec<Self>) -> Self {
+    pub fn group(key: PropertyKey, label: String, fields: Vec<Self>) -> Self {
         let default = FieldValue::Map(
             fields
                 .iter()
-                .map(|f| (f.key.local_id().to_owned(), f.default.clone()))
+                .map(|f| (f.key.local_name().to_owned(), f.default.clone()))
                 .collect(),
         );
         Self {
@@ -171,13 +199,13 @@ impl PropertySchema {
                 for child in fields {
                     let effective = match default {
                         FieldValue::Map(values) => {
-                            values.get(child.key.local_id()).unwrap_or(&child.default)
+                            values.get(child.key.local_name()).unwrap_or(&child.default)
                         }
                         _ => &child.default,
                     };
                     visit(
                         child,
-                        path.child(child.key.local_id())?,
+                        path.child(child.key.local_name())?,
                         &groups,
                         effective,
                         out,
@@ -234,9 +262,32 @@ impl PropertySchema {
 
     /// 単一の生プロパティ定義（`PropertySchemaRaw`）をパースして `PropertySchema` を構築します。
     ///
+    /// キーはプラグイン名前空間直下の識別子（`plugin_id:raw.key`）になります。
+    /// 設定スキーマやシェーダ固有プロパティなど、コンポーネントに属さない
+    /// プロパティ向けです。コンポーネントのプロパティには `parse_for_component` を
+    /// 使ってください。
+    ///
     /// `kind` は TOML 値から `FieldTypeKind` に変換し、`default` が省略された場合は
     /// `kind` からデフォルト値を導出します。
     pub fn parse_one(raw: PropertySchemaRaw, plugin_id: &str) -> anyhow::Result<PropertySchema> {
+        Self::parse_scoped(raw, &KeyScope::Namespaced { plugin_id })
+    }
+
+    /// コンポーネントが宣言するプロパティとして、生定義をパースします。
+    ///
+    /// キーは所有コンポーネントの ID とローカル名の組（アドレスは
+    /// `plugin:component#name`）になります。TOML 側のキーにはローカル名のみを
+    /// 書きます。Group の子フィールドも同じ所有者の下でパースされます。
+    pub fn parse_for_component(
+        raw: PropertySchemaRaw,
+        owner: &NamespacedID,
+    ) -> anyhow::Result<PropertySchema> {
+        Self::parse_scoped(raw, &KeyScope::Component { owner })
+    }
+
+    fn parse_scoped(raw: PropertySchemaRaw, scope: &KeyScope) -> anyhow::Result<PropertySchema> {
+        let plugin_id = scope.plugin_id();
+        let key = scope.key(&raw.key)?;
         let mut kind = FieldTypeKind::from_toml_value(&raw.kind)
             .with_context(|| format!("invalid `kind` for key `{}` in `{plugin_id}`", raw.key))?;
 
@@ -246,7 +297,7 @@ impl PropertySchema {
                 Some(raw_fields) => {
                     *fields = raw_fields
                         .iter()
-                        .map(|rf| PropertySchema::parse_one(rf.clone(), plugin_id))
+                        .map(|rf| PropertySchema::parse_scoped(rf.clone(), scope))
                         .collect::<anyhow::Result<Vec<_>>>()?;
                 }
                 None => *fields = Vec::new(),
@@ -296,7 +347,7 @@ impl PropertySchema {
         };
 
         Ok(PropertySchema {
-            key: NamespacedID::new(plugin_id, &raw.key)?,
+            key,
             category: raw.category,
             label: raw.label,
             kind,
@@ -320,7 +371,7 @@ impl PropertySchema {
         Ok(())
     }
 
-    fn validate_kind(key: &NamespacedID, kind: &FieldTypeKind) -> anyhow::Result<()> {
+    fn validate_kind(key: &PropertyKey, kind: &FieldTypeKind) -> anyhow::Result<()> {
         match kind {
             FieldTypeKind::Enum { options } if options.is_empty() => {
                 anyhow::bail!("Enum kind for key `{key}` has no options")
@@ -329,9 +380,9 @@ impl PropertySchema {
                 let mut names = HashSet::new();
                 for field in fields {
                     anyhow::ensure!(
-                        names.insert(field.key.local_id()),
+                        names.insert(field.key.local_name()),
                         "duplicate group member `{}`",
-                        field.key.local_id()
+                        field.key.local_name()
                     );
                 }
                 Self::validate_properties(fields)
@@ -355,9 +406,9 @@ pub trait PropertyHost {
     /// このホストが宣言するプロパティスキーマの一覧を返します。
     fn properties(&self) -> Cow<'_, [PropertySchema]>;
     /// 指定キーのプロパティ値を返します。存在しなければ `None` を返します。
-    fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue>;
+    fn get_value(&self, key: &PropertyKey) -> Option<&FieldValue>;
     /// 指定キーのプロパティ値を設定します。
-    fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()>;
+    fn set_value(&mut self, key: PropertyKey, value: FieldValue) -> anyhow::Result<()>;
 }
 
 #[cfg(test)]
@@ -384,7 +435,7 @@ mod tests {
             fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
-        assert_eq!(schema.key.full(), "std:source");
+        assert_eq!(schema.key.address(), "std:source");
         assert_eq!(schema.label, "Source");
         assert_eq!(schema.category, vec!["Media"]);
         assert!(matches!(schema.kind, FieldTypeKind::String));
@@ -431,7 +482,7 @@ mod tests {
 
     #[test]
     fn validate_properties_rejects_duplicate_keys() {
-        let key = NamespacedID::new("std", "dup").unwrap();
+        let key = PropertyKey::from_namespaced(NamespacedID::new("std", "dup").unwrap());
         let props = vec![
             PropertySchema {
                 key: key.clone(),
@@ -458,7 +509,7 @@ mod tests {
     #[test]
     fn group_constructor_builds_nested_default() {
         let child = PropertySchema {
-            key: NamespacedID::new("std", "font_size").unwrap(),
+            key: PropertyKey::from_namespaced(NamespacedID::new("std", "font_size").unwrap()),
             category: vec![],
             label: "Font Size".to_string(),
             kind: FieldTypeKind::Float {
@@ -471,7 +522,7 @@ mod tests {
             member_capabilities: BTreeMap::new(),
         };
         let group = PropertySchema::group(
-            NamespacedID::new("std", "style").unwrap(),
+            PropertyKey::from_namespaced(NamespacedID::new("std", "style").unwrap()),
             "Style".to_string(),
             vec![child],
         );
@@ -480,7 +531,7 @@ mod tests {
         assert!(matches!(
             group.kind,
             FieldTypeKind::Group { ref fields, .. }
-                if fields.len() == 1 && fields[0].key.full() == "std:font_size"
+                if fields.len() == 1 && fields[0].key.address() == "std:font_size"
         ));
         assert!(matches!(
             group.default,
@@ -506,7 +557,7 @@ kind = { type = "string" }
     #[test]
     fn leaf_fields_flattens_group_members() {
         let inner = PropertySchema {
-            key: NamespacedID::new("std", "x").unwrap(),
+            key: PropertyKey::from_namespaced(NamespacedID::new("std", "x").unwrap()),
             category: vec![],
             label: "X".to_string(),
             kind: FieldTypeKind::Int {
@@ -518,7 +569,7 @@ kind = { type = "string" }
             member_capabilities: BTreeMap::new(),
         };
         let group = PropertySchema::group(
-            NamespacedID::new("std", "g").unwrap(),
+            PropertyKey::from_namespaced(NamespacedID::new("std", "g").unwrap()),
             "Group".to_string(),
             vec![inner],
         );

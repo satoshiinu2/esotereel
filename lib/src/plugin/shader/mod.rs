@@ -83,7 +83,7 @@ impl ShaderProperty {
     pub fn key_str(&self) -> &str {
         match self {
             ShaderProperty::Core { key, .. } => key,
-            ShaderProperty::Own(schema) => schema.key.local_id(),
+            ShaderProperty::Own(schema) => schema.key.local_name(),
         }
     }
 }

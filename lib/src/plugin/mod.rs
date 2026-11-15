@@ -32,7 +32,7 @@ use crate::{
                 parse_component_definitions,
             },
         },
-        property::PropertySchema,
+        property::{PropertyKey, PropertySchema},
         script::CompiledScript,
         shader::{
             ShaderDefinition, ShaderRegistry, compile_and_validate, module_path_for,
@@ -977,7 +977,9 @@ mod archive_tests {
             let properties = (0..count)
                 .map(|i| {
                     (
-                        NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+                        PropertyKey::from_namespaced(
+                            NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+                        ),
                         ClipBindingValue::Static(FieldValue::Int(i)),
                     )
                 })
@@ -1004,9 +1006,11 @@ mod archive_tests {
             };
             assert_eq!(properties.len(), count as usize);
             for i in 0..count {
-                let key = NamespacedID::new("std", &format!("field_{i}")).unwrap();
+                let key = PropertyKey::from_namespaced(
+                    NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+                );
                 let key_bytes = rkyv::to_bytes::<_, 256>(&key).unwrap();
-                let archived_key = rkyv::check_archived_root::<NamespacedID>(&key_bytes).unwrap();
+                let archived_key = rkyv::check_archived_root::<PropertyKey>(&key_bytes).unwrap();
                 assert!(
                     matches!(properties.get(archived_key), Some(ArchivedClipBindingValue::Static(crate::plugin::property::value::ArchivedFieldValue::Int(value))) if *value == i)
                 );

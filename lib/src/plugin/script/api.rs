@@ -82,7 +82,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
 
     /// クリップのプロパティをパス指定で設定します。
     ///
-    /// Rhai スクリプトから `set_property(clip_id, "std:video:media/source_offset", 100)` のように
+    /// Rhai スクリプトから `set_property(clip_id, "std:media#media/source_offset", 100)` のように
     /// 呼び出し、値を型に応じて正規化（int⇄float 相互変換、文字列→数値パース、bool パースなど）
     /// した上でクリッププロパティに書き込みます。
     pub fn set_clip_property(
@@ -589,11 +589,11 @@ mod render_tests {
         let fields = &fields;
         let media = fields
             .iter()
-            .find(|f| f.key.local_id() == "video:media")
+            .find(|f| f.key.name() == "media")
             .unwrap();
         let transform = fields
             .iter()
-            .find(|f| f.key.local_id() == "video:transform")
+            .find(|f| f.key.name() == "transform")
             .unwrap();
         let crate::plugin::property::value::FieldTypeKind::Group { .. } = &media.kind
         else {
@@ -606,7 +606,7 @@ mod render_tests {
         assert!(
             !fields
                 .iter()
-                .any(|field| matches!(field.key.local_id(), "width" | "height"))
+                .any(|field| matches!(field.key.local_name(), "width" | "height"))
         );
         let leaves = crate::plugin::property::PropertySchema::leaf_fields(fields).unwrap();
         assert_eq!(
@@ -615,18 +615,24 @@ mod render_tests {
                 .map(|(path, _)| path.to_string())
                 .collect::<Vec<_>>(),
             [
-                "std:video:media/source",
-                "std:video:media/source_offset",
-                "std:video:transform/position",
-                "std:video:transform/rotation",
-                "std:video:transform/scale"
+                "std:media#media/source",
+                "std:media#media/source_offset",
+                "std:transform#transform/position",
+                "std:transform#transform/rotation",
+                "std:transform#transform/scale"
             ]
         );
         let mut props = ClipBindingValue::default_properties(fields);
-        // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。
+        // コンポーネントのプロパティは所有者付きのキー（std:media#media, std:transform#transform）で配置される。
         // transform デフォルト値をセット（as_mat4 は position/rotation/scale を全て要求する）
         let transform_value = props
-            .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+            .get_mut(
+                &crate::plugin::property::PropertyKey::new(
+                    crate::plugin::NamespacedID::new("std", "transform").unwrap(),
+                    "transform",
+                )
+                .unwrap(),
+            )
             .unwrap();
         let ClipBindingValue::Static(
             crate::plugin::property::value::FieldValue::Map(transform_map),
@@ -682,7 +688,13 @@ mod render_tests {
         streams.insert(7, player);
         for factor in [1.0, 0.5, 2.0] {
             let transform_value = props
-                .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+                .get_mut(
+                &crate::plugin::property::PropertyKey::new(
+                    crate::plugin::NamespacedID::new("std", "transform").unwrap(),
+                    "transform",
+                )
+                .unwrap(),
+            )
                 .unwrap();
             let ClipBindingValue::Static(
                 crate::plugin::property::value::FieldValue::Map(transform_map),

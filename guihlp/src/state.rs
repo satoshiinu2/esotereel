@@ -12,7 +12,7 @@ use esotereel_lib::{
     plugin::{
         NamespacedID,
         property::{
-            PropertySchema,
+            PropertyKey, PropertySchema,
             value::{FieldTypeKind, FieldValue},
         },
         settings::SettingsStore,
@@ -68,7 +68,7 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
 
     Ok(vec![
         PropertySchema {
-            key: NamespacedID::new("core", "log.level")?,
+            key: PropertyKey::from_namespaced(NamespacedID::new("core", "log.level")?),
             category: vec!["Core > Logging".to_owned()],
             label: "Default Log Level".to_owned(),
             kind: level_kind.clone(),
@@ -77,7 +77,7 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
             member_capabilities: BTreeMap::new(),
         },
         PropertySchema {
-            key: NamespacedID::new("core", "log.filters")?,
+            key: PropertyKey::from_namespaced(NamespacedID::new("core", "log.filters")?),
             category: vec!["Core > Logging".to_owned()],
             label: "Log ID Filters".to_owned(),
             kind: FieldTypeKind::Map {

@@ -137,7 +137,7 @@ properties = [
         assert_eq!(video.kind.full(), "std:media-provider");
         assert!(video.capabilities.contains(&ComponentCapability::FrameProvider));
         assert_eq!(video.properties.len(), 1);
-        assert_eq!(video.properties[0].key.full(), "std:source");
+        assert_eq!(video.properties[0].key.address(), "std:video#source");
     }
 
     #[test]

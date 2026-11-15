@@ -69,7 +69,7 @@ impl FfiPropertySchema {
         let default_value = CFieldValue::wrap_ffi(&schema.default);
 
         Self {
-            key: FfiOwnedString::from_string(schema.key.full().to_owned()),
+            key: FfiOwnedString::from_string(schema.key.address()),
             category: FfiOwnedString::from_string(category_str),
             label: FfiOwnedString::from_string(schema.label.clone()),
             kind_type,

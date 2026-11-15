@@ -6,7 +6,7 @@ capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
 editor = "video"
 script = "video.rhai"
 properties = [
-  { key = "video:media", label = "Media",
+  { key = "media", label = "Media",
     kind = { type = "group" },
     fields = [
       { key = "source", label = "Source", kind = { type = "string" }, default = "" },

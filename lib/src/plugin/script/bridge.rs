@@ -3,14 +3,15 @@ use std::collections::HashMap;
 use rhai::{Dynamic, Map};
 
 use crate::{
-    plugin::{NamespacedID, property::value::FieldValue},
+    plugin::property::{PropertyKey, value::FieldValue},
     project::clip::ClipBindingValue,
 };
 
 /// プロパティ値のマップを Rhai の `Map` に変換します。
 ///
 /// `ClipBindingValue` を `rhai::Dynamic` に変換し、スクリプトエンジンに渡せる形式にします。
-pub fn field_values_to_rhai_map(properties: &HashMap<NamespacedID, ClipBindingValue>) -> Map {
+/// キーはプロパティアドレスの正規形文字列（`std:media#media` 等）です。
+pub fn field_values_to_rhai_map(properties: &HashMap<PropertyKey, ClipBindingValue>) -> Map {
     properties
         .iter()
         .map(|(k, v)| (k.to_string().into(), property_value_to_dynamic(v)))

@@ -5,7 +5,7 @@ use esotereel_lib::{
     plugin::{
         NamespacedID,
         clip::component::{ComponentCapability, RuntimeDefinition},
-        property::{PropertyPath, value::FieldValue},
+        property::{PropertyKey, PropertyPath, value::FieldValue},
     },
     project::{
         Clip, Project, TimelineTick,
@@ -201,7 +201,7 @@ pub(crate) fn clip_add_core(
     position: TimelineTick,
     duration: TimelineTick,
     kind_id: NamespacedID,
-    properties: HashMap<NamespacedID, ClipBindingValue>,
+    properties: HashMap<PropertyKey, ClipBindingValue>,
     // 能力ベースで解決したメディアプロパティのパス。
     // `None` の場合はアセット登録をスキップする。
     media_paths: Option<&MediaPropertyPaths>,

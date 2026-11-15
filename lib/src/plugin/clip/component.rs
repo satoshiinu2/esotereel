@@ -5,7 +5,7 @@ use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
-    ComponentCapability, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
+    ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
@@ -136,7 +136,7 @@ impl RuntimeDefinition {
 #[derive(Debug, Clone)]
 pub struct ClipInstance {
     pub kind_id: NamespacedID,
-    pub properties: HashMap<NamespacedID, ClipBindingValue>,
+    pub properties: HashMap<PropertyKey, ClipBindingValue>,
     /// コンポーネントごとの実行時状態。キーはコンポーネント id。
     pub state: HashMap<NamespacedID, FieldValue>,
 }
@@ -280,7 +280,7 @@ impl ComponentDefinitionRaw {
         }
         let mut properties = Vec::new();
         for raw in &self.properties {
-            properties.push(PropertySchema::parse_one(raw.clone(), plugin_id)?);
+            properties.push(PropertySchema::parse_for_component(raw.clone(), &id)?);
         }
         Ok(ComponentDefinition {
             id,
@@ -360,7 +360,7 @@ impl Scheduler {
         loader: &PluginLoader,
         kind_id: &NamespacedID,
         source_path: &str,
-    ) -> anyhow::Result<HashMap<NamespacedID, ClipBindingValue>> {
+    ) -> anyhow::Result<HashMap<PropertyKey, ClipBindingValue>> {
         let definition = loader.resolve_component_definition(kind_id)?;
         let handlers: Vec<_> = definition
             .components
@@ -417,9 +417,12 @@ impl Scheduler {
         }
 
         for (property_id, value) in returned_properties {
-            let property_id = NamespacedID::parse(&property_id).with_context(|| {
-                format!("invalid property ID returned by `{}`", handler.id.full())
-            })?;
+            // 戻り値のキーはプロパティアドレス。ハンドラ自身のプロパティは
+            // 所有者を省略した相対形（`#name`）でも書ける。
+            let property_id = PropertyKey::parse_in_context(&property_id, &handler.id)
+                .with_context(|| {
+                    format!("invalid property ID returned by `{}`", handler.id.full())
+                })?;
             let schema = schemas.get(&property_id).with_context(|| {
                 format!(
                     "file-drop-handler `{}` returned undeclared property `{property_id}`",
@@ -751,7 +754,7 @@ properties = [
         let source = video
             .properties
             .iter()
-            .find(|p| p.key.full() == "std:source")
+            .find(|p| p.key.address() == "std:video#source")
             .unwrap();
         assert_eq!(source.label, "Source");
         assert!(matches!(source.kind, FieldTypeKind::String));
@@ -760,7 +763,7 @@ properties = [
         let volume = video
             .properties
             .iter()
-            .find(|p| p.key.full() == "std:volume")
+            .find(|p| p.key.address() == "std:video#volume")
             .unwrap();
         assert_eq!(volume.label, "Volume");
         assert_eq!(volume.default, FieldValue::Float(1.0));
@@ -821,7 +824,7 @@ capabilities = ["my-custom-cap"]
             FieldValue::String("/media/clip.mp4".to_string()),
         )]));
 
-        merge_field_value(&mut defaults, returned, "std:video:media").unwrap();
+        merge_field_value(&mut defaults, returned, "std:media#media").unwrap();
 
         assert_eq!(
             defaults,
@@ -842,7 +845,7 @@ capabilities = ["my-custom-cap"]
             FieldValue::String("value".to_string()),
         )]));
         assert!(
-            merge_field_value(&mut defaults, unknown_field, "std:video:media")
+            merge_field_value(&mut defaults, unknown_field, "std:media#media")
                 .unwrap_err()
                 .to_string()
                 .contains("undeclared field")
@@ -857,7 +860,7 @@ capabilities = ["my-custom-cap"]
                 r#"
                     fn handle_file_drop(source_path) {
                         #{
-                            "std:video:media": #{
+                            "std:media#media": #{
                                 source: source_path,
                             },
                         }
@@ -880,7 +883,7 @@ capabilities = ["my-custom-cap"]
         let FieldValue::Map(properties) = dynamic_to_field_value(result).unwrap() else {
             panic!("handler should return a property map");
         };
-        let FieldValue::Map(media) = properties.get("std:video:media").unwrap() else {
+        let FieldValue::Map(media) = properties.get("std:media#media").unwrap() else {
             panic!("media property should be a map");
         };
         assert_eq!(
@@ -972,7 +975,7 @@ capabilities = ["my-custom-cap"]
             script: None,
             properties: vec![
                 PropertySchema {
-                    key: NamespacedID::new("std", "source").unwrap(),
+                    key: PropertyKey::from_namespaced(NamespacedID::new("std", "source").unwrap()),
                     category: vec!["Media".to_string()],
                     label: "Source".to_string(),
                     kind: FieldTypeKind::String,
@@ -981,7 +984,7 @@ capabilities = ["my-custom-cap"]
                     member_capabilities: BTreeMap::new(),
                 },
                 PropertySchema {
-                    key: NamespacedID::new("std", "volume").unwrap(),
+                    key: PropertyKey::from_namespaced(NamespacedID::new("std", "volume").unwrap()),
                     category: vec![],
                     label: "Volume".to_string(),
                     kind: FieldTypeKind::Float {
@@ -1000,11 +1003,15 @@ capabilities = ["my-custom-cap"]
         assert_eq!(instance.properties.len(), 2);
 
         assert!(matches!(
-            instance.properties.get(&NamespacedID::new("std", "source").unwrap()),
+            instance.properties.get(&PropertyKey::from_namespaced(
+                NamespacedID::new("std", "source").unwrap(),
+            )),
             Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "default.mp4"
         ));
         assert!(matches!(
-            instance.properties.get(&NamespacedID::new("std", "volume").unwrap()),
+            instance.properties.get(&PropertyKey::from_namespaced(
+                NamespacedID::new("std", "volume").unwrap(),
+            )),
             Some(ClipBindingValue::Static(FieldValue::Float(v))) if *v == 1.0
         ));
         assert!(instance.state.is_empty());
@@ -1020,7 +1027,7 @@ capabilities = ["my-custom-cap"]
             editor: None,
             script: None,
             properties: vec![PropertySchema {
-                key: NamespacedID::new("std", "prop_a").unwrap(),
+                key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_a").unwrap()),
                 category: vec![],
                 label: "Prop A".to_string(),
                 kind: FieldTypeKind::String,
@@ -1037,7 +1044,7 @@ capabilities = ["my-custom-cap"]
             editor: None,
             script: None,
             properties: vec![PropertySchema {
-                key: NamespacedID::new("std", "prop_b").unwrap(),
+                key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_b").unwrap()),
                 category: vec![],
                 label: "Prop B".to_string(),
                 kind: FieldTypeKind::Int {
@@ -1054,11 +1061,15 @@ capabilities = ["my-custom-cap"]
         assert_eq!(instance.properties.len(), 2);
 
         assert!(matches!(
-            instance.properties.get(&NamespacedID::new("std", "prop_a").unwrap()),
+            instance.properties.get(&PropertyKey::from_namespaced(
+                NamespacedID::new("std", "prop_a").unwrap(),
+            )),
             Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "a"
         ));
         assert!(matches!(
-            instance.properties.get(&NamespacedID::new("std", "prop_b").unwrap()),
+            instance.properties.get(&PropertyKey::from_namespaced(
+                NamespacedID::new("std", "prop_b").unwrap(),
+            )),
             Some(ClipBindingValue::Static(FieldValue::Int(v))) if *v == 42
         ));
     }
