@@ -9,7 +9,7 @@
 //! クリップのシェーダスタック経由で実レンダーループへ接続済みです
 //! （`render::deform` 参照）。render 用シェーダの実行配線は未実装です。
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use anyhow::Context;
 use wesl::{Compiler, resolver::VirtualResolver, syntax::ModulePath};
@@ -190,13 +190,13 @@ pub fn compile_and_validate(
 /// `ComponentRegistry` と対になる位置づけで、ID 衝突チェック付きでマージします。
 #[derive(Debug, Default)]
 pub struct ShaderRegistry {
-    inner: PluginDefinitionRegistry<NamespacedID, ShaderDefinition>,
+    inner: PluginDefinitionRegistry<NamespacedID, Arc<ShaderDefinition>>,
 }
 
 impl ShaderRegistry {
-    /// 指定 ID の `ShaderDefinition` への参照を返します。存在しなければ `None`。
-    pub fn get(&self, id: &NamespacedID) -> Option<&ShaderDefinition> {
-        self.inner.get(id)
+    /// 指定 ID の `ShaderDefinition` を返します。存在しなければ `None`。
+    pub fn get(&self, id: &NamespacedID) -> Option<Arc<ShaderDefinition>> {
+        self.inner.get(id).cloned()
     }
 
     /// 指定 ID のエントリが存在するかを返します。
@@ -205,7 +205,7 @@ impl ShaderRegistry {
     }
 
     /// 全エントリへのイテレータを返します。
-    pub fn iter(&self) -> impl Iterator<Item = (&NamespacedID, &ShaderDefinition)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&NamespacedID, &Arc<ShaderDefinition>)> {
         self.inner.iter()
     }
 
@@ -222,7 +222,7 @@ impl ShaderRegistry {
     /// 既存定義と id 衝突があればエラーにして合流させる。
     pub fn merge_shader_definitions(
         &mut self,
-        definitions: HashMap<NamespacedID, ShaderDefinition>,
+        definitions: HashMap<NamespacedID, Arc<ShaderDefinition>>,
     ) -> anyhow::Result<()> {
         self.inner.merge(definitions)
     }

@@ -326,7 +326,7 @@ mod tests {
             )))
             .unwrap();
         let id = NamespacedID::new("std", "wave_compute").unwrap();
-        let definition = loader.get_shader(&id).unwrap().clone();
+        let definition = loader.get_shader(&id).unwrap();
 
         let (device, queue) = create_device();
         let xs = [0.0f32, 10.0, 20.0, 100.0];

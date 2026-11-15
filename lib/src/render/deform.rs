@@ -10,7 +10,7 @@
 //! 残りのエントリで変形を続行します。パラメータのパッキングに失敗した場合は
 //! そのバッチの変形全体を中止し、変形なしで描画します。
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use glam::Mat4;
 
@@ -43,8 +43,8 @@ pub fn apply_shader_stacks(
         return;
     }
 
-    // 参照されるシェーダ定義をまとめて複製し、ロックを解放してから GPU 処理する。
-    let definitions: HashMap<NamespacedID, ShaderDefinition> = {
+    // 参照されるシェーダ定義への `Arc` を集め、ロックを解放してから GPU 処理する。
+    let definitions: HashMap<NamespacedID, Arc<ShaderDefinition>> = {
         let Ok(loader) = ctx.plugin_loader.read() else {
             log::warn!("plugin_loader lock poisoned, skipping shader stacks");
             return;
@@ -52,14 +52,14 @@ pub fn apply_shader_stacks(
         deformations
             .iter()
             .flat_map(|d| d.shader_stack.iter().map(|e| &e.shader_id))
-            .filter_map(|id| loader.get_shader(id).map(|def| (id.clone(), def.clone())))
+            .filter_map(|id| loader.get_shader(id).map(|def| (id.clone(), def)))
             .collect()
     };
 
     for deformation in deformations {
         // スタックに載せられるのは compute シェーダだけです。
         // 見つからない定義と render 用シェーダは警告して読み飛ばします。
-        let mut entries: Vec<(&ShaderStackEntry, &ShaderDefinition)> = Vec::new();
+        let mut entries: Vec<(&ShaderStackEntry, Arc<ShaderDefinition>)> = Vec::new();
         for entry in &deformation.shader_stack {
             let Some(definition) = definitions.get(&entry.shader_id) else {
                 log::warn!(
@@ -75,7 +75,7 @@ pub fn apply_shader_stacks(
                 );
                 continue;
             }
-            entries.push((entry, definition));
+            entries.push((entry, definition.clone()));
         }
         if entries.is_empty() {
             continue;

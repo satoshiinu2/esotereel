@@ -14,7 +14,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 
 use anyhow::Context;
@@ -177,7 +177,7 @@ pub struct Plugin {
     pub clip_kinds: HashMap<NamespacedID, ClipKind>,
     pub component_definitions: HashMap<NamespacedID, ComponentDefinition>,
     pub component_scripts: HashMap<NamespacedID, CompiledScript>,
-    pub shader_definitions: HashMap<NamespacedID, ShaderDefinition>,
+    pub shader_definitions: HashMap<NamespacedID, Arc<ShaderDefinition>>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub toolbar_button_scripts: HashMap<NamespacedID, CompiledScript>,
     pub script: Option<CompiledScript>,
@@ -395,7 +395,7 @@ impl Plugin {
     fn load_shaders(
         manifest: &PluginManifest,
         shaders_dir: &Path,
-    ) -> anyhow::Result<HashMap<NamespacedID, ShaderDefinition>> {
+    ) -> anyhow::Result<HashMap<NamespacedID, Arc<ShaderDefinition>>> {
         if !shaders_dir.exists() {
             return Ok(HashMap::new());
         }
@@ -460,7 +460,7 @@ impl Plugin {
                 })?;
 
             let id = def.id.clone();
-            if all_shaders.insert(id.clone(), def).is_some() {
+            if all_shaders.insert(id.clone(), Arc::new(def)).is_some() {
                 anyhow::bail!(
                     "duplicate shader definition id `{}` across files in `{}`",
                     id,
@@ -693,7 +693,7 @@ impl PluginLoader {
             .merge_component_definitions(merged_components)?;
 
         // 全プラグインのshader_definitionsをマージする。id 衝突があればエラー。
-        let mut merged_shaders: HashMap<NamespacedID, ShaderDefinition> = HashMap::new();
+        let mut merged_shaders: HashMap<NamespacedID, Arc<ShaderDefinition>> = HashMap::new();
         for plugin in &self.plugins {
             for (id, def) in &plugin.shader_definitions {
                 if merged_shaders.insert(id.clone(), def.clone()).is_some() {
@@ -841,7 +841,7 @@ impl PluginLoader {
     }
 
     /// 指定 ID の `ShaderDefinition` を返します。
-    pub fn get_shader(&self, id: &NamespacedID) -> Option<&ShaderDefinition> {
+    pub fn get_shader(&self, id: &NamespacedID) -> Option<Arc<ShaderDefinition>> {
         self.shader_registry.get(id)
     }
 
