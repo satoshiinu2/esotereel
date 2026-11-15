@@ -14,7 +14,9 @@ use wesl::{Compiler, resolver::VirtualResolver, syntax::ModulePath};
 
 use crate::plugin::{NamespacedID, property::PropertySchema, registry::PluginDefinitionRegistry};
 
+pub mod params;
 pub mod parse;
+pub use params::{CoreParamValue, pack_params};
 pub use parse::parse_shader_definition;
 
 /// シェーダの種別とエントリポイントです。
