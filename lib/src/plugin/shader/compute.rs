@@ -7,7 +7,7 @@
 //!
 //! バインドレイアウトはフェーズ 1 の契約どおり、@group(0) が Params uniform、
 //! @group(1) の binding 0 / 1 が入力（read）/ 出力（read_write）の頂点バッファです。
-//! 実レンダーループへの接続はまだ行っていません。
+//! レンダーループからは `render::deform` 経由で使われます。
 
 use std::collections::HashMap;
 
