@@ -1,7 +1,7 @@
 //! プラグインシステムのモジュールです。
 //!
-//! プラグインは `manifest.toml`、`settings.toml`、`clips/`、`components/`、`toolbars.toml`、
-//! `script.rhai` で構成され、`PluginLoader` によりディスクから読み込まれます。
+//! プラグインは `manifest.toml`、`settings.toml`、`clips/`、`components/`、`shaders/`、
+//! `toolbars.toml`、`script.rhai` で構成され、`PluginLoader` によりディスクから読み込まれます。
 //! 各プラグインは `ClipKind`（クリップ種別）、`ComponentDefinition`（コンポーネント定義）、
 //! `PropertySchema`（プロパティスキーマ）、Rhai スクリプトを登録します。
 //!
@@ -34,6 +34,10 @@ use crate::{
         },
         property::PropertySchema,
         script::CompiledScript,
+        shader::{
+            ShaderDefinition, ShaderRegistry, compile_and_validate, module_path_for,
+            parse_shader_definition,
+        },
         toolbar::ToolbarButtonSpec,
     },
     project::clip::ClipKind,
@@ -164,7 +168,7 @@ pub struct PluginManifest {
 /// 読み込まれたプラグインの実体です。
 ///
 /// プラグインディレクトリからマニフェスト・設定スキーマ・クリップ種別・
-/// コンポーネント定義・ツールバーボタン・スクリプトをすべて読み込み、保持します。
+/// コンポーネント定義・シェーダ定義・ツールバーボタン・スクリプトをすべて読み込み、保持します。
 /// `PluginLoader` が所有し、他モジュールからは `PluginLoader` のアクセサ経由で
 /// 間接的に参照することを前提とします。
 pub struct Plugin {
@@ -173,6 +177,7 @@ pub struct Plugin {
     pub clip_kinds: HashMap<NamespacedID, ClipKind>,
     pub component_definitions: HashMap<NamespacedID, ComponentDefinition>,
     pub component_scripts: HashMap<NamespacedID, CompiledScript>,
+    pub shader_definitions: HashMap<NamespacedID, ShaderDefinition>,
     pub toolbar_buttons: Vec<ToolbarButtonSpec>,
     pub toolbar_button_scripts: HashMap<NamespacedID, CompiledScript>,
     pub script: Option<CompiledScript>,
@@ -189,6 +194,7 @@ impl Plugin {
         let clip_kinds = Self::load_clip_kinds(&manifest, &dir.join("clips"))?;
         let (component_definitions, mut component_scripts) =
             Self::load_components(&manifest, &dir.join("components"))?;
+        let shader_definitions = Self::load_shaders(&manifest, &dir.join("shaders"))?;
         let toolbar_buttons = Self::load_toolbar(&manifest, &dir.join("toolbars.toml"))?;
         let mut toolbar_button_scripts = HashMap::new();
         for button in &toolbar_buttons {
@@ -206,6 +212,7 @@ impl Plugin {
             clip_kinds,
             component_definitions,
             component_scripts,
+            shader_definitions,
             toolbar_buttons,
             toolbar_button_scripts,
             script,
@@ -383,6 +390,87 @@ impl Plugin {
 
         Ok((all_components, all_scripts))
     }
+
+    /// shaders/ 配下の全TOMLからシェーダ定義を集め、WGSLをコンパイルする。
+    fn load_shaders(
+        manifest: &PluginManifest,
+        shaders_dir: &Path,
+    ) -> anyhow::Result<HashMap<NamespacedID, ShaderDefinition>> {
+        if !shaders_dir.exists() {
+            return Ok(HashMap::new());
+        }
+
+        // import 解決用に、配下の全 WGSL を package:: モジュールとして登録する。
+        // 定義 TOML の無いファイルは import 専用のヘルパモジュールとして扱う。
+        let mut module_files: Vec<PathBuf> = walkdir::WalkDir::new(shaders_dir)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_type().is_file())
+            .map(|entry| entry.path().to_path_buf())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "wgsl" || ext == "wesl"))
+            .collect();
+        module_files.sort();
+
+        let mut package_modules: Vec<(String, String)> = Vec::new();
+        for path in &module_files {
+            let relative = path.strip_prefix(shaders_dir).with_context(|| {
+                format!("failed to resolve shader module path {}", path.display())
+            })?;
+            let module_path = module_path_for(relative)
+                .with_context(|| format!("invalid shader module path {}", path.display()))?;
+            let source = std::fs::read_to_string(path).with_context(|| {
+                format!("failed to read shader source at {}", path.display())
+            })?;
+            package_modules.push((module_path, source));
+        }
+
+        let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(shaders_dir)
+            .with_context(|| format!("failed to read shaders directory {}", shaders_dir.display()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .collect();
+        toml_paths.sort();
+
+        let mut all_shaders = HashMap::new();
+        for path in toml_paths {
+            let text = std::fs::read_to_string(&path).with_context(|| {
+                format!("failed to read shader file at {}", path.display())
+            })?;
+            let mut def = parse_shader_definition(&text, &manifest.id).with_context(|| {
+                format!(
+                    "failed parse shader in `{}` for plugin `{}`",
+                    path.display(),
+                    manifest.id
+                )
+            })?;
+
+            let main_module = module_path_for(Path::new(&def.source)).with_context(|| {
+                format!(
+                    "invalid shader source path `{}` for plugin `{}`",
+                    def.source, manifest.id
+                )
+            })?;
+            def.compiled_wgsl = compile_and_validate(&main_module, &package_modules)
+                .with_context(|| {
+                    format!(
+                        "failed to compile shader `{}` for plugin `{}`",
+                        def.id, manifest.id
+                    )
+                })?;
+
+            let id = def.id.clone();
+            if all_shaders.insert(id.clone(), def).is_some() {
+                anyhow::bail!(
+                    "duplicate shader definition id `{}` across files in `{}`",
+                    id,
+                    manifest.id
+                );
+            }
+        }
+
+        Ok(all_shaders)
+    }
 }
 
 // 内部で使う読み込みのための結果
@@ -412,6 +500,7 @@ pub struct PluginLoader {
     is_loaded: bool,
     clip_kinds: ClipKindStore,
     component_registry: ComponentRegistry,
+    shader_registry: ShaderRegistry,
 
     // インデックスで検索コストを最小化
     scripts_index: HashMap<String, CompiledScript>,
@@ -428,6 +517,7 @@ impl PluginLoader {
             is_loaded: false,
             clip_kinds: ClipKindStore::new(),
             component_registry: ComponentRegistry::default(),
+            shader_registry: ShaderRegistry::default(),
             scripts_index: HashMap::new(),
             component_scripts_index: HashMap::new(),
             toolbar_button_scripts_index: HashMap::new(),
@@ -576,6 +666,7 @@ impl PluginLoader {
         self.schemas_index.clear();
         self.toolbars_index.clear();
         self.component_registry = ComponentRegistry::default();
+        self.shader_registry = ShaderRegistry::default();
 
         // 1段階目: 全プラグインのkindsをマージ
         let mut merged_kinds: HashMap<NamespacedID, ClipKind> = HashMap::new();
@@ -600,6 +691,17 @@ impl PluginLoader {
         }
         self.component_registry
             .merge_component_definitions(merged_components)?;
+
+        // 全プラグインのshader_definitionsをマージする。id 衝突があればエラー。
+        let mut merged_shaders: HashMap<NamespacedID, ShaderDefinition> = HashMap::new();
+        for plugin in &self.plugins {
+            for (id, def) in &plugin.shader_definitions {
+                if merged_shaders.insert(id.clone(), def.clone()).is_some() {
+                    anyhow::bail!("duplicate shader definition id `{}` across plugins", id);
+                }
+            }
+        }
+        self.shader_registry.merge_shader_definitions(merged_shaders)?;
 
         let mut clip_kinds = ClipKindStore::new();
         clip_kinds
@@ -637,11 +739,12 @@ impl PluginLoader {
         }
 
         log::info!(
-            "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}",
+            "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}, shaders={}",
             self.clip_kinds.registry.iter().count(),
             self.scripts_index.len(),
             self.schemas_index.len(),
-            self.toolbars_index.len()
+            self.toolbars_index.len(),
+            self.shader_registry.len()
         );
 
         Ok(())
@@ -729,6 +832,11 @@ impl PluginLoader {
     /// 指定 ID の `ComponentDefinition` を返します。
     pub fn get_component(&self, id: &NamespacedID) -> Option<&ComponentDefinition> {
         self.component_registry.get(id)
+    }
+
+    /// 指定 ID の `ShaderDefinition` を返します。
+    pub fn get_shader(&self, id: &NamespacedID) -> Option<&ShaderDefinition> {
+        self.shader_registry.get(id)
     }
 
     /// ルートコンポーネント ID から階層を解決し、フラットな `RuntimeDefinition` を返します。
@@ -871,5 +979,74 @@ mod archive_tests {
             };
             assert_eq!(properties.len(), count as usize);
         }
+    }
+}
+
+#[cfg(test)]
+mod shader_loading_tests {
+    use super::*;
+    use crate::plugin::shader::ShaderKind;
+
+    #[test]
+    fn shader_definitions_are_loaded_and_compiled_via_plugin() {
+        use std::fs;
+
+        let dir = std::env::temp_dir().join("esotereel_shader_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("shaders")).unwrap();
+
+        fs::write(
+            dir.join("manifest.toml"),
+            "id = \"shader-test\"\nname = \"Shader Test\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("shaders").join("wave_compute.toml"),
+            r#"
+id = "wave_compute"
+name = "Wave (Compute)"
+source = "wave_compute.wgsl"
+kind = "compute"
+entry_compute = "deform_main"
+
+[[properties]]
+key = "core:time"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("shaders").join("wave_compute.wgsl"),
+            r#"
+import core::common::CLIP_VERTEX_FLOATS;
+
+@group(0) @binding(0)
+var<storage, read_write> vertices: array<f32>;
+
+@compute @workgroup_size(64)
+fn deform_main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    if (gid.x < arrayLength(&vertices) / CLIP_VERTEX_FLOATS) {
+        vertices[gid.x * CLIP_VERTEX_FLOATS + 1u] += 1.0;
+    }
+}
+"#,
+        )
+        .unwrap();
+
+        let mut loader = PluginLoader::new();
+        loader.load_additional_plugin(&dir).unwrap();
+
+        let id = NamespacedID::new("shader-test", "wave_compute").unwrap();
+        let def = loader
+            .get_shader(&id)
+            .expect("shader definition must be registered");
+        assert_eq!(
+            def.kind,
+            ShaderKind::Compute {
+                entry_compute: "deform_main".to_string()
+            }
+        );
+        // wesl が core::common の import を解決し、検証済み WGSL が保持される。
+        assert!(def.compiled_wgsl.contains("deform_main"));
+        assert!(def.compiled_wgsl.contains("9u"));
     }
 }
