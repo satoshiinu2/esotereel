@@ -16,9 +16,10 @@ use super::bridge::{binding_value_to_dynamic, field_value_to_dynamic};
 ///
 /// 事前に Map 化して配るのではなく、呼び出し時点のプロパティ値の
 /// スナップショットを保持し、スクリプトからのキーアクセスのたびに解決する。
-/// 見える名前は自コンポーネントのプロパティと `[[requires]]` で宣言した
-/// 依存だけ（サンドボックス仕様）。宣言されていない名前へのアクセスは、
-/// 黙って空を返さずキー名を含むエラーにする。
+/// 見える名前は、`:#` 形式で引く自コンポーネントのプロパティと、裸の名前で
+/// 引く `[[requires]]` で宣言した依存だけ（サンドボックス仕様）。
+/// 宣言されていない名前へのアクセスは、黙って空を返さずキー名を含む
+/// エラーにする。
 #[derive(Clone)]
 pub struct ComponentProps {
     component_id: NamespacedID,
@@ -56,9 +57,10 @@ enum Dependency {
 impl ComponentProps {
     /// `component` のスクリプトへ渡す props を構築する。
     ///
-    /// 自コンポーネントのプロパティをローカル名で、`[[requires]]` で宣言した
-    /// 依存先は capability に紐づく値だけを依存名で解決できるようにする
-    /// （依存先の全プロパティは渡らない）。必須依存が満たせなければエラー。
+    /// 自コンポーネントのプロパティを `:#` 形式のローカル名で、`[[requires]]`
+    /// で宣言した依存先は capability に紐づく値だけを依存名で解決できる
+    /// ようにする（依存先の全プロパティは渡らない）。
+    /// 必須依存が満たせなければエラー。
     pub fn build(
         definition: &RuntimeDefinition,
         instance: &ClipInstance,
@@ -116,7 +118,11 @@ impl ComponentProps {
         })
     }
 
-    /// キーアクセスを解決する。`:#name` 形式は自プロパティとして解決する。
+    /// キーアクセスを解決する。
+    ///
+    /// `:#name` 形式は自プロパティ専用で、裸の名前は `[[requires]]` の
+    /// 依存名としてだけ解決する。自プロパティを裸の名前で引いた場合は、
+    /// 黙って解決せず `:#name` 形式へ誘導するエラーにする。
     fn resolve(&self, name: &str) -> Result<Dynamic, Box<EvalAltResult>> {
         if let Some(own_name) = name.strip_prefix(":#") {
             return match self.own.get(own_name) {
@@ -124,8 +130,8 @@ impl ComponentProps {
                 None => Err(self.not_own_property_error(name)),
             };
         }
-        if let Some(value) = self.own.get(name) {
-            return Ok(value.as_ref().map_or(Dynamic::UNIT, PropsValue::to_dynamic));
+        if self.own.contains_key(name) {
+            return Err(self.self_needs_prefix_error(name));
         }
         match self.dependencies.get(name) {
             Some(Dependency::Value(value)) => Ok(value.to_dynamic()),
@@ -135,6 +141,7 @@ impl ComponentProps {
     }
 
     /// 宣言した名前が満たされているかを返す。任意依存の有無での分岐用。
+    /// 名前の解釈はキーアクセスと同じ（自プロパティは `:#name` 形式のみ）。
     fn has(&self, name: &str) -> Result<bool, Box<EvalAltResult>> {
         if let Some(own_name) = name.strip_prefix(":#") {
             return match self.own.get(own_name) {
@@ -142,8 +149,8 @@ impl ComponentProps {
                 None => Err(self.not_own_property_error(name)),
             };
         }
-        if let Some(value) = self.own.get(name) {
-            return Ok(value.is_some());
+        if self.own.contains_key(name) {
+            return Err(self.self_needs_prefix_error(name));
         }
         match self.dependencies.get(name) {
             Some(Dependency::Value(_) | Dependency::DeclaredOnly) => Ok(true),
@@ -163,6 +170,14 @@ impl ComponentProps {
     fn not_own_property_error(&self, name: &str) -> Box<EvalAltResult> {
         format!(
             "`{name}` is not a property of component `{}`",
+            self.component_id.full()
+        )
+        .into()
+    }
+
+    fn self_needs_prefix_error(&self, name: &str) -> Box<EvalAltResult> {
+        format!(
+            "`{name}` is a property of component `{}`; access it as `:#{name}`",
             self.component_id.full()
         )
         .into()
@@ -285,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_own_self_relative_and_dependency_values() {
+    fn resolves_self_relative_and_dependency_values() {
         let (definition, instance, owner) = fixture(
             vec![ComponentRequire {
                 name: "dep".to_string(),
@@ -295,10 +310,7 @@ mod tests {
             vec![],
         );
         let props = ComponentProps::build(&definition, &instance, &owner).unwrap();
-        assert_eq!(
-            eval(props.clone(), "props[\"own\"]").unwrap().cast::<i64>(),
-            7
-        );
+        // 自プロパティは `:#` 形式でのみ引ける。
         assert_eq!(
             eval(props.clone(), "props[\":#own\"]")
                 .unwrap()
@@ -312,7 +324,13 @@ mod tests {
         assert!(eval(props.clone(), "props.has(\"dep\")")
             .unwrap()
             .cast::<bool>());
-        assert!(eval(props, "props.has(\":#own\")").unwrap().cast::<bool>());
+        assert!(eval(props.clone(), "props.has(\":#own\")")
+            .unwrap()
+            .cast::<bool>());
+        // 裸の名前で自プロパティを引くと、`:#` 形式へ誘導するエラーになる。
+        let err = eval(props.clone(), "props[\"own\"]").unwrap_err();
+        assert!(err.to_string().contains(":#own"), "{err}");
+        assert!(eval(props, "props.has(\"own\")").is_err());
     }
 
     #[test]
