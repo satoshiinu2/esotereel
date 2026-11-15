@@ -1,0 +1,41 @@
+# シェーダ定義（compute 版。プラグインの shaders/ に置く独立要素）
+# wave の波打ちを compute パスでかける版で、描画シェーダではない。
+# コンポーネントからは "std:wave_compute" のようにプラグイン名前空間付きの
+# 名前で参照する。重ねがけする場合はシェーダスタックの順に
+# compute パスを ping-pong で回す（wave_compute.wgsl の冒頭コメント参照）。
+id = "wave_compute"
+name = "Wave (Compute)"
+source = "wave_compute.wgsl"
+
+# render 用の entry_vertex / entry_fragment の代わりに、compute の
+# エントリを1つ宣言する。
+kind = "compute"
+entry_compute = "deform_main"
+
+# パラメータ宣言。宣言順に Params 構造体（@group(0)）へ詰められる。
+# key が "core:" で始まるものは lib が値を供給する共通パラメータで、
+# 型は lib 側で固定のため kind / default は書かない。
+# compute の変形はローカル空間で完結するため、core:view_projection と
+# core:transform はここには要らない（描画時に最後に1回だけ適用する）。
+# tint も色を触らないので無し。色は描画シェーダ側のプロパティのまま。
+
+[[properties]]
+key = "core:time"
+
+[[properties]]
+key = "amplitude"
+label = "Amplitude"
+kind = { type = "float", min = 0.0, max = 100.0, step = 0.1 }
+default = 10.0
+
+[[properties]]
+key = "frequency"
+label = "Frequency"
+kind = { type = "float", min = 0.0, max = 1.0, step = 0.01 }
+default = 0.05
+
+[[properties]]
+key = "speed"
+label = "Speed"
+kind = { type = "float", min = 0.0, max = 10.0, step = 0.1 }
+default = 2.0

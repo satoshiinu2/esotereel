@@ -1049,4 +1049,28 @@ fn deform_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         assert!(def.compiled_wgsl.contains("deform_main"));
         assert!(def.compiled_wgsl.contains("9u"));
     }
+
+    #[test]
+    fn std_plugin_shader_is_loaded_and_compiled() {
+        let mut loader = PluginLoader::new();
+        loader
+            .load_additional_plugin(Path::new(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../plugins/std"
+            )))
+            .unwrap();
+
+        let id = NamespacedID::new("std", "wave_compute").unwrap();
+        let def = loader
+            .get_shader(&id)
+            .expect("std:wave_compute must be registered");
+        assert_eq!(
+            def.kind,
+            ShaderKind::Compute {
+                entry_compute: "deform_main".to_string()
+            }
+        );
+        assert_eq!(def.properties.len(), 4);
+        assert!(def.compiled_wgsl.contains("deform_main"));
+    }
 }
