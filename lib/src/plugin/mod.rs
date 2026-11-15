@@ -870,6 +870,28 @@ impl PluginLoader {
         self.component_registry.by_capability(capability)
     }
 
+    /// 指定 `Capability` を持つコンポーネントを含むクリップ種別を返します。
+    ///
+    /// 複数の種別が該当する場合は ID の辞書順で最小のものを返し、選択を
+    /// 決定的にします。該当する種別が無ければ `None` を返します。
+    pub fn find_clip_kind_by_capability(
+        &self,
+        capability: &ComponentCapability,
+    ) -> Option<NamespacedID> {
+        self.clip_kinds
+            .iter()
+            .filter(|(_, kind)| {
+                kind.components.iter().any(|component_id| {
+                    self.component_registry
+                        .get(component_id)
+                        .is_some_and(|component| component.capabilities.contains(capability))
+                })
+            })
+            .map(|(id, _)| id)
+            .min_by(|a, b| a.full().cmp(b.full()))
+            .cloned()
+    }
+
     /// 全設定スキーマへのスライス参照を返します。
     pub fn get_settings_schemas(&self) -> &[PropertySchema] {
         &self.schemas_index

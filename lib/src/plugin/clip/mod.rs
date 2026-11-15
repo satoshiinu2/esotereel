@@ -72,4 +72,9 @@ impl ClipKindStore {
     pub fn get(&self, id: &NamespacedID) -> Option<&ClipKind> {
         self.registry.get(id)
     }
+
+    /// 全エントリへのイテレータを返します。
+    pub fn iter(&self) -> impl Iterator<Item = (&NamespacedID, &ClipKind)> {
+        self.registry.iter()
+    }
 }

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
-    plugin::NamespacedID,
+    plugin::{clip::component::ComponentCapability, NamespacedID, PluginLoader},
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
@@ -123,9 +123,9 @@ impl CommandQueue {
         position: i64,
         layer_id: LayerId,
     ) -> anyhow::Result<()> {
-        let kind_id = NamespacedID::parse("std:video").unwrap();
-
         let loader = state.plugin_loader.read_or_err()?;
+
+        let kind_id = media_clip_kind_id(&loader)?;
 
         let property_schema = loader
             .get_clip_properties(&kind_id)
@@ -149,13 +149,16 @@ impl CommandQueue {
 
     pub fn req_cmd_add_clip_with_source(
         &mut self,
-        _state: &ClientState,
+        state: &ClientState,
         timeline_id: TimelineId,
         position: i64,
         layer_id: LayerId,
         source_path: &str,
     ) -> anyhow::Result<()> {
-        let kind_id = NamespacedID::parse("std:video")?;
+        let loader = state.plugin_loader.read_or_err()?;
+        let kind_id = media_clip_kind_id(&loader)?;
+        drop(loader);
+
         let command = CommandRequest::AddClipFromFile {
             layer_id,
             position,
@@ -204,4 +207,14 @@ impl CommandQueue {
 
         self.enqueue(timeline_id, command);
     }
+}
+
+/// メディアクリップの種別 ID を、`FrameProvider` 能力を持つコンポーネントを
+/// 含む種別として PluginLoader から解決します（AGENTS.md 第9条）。
+fn media_clip_kind_id(loader: &PluginLoader) -> anyhow::Result<NamespacedID> {
+    loader
+        .find_clip_kind_by_capability(&ComponentCapability::FrameProvider)
+        .ok_or_else(|| {
+            anyhow::anyhow!("no clip kind has a component with the frame-provider capability")
+        })
 }
