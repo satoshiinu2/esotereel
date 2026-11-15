@@ -43,6 +43,7 @@ pub mod clip;
 pub mod property;
 pub mod registry;
 pub mod script;
+pub mod shader;
 pub mod settings;
 pub mod toolbar;
 
