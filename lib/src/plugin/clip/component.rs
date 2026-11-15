@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::plugin::property::{
     ComponentCapability, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
 };
+use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
 use crate::plugin::script::bridge::field_values_to_rhai_map;
 use crate::plugin::{NamespacedID, PluginLoader};
@@ -84,6 +85,46 @@ impl ComponentDefinition {
 pub struct RuntimeDefinition {
     pub kind_id: NamespacedID,
     pub components: Vec<ComponentDefinition>,
+}
+
+impl RuntimeDefinition {
+    /// 指定された能力を持つプロパティのスキーマを、構成コンポーネント全体から
+    /// 逆引きする。プロパティ ID のハードコードを避けるための解決経路（AGENTS.md §9）。
+    pub fn property_by_capability(
+        &self,
+        capability: &ComponentCapability,
+    ) -> Option<&PropertySchema> {
+        self.components
+            .iter()
+            .flat_map(|component| component.properties.iter())
+            .find(|property| property.capability.as_ref() == Some(capability))
+    }
+
+    /// 構成全体から、指定メンバー能力を持つメンバーキーを逆引きする。
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
+        self.components
+            .iter()
+            .find_map(|component| component.member_key_by_capability(capability))
+    }
+
+    /// プロパティ能力とメンバー能力からプロパティパスを能力ベースで解決する。
+    ///
+    /// ルートは `property_capability` を持つプロパティのキー、メンバーはその
+    /// プロパティの `member_capabilities` で `member_capability` を持つメンバー。
+    /// どちらかの宣言が無ければ `None`。
+    pub fn member_path(
+        &self,
+        property_capability: &ComponentCapability,
+        member_capability: &ComponentCapability,
+    ) -> Option<PropertyPath> {
+        let property = self.property_by_capability(property_capability)?;
+        let member = property
+            .member_capabilities
+            .iter()
+            .find(|(_, cap)| *cap == member_capability)
+            .map(|(key, _)| key)?;
+        PropertyPath::from(property.key.clone()).child(member).ok()
+    }
 }
 
 /// コンポーネントの実行時インスタンス。

@@ -7,8 +7,7 @@ use esotereel_lib::{
     StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        NamespacedID, PluginLoader, clip::component::Scheduler, property::ComponentCapability,
-        script::api::PluginActionContext,
+        NamespacedID, PluginLoader, clip::component::Scheduler, script::api::PluginActionContext,
     },
     project::{
         Project,
@@ -26,7 +25,7 @@ use uuid::Uuid;
 use crate::{
     network::ServerNetworkHandler,
     project::{
-        clip_add_core,
+        MediaPropertyPaths, clip_add_core,
         commands::command_to_history,
         history::{HistoryStack, execute_command_with_history, redo_command, undo_command},
     },
@@ -345,10 +344,10 @@ pub fn on_request_receive(
 
                 log::debug!(target:"core_packet_request","request: {:?}", command);
 
-                // コンポーネント定義から能力ベースでメディアオフセットメンバーのキーを解決する。
-                // プラグインが宣言する `media-offset-provider` 能力からメンバー名を逆引きし、
-                // ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
-                let offset_member_key = match &command {
+                // コンポーネント定義から能力ベースでメディアプロパティのパスを解決する。
+                // プラグインが宣言する能力（`frame-provider` とそのメンバー能力）から
+                // 逆引きし、ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
+                let media_paths = match &command {
                     CommandRequest::ClipsResize { clips } if !clips.is_empty() => {
                         let clip = project
                             .timeline_ref(*timeline_id)
@@ -356,16 +355,12 @@ pub fn on_request_receive(
                             .get_clip(clips[0].clip_id)
                             .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
                         let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
-                        runtime_def
-                            .components
-                            .iter()
-                            .find_map(|c| {
-                                c.member_key_by_capability(
-                                    &ComponentCapability::MediaOffsetProvider,
-                                )
-                            })
-                            .cloned()
+                        Some(MediaPropertyPaths::resolve(&runtime_def))
                     }
+                    CommandRequest::AddClip { kind_id, .. } => loader
+                        .resolve_component_definition(kind_id)
+                        .map(|def| MediaPropertyPaths::resolve(&def))
+                        .ok(),
                     _ => None,
                 };
 
@@ -382,7 +377,7 @@ pub fn on_request_receive(
                             *timeline_id,
                             command_history.clone(),
                             history,
-                            offset_member_key.as_deref(),
+                            media_paths.as_ref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
                         } else {
@@ -626,10 +621,10 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history.last_undo().and_then(|cmd| {
-                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
-                        });
-                        undo_command(project, timeline_id, history, offset_member_key.as_deref())?;
+                        let media_paths = history
+                            .last_undo()
+                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        undo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     Request::Redo { timeline_id } => {
                         let mut project_guard = project_arc.write_or_err()?;
@@ -646,10 +641,10 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let offset_member_key = history.last_redo().and_then(|cmd| {
-                            resolve_offset_member_key(project, timeline_id, cmd, &loader)
-                        });
-                        redo_command(project, timeline_id, history, offset_member_key.as_deref())?;
+                        let media_paths = history
+                            .last_redo()
+                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        redo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     _ => {
                         log::warn!("Unhandled packet type in toolbar action: {:?}", packet);
@@ -690,12 +685,12 @@ pub fn on_request_receive(
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            // 履歴の最後のコマンドから能力ベースでオフセットメンバキーを解決する。
-            let offset_member_key = history
+            // 履歴の最後のコマンドから能力ベースでメディアプロパティのパスを解決する。
+            let media_paths = history
                 .last_undo()
-                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+                .and_then(|cmd| resolve_media_paths(project, *timeline_id, cmd, &loader));
 
-            undo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            undo_command(project, *timeline_id, history, media_paths.as_ref())?;
             drop(project_guard);
             // must send to client
             network.notify_dirty();
@@ -727,11 +722,11 @@ pub fn on_request_receive(
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
 
-            let offset_member_key = history
+            let media_paths = history
                 .last_redo()
-                .and_then(|cmd| resolve_offset_member_key(project, *timeline_id, cmd, &loader));
+                .and_then(|cmd| resolve_media_paths(project, *timeline_id, cmd, &loader));
 
-            redo_command(project, *timeline_id, history, offset_member_key.as_deref())?;
+            redo_command(project, *timeline_id, history, media_paths.as_ref())?;
             drop(project_guard);
             // must send to client
             network.notify_dirty();
@@ -740,29 +735,29 @@ pub fn on_request_receive(
     Ok(())
 }
 
-/// コマンド履歴からメディアオフセットメンバーのキーを能力ベースで解決する。
+/// コマンド履歴からメディアプロパティのパスを能力ベースで解決する。
 ///
-/// 履歴の最初のクリップの種別からコンポーネント定義を引き、
-/// `MediaOffsetProvider` 能力を持つメンバーのキーを返す。
-/// プラグインが宣言する能力からプロパティを参照し、ハードコードを避ける
-/// （AGENTS.md 第9条）。
-fn resolve_offset_member_key(
+/// 履歴コマンドの対象クリップ（または追加されるクリップ）の種別から
+/// コンポーネント定義を引き、`FrameProvider` 能力とそのメンバー能力から
+/// パスを逆引きする。プラグインが宣言する能力からプロパティを参照し、
+/// ハードコードを避ける（AGENTS.md 第9条）。
+fn resolve_media_paths(
     project: &Project,
     timeline_id: TimelineId,
     command: &CommandHistory,
     loader: &PluginLoader,
-) -> Option<String> {
-    match command {
-        CommandHistory::ClipsResize { clips } => clips.first().and_then(|ctx| {
+) -> Option<MediaPropertyPaths> {
+    let kind_id = match command {
+        CommandHistory::ClipsResize { clips } => {
+            let ctx = clips.first()?;
             let clip = project.timeline_ref(timeline_id)?.get_clip(ctx.clip_id)?;
-            let runtime_def = loader.resolve_component_definition(&clip.kind_id).ok()?;
-            runtime_def.components.iter().find_map(|c| {
-                c.member_key_by_capability(&ComponentCapability::MediaOffsetProvider)
-                    .cloned()
-            })
-        }),
-        _ => None,
-    }
+            clip.kind_id.clone()
+        }
+        CommandHistory::AddClip { kind_id, .. } => kind_id.clone(),
+        _ => return None,
+    };
+    let runtime_def = loader.resolve_component_definition(&kind_id).ok()?;
+    Some(MediaPropertyPaths::resolve(&runtime_def))
 }
 
 /// コマンドが拒否された場合にクライアントへ送信する `CommandRejected` レスポンスを構築する。
@@ -863,6 +858,10 @@ fn add_clip_from_asset(
         &add_clip.kind_id,
         source_path,
     )?;
+    let media_paths = loader_guard
+        .resolve_component_definition(&add_clip.kind_id)
+        .map(|def| MediaPropertyPaths::resolve(&def))
+        .ok();
     clip_add_core(
         project,
         add_clip.timeline_id,
@@ -871,6 +870,7 @@ fn add_clip_from_asset(
         add_clip.duration,
         add_clip.kind_id.clone(),
         properties,
+        media_paths.as_ref(),
         None,
     )?;
     Ok(())

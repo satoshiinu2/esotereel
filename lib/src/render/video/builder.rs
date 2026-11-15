@@ -99,11 +99,7 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         // コンポーネントが宣言する能力から、どのプロパティを参照すべきかを解決する。
         // メディアプロパティはクリップ種別を構成するいずれかのコンポーネントが
         // 提供するため、構成全体から `FrameProvider` 能力を持つプロパティを逆引きする。
-        let media_property = runtime_def
-            .components
-            .iter()
-            .flat_map(|c| c.properties.iter())
-            .find(|p| p.capability == Some(ComponentCapability::FrameProvider));
+        let media_property = runtime_def.property_by_capability(&ComponentCapability::FrameProvider);
         let media_property_key = media_property.map(|p| p.key.clone());
 
         // メンバキー（"source", "source_offset" 等）もハードコードせず、

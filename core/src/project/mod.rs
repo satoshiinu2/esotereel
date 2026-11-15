@@ -4,11 +4,12 @@ use std::path::Path;
 use esotereel_lib::{
     plugin::{
         NamespacedID,
+        clip::component::{ComponentCapability, RuntimeDefinition},
         property::{PropertyPath, value::FieldValue},
     },
     project::{
         Clip, Project, TimelineTick,
-        clip::ClipBindingValue,
+        clip::{ClipBindingValue, get_property_path_from_map},
         command::{ClipMoveHistoryCtx, ClipResizeHistoryCtx},
         ids::{ClipId, LayerId, TimelineId},
     },
@@ -17,6 +18,33 @@ use esotereel_lib::{
 
 pub(crate) mod commands;
 pub(crate) mod history;
+
+/// コマンド実行用に、能力ベースで解決したメディアプロパティのパス一式。
+///
+/// プロパティ ID をハードコードせず、クリップ種別の `RuntimeDefinition` が
+/// 宣言する能力（`FrameProvider` とそのメンバー能力）から解決して実行時に
+/// 渡す（AGENTS.md 第9条）。
+pub(crate) struct MediaPropertyPaths {
+    /// `media-source` メンバーへのパス。クリップ追加時のアセット登録に使う。
+    pub source: Option<PropertyPath>,
+    /// `media-offset-provider` メンバーへのパス。左エッジリサイズ時のオフセット追随に使う。
+    pub offset: Option<PropertyPath>,
+}
+
+impl MediaPropertyPaths {
+    pub fn resolve(definition: &RuntimeDefinition) -> Self {
+        Self {
+            source: definition.member_path(
+                &ComponentCapability::FrameProvider,
+                &ComponentCapability::MediaSource,
+            ),
+            offset: definition.member_path(
+                &ComponentCapability::FrameProvider,
+                &ComponentCapability::MediaOffsetProvider,
+            ),
+        }
+    }
+}
 
 pub(crate) fn clip_move_mul_core(
     project: &mut Project,
@@ -99,9 +127,9 @@ pub(crate) fn clip_resize_core(
     project: &mut Project,
     timeline_id: TimelineId,
     resized_clips: &[ClipResizeHistoryCtx],
-    // コンポーネント定義から能力ベースで解決したメディアオフセットメンバーのキー。
+    // コンポーネント定義から能力ベースで解決したメディアプロパティのパス。
     // `None` の場合はオフセット調整をスキップする。
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     // 重なり判定
     {
@@ -144,25 +172,17 @@ pub(crate) fn clip_resize_core(
 
         // 左エッジ変更時は source_offset を位置変化分だけシフトする。
         // 左端を右に動かすと source 側からのオフセットも同じだけ進む。
-        // プロパティキーはハードコードせず、呼び出し側で能力ベースに解決した
-        // メンバキーを受け取って使用する（AGENTS.md 第9条）。
+        // プロパティパスはハードコードせず、呼び出し側で能力ベースに解決した
+        // ものを受け取って使用する（AGENTS.md 第9条）。
         if ctx.left_edge && ctx.position_delta != 0 {
-            if let Some(offset_member_key) = offset_member_key {
-                let source_offset_path = PropertyPath::parse(&format!(
-                    "std:video:media/{offset_member_key}"
-                ));
-                if let Ok(path) = source_offset_path {
-                    if let Some(FieldValue::String(current_offset)) = clip.get_property_path(&path)
-                    {
-                        if let Ok(current) = current_offset.parse::<i64>() {
-                            let new_offset = current + ctx.position_delta;
-                            let _ = clip.set_property_path(
-                                &path,
-                                ClipBindingValue::Static(FieldValue::String(
-                                    new_offset.to_string(),
-                                )),
-                            );
-                        }
+            if let Some(path) = media_paths.and_then(|paths| paths.offset.as_ref()) {
+                if let Some(FieldValue::String(current_offset)) = clip.get_property_path(path) {
+                    if let Ok(current) = current_offset.parse::<i64>() {
+                        let new_offset = current + ctx.position_delta;
+                        let _ = clip.set_property_path(
+                            path,
+                            ClipBindingValue::Static(FieldValue::String(new_offset.to_string())),
+                        );
                     }
                 }
             }
@@ -174,28 +194,6 @@ pub(crate) fn clip_resize_core(
     Ok(())
 }
 
-/// クリッププロパティから動画ソースのファイルパスを取り出す。
-///
-/// プロパティ ID はハードコードせず、`well_known` で定義した定数を経由する
-///（AGENTS.md 第9条）。グループ/メンバー構造はコンポーネント定義のスキーマに
-/// 従うが、既知の標準プロパティ（`std:video:media/source`）についてはここで解決する。
-fn extract_video_source_path(
-    properties: &HashMap<NamespacedID, ClipBindingValue>,
-) -> Option<String> {
-    let media_key = NamespacedID::new("std", "video:media").unwrap();
-    let media_value = properties.get(&media_key)?.in_frame_of()?;
-    let FieldValue::Map(media_map) = media_value else {
-        return None;
-    };
-    let FieldValue::String(source) = media_map.get("source")? else {
-        return None;
-    };
-    if source.is_empty() {
-        return None;
-    }
-    Some(source.clone())
-}
-
 pub(crate) fn clip_add_core(
     project: &mut Project,
     timeline_id: TimelineId,
@@ -204,13 +202,23 @@ pub(crate) fn clip_add_core(
     duration: TimelineTick,
     kind_id: NamespacedID,
     properties: HashMap<NamespacedID, ClipBindingValue>,
+    // 能力ベースで解決したメディアプロパティのパス。
+    // `None` の場合はアセット登録をスキップする。
+    media_paths: Option<&MediaPropertyPaths>,
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
     // クリップが参照する動画リソースをプロジェクトのアセットレジストリに登録し、
     // `Project.assets` を動画コンテンツのカタログとする。クリップの `source`
     // プロパティ自体は従来通り生パスを保持し、クライアントとの互換性を保つ。
-    if let Some(source) = extract_video_source_path(&properties) {
-        let _ = project.register_asset(Path::new(&source));
+    // ソースへのパスは呼び出し側が能力ベースで解決したものを使う（AGENTS.md 第9条）。
+    if let Some(source_path) = media_paths.and_then(|paths| paths.source.as_ref()) {
+        if let Some(FieldValue::String(source)) =
+            get_property_path_from_map(&properties, source_path)
+        {
+            if !source.is_empty() {
+                let _ = project.register_asset(Path::new(source));
+            }
+        }
     }
 
     if let Some(existing) = preferred_clip_id {

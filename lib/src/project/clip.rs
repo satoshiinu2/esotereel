@@ -118,14 +118,7 @@ impl Clip {
     /// グループ型プロパティのメンバー値にアクセスする際に使用します。
     /// パスを辿れない場合（グループでない、メンバーが不在など）は `None` を返します。
     pub fn get_property_path(&self, path: &PropertyPath) -> Option<&FieldValue> {
-        let mut value = self.properties.get(path.root())?.in_frame_of()?;
-        for member in path.members() {
-            let FieldValue::Map(values) = value else {
-                return None;
-            };
-            value = values.get(member)?;
-        }
-        Some(value)
+        get_property_path_from_map(&self.properties, path)
     }
 
     /// プロパティパスを辿って値を設定します。
@@ -223,6 +216,24 @@ impl ClipBindingValue {
             })
             .collect()
     }
+}
+
+/// プロパティマップから `PropertyPath` を辿って値を取り出します。
+///
+/// `Clip::get_property_path` と同じ辿り方を、まだ `Clip` になっていない
+/// プロパティマップに対して行います。
+pub fn get_property_path_from_map<'a>(
+    properties: &'a HashMap<NamespacedID, ClipBindingValue>,
+    path: &PropertyPath,
+) -> Option<&'a FieldValue> {
+    let mut value = properties.get(path.root())?.in_frame_of()?;
+    for member in path.members() {
+        let FieldValue::Map(values) = value else {
+            return None;
+        };
+        value = values.get(member)?;
+    }
+    Some(value)
 }
 
 /// タイムラインへの参照種別です。

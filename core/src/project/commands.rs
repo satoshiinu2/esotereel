@@ -10,7 +10,7 @@ use esotereel_lib::{
     util::result::EsotereelError,
 };
 
-use crate::project::{clip_add_core, clip_move_mul_core, clip_resize_core};
+use crate::project::{MediaPropertyPaths, clip_add_core, clip_move_mul_core, clip_resize_core};
 
 pub fn command_to_history(
     project: &mut Project,
@@ -173,14 +173,14 @@ pub fn execute_command(
     project: &mut Project,
     timeline_id: TimelineId,
     command: &mut CommandHistory,
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     match command {
         CommandHistory::ClipsMove { clips } => {
             clip_move_mul_core(project, timeline_id, clips.as_slice())?
         }
         CommandHistory::ClipsResize { clips } => {
-            clip_resize_core(project, timeline_id, clips.as_slice(), offset_member_key)?
+            clip_resize_core(project, timeline_id, clips.as_slice(), media_paths)?
         }
         CommandHistory::AddClip {
             clip_id,
@@ -198,6 +198,7 @@ pub fn execute_command(
                 *duration,
                 kind_id.clone(),
                 properties.clone(),
+                media_paths,
                 *clip_id,
             )?;
             // 履歴のIDを実際のIDで更新
@@ -271,7 +272,7 @@ pub fn execute_command_undo(
     project: &mut Project,
     timeline_id: TimelineId,
     command: CommandHistory,
-    offset_member_key: Option<&str>,
+    media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
     match command {
         CommandHistory::ClipsMove { clips } => {
@@ -290,7 +291,7 @@ pub fn execute_command_undo(
                 .collect();
 
             let mut undo_command = CommandHistory::ClipsMove { clips: undo_moves };
-            execute_command(project, timeline_id, &mut undo_command, offset_member_key)?;
+            execute_command(project, timeline_id, &mut undo_command, media_paths)?;
         }
         CommandHistory::ClipsResize { clips } => {
             // クリップリサイズのundoは、古い値に戻す
@@ -311,7 +312,7 @@ pub fn execute_command_undo(
             let mut undo_command = CommandHistory::ClipsResize {
                 clips: undo_resizes,
             };
-            execute_command(project, timeline_id, &mut undo_command, offset_member_key)?;
+            execute_command(project, timeline_id, &mut undo_command, media_paths)?;
         }
         CommandHistory::AddClip {
             clip_id,
