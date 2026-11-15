@@ -58,8 +58,8 @@ pub struct ClipDeformation {
 ///
 /// プロパティ ID（`std:video:media` 等）をコード中にハードコードせず、
 /// コンポーネント定義の `capability` フィールドから `FrameProvider` などの能力を
-/// 逆引きしてプロパティキーを解決します。未宣言の場合は既定のメンバー名に
-/// フォールバックします。
+/// 逆引きしてプロパティキーを解決します。メディアプロパティのメンバー能力が
+/// 未宣言の場合は宣言不備として、そのクリップを描画しません。
 ///
 /// # スケジューラ
 ///
@@ -102,8 +102,10 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         let media_property = runtime_def.property_by_capability(&ComponentCapability::FrameProvider);
         let media_property_key = media_property.map(|p| p.key.clone());
 
-        // メンバキー（"source", "source_offset" 等）もハードコードせず、
-        // プロパティ定義の `member_capabilities` から能力ベースで解決する。
+        // メンバキーもハードコードせず、プロパティ定義の `member_capabilities`
+        // から能力ベースで解決する。メディアプロパティがあるのにメンバー能力が
+        // 宣言されていない場合は宣言不備として、そのクリップを描画しない。
+        // メンバー名を推測して続行はしない。
         let member_key = |capability: ComponentCapability| -> Option<&str> {
             media_property.and_then(|p| {
                 p.member_capabilities
@@ -112,15 +114,24 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
                     .map(|(key, _)| key.as_str())
             })
         };
-        let source_member_key =
-            member_key(ComponentCapability::MediaSource).unwrap_or("source");
-        let offset_member_key =
-            member_key(ComponentCapability::MediaOffsetProvider).unwrap_or("source_offset");
+        let source_member_key = member_key(ComponentCapability::MediaSource);
+        let offset_member_key = member_key(ComponentCapability::MediaOffsetProvider);
+        if media_property.is_some()
+            && (source_member_key.is_none() || offset_member_key.is_none())
+        {
+            log::warn!(
+                "media property of clip kind {} does not declare media-source / media-offset-provider members, skipping render",
+                clip.kind_id.full()
+            );
+            continue;
+        }
 
         let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
         let mut video_source: Option<String> = None;
 
-        if let Some(media_key) = media_property_key {
+        if let (Some(media_key), Some(source_member_key), Some(offset_member_key)) =
+            (media_property_key, source_member_key, offset_member_key)
+        {
             if let Some(FieldValue::Map(media_map)) = clip
                 .properties
                 .get(&media_key)

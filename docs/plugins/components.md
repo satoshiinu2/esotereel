@@ -167,7 +167,7 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 - そのメンバーには `member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }` を宣言する
 - transform コンポーネントのプロパティ `video:transform`（group。メンバーは `position` / `rotation` / `scale`）には `capability = "transformable"` を宣言する
 
-レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `member_capabilities` の `media-source` から解決され、宣言がない場合はメンバー名 `source` にフォールバックします。同様にオフセットは `media-offset-provider` から解決され、なければ `source_offset` にフォールバックします。
+レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `member_capabilities` の `media-source` から、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
 
 グループ型のメンバーは、パス記法で `std:video:media/source` のように表されます（ルートが名前空間付き ID、メンバーが `/` 区切り）。スクリプトの `set_property` などで使います（[スクリプト API リファレンス](script-api.md)）。
 
