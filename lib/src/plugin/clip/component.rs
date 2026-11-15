@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, bail};
-use rhai::{Dynamic, Engine, Map};
+use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
@@ -9,7 +9,7 @@ pub use crate::plugin::property::{
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
-use crate::plugin::script::bridge::{binding_value_to_dynamic, field_value_to_dynamic};
+use crate::plugin::script::props::ComponentProps;
 use crate::plugin::{NamespacedID, PluginLoader};
 use crate::project::clip::ClipBindingValue;
 
@@ -51,12 +51,12 @@ pub struct ComponentDefinition {
     /// コンポーネントが自身のプロパティを宣言し、ClipInstance は各コンポーネントの
     /// プロパティを保持する。スケジューラがスクリプトへ渡す props は
     /// サンドボックス化されており、自コンポーネントのプロパティ（ローカル名）と、
-    /// `[[requires]]` で宣言した依存先の capability に紐づくプロパティだけが入る。
+    /// `[[requires]]` で宣言した依存先の capability に紐づくプロパティだけが解決できる。
     #[serde(default)]
     pub properties: Vec<PropertySchema>,
     /// 他コンポーネントへの依存宣言（`[[requires]]`）。
-    /// スクリプトへ渡る props には、自プロパティに加えて、ここで宣言した依存先の
-    /// capability に紐づくプロパティだけが `name` をキーに混ざる。
+    /// スクリプトへ渡る props では、自プロパティに加えて、ここで宣言した依存先の
+    /// capability に紐づくプロパティだけが `name` で参照できる。
     #[serde(default)]
     pub requires: Vec<ComponentRequire>,
 }
@@ -484,62 +484,6 @@ impl Scheduler {
         Ok(())
     }
 
-    /// スクリプトへ渡す props を構築する。
-    ///
-    /// 自コンポーネントのプロパティをローカル名で入れ、`[[requires]]` で宣言した
-    /// 依存先は capability に紐づくプロパティだけを依存名で混ぜる（依存先の
-    /// 全プロパティは渡らない）。任意依存が満たせない場合はそのキーが現れない。
-    /// 必須依存は定義解決時に検証されるのが原則だが、実行時に満たせないことが
-    /// 判明した場合も黙って進めずエラーにする。
-    pub fn build_props(
-        definition: &RuntimeDefinition,
-        instance: &ClipInstance,
-        component: &ComponentDefinition,
-    ) -> anyhow::Result<Map> {
-        let mut props = Map::new();
-        for schema in &component.properties {
-            if let Some(value) = instance.properties.get(&schema.key) {
-                props.insert(schema.key.name().into(), binding_value_to_dynamic(value));
-            }
-        }
-        for require in &component.requires {
-            match definition.resolve_requirement(component, require) {
-                Some(RequirementResolution::Property { schema, .. }) => {
-                    if let Some(value) = instance.properties.get(&schema.key) {
-                        props.insert(
-                            require.name.clone().into(),
-                            binding_value_to_dynamic(value),
-                        );
-                    }
-                }
-                Some(RequirementResolution::Member { schema, member, .. }) => {
-                    if let Some(ClipBindingValue::Static(FieldValue::Map(values))) =
-                        instance.properties.get(&schema.key)
-                    {
-                        if let Some(value) = values.get(member) {
-                            props.insert(
-                                require.name.clone().into(),
-                                field_value_to_dynamic(value),
-                            );
-                        }
-                    }
-                }
-                Some(RequirementResolution::DeclaredOnly { .. }) => {}
-                None => {
-                    if require.required {
-                        bail!(
-                            "component `{}` requires capability `{:?}` as `{}` but it is not satisfied",
-                            component.id.full(),
-                            require.capability,
-                            require.name
-                        );
-                    }
-                }
-            }
-        }
-        Ok(props)
-    }
-
     /// FileDropHandler の戻り値を初期プロパティとして適用します。
     pub fn file_drop_properties(
         &self,
@@ -643,10 +587,9 @@ impl Scheduler {
         };
 
         // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
-        // 依存だけが入る（例: media の描画スクリプトは requires 経由で
+        // 依存だけが解決できる（例: media の描画スクリプトは requires 経由で
         // transform の変換プロパティを読む）。
-        let props = Self::build_props(definition, instance, component)?;
-        let props_dynamic = Dynamic::from_map(props);
+        let props = ComponentProps::build(definition, instance, component)?;
 
         // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
         let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
@@ -662,7 +605,7 @@ impl Scheduler {
 
         for (_, fn_name) in calls {
             script
-                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props_dynamic.clone()))
+                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props.clone()))
                 .with_context(|| {
                     format!(
                         "capability function `{fn_name}` of component `{}` failed",

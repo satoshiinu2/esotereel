@@ -421,6 +421,7 @@ fn read_rhai_vector(
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
+    super::props::register_props_api(engine);
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
     engine.register_fn("mat4_trs", transform_matrix);
@@ -560,7 +561,8 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
 mod render_tests {
     use super::*;
     use crate::plugin::Plugin;
-    use crate::plugin::clip::component::{ClipInstance, RuntimeDefinition, Scheduler};
+    use crate::plugin::clip::component::{ClipInstance, RuntimeDefinition};
+    use crate::plugin::script::props::ComponentProps;
     use crate::project::clip::ClipBindingValue;
 
     #[test]
@@ -651,7 +653,7 @@ mod render_tests {
         transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
 
         // Scheduler と同じ経路で props を構築する: media の自プロパティと、
-        // [[requires]] で宣言した transform 依存だけがローカル名で渡る。
+        // [[requires]] で宣言した transform 依存だけがローカル名で解決できる。
         let definition = RuntimeDefinition {
             kind_id: crate::plugin::NamespacedID::new("std", "video").unwrap(),
             components: vec![media_component.clone(), transform_component.clone()],
@@ -686,7 +688,7 @@ mod render_tests {
                 "render_frame",
                 (
                     context.clone(),
-                    Scheduler::build_props(&definition, &instance, media_component).unwrap(),
+                    ComponentProps::build(&definition, &instance, media_component).unwrap(),
                 ),
             )
             .unwrap();
@@ -743,7 +745,7 @@ mod render_tests {
                     "render_frame",
                     (
                         context.clone(),
-                        Scheduler::build_props(&definition, &instance, media_component).unwrap(),
+                        ComponentProps::build(&definition, &instance, media_component).unwrap(),
                     ),
                 )
                 .unwrap();

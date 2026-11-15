@@ -9,6 +9,7 @@ use crate::{plugin::registry::PluginDefinitionRegistry, util::result::EsotereelE
 
 pub mod api;
 pub mod bridge;
+pub mod props;
 
 thread_local! {
     /// for compile only
