@@ -47,17 +47,13 @@ impl PropertyKey {
 
     /// アドレス文字列をパースします。
     ///
-    /// 必ず `#` で先に割ってから所有者を `NamespacedID` として解釈します
-    /// （`NamespacedID::parse` は文字種を検証しないため、全体を渡すと
-    /// `#name` までローカル ID として黙って取り込んでしまう）。
+    /// 所有者とローカル名を分けるため、必ず `#` で先に割ってから所有者を
+    /// `NamespacedID` として解釈します。
+    ///
+    /// 所有者を省略した相対形（`:#name`）は受理しません（所有者として
+    /// 解釈される ":" が ID として不正なためエラーになります）。相対形には
+    /// 文脈となる所有者を補う `parse_in_context` を使ってください。
     pub fn parse(text: &str) -> anyhow::Result<Self> {
-        // 相対形（`:#name`）は文脈となる所有者がなければ解決できないため、
-        // ここでは受理しない（所有者 ":" のキーとして黙って通さない）。
-        if text.starts_with(":#") {
-            anyhow::bail!(
-                "relative property key `{text}` requires a context owner; use parse_in_context"
-            );
-        }
         match text.split_once('#') {
             Some((owner, name)) => Self::new(
                 NamespacedID::parse(owner)
