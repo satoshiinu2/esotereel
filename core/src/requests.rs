@@ -313,9 +313,10 @@ pub fn on_request_receive(
                             Ok(properties) => properties,
                             Err(error) => {
                                 log::error!("File drop handler failed: {error:#}");
-                                pending_file_drop_failures.push(Response::FileDropFailed {
-                                    source_path,
-                                    message: format!("{error:#}"),
+                                pending_file_drop_failures.push(Response::Failed {
+                                    error: EsotereelError::FileDropFailed(format!(
+                                        "file drop `{source_path}`: {error:#}"
+                                    )),
                                 });
                                 continue;
                             }
@@ -859,9 +860,10 @@ fn send_asset_import_failed(
     log::error!("asset import failed for `{asset_id}`: {error:#}");
     network.send(
         client_id,
-        &Response::AssetImportFailed {
-            asset_id: asset_id.to_string(),
-            message: format!("{error:#}"),
+        &Response::Failed {
+            error: EsotereelError::UploadFailed(format!(
+                "asset import `{asset_id}`: {error:#}"
+            )),
         },
     );
 }

@@ -455,14 +455,9 @@ pub(super) fn on_responce_recveve(
         ArchivedResponse::AssetImported { asset_id } => {
             info!("asset import succeeded: {asset_id}");
         }
-        ArchivedResponse::AssetImportFailed { asset_id, message } => {
-            log::error!("asset import failed: {asset_id}: {message}");
-        }
-        ArchivedResponse::FileDropFailed {
-            source_path,
-            message,
-        } => {
-            log::error!("file drop failed: {source_path}: {message}");
+        ArchivedResponse::Failed { error } => {
+            let error: EsotereelError = error.deserialize(&mut rkyv::Infallible).unwrap();
+            return Err(error.into());
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
             let (project_arc, _) = project_and_callback(state)?;

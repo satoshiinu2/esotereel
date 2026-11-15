@@ -3,6 +3,7 @@ use std::ops::Range;
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::plugin::NamespacedID;
+use crate::util::result::EsotereelError;
 use crate::project::{
     Clip, TimelineTick,
     clip::ClipBindingValue,
@@ -50,13 +51,8 @@ pub enum Response {
     },
     /// Asset の参照登録またはアップロードが完了しました。
     AssetImported { asset_id: String },
-    /// Asset の参照登録またはアップロードが失敗しました。
-    AssetImportFailed { asset_id: String, message: String },
-    /// FileDropHandler の実行または戻り値の適用が失敗しました。
-    FileDropFailed {
-        source_path: String,
-        message: String,
-    },
+    /// 処理が失敗しました。
+    Failed { error: EsotereelError },
     /// レイヤーの更新。
     UpdateLayer {
         timeline_id: TimelineId,
@@ -106,4 +102,39 @@ pub enum Response {
     },
     /// デバッグ用：プロジェクト構造（オプションの文字列）。
     DebugProjectStruct(Option<String>),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::result::EsotereelError;
+
+    #[test]
+    fn failed_response_round_trips_error_variants() {
+        let asset_id = uuid::Uuid::new_v4();
+        let responses = [
+            Response::Failed {
+                error: EsotereelError::UploadFailed("upload rejected".to_string()),
+            },
+            Response::Failed {
+                error: EsotereelError::AssetNotFound(asset_id),
+            },
+        ];
+
+        for response in responses {
+            let bytes = rkyv::to_bytes::<_, 1024>(&response).unwrap();
+            let archived = rkyv::check_archived_root::<Response>(&bytes).unwrap();
+            let decoded: Response = archived.deserialize(&mut rkyv::Infallible).unwrap();
+
+            match decoded {
+                Response::Failed {
+                    error: EsotereelError::UploadFailed(message),
+                } => assert_eq!(message, "upload rejected"),
+                Response::Failed {
+                    error: EsotereelError::AssetNotFound(id),
+                } => assert_eq!(id, asset_id),
+                _ => panic!("unexpected response variant"),
+            }
+        }
+    }
 }

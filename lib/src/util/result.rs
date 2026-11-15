@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::{
     plugin::NamespacedID,
@@ -12,6 +13,7 @@ use crate::{
         TimelineTick,
         ids::{AssetId, ClipId, LayerId, ResourceId, TimelineId},
     },
+    util::rkyv_with::UuidAsBytes,
 };
 
 // Esotereel コア全体で共通に使用するエラー型と結果型です。
@@ -22,7 +24,8 @@ use crate::{
 // （AGENTS.md 第9条：パニックの使用制限）。
 
 // TODO: cow
-#[derive(Debug, thiserror::Error)]
+#[derive(Archive, Deserialize, Serialize, Debug, thiserror::Error)]
+#[archive_attr(derive(CheckBytes))]
 pub enum EsotereelError {
     NullPointer(String),
     LockError(String),
@@ -43,8 +46,10 @@ pub enum EsotereelError {
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
-    AssetNotFound(AssetId),
-    AssetAlreadyExists(AssetId),
+    AssetNotFound(#[with(UuidAsBytes)] AssetId),
+    AssetAlreadyExists(#[with(UuidAsBytes)] AssetId),
+    UploadFailed(String),
+    FileDropFailed(String),
 }
 
 impl fmt::Display for EsotereelError {
@@ -71,6 +76,8 @@ impl fmt::Display for EsotereelError {
             EsotereelError::InvalidLayerMove => write!(f, "Invalid layer move"),
             EsotereelError::AssetNotFound(id) => write!(f, "Asset '{}' not found", id),
             EsotereelError::AssetAlreadyExists(id) => write!(f, "Asset '{}' already exists", id),
+            EsotereelError::UploadFailed(message) => write!(f, "Upload failed: {message}"),
+            EsotereelError::FileDropFailed(message) => write!(f, "File drop failed: {message}"),
         }
     }
 }
