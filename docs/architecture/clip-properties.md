@@ -7,7 +7,11 @@
 構成コンポーネントを宣言し、プロパティは構成全体から合成される。
 全プラグインの読み込み後に参照を解決するため、ファイルの読み込み順には依存しない。
 プロパティはコンポーネントが宣言する能力（`ComponentCapability`）から参照し、
-プロパティID（`std:video:media` など）をコード中にハードコードしてはならない。
+プロパティアドレス（`std:media#media` など）をコード中にハードコードしてはならない。
+プロパティは「所有コンポーネントの名前空間付き ID + コンポーネント内ローカル名」で
+識別し、正規形は `plugin:component#property/member` とする。`:` は名前空間付き ID、
+`#` はプロパティ、 `/` はメンバーの区切りで、`.` はサブモジュール用に予約する。
+所有者が文脈から明らかな場所では相対形 `#property/member` も使える。
 
 ```toml
 # components/media.toml
@@ -19,8 +23,13 @@ capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
 editor = "video"
 script = "video.rhai"
 properties = [
-  { key = "video:media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }, default = { source = "", source_offset = "0" } },
+  { key = "media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }, default = { source = "", source_offset = "0" } },
 ]
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 
 # components/transform.toml
 [[components]]
@@ -30,7 +39,7 @@ kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
-  { key = "video:transform", label = "Transform", kind = { type = "group" }, fields = [ { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "rotation", label = "Rotation", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "scale", label = "Scale", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [1.0, 1.0, 1.0] } ], capability = "transformable", default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
+  { key = "transform", label = "Transform", kind = { type = "group" }, fields = [ { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "rotation", label = "Rotation", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] }, { key = "scale", label = "Scale", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [1.0, 1.0, 1.0] } ], capability = "transformable", default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
 ]
 
 # clips/video.toml
@@ -110,23 +119,24 @@ Rhai は `props["generator:telop"].caption.content` のようにアクセスす�
 スキーマは `FieldTypeKind::Group { fields }` と
 `FieldTypeKind::Map { value_kind, known_keys }` のツリーとして保持し、
 値は `FieldValue::Map` を使って同じ階層で保存する。
-ルートの ID は名前空間付き、グループ内のメンバーはローカル名となる。
-例: `std:video` → `media` → `source_offset`、`std:video` → `transform` → `scale`。
+ルートは所有コンポーネントの ID とプロパティ名（`std:media#media`）、
+グループ内のメンバーは `/` 区切りのローカル名となる。
+例: `std:media#media/source_offset`、`std:transform#transform/scale`。
 
-編集対象は型付き `PropertyPath` で指定する。文字列表現は `std:video/transform/scale` や
-`generator:telop/caption/content`。ラベルや表示カテゴリを変更してもパスは変わらない。
+編集対象は型付き `PropertyPath` で指定する。文字列表現は `std:transform#transform/scale` や
+`generator:telop#caption/content`。ラベルや表示カテゴリを変更してもパスは変わらない。
 コマンドは末端の値だけを更新し、Undo/Redo もその末端に限定するため、兄弟の値を上書きしない。
 受信側への通知では更新後のルートグループを送る。
 
 C ABI の引数とスキーマ構造体は変更せず、GUI用にのみ末端項目へ展開する。
 GUI はルートグループのタブと再帰的な折りたたみセクションを表示する。
 複数クリップの共通項目は、グループ全体ではなく末端のパスと型で判定する。
-同じ `transformable` 能力を持つプロパティでも、`std:video/transform/scale` と
-`std:text/transform/scale` のようにパスが異なる項目は一括編集の対象にならない。
+同じ `transformable` 能力を持つプロパティでも、`std:transform#transform/scale` と
+`text:transform#transform/scale` のようにパスが異なる項目は一括編集の対象にならない。
 
-旧プロパティ値の自動移行は未実装。以前の `std:video/source` や `std:transform/scale` は、
-それぞれ `std:video/media/source`、`std:video/transform/scale` に変わる。
-標準動画スクリプトは今回の階層構造を前提とする。
+旧プロパティ値の自動移行は未実装。以前の `std:video/media/source` や `std:video/transform/scale` は、
+それぞれ `std:media#media/source`、`std:transform#transform/scale` に変わる。
+標準動画スクリプトは今回のアドレス形式を前提とする。
 通信コマンドのキー型は `NamespacedID` から `PropertyPath` に変わるため、クライアントとサーバーは
 同じ版を使う必要がある。
 
@@ -143,9 +153,9 @@ GUI はルートグループのタブと再帰的な折りたたみセクショ�
 
 ## 3. 動画サイズと変換
 
-表示サイズは `std:video` → `transform` → `scale` にピクセル単位で指定する。
-`std:width` と `std:height` は使用しない。Transform プロパティは `video:transform` に
-`capability = "transformable"` を付けて宣言する。
+表示サイズは `std:transform#transform/scale` にピクセル単位で指定する。
+`std:width` と `std:height` は使用しない。Transform プロパティは `std:transform` の
+`transform` に `capability = "transformable"` を付けて宣言する。
 
 `scale` の X・Y は倍率ではなく描画幅・高さ（ピクセル単位）を表し、表示サイズはこの値だけで決まる。
 元動画の解像度は表示サイズに自動反映しないため、元動画と異なる縦横比も指定できる。
@@ -155,14 +165,14 @@ GUI はルートグループのタブと再帰的な折りたたみセクショ�
 
 | フィールド | 内容 | 既定値 |
 | --- | --- | --- |
-| `std:video/transform/position` | XYZ 位置 | `[0.0, 0.0, 0.0]` |
-| `std:video/transform/rotation` | XYZ 回転、度単位 | `[0.0, 0.0, 0.0]` |
-| `std:video/transform/scale` | 描画幅・高さ（ピクセル）と Z スケール | `[100.0, 100.0, 1.0]` |
+| `std:transform#transform/position` | XYZ 位置 | `[0.0, 0.0, 0.0]` |
+| `std:transform#transform/rotation` | XYZ 回転、度単位 | `[0.0, 0.0, 0.0]` |
+| `std:transform#transform/scale` | 描画幅・高さ（ピクセル）と Z スケール | `[100.0, 100.0, 1.0]` |
 
 GUI は数値配列を各成分の数値欄として編集する。数値欄は暫定的に ±1,000,000,000 の範囲を持つ。
 スキーマの min/max/step を FFI 経由で編集UIに反映する処理は未実装である。
 
-Rhai の `props["std:video"].transform.as_mat4()` は Transform 型の値から
+Rhai の `props["transform"].as_mat4()` は Transform 型の値から
 `Mat4` を生成する。各ベクトルは有限な数値を3個含む必要があり、回転順は `EulerRot::XYZ`。
 `ctx.set_transform(matrix)` はモデル行列を置き換える。
 `ctx.apply_transform(matrix)` は現在のモデル行列の右側に行列を合成する。
@@ -175,14 +185,14 @@ Rhai の `props["std:video"].transform.as_mat4()` は Transform 型の値から
 引数で矩形を指定する既存の `ctx.render_video(texture_id, x, y, width, height)` も維持する。
 最終変換は既存シェーダーで `P × V × M × vertex` として計算する。
 クリップ変換はプロパティとして管理し、標準動画プラグインは
-`video:transform` プロパティ（`capability = "transformable"`）の行列を `render_video` へ明示的に渡す。
+`transform` プロパティ（`capability = "transformable"`）の行列を `render_video` へ明示的に渡す。
 他のプラグインも `set_transform` または `apply_transform` を利用できる。
 以前の `std:width` / `std:height` の値が
-既存クリップに残っていても描画には使わず、`std:video/transform/scale` の寸法を基準にする。
+既存クリップに残っていても描画には使わず、`std:transform#transform/scale` の寸法を基準にする。
 
 標準動画スクリプトは `ctx.get_video_texture()` を使う。動画ソース、取得時刻、変換行列は
 Rust 側の型付きプロパティビューで処理し、`(クリップ内の経過 tick +
-std:video/media/source_offset) / ticks_per_second` を取得時刻とする。
+std:media#media/source_offset) / ticks_per_second` を取得時刻とする。
 プロパティのパス・型変換は Rust 内で集約し、GUI は引き続き TOML スキーマから生成する。
 
 ## 4. 動画取得と描画
@@ -193,9 +203,10 @@ std:video/media/source_offset) / ticks_per_second` を取得時刻とする。
 
 ## 5. 通信時のプロパティキー
 
-プロパティマップのキーに使う `NamespacedID` は、通常型・rkyv のアーカイブ型ともに
-`full` だけで等価比較とハッシュ計算を行う。両型で計算対象が異なると、受信時に
-ハッシュマップの位置検証が失敗し、`AddClip` が `InvalidKeyPosition` で拒否される。
+プロパティマップのキーに使う `PropertyKey` は、通常型・rkyv のアーカイブ型ともに
+所有者の `full` とローカル名の組で等価比較とハッシュ計算を行う。両型で計算対象が
+異なると、受信時にハッシュマップの位置検証が失敗し、`AddClip` が
+`InvalidKeyPosition` で拒否される。
 通信の検証は維持し、送受信のキーの計算を一致させる。
 
 ## 6. 描画の検証

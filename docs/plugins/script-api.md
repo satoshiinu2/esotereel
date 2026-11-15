@@ -36,7 +36,7 @@
 ```rhai
 fn render_frame(ctx, props) {
     let tex = ctx.get_video_texture();
-    let transform = props["std:video:transform"];
+    let transform = props["transform"];
     ctx.render_video(tex, transform.as_mat4());
 }
 
@@ -48,9 +48,9 @@ fn prefetch(ctx, props) {
 ### 2.1 引数
 
 - `ctx`: 描画コンテキスト（RenderContext、第 3 節）。描画はこのオブジェクトへのメソッド呼び出しで行います
-- `props`: そのコンポーネントが宣言したプロパティだけを含むマップ。**キーは名前空間付き ID の完全な文字列**です（例: `props["std:video:transform"]`）
+- `props`: そのコンポーネントが宣言したプロパティだけを含むマップ。**キーはローカル名**です（例: `props["transform"]`）
 
-Scheduler はコンポーネントごとにプロパティを抽出して渡すため、他コンポーネントのプロパティは見えません。
+Scheduler はコンポーネントごとにプロパティを抽出して渡すため、他コンポーネントのプロパティは見えません。他コンポーネントの値が必要な場合は `[[requires]]` で依存を宣言すると、その capability に紐づく値だけが宣言した名前で `props` に混ざります（[コンポーネント定義リファレンス](components.md) 第 4.1 節）。上の例の `transform` は、media コンポーネントが `transformable` への依存を `name = "transform"` で宣言しているために見えています。
 
 ### 2.2 props の値の型変換
 
@@ -119,11 +119,11 @@ fn toolbar_undo(ctx) {
 ### 4.2 ctx.set_property
 
 ```rhai
-ctx.set_property(clip_id, "std:video:media/source_offset", 100);
+ctx.set_property(clip_id, "std:media#media/source_offset", 100);
 ```
 
 - 第 1 引数: クリップ ID（整数）
-- 第 2 引数: プロパティパス。名前空間付き ID をルートとし、メンバーを `/` でつなぎます
+- 第 2 引数: プロパティパス。正規形 `plugin:component#property/member` で書きます
 - 第 3 引数: 設定する値
 
 値は次の規則でプロパティの値型に正規化されます。

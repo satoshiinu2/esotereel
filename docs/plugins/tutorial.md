@@ -76,7 +76,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    editor = "video"
    script = "photo.rhai"
    properties = [
-     { key = "photo:media", label = "Media",
+     { key = "media", label = "Media",
        kind = { type = "group" },
        fields = [
          { key = "source", label = "Source", kind = { type = "string" }, default = "" },
@@ -87,6 +87,11 @@ video クリップは、次のファイルの組み合わせでできていま�
        default = { source = "", source_offset = "0" } },
    ]
 
+   [[components.requires]]
+   name = "transform"
+   capability = "transformable"
+   required = true
+
    [[components]]
    id = "photo-transform"
    name = "Photo Transform"
@@ -94,7 +99,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    capabilities = ["transformable"]
    editor = "transform"
    properties = [
-     { key = "photo:transform", label = "Transform",
+     { key = "transform", label = "Transform",
        kind = { type = "group" },
        fields = [
          { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] },
@@ -106,7 +111,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    ]
    ```
 
-   プロパティのキーはプラグイン内で一意にします。この例では `photo:media`、`photo:transform` とし、名前空間付き ID は `mypack:photo:media` などになります。
+   プロパティのキーはコンポーネント内のローカル名です。プロパティは所有コンポーネントの ID と組で識別され、この例のアドレスは `mypack:photo#media`、`mypack:photo-transform#transform` になります。メディア担当が変換担当のプロパティを使うため、`[[components.requires]]` で `transformable` への依存も宣言しています。
 
 5. 描画スクリプトを書く（`components/photo.rhai`）
    - 宣言した capability に対応する標準関数を実装します
@@ -114,7 +119,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    ```rhai
    fn render_frame(ctx, props) {
        let tex = ctx.get_video_texture();
-       let transform = props["mypack:photo:transform"];
+       let transform = props["transform"];
        ctx.render_video(tex, transform.as_mat4());
    }
 
@@ -122,7 +127,7 @@ video クリップは、次のファイルの組み合わせでできていま�
    }
    ```
 
-   `props` のキーには**自分のプラグイン ID を含む完全な名前空間付き ID**を使う点に注意してください。スクリプトにはクリップを構成する全コンポーネントのプロパティが渡されるため、兄弟コンポーネント（この例では `photo-transform`）が宣言したプロパティも参照できます。
+   `props` のキーは**ローカル名**です。スクリプトに渡されるのは自コンポーネントのプロパティだけですが、`[[requires]]` で宣言した依存先については、その capability に紐づく値が宣言名で混ざります。この例では `photo-transform` の `transform` プロパティが、依存宣言の名前 `transform` で参照できます。
 
 6. アプリを起動し、プラグインが読み込まれることを確認する
    - 起動ログに `Loaded X/Y plugins successfully` と `Plugin indices rebuilt` が出力されます
@@ -135,7 +140,7 @@ video クリップは、次のファイルの組み合わせでできていま�
 - **スクリプトの関数が見つからないとエラーになる**: capability に対応する標準関数はすべて実装が必要です。使わない場合も `prefetch` のように空の関数を置いてください
 - **読み込み時に重複エラーになる**: ID は全プラグインを通じて一意です。クリップ種別・コンポーネント・プロパティキー・ツールバーボタンの重複を確認してください
 - **関数の重複エラーになる**: 同じ基準ディレクトリ（`components/` やプラグインルート）配下の `.rhai` ファイルはすべてマージされます。同名・同引数の関数の重複を避けてください
-- **`props` にキーが見つからない**: `props` にはクリップを構成する全コンポーネントのプロパティが、完全な名前空間付き ID をキーとして渡されます。キーがそのクリップ種別の構成コンポーネントのいずれかで宣言されているかを確認してください
+- **`props` にキーが見つからない**: `props` には自コンポーネントのプロパティと `[[requires]]` で宣言した依存だけが、ローカル名をキーとして渡されます。他コンポーネントの値を使う場合は依存を宣言しているか、その依存先がクリップ種別の構成に含まれているかを確認してください
 
 ## 4. 次のステップ
 
