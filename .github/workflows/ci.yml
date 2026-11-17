@@ -28,6 +28,10 @@ jobs:
             rust_target: "x86_64-pc-windows-msvc"
             arch: "x86_64"
             ffmpeg_arch: "win64"
+            msvc_arch: "x64"
+            qt_kit: "qt6_6120_msvc2022_64"
+            qt_pkg: "win64_msvc2022_64"
+            qt_dir: "msvc2022_64"
             dist: "error"
           # macos-14 runners were retired by GitHub (jobs fail to start with
           # "The configuration 'macos-14-arm64-us-default' is not supported"),
@@ -68,6 +72,10 @@ jobs:
             rust_target: "aarch64-pc-windows-msvc"
             arch: "arm64"
             ffmpeg_arch: "winarm64"
+            msvc_arch: "arm64"
+            qt_kit: "qt6_6120_msvc2022_arm64_cross_compiled"
+            qt_pkg: "win64_msvc2022_arm64_cross_compiled"
+            qt_dir: "msvc2022_arm64"
             dist: "error"
 
     runs-on: ${{ matrix.os }}
@@ -79,6 +87,8 @@ jobs:
       - name: Setup MSVC dev environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -94,11 +104,50 @@ jobs:
           workspaces: "."
 
       - name: Install Qt6
+        if: runner.os != 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
           version: "6.12.*"
           arch: ${{ matrix.qt_arch }}
           cache: true
+
+      # Windows jobs cannot use install-qt-action: since Qt 6.11 the
+      # Windows repository uses per-kit directories
+      # (qt6_6120/qt6_6120_msvc2022_64/...) and aqt still looks for
+      # qt6_6120/qt6_6120/Updates.xml, which no longer exists, so the
+      # install fails with "Failed to locate XML data". Download the
+      # component archives listed in the kit's Updates.xml directly
+      # instead. qtdoc/qtdeclarative archives are skipped: the build
+      # only needs qtbase/qttools (plus the runtime helpers below).
+      - name: Install Qt6 (Windows, direct download)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '6.12.0'
+          $kit = '${{ matrix.qt_kit }}'
+          $pkg = "qt.qt6.6120.${{ matrix.qt_pkg }}"
+          $repo = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/$kit"
+          $dest = Join-Path $env:GITHUB_WORKSPACE "Qt\$version\${{ matrix.qt_dir }}"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          [xml]$updates = (Invoke-WebRequest -Uri "$repo/Updates.xml" -UseBasicParsing).Content
+          $node = $updates.Updates.PackageUpdate | Where-Object { $_.Name -eq $pkg } | Select-Object -First 1
+          if (-not $node) { throw "package $pkg not found in $repo/Updates.xml" }
+          $archives = ($node.DownloadableArchives -split ',\s*') | Where-Object { $_ -match '^(qtbase|qtsvg|qttools|qttranslations|d3dcompiler|opengl32sw)' }
+          $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+          if (-not (Test-Path $sevenZip)) { $sevenZip = (Get-Command 7z.exe).Source }
+          foreach ($a in $archives) {
+            $url = "$repo/$pkg/$($node.Version)$a"
+            $file = Join-Path $env:RUNNER_TEMP $a
+            Write-Host "Downloading $url"
+            curl.exe -L --fail -o $file $url
+            if ($LASTEXITCODE -ne 0) { throw "download failed: $url" }
+            & $sevenZip x $file "-o$dest" -y | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "extract failed: $a" }
+          }
+          echo "QT_ROOT_DIR=$dest" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$dest" >> $env:GITHUB_ENV
+          echo "$dest\bin" >> $env:GITHUB_PATH
 
       - name: Install Ninja
         run: |
