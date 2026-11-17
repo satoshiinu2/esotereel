@@ -247,6 +247,22 @@ jobs:
         run: cargo test --workspace --release
 
       # ========== パッケージ化ステップ ==========
+      # The installer scripts locate objdump.exe via PATH, but the
+      # MinGW objdump available on the ARM64 runner cannot read ARM64
+      # PE files, so build_installer.ps1 fails at its first inspection.
+      # Shim objdump.exe to llvm-objdump (same -p "DLL Name:" output)
+      # ahead of it in PATH for this job only.
+      - name: Shim objdump to llvm-objdump (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          $llvmObjdump = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\Llvm\ARM64\bin\llvm-objdump.exe' | Select-Object -First 1
+          if (-not $llvmObjdump) { throw 'llvm-objdump.exe not found in the VS LLVM ARM64 toolchain' }
+          $shim = Join-Path $env:RUNNER_TEMP 'objdump-shim'
+          New-Item -ItemType Directory -Force -Path $shim | Out-Null
+          Copy-Item $llvmObjdump.FullName (Join-Path $shim 'objdump.exe')
+          echo $shim >> $env:GITHUB_PATH
+
       - name: Package Windows Installer
         if: runner.os == 'Windows'
         shell: pwsh
