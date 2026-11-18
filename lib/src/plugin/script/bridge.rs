@@ -1,30 +1,16 @@
-use std::collections::HashMap;
-
 use rhai::{Dynamic, Map};
 
-use crate::{
-    plugin::{NamespacedID, property::value::FieldValue},
-    project::clip::ClipBindingValue,
-};
+use crate::{plugin::property::value::FieldValue, project::clip::ClipBindingValue};
 
-/// プロパティ値のマップを Rhai の `Map` に変換します。
-///
 /// `ClipBindingValue` を `rhai::Dynamic` に変換し、スクリプトエンジンに渡せる形式にします。
-pub fn field_values_to_rhai_map(properties: &HashMap<NamespacedID, ClipBindingValue>) -> Map {
-    properties
-        .iter()
-        .map(|(k, v)| (k.to_string().into(), property_value_to_dynamic(v)))
-        .collect()
-}
-
-fn property_value_to_dynamic(v: &ClipBindingValue) -> Dynamic {
+pub fn binding_value_to_dynamic(v: &ClipBindingValue) -> Dynamic {
     match v {
         ClipBindingValue::Static(fv) => field_value_to_dynamic(fv),
         // 将来Keyframes等が増えたら、ここでmedia_time時点の値を評価して渡す
     }
 }
 
-fn field_value_to_dynamic(v: &FieldValue) -> Dynamic {
+pub fn field_value_to_dynamic(v: &FieldValue) -> Dynamic {
     match v {
         FieldValue::Bool(b) => Dynamic::from(*b),
         FieldValue::Int(i) => Dynamic::from(*i),

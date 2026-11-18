@@ -1,4 +1,4 @@
-use crate::plugin::property::PropertyPath;
+use crate::plugin::property::{PropertyKey, PropertyPath};
 use std::collections::HashMap;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
@@ -91,7 +91,7 @@ pub enum CommandRequest {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, ClipBindingValue>,
+        properties: HashMap<PropertyKey, ClipBindingValue>,
     },
     /// ファイルドロップからクリップを追加します。サーバーがプラグインの
     /// FileDropHandler を実行してから通常の AddClip に変換します。
@@ -138,7 +138,7 @@ pub enum CommandHistory {
         duration: TimelineTick,
 
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, ClipBindingValue>,
+        properties: HashMap<PropertyKey, ClipBindingValue>,
     },
     /// レイヤー追加の履歴。
     AddLayer {

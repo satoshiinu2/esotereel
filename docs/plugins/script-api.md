@@ -31,30 +31,33 @@
 
 コンポーネントが capability を宣言すると、Scheduler が対応する標準関数を `(ctx, props)` の 2 引数で呼び出します（capability と標準関数の対応は [コンポーネント定義リファレンス](components.md) を参照）。
 
-標準プラグインの `components/video.rhai`:
+標準プラグインの `components/media.rhai`（`std:media` コンポーネント、`render_frame`）:
 
 ```rhai
 fn render_frame(ctx, props) {
     let tex = ctx.get_video_texture();
-    let transform = props["std:video:transform"];
+    let transform = props["transform"];
     ctx.render_video(tex, transform.as_mat4());
 }
-
-fn prefetch(ctx, props) {
-    // TODO
-}
 ```
+
+素材側の標準関数（`prefetch`、`handle_file_drop`）も、media コンポーネントの `components/media.rhai` に定義されています。
 
 ### 2.1 引数
 
 - `ctx`: 描画コンテキスト（RenderContext、第 3 節）。描画はこのオブジェクトへのメソッド呼び出しで行います
-- `props`: そのコンポーネントが宣言したプロパティだけを含むマップ。**キーは名前空間付き ID の完全な文字列**です（例: `props["std:video:transform"]`）
+- `props`: そのコンポーネントから見えるプロパティへのアクセス口。マップではなく、キーアクセスのたびに値が解決されます。キーの形式は参照先で決まります（自プロパティは `:#` 形式、依存は宣言名）
 
-Scheduler はコンポーネントごとにプロパティを抽出して渡すため、他コンポーネントのプロパティは見えません。
+`props` で参照できるのは、自コンポーネントのプロパティと、`[[requires]]` で宣言した依存先の capability に紐づく値だけです。他コンポーネントの値が必要な場合は `[[requires]]` で依存を宣言してください（[コンポーネント定義リファレンス](components.md) 第 4.1 節）。上の例の `transform` は、video コンポーネントが `transformable` への依存を `name = "transform"` で宣言しているために見えています。
+
+- 自コンポーネントのプロパティは、`props[":#media"]` のように `:#` を付けた形式でのみ参照できます。自プロパティを裸の名前で引くと、`:#` 形式へ誘導するエラーになります
+- 依存は、`props["transform"]` のように宣言名（裸の名前）で参照します
+- 宣言していない名前へアクセスすると、キー名を含むエラーになります
+- 任意依存が満たされていない場合、その名前へのアクセスは `()` を返します。`props.has("name")` で有無を確認できます（満たされていれば `true`、任意依存が満たされていなければ `false`。コンポーネント自体が capability を持つ依存は、参照できる値は無くても `true` です）。自プロパティの有無は `props.has(":#media")` のように `:#` 形式で確認します
 
 ### 2.2 props の値の型変換
 
-プロパティ値は Rhai の値に変換されて渡されます。
+プロパティ値は、アクセス時に Rhai の値に変換されて返されます。
 
 | プロパティの型 | Rhai での表現 |
 |----------------|---------------|
@@ -119,11 +122,11 @@ fn toolbar_undo(ctx) {
 ### 4.2 ctx.set_property
 
 ```rhai
-ctx.set_property(clip_id, "std:video:media/source_offset", 100);
+ctx.set_property(clip_id, "std:media#media/source_offset", 100);
 ```
 
 - 第 1 引数: クリップ ID（整数）
-- 第 2 引数: プロパティパス。名前空間付き ID をルートとし、メンバーを `/` でつなぎます
+- 第 2 引数: プロパティパス。正規形 `plugin:component#property/member` で書きます
 - 第 3 引数: 設定する値
 
 値は次の規則でプロパティの値型に正規化されます。

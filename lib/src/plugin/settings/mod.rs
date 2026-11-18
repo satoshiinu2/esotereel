@@ -4,7 +4,7 @@ use anyhow::Context;
 
 use crate::plugin::{
     NamespacedID,
-    property::{PropertyHost, PropertySchema, value::FieldValue},
+    property::{PropertyHost, PropertyKey, PropertySchema, value::FieldValue},
 };
 
 /// 設定スキーマのレジストリです。
@@ -33,7 +33,7 @@ impl SettingsSchemaRegistry {
 #[derive(Debug, Default)]
 pub struct SettingsStore {
     pub schema: SettingsSchemaRegistry,
-    values: HashMap<NamespacedID, FieldValue>,
+    values: HashMap<PropertyKey, FieldValue>,
     pending_values: HashMap<String, toml::Value>,
 }
 
@@ -113,10 +113,10 @@ impl SettingsStore {
 
     fn apply_pending_values(&mut self) {
         for field in &self.schema.fields {
-            if field.key.plugin_id() == "core" {
+            if field.key.owner().plugin_id() == "core" {
                 continue;
             }
-            let Some(value) = self.pending_values.get(field.key.full()) else {
+            let Some(value) = self.pending_values.get(&field.key.address()) else {
                 continue;
             };
             match field.kind.parse_toml_to(value) {
@@ -140,7 +140,7 @@ impl SettingsStore {
             table.insert(key.clone(), value.clone());
         }
         for field in &self.schema.fields {
-            if field.key.plugin_id() == "core" {
+            if field.key.owner().plugin_id() == "core" {
                 continue;
             }
             let Some(value) = self.values.get(&field.key) else {
@@ -148,7 +148,7 @@ impl SettingsStore {
             };
             let value = field_value_to_toml(&field.kind, value)
                 .with_context(|| format!("cannot serialize setting {}", field.key))?;
-            table.insert(field.key.full().to_owned(), value);
+            table.insert(field.key.address(), value);
         }
 
         if let Some(parent) = path.parent() {
@@ -165,7 +165,7 @@ impl SettingsStore {
     /// ディスクから読み込めた値だけ上書きします。存在しないキーはデフォルトのまま残ります。
     pub fn apply_loaded_setting(&mut self, loaded: HashMap<NamespacedID, FieldValue>) {
         for (k, v) in loaded {
-            self.values.insert(k, v);
+            self.values.insert(PropertyKey::from_namespaced(k), v);
         }
     }
 
@@ -175,11 +175,12 @@ impl SettingsStore {
 
     /// 指定キーの値への参照を返します。
     pub fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue> {
-        self.values.get(key)
+        self.values.get(&PropertyKey::from_namespaced(key.clone()))
     }
 
     /// 指定キーの値を設定します。スキーマに存在しないキーの場合はエラー。
     pub fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()> {
+        let key = PropertyKey::from_namespaced(key);
         // スキーマに存在するキーかチェック
         if !self.schema.fields().iter().any(|f| f.key == key) {
             anyhow::bail!("unknown settings key: {}", key);
@@ -272,11 +273,11 @@ impl PropertyHost for SettingsStore {
         Cow::Borrowed(self.schema.fields())
     }
 
-    fn get_value(&self, key: &NamespacedID) -> Option<&FieldValue> {
+    fn get_value(&self, key: &PropertyKey) -> Option<&FieldValue> {
         self.values.get(key)
     }
 
-    fn set_value(&mut self, key: NamespacedID, value: FieldValue) -> anyhow::Result<()> {
+    fn set_value(&mut self, key: PropertyKey, value: FieldValue) -> anyhow::Result<()> {
         if !self.schema.fields().iter().any(|f| f.key == key) {
             anyhow::bail!("unknown settings key: {}", key);
         }

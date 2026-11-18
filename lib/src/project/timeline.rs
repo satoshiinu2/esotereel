@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
 use std::sync::RwLock;
 
-use crate::plugin::NamespacedID;
+use crate::plugin::{NamespacedID, property::PropertyKey};
 use crate::project::TimelineTick;
 use crate::project::change::{ChangeSet, RemovedClipInfo};
 use crate::project::chunk_index::ChunkIndex;
@@ -262,7 +262,7 @@ impl Timeline {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, ClipBindingValue>,
+        properties: HashMap<PropertyKey, ClipBindingValue>,
     ) -> EsotereelResult<ClipId> {
         // 重複チェック(既存 try_insert 相当)
         {
@@ -485,7 +485,7 @@ impl Timeline {
     pub fn touch_property_changed(
         &mut self,
         clip_id: ClipId,
-        key: NamespacedID,
+        key: PropertyKey,
         value: ClipBindingValue,
     ) {
         self.invalidate_index();

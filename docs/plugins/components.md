@@ -4,38 +4,40 @@
 
 コンポーネントは、クリップの描画・振る舞いとプロパティを定義する部品です。`components/` ディレクトリ配下の TOML ファイルに `[[components]]` として宣言し、あわせて Rhai スクリプトで振る舞いを実装します。1 ファイルに複数のコンポーネントを書くこともできますが、標準プラグインでは再利用しやすいよう 1 ファイル 1 コンポーネントに分割しています。
 
-標準プラグインの `components/media.toml` と `components/transform.toml` を例に、各要素を解説します。
+標準プラグインの `components/media.toml`、`components/transform.toml`、`components/video.toml` を例に、各要素を解説します。
 
 ```toml
 # components/media.toml
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
-capabilities = ["frame-provider", "prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler", "frame-provider"]
 editor = "video"
-script = "video.rhai"
+script = "media.rhai"
 properties = [
-  { key = "video:media", label = "Media",
+  { key = "media", label = "Media",
     kind = { type = "group" },
     fields = [
-      { key = "source", label = "Source", kind = { type = "string" }, default = "" },
-      { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
+      { key = "source", label = "Source", kind = { type = "string" }, default = "", capability = "media-source" },
+      { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0", capability = "media-offset-provider" },
     ],
     capability = "frame-provider",
-    member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
 ]
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 
 # components/transform.toml
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
-  { key = "video:transform", label = "Transform",
+  { key = "transform", label = "Transform",
     kind = { type = "group" },
     fields = [
       { key = "position", label = "Position", kind = { type = "array", item_kind = { type = "float", step = 0.1 } }, default = [0.0, 0.0, 0.0] },
@@ -45,6 +47,21 @@ properties = [
     capability = "transformable",
     default = { position = [0.0, 0.0, 0.0], rotation = [0.0, 0.0, 0.0], scale = [1.0, 1.0, 1.0] } },
 ]
+
+# components/video.toml
+[[components]]
+id = "video"
+name = "Video"
+
+[[components.requires]]
+name = "media"
+capability = "frame-provider"
+required = true
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 ```
 
 ## 1. コンポーネント定義のフィールド
@@ -53,15 +70,15 @@ properties = [
 |------------|------|------|------|
 | `id` | 文字列 | ○ | コンポーネントのローカル ID。名前空間付き ID は `<plugin_id>:<id>` になります |
 | `name` | 文字列 | ○ | コンポーネントの表示名 |
-| `kind` | 文字列 | ○ | コンポーネントの種別への参照。ローカル名で書くと自プラグインの名前空間で解決され、`plugin:local` 形式で他プラグインの種別も参照できます |
 | `capabilities` | 文字列の配列 | ― | このコンポーネントが提供する能力の一覧（第 2 節）。省略時は空 |
 | `editor` | 文字列 | ― | GUI 側でこのコンポーネントの編集に使うエディタの識別子 |
 | `script` | 文字列 | ― | このコンポーネント専用の Rhai スクリプト。`components/` ディレクトリからの相対パスで指定します。省略したコンポーネントはスクリプト実行の対象外になります（GUI 専用定義など） |
 | `properties` | スキーマの配列 | ― | このコンポーネントが提供するプロパティスキーマ（第 5 節）。省略時は空 |
+| `requires` | テーブルの配列 | ― | 他コンポーネントへの依存宣言（第 4.1 節）。省略時は空 |
 
 ## 2. capability（能力）
 
-capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの `kind` や ID ではなく capability を見て連携します。
+capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの ID ではなく capability を見て連携します。
 
 標準の capability は次のとおりです。文字列は TOML に書く小文字 kebab-case 表記です。
 
@@ -78,7 +95,7 @@ capability は「コンポーネントが何を提供できるか」の宣言で
 | `file-drop-handler` | ファイルドロップ時に初期プロパティを返す | `handle_file_drop` | Prepare |
 
 - **標準関数がある capability を宣言した場合、スクリプトに対応する関数を実装する必要があります**。未実装だとスケジューラの呼び出しがエラーになり、そのクリップは描画されません
-- 標準関数のない capability は、プロパティやメンバーへの目印として使います（第 5 節の `capability` / `member_capabilities`）
+- 標準関数のない capability は、プロパティやメンバーへの目印として使います（第 5 節の `capability`）
 - 上記以外の文字列は書けません。未知の capability 文字列を指定すると、コンポーネント定義の読み込み時にエラーになります
 
 ## 3. フックと実行順序
@@ -94,7 +111,7 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 描画時の実行は `Scheduler`（`lib/src/plugin/clip/component.rs`）が行います。
 
 1. クリップ種別が宣言するコンポーネント列を、宣言順に実行対象コンポーネントの一覧とする（第 4 節）
-2. コンポーネントごとに、クリップインスタンスのプロパティ全体をスクリプトに渡す。兄弟コンポーネントが宣言したプロパティも参照できます（例: media の描画スクリプトが transform の変換プロパティを読む）
+2. コンポーネントごとに、スクリプトへ渡す `props` を構築する。`props` はサンドボックス化されており、自コンポーネントのプロパティ（`:#` 形式で参照）と、`[[requires]]` で宣言した依存先の capability に紐づくプロパティ（宣言名で参照）だけが解決できます（第 4.1 節）。兄弟コンポーネントのプロパティは、依存を宣言しない限り参照できません
 3. capability をフックタイミング順に並べ替え、対応する標準関数を順に呼び出す
 
 > **注意**: 現在の Scheduler は標準関数の戻り値を破棄します。描画結果は、後述する描画コンテキスト（`ctx`）へのメソッド呼び出しという副作用で返してください（[スクリプト API リファレンス](script-api.md)）。
@@ -106,7 +123,26 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 - 同じコンポーネントが複数回書かれても、実行リストには 1 回だけ現れます（最初の出現位置が優先されます）
 - 存在しないコンポーネントを書いた場合、解決時にエラーになります
 
-`plugins/std` の例では、クリップ種別 `video` が `components = ["media", "transform"]` を宣言します。`transform` コンポーネント自体はスクリプトを持たず、`transformable` 能力と GUI エディタ（`transform`）の宣言、および変換プロパティを提供します。コンポーネントは特定のクリップ種別に属さない独立した部品なので、他のクリップ種別からも同じコンポーネントを構成に含めて再利用できます。
+`plugins/std` の例では、クリップ種別 `video` が `components = ["media", "transform", "video"]` を宣言します。`video` コンポーネントは自プロパティを持たず、描画スクリプトと `frame-provider` 能力を持ち、`[[requires]]` で media と transform に依存します。`transform` コンポーネント自体はスクリプトを持たず、`transformable` 能力と GUI エディタ（`transform`）の宣言、および変換プロパティを提供します。コンポーネントは特定のクリップ種別に属さない独立した部品なので、他のクリップ種別からも同じコンポーネントを構成に含めて再利用できます。
+
+### 4.1 依存宣言（`[[requires]]`）
+
+コンポーネントのスクリプトが他コンポーネントのプロパティを必要とする場合、`[[requires]]` で依存を宣言します。依存先はコンポーネント ID ではなく capability で解決されます。
+
+```toml
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|------------|------|------|------|
+| `name` | 文字列 | ○ | 依存先の値を `props` で参照するときのローカル名。自コンポーネントのプロパティ名と重なるとエラーになります。requires 同士の重複もエラーです |
+| `capability` | 文字列 | ○ | 依存する capability。構成コンポーネントの中から、この capability を宣言するプロパティ（またはメンバー、またはコンポーネント自体）が解決されます |
+| `required` | 真偽値 | ― | 既定は `false`（任意依存）。`true` の場合、kind の構成で依存が満たせなければ定義の解決時にエラーになります。任意依存が満たせない場合は、その名前へのアクセスが `()` を返します（`props.has()` で有無を確認できます） |
+
+`props` で参照できるのは、依存先の全プロパティではなく、宣言した capability に紐づく値だけです。プロパティが capability を宣言していればそのプロパティの値全体が、グループのメンバーが宣言していればそのメンバーの値だけが、`name` で参照できます。コンポーネント自体が capability を持つ場合は、参照できる値はありません（必須依存の充足だけが意味を持ちます）。
 
 ## 5. プロパティスキーマ
 
@@ -114,13 +150,12 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 
 | フィールド | 型 | 必須 | 説明 |
 |------------|------|------|------|
-| `key` | 文字列 | ○ | プロパティのキー。名前空間付き ID は `<plugin_id>:<key>` になります。`:` を含めて階層的なキー（例: `video:media`）にもできます |
+| `key` | 文字列 | ○ | プロパティのローカル名。プロパティは「所有コンポーネントの名前空間付き ID + ローカル名」で識別され、正規形のアドレスは `std:media#media` のようになります（第 5.3 節）。`:` `#` `/` は使えません |
 | `label` | 文字列 | ○ | GUI に表示するラベル |
 | `kind` | テーブル | ○ | 値の型（第 5.1 節） |
 | `category` | 文字列の配列 | ― | GUI での分類。省略時は空 |
 | `default` | 任意の TOML 値 | ― | 既定値。省略した場合は `kind` から導出されます（第 5.2 節） |
-| `capability` | 文字列 | ― | このプロパティが提供する能力。本体はこの宣言を使ってプロパティを逆引きします |
-| `member_capabilities` | テーブル | ― | マップ型・グループ型のメンバー名 → capability の対応付け |
+| `capability` | 文字列 | ― | このプロパティ（グループの場合はそのメンバー）が提供する能力。本体はこの宣言を使ってプロパティやメンバーを逆引きします |
 | `fields` | スキーマの配列 | ― | `group` 型の場合の子フィールド定義 |
 
 同じ一覧内での `key` の重複はエラーになります。
@@ -163,13 +198,22 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 
 `plugins/std` の例（コンポーネントは第 4 節のとおり media / transform に分かれています）:
 
-- media コンポーネントのプロパティ `video:media`（group）に `capability = "frame-provider"` を宣言し、このプロパティがメディア情報の提供者であることを示す
-- そのメンバーには `member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }` を宣言する
-- transform コンポーネントのプロパティ `video:transform`（group。メンバーは `position` / `rotation` / `scale`）には `capability = "transformable"` を宣言する
+- media コンポーネントのプロパティ `media`（group）に `capability = "frame-provider"` を宣言し、このプロパティがメディア情報の提供者であることを示す
+- そのメンバーは各フィールド自身が `capability` を宣言する（`source` に `"media-source"`、`source_offset` に `"media-offset-provider"`）
+- transform コンポーネントのプロパティ `transform`（group。メンバーは `position` / `rotation` / `scale`）には `capability = "transformable"` を宣言する
 
-レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `member_capabilities` の `media-source` から、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
+レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `media-source` 能力を宣言するメンバーから、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
 
-グループ型のメンバーは、パス記法で `std:video:media/source` のように表されます（ルートが名前空間付き ID、メンバーが `/` 区切り）。スクリプトの `set_property` などで使います（[スクリプト API リファレンス](script-api.md)）。
+#### プロパティアドレス
+
+プロパティを一意に指す正規形は `plugin:component#property/member` です（例: `std:media#media/source`）。区切りの役割は次のとおりです。
+
+- `:` — 名前空間付き ID（プラグイン:コンポーネント）の区切り
+- `#` — その ID の中身（プロパティ）を指す
+- `/` — プロパティ内のメンバー
+- `.` — プラグイン名前空間内のサブモジュール用に予約されており、プロパティ記法では使いません
+
+所有者が文脈から明らかな場所では、所有者部分を省略した相対形 `:#property/member` も使えます（先頭の `:` が所有者の省略＝self を明示します。例: file-drop ハンドラの戻り値で自コンポーネントのプロパティを指す場合）。スクリプトの `set_property` などでは正規形を使います（[スクリプト API リファレンス](script-api.md)）。
 
 ## 6. クリップ定義（clips/*.toml）
 
@@ -178,7 +222,7 @@ Prepare → Prefetch → Evaluate → Process → Finalize
 ```toml
 [[kinds]]
 id = "video"
-components = ["media", "transform"]
+components = ["media", "transform", "video"]
 render_script = "render_clip_video"
 tags = ["media"]
 ```

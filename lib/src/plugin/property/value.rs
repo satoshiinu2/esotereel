@@ -277,7 +277,7 @@ impl FieldTypeKind {
 
             (FieldTypeKind::Group { fields, .. }, toml::Value::Table(table)) => {
                 for key in table.keys() {
-                    if !fields.iter().any(|field| field.key.local_id() == key) {
+                    if !fields.iter().any(|field| field.key.local_name() == key) {
                         return Err(ConvertError::InvalidOption(format!(
                             "unknown group member `{key}`"
                         )));
@@ -285,11 +285,11 @@ impl FieldTypeKind {
                 }
                 let mut values = BTreeMap::new();
                 for field in fields {
-                    let value = match table.get(field.key.local_id()) {
+                    let value = match table.get(field.key.local_name()) {
                         Some(value) => field.kind.parse_toml_to(value)?,
                         None => field.default.clone(),
                     };
-                    values.insert(field.key.local_id().to_owned(), value);
+                    values.insert(field.key.local_name().to_owned(), value);
                 }
                 Ok(FieldValue::Map(values))
             }
