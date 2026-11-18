@@ -11,7 +11,7 @@
 [[components]]
 id = "media"
 name = "Media"
-capabilities = ["prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler", "frame-provider"]
 editor = "video"
 script = "media.rhai"
 properties = [
@@ -25,6 +25,11 @@ properties = [
     member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
 ]
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 
 # components/transform.toml
 [[components]]
@@ -48,8 +53,6 @@ properties = [
 [[components]]
 id = "video"
 name = "Video"
-capabilities = ["frame-provider"]
-script = "video.rhai"
 
 [[components.requires]]
 name = "media"

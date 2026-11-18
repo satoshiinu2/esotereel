@@ -31,7 +31,7 @@
 
 コンポーネントが capability を宣言すると、Scheduler が対応する標準関数を `(ctx, props)` の 2 引数で呼び出します（capability と標準関数の対応は [コンポーネント定義リファレンス](components.md) を参照）。
 
-標準プラグインの `components/video.rhai`（描画役の `std:video` コンポーネント）:
+標準プラグインの `components/media.rhai`（`std:media` コンポーネント、`render_frame`）:
 
 ```rhai
 fn render_frame(ctx, props) {
@@ -41,7 +41,7 @@ fn render_frame(ctx, props) {
 }
 ```
 
-素材側の標準関数（`prefetch`、`handle_file_drop`）は、media コンポーネントの `components/media.rhai` に定義されています。
+素材側の標準関数（`prefetch`、`handle_file_drop`）も、media コンポーネントの `components/media.rhai` に定義されています。
 
 ### 2.1 引数
 
