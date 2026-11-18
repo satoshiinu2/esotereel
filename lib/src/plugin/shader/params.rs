@@ -86,7 +86,7 @@ pub fn pack_params(
         let declared = definition
             .properties
             .iter()
-            .any(|p| matches!(p, ShaderProperty::Own(schema) if schema.key.local_id() == key));
+            .any(|p| matches!(p, ShaderProperty::Own(schema) if schema.key.local_name() == key));
         if !declared {
             bail!(
                 "unknown property `{key}` for shader `{}`",
@@ -114,12 +114,12 @@ pub fn pack_params(
             }
             ShaderProperty::Own(schema) => {
                 let value = own_values
-                    .get(schema.key.local_id())
+                    .get(schema.key.local_name())
                     .unwrap_or(&schema.default);
                 write_own(&mut packer, &schema.kind, value).with_context(|| {
                     format!(
                         "invalid value for property `{}` of shader `{}`",
-                        schema.key.local_id(),
+                        schema.key.local_name(),
                         definition.id.full()
                     )
                 })?;

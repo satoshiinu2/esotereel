@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::{
     plugin::{
         NamespacedID,
-        property::{PropertyPath, PropertySchema, value::FieldValue},
+        property::{PropertyKey, PropertyPath, PropertySchema, value::FieldValue},
     },
     project::{
         TimelineTick,
@@ -58,7 +58,7 @@ pub struct Clip {
     pub duration: TimelineTick,
 
     pub kind_id: NamespacedID,
-    pub properties: HashMap<NamespacedID, ClipBindingValue>,
+    pub properties: HashMap<PropertyKey, ClipBindingValue>,
 
     /// 適用する compute シェーダのスタック。空なら変形なし（従来どおり描画）。
     /// 旧形式の保存データには存在しないため、serde では空リストを既定とします。
@@ -73,7 +73,7 @@ impl Clip {
         position: TimelineTick,
         duration: TimelineTick,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, ClipBindingValue>,
+        properties: HashMap<PropertyKey, ClipBindingValue>,
     ) -> Self {
         Self {
             id,
@@ -109,7 +109,7 @@ impl Clip {
     }
 
     /// 指定キーのプロパティ値を返します。存在しなければ `None`。
-    pub fn get_property_value(&self, key: &NamespacedID) -> Option<&ClipBindingValue> {
+    pub fn get_property_value(&self, key: &PropertyKey) -> Option<&ClipBindingValue> {
         self.properties.get(key)
     }
 
@@ -155,7 +155,7 @@ impl Clip {
     /// 指定キーのプロパティ値を設定（上書き）します。
     pub fn set_property_value(
         &mut self,
-        key: NamespacedID,
+        key: PropertyKey,
         value: ClipBindingValue,
     ) -> anyhow::Result<()> {
         self.properties.insert(key, value);
@@ -205,7 +205,7 @@ impl ClipBindingValue {
     /// スキーマ一覧からデフォルト値のプロパティマップを構築します。
     pub fn default_properties(
         schema: &[PropertySchema],
-    ) -> HashMap<NamespacedID, ClipBindingValue> {
+    ) -> HashMap<PropertyKey, ClipBindingValue> {
         schema
             .iter()
             .map(|field| {
@@ -223,7 +223,7 @@ impl ClipBindingValue {
 /// `Clip::get_property_path` と同じ辿り方を、まだ `Clip` になっていない
 /// プロパティマップに対して行います。
 pub fn get_property_path_from_map<'a>(
-    properties: &'a HashMap<NamespacedID, ClipBindingValue>,
+    properties: &'a HashMap<PropertyKey, ClipBindingValue>,
     path: &PropertyPath,
 ) -> Option<&'a FieldValue> {
     let mut value = properties.get(path.root())?.in_frame_of()?;

@@ -1,4 +1,4 @@
-use crate::plugin::NamespacedID;
+use crate::plugin::property::PropertyKey;
 use crate::project::{
     clip::ClipBindingValue,
     ids::{ClipId, LayerFolderId, LayerId},
@@ -17,7 +17,7 @@ pub struct RemovedClipInfo {
 #[derive(Debug, Clone)]
 pub struct ClipPropertyChange {
     pub clip_id: ClipId,
-    pub key: NamespacedID,
+    pub key: PropertyKey,
     pub value: ClipBindingValue,
 }
 
@@ -78,7 +78,7 @@ impl ChangeSet {
     pub(crate) fn mark_clip_property_changed(
         &mut self,
         clip_id: ClipId,
-        key: NamespacedID,
+        key: PropertyKey,
         value: ClipBindingValue,
     ) {
         self.clip_properties_changed.push(ClipPropertyChange {

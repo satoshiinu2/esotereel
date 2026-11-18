@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use super::*;
 use crate::project::history::{HistoryStack, redo_command, undo_command};
-use esotereel_lib::plugin::{NamespacedID, property::PropertyPath};
+use esotereel_lib::plugin::{
+    NamespacedID,
+    property::{PropertyKey, PropertyPath},
+};
 
 #[test]
 fn move_history_keeps_duration_on_undo_redo() {
@@ -249,7 +252,7 @@ fn nested_property_edits_preserve_siblings_and_undo_redo() {
         .next()
         .unwrap()
         .0;
-    let root = NamespacedID::new("test", "text").unwrap();
+    let root = PropertyKey::from_namespaced(NamespacedID::new("test", "text").unwrap());
     let properties = HashMap::from([(
         root.clone(),
         ClipBindingValue::Static(FieldValue::Map(std::collections::BTreeMap::from([

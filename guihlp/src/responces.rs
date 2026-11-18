@@ -11,7 +11,7 @@ use esotereel_lib::{
     plugin::{
         NamespacedID, PluginLoader,
         clip::component::{ComponentCapability, RuntimeDefinition},
-        property::value::FieldValue,
+        property::{PropertyKey, value::FieldValue},
     },
     project::{
         Project,
@@ -181,7 +181,7 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                 let clip_id: ClipId = clip_id.deserialize(&mut rkyv::Infallible).unwrap();
-                let key: NamespacedID = key.deserialize(&mut rkyv::Infallible).unwrap();
+                let key: PropertyKey = key.deserialize(&mut rkyv::Infallible).unwrap();
                 let value: ClipBindingValue = value.deserialize(&mut rkyv::Infallible).unwrap();
 
                 // プロパティ変更が動画ソースなら、タイムライン貸し出しを解放した後に
@@ -505,7 +505,7 @@ fn video_source_path(definition: &RuntimeDefinition, clip: &Clip) -> Option<Stri
 /// 能力宣言から解決する（AGENTS.md 第9条）。
 fn video_source_from_property(
     definition: &RuntimeDefinition,
-    key: &NamespacedID,
+    key: &PropertyKey,
     value: &ClipBindingValue,
 ) -> Option<String> {
     let property = definition.property_by_capability(&ComponentCapability::FrameProvider)?;

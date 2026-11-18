@@ -1,5 +1,7 @@
 use super::*;
-use crate::plugin::{Plugin, script::bridge::field_values_to_rhai_map};
+use crate::plugin::Plugin;
+use crate::plugin::clip::component::{ClipInstance, RuntimeDefinition};
+use crate::plugin::script::props::ComponentProps;
 use crate::project::clip::ClipBindingValue;
 
 #[test]
@@ -20,6 +22,10 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
         .component_definitions
         .get(&crate::plugin::NamespacedID::new("std", "transform").unwrap())
         .unwrap();
+    let video_component = plugin
+        .component_definitions
+        .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+        .unwrap();
     let fields: Vec<_> = media_component
         .properties
         .iter()
@@ -27,14 +33,8 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
         .cloned()
         .collect();
     let fields = &fields;
-    let media = fields
-        .iter()
-        .find(|f| f.key.local_id() == "video:media")
-        .unwrap();
-    let transform = fields
-        .iter()
-        .find(|f| f.key.local_id() == "video:transform")
-        .unwrap();
+    let media = fields.iter().find(|f| f.key.name() == "media").unwrap();
+    let transform = fields.iter().find(|f| f.key.name() == "transform").unwrap();
     let crate::plugin::property::value::FieldTypeKind::Group { .. } = &media.kind else {
         panic!("media property must be a group")
     };
@@ -44,7 +44,7 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
     assert!(
         !fields
             .iter()
-            .any(|field| matches!(field.key.local_id(), "width" | "height"))
+            .any(|field| matches!(field.key.local_name(), "width" | "height"))
     );
     let leaves = crate::plugin::property::PropertySchema::leaf_fields(fields).unwrap();
     assert_eq!(
@@ -53,18 +53,24 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
             .map(|(path, _)| path.to_string())
             .collect::<Vec<_>>(),
         [
-            "std:video:media/source",
-            "std:video:media/source_offset",
-            "std:video:transform/position",
-            "std:video:transform/rotation",
-            "std:video:transform/scale"
+            "std:media#media/source",
+            "std:media#media/source_offset",
+            "std:transform#transform/position",
+            "std:transform#transform/rotation",
+            "std:transform#transform/scale"
         ]
     );
     let mut props = ClipBindingValue::default_properties(fields);
-    // コンポーネントのプロパティはフラットなキー（std:video:media, std:video:transform）で配置される。
+    // コンポーネントのプロパティは所有者付きのキー（std:media#media, std:transform#transform）で配置される。
     // transform デフォルト値をセット（as_mat4 は position/rotation/scale を全て要求する）
     let transform_value = props
-        .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+        .get_mut(
+            &crate::plugin::property::PropertyKey::new(
+                crate::plugin::NamespacedID::new("std", "transform").unwrap(),
+                "transform",
+            )
+            .unwrap(),
+        )
         .unwrap();
     let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(transform_map)) =
         transform_value
@@ -81,6 +87,23 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
     transform_map.insert("position".into(), vec([0.0, 0.0, 0.0]));
     transform_map.insert("rotation".into(), vec([0.0, 0.0, 0.0]));
     transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
+
+    // Scheduler と同じ経路で props を構築する: render_frame を担う media
+    // コンポーネントは、自プロパティと [[requires]] で宣言した transform
+    // 依存がローカル名で解決できる。
+    let definition = RuntimeDefinition {
+        kind_id: crate::plugin::NamespacedID::new("std", "video").unwrap(),
+        components: vec![
+            media_component.clone(),
+            transform_component.clone(),
+            video_component.clone(),
+        ],
+    };
+    let mut instance = ClipInstance {
+        kind_id: definition.kind_id.clone(),
+        properties: props,
+        state: std::collections::HashMap::new(),
+    };
 
     let cache = Arc::new(MediaFetchCache::default());
     let path_to_stream = Arc::new(DashMap::new());
@@ -104,7 +127,10 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
         .call::<()>(
             &engine,
             "render_frame",
-            (context.clone(), field_values_to_rhai_map(&props)),
+            (
+                context.clone(),
+                ComponentProps::build(&definition, &instance, media_component).unwrap(),
+            ),
         )
         .unwrap();
     let (_, paths) = context.clone().into_parts();
@@ -120,8 +146,15 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
     path_to_stream.insert("test.mp4".into(), StreamState::Loaded(7));
     streams.insert(7, player);
     for factor in [1.0, 0.5, 2.0] {
-        let transform_value = props
-            .get_mut(&crate::plugin::NamespacedID::new("std", "video:transform").unwrap())
+        let transform_value = instance
+            .properties
+            .get_mut(
+                &crate::plugin::property::PropertyKey::new(
+                    crate::plugin::NamespacedID::new("std", "transform").unwrap(),
+                    "transform",
+                )
+                .unwrap(),
+            )
             .unwrap();
         let ClipBindingValue::Static(crate::plugin::property::value::FieldValue::Map(
             transform_map,
@@ -151,7 +184,10 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
             .call::<()>(
                 &engine,
                 "render_frame",
-                (context.clone(), field_values_to_rhai_map(&props)),
+                (
+                    context.clone(),
+                    ComponentProps::build(&definition, &instance, media_component).unwrap(),
+                ),
             )
             .unwrap();
         let (batches, _) = context.clone().into_parts();

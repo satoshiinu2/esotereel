@@ -27,12 +27,14 @@ fn clip_set_and_get_property_value() {
         HashMap::new(),
     );
     clip.set_property_value(
-        NamespacedID::new("std", "source").unwrap(),
+        PropertyKey::from_namespaced(NamespacedID::new("std", "source").unwrap()),
         ClipBindingValue::Static(FieldValue::String("clip.mp4".to_string())),
     )
     .unwrap();
     assert!(matches!(
-        clip.get_property_value(&NamespacedID::new("std", "source").unwrap()),
+        clip.get_property_value(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "source").unwrap()
+        )),
         Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "clip.mp4"
     ));
 }
@@ -40,7 +42,7 @@ fn clip_set_and_get_property_value() {
 #[test]
 fn clip_default_properties_from_schema() {
     let schema = vec![PropertySchema {
-        key: NamespacedID::new("std", "volume").unwrap(),
+        key: PropertyKey::from_namespaced(NamespacedID::new("std", "volume").unwrap()),
         category: vec![],
         label: "Volume".to_string(),
         kind: FieldTypeKind::Float {
@@ -50,12 +52,13 @@ fn clip_default_properties_from_schema() {
         },
         default: FieldValue::Float(0.5),
         capability: None,
-        member_capabilities: BTreeMap::new(),
     }];
     let defaults = ClipBindingValue::default_properties(&schema);
     assert_eq!(defaults.len(), 1);
     assert!(matches!(
-        defaults.get(&NamespacedID::new("std", "volume").unwrap()),
+        defaults.get(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "volume").unwrap()
+        )),
         Some(ClipBindingValue::Static(FieldValue::Float(v))) if *v == 0.5
     ));
 }
@@ -120,10 +123,10 @@ fn clip_get_set_property_path() {
         60,
         NamespacedID::new("std", "video").unwrap(),
         ClipBindingValue::default_properties(&[PropertySchema::group(
-            NamespacedID::new("std", "transform").unwrap(),
+            PropertyKey::from_namespaced(NamespacedID::new("std", "transform").unwrap()),
             "Transform".to_string(),
             vec![PropertySchema {
-                key: NamespacedID::new("std", "x").unwrap(),
+                key: PropertyKey::from_namespaced(NamespacedID::new("std", "x").unwrap()),
                 category: vec![],
                 label: "X".to_string(),
                 kind: FieldTypeKind::Float {
@@ -133,7 +136,6 @@ fn clip_get_set_property_path() {
                 },
                 default: FieldValue::Float(10.0),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             }],
         )]),
     );

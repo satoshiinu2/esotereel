@@ -32,7 +32,7 @@ use crate::{
                 parse_component_definitions,
             },
         },
-        property::PropertySchema,
+        property::{PropertyKey, PropertySchema},
         script::CompiledScript,
         shader::{
             ShaderDefinition, ShaderRegistry, compile_and_validate, module_path_for,
@@ -77,12 +77,13 @@ static ID_VALIDATION_REGEX: LazyLock<Regex> =
 impl NamespacedID {
     /// `plugin_id:local_id` 形式の新しい `NamespacedID` を作成します。
     ///
-    /// 入力は ASCII 英字・数字・`.` `_` `-` のみを含む必要があります。
+    /// 入力は ASCII 英字・数字・`.` `_` `-` `:` のみを含む必要があります
+    /// （`local_id` には `:` を含む階層形も使えます）。
     /// 不正な場合は `anyhow::bail!` でエラーを返します。
     pub fn new(plugin_id: &str, local_id: &str) -> anyhow::Result<Self> {
         if !ID_VALIDATION_REGEX.is_match(plugin_id) || !ID_VALIDATION_REGEX.is_match(local_id) {
             anyhow::bail!(
-                "plugin_id/local_id must contain only ASCII letters, digits, '.', '_' or '-': {plugin_id}:{local_id}"
+                "plugin_id/local_id must contain only ASCII letters, digits, '.', '_', '-' or ':': {plugin_id}:{local_id}"
             );
         }
         Ok(Self {
@@ -94,16 +95,14 @@ impl NamespacedID {
 
     /// `plugin_id:local_id` 形式の文字列をパースして `NamespacedID` を作成します。
     ///
-    /// `:` 区切りがなければエラーとなります。
+    /// `:` 区切りがなければエラーとなります。各節は `new` と同じ検証を通る
+    /// 必要があり、空の節や不正な文字を含む ID はエラーとなります。
     pub fn parse(full: &str) -> anyhow::Result<Self> {
         let (plugin_id, local_id) = full
             .split_once(':')
             .with_context(|| format!("invalid namespaced id (missing ':'): {full}"))?;
-        Ok(Self {
-            full: full.to_string(),
-            plugin_id: plugin_id.to_string(),
-            local_id: local_id.to_string(),
-        })
+        Self::new(plugin_id, local_id)
+            .with_context(|| format!("invalid namespaced id: {full}"))
     }
 
     /// フル ID 文字列（`plugin_id:local_id`）を返します。

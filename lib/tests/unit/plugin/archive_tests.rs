@@ -25,12 +25,38 @@ fn namespaced_id_has_same_hash_before_and_after_archiving() {
 }
 
 #[test]
+fn parse_accepts_hierarchical_and_dotted_local_ids() {
+    let dotted = NamespacedID::parse("core:log.level").unwrap();
+    assert_eq!(dotted.plugin_id(), "core");
+    assert_eq!(dotted.local_id(), "log.level");
+
+    let hierarchical = NamespacedID::parse("std:video:media").unwrap();
+    assert_eq!(hierarchical.plugin_id(), "std");
+    assert_eq!(hierarchical.local_id(), "video:media");
+    assert_eq!(hierarchical.full(), "std:video:media");
+}
+
+#[test]
+fn parse_rejects_empty_segments_and_invalid_characters() {
+    assert!(NamespacedID::parse("").is_err());
+    assert!(NamespacedID::parse("std").is_err());
+    assert!(NamespacedID::parse(":").is_err());
+    assert!(NamespacedID::parse(":video").is_err());
+    assert!(NamespacedID::parse("std:").is_err());
+    assert!(NamespacedID::parse("std:vid eo").is_err());
+    assert!(NamespacedID::parse("std:video#media").is_err());
+    assert!(NamespacedID::parse("std:video/media").is_err());
+}
+
+#[test]
 fn add_clip_properties_survive_network_validation_and_lookup() {
     for count in [1, 2, 7, 32] {
         let properties = (0..count)
             .map(|i| {
                 (
-                    NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+                    PropertyKey::from_namespaced(
+                        NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+                    ),
                     ClipBindingValue::Static(FieldValue::Int(i)),
                 )
             })
@@ -57,9 +83,11 @@ fn add_clip_properties_survive_network_validation_and_lookup() {
         };
         assert_eq!(properties.len(), count as usize);
         for i in 0..count {
-            let key = NamespacedID::new("std", &format!("field_{i}")).unwrap();
+            let key = PropertyKey::from_namespaced(
+                NamespacedID::new("std", &format!("field_{i}")).unwrap(),
+            );
             let key_bytes = rkyv::to_bytes::<_, 256>(&key).unwrap();
-            let archived_key = rkyv::check_archived_root::<NamespacedID>(&key_bytes).unwrap();
+            let archived_key = rkyv::check_archived_root::<PropertyKey>(&key_bytes).unwrap();
             assert!(
                 matches!(properties.get(archived_key), Some(ArchivedClipBindingValue::Static(crate::plugin::property::value::ArchivedFieldValue::Int(value))) if *value == i)
             );

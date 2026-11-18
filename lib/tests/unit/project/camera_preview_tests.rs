@@ -31,17 +31,29 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
     let kind = NamespacedID::new("std", "video").unwrap();
     let mut properties =
         ClipBindingValue::default_properties(&loader.get_clip_properties(&kind).unwrap());
-    // コンポーネントが提供するプロパティはフラットなキーで配置される:
-    // std:video:media, std:video:transform など
+    // コンポーネントが提供するプロパティは所有者付きのキーで配置される:
+    // std:media#media, std:transform#transform など
     let media_value = properties
-        .get_mut(&NamespacedID::new("std", "video:media").unwrap())
+        .get_mut(
+            &crate::plugin::property::PropertyKey::new(
+                NamespacedID::new("std", "media").unwrap(),
+                "media",
+            )
+            .unwrap(),
+        )
         .unwrap();
     let ClipBindingValue::Static(FieldValue::Map(media)) = media_value else {
         panic!("media property must be a map")
     };
     media.insert("source".into(), FieldValue::String("fixture.mp4".into()));
     let transform_value = properties
-        .get_mut(&NamespacedID::new("std", "video:transform").unwrap())
+        .get_mut(
+            &crate::plugin::property::PropertyKey::new(
+                NamespacedID::new("std", "transform").unwrap(),
+                "transform",
+            )
+            .unwrap(),
+        )
         .unwrap();
     let ClipBindingValue::Static(FieldValue::Map(transform)) = transform_value else {
         panic!("transform property must be a map")
@@ -229,7 +241,7 @@ fn video_file_preview_matches_decoded_frame() {
         let clip = timeline.get_clip_mut(0).unwrap();
         clip.duration = 600;
         clip.set_property_path(
-            &crate::plugin::property::PropertyPath::parse("std:video/transform/scale").unwrap(),
+            &crate::plugin::property::PropertyPath::parse("std:transform#transform/scale").unwrap(),
             ClipBindingValue::Static(FieldValue::Array(
                 [
                     32.0 / decoded.width() as f64,

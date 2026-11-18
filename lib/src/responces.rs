@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
-use crate::plugin::NamespacedID;
+use crate::plugin::property::PropertyKey;
 use crate::util::result::EsotereelError;
 use crate::project::{
     Clip, TimelineTick,
@@ -33,7 +33,7 @@ pub enum Response {
     UpdateClipProperty {
         timeline_id: TimelineId,
         clip_id: ClipId,
-        key: NamespacedID,
+        key: PropertyKey,
         value: ClipBindingValue,
     },
     /// クリップの削除。

@@ -1,15 +1,15 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
-    ComponentCapability, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
+    ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
-use crate::plugin::script::bridge::field_values_to_rhai_map;
+use crate::plugin::script::props::ComponentProps;
 use crate::plugin::{NamespacedID, PluginLoader};
 use crate::project::clip::ClipBindingValue;
 
@@ -29,8 +29,8 @@ pub enum ComponentHook {
 /// コンポーネントの定義。
 ///
 /// プラグインが TOML で宣言し、Component Registry に登録される。
-/// `kind` は `NamespacedID`（例: `std:media-provider`）であり、ネイティブ側では
-/// 種別判定より `capabilities` を通じた能力ベースのアクセスを原則とする。
+/// ネイティブ側では ID による種別判定より `capabilities` を通じた
+/// 能力ベースのアクセスを原則とする。
 /// コンポーネントは独立した部品であり、どのクリップ種別がどのコンポーネントで
 /// 構成されるかはクリップ種別（`ClipKind`）側が宣言する。定義は Kind ごとに1つ、
 /// 状態（Runtime State）は Clip Instance ごとに独立する。
@@ -38,9 +38,6 @@ pub enum ComponentHook {
 pub struct ComponentDefinition {
     pub id: NamespacedID,
     pub name: String,
-    /// このコンポーネントの種別を参照する NamespacedID。
-    /// Capability 経由でのアクセスが基本のため、ここでは単なる参照として保持する。
-    pub kind: NamespacedID,
     pub capabilities: BTreeSet<ComponentCapability>,
     pub editor: Option<String>,
     /// このコンポーネント専用の Rhai スクリプトファイルパス（プラグインディレクトリからの相対パス）。
@@ -49,32 +46,43 @@ pub struct ComponentDefinition {
     pub script: Option<String>,
     /// このコンポーネントが提供するプロパティスキーマの一覧。
     /// コンポーネントが自身のプロパティを宣言し、ClipInstance は各コンポーネントの
-    /// プロパティを保持・渡す。スケジューラはフック実行時にクリップインスタンスの
-    /// プロパティ全体をスクリプトに渡すため、兄弟コンポーネントが宣言した
-    /// プロパティも参照できる。
+    /// プロパティを保持する。スケジューラがスクリプトへ渡す props は
+    /// サンドボックス化されており、自コンポーネントのプロパティ（ローカル名）と、
+    /// `[[requires]]` で宣言した依存先の capability に紐づくプロパティだけが解決できる。
     #[serde(default)]
     pub properties: Vec<PropertySchema>,
+    /// 他コンポーネントへの依存宣言（`[[requires]]`）。
+    /// スクリプトへ渡る props では、自プロパティに加えて、ここで宣言した依存先の
+    /// capability に紐づくプロパティだけが `name` で参照できる。
+    #[serde(default)]
+    pub requires: Vec<ComponentRequire>,
+}
+
+/// コンポーネントが他のコンポーネントへ宣言する依存。
+///
+/// 依存先はコンポーネント ID ではなく capability で解決する（AGENTS.md §9）。
+/// デフォルトは任意依存で、満たせない場合は props に現れない。
+/// `required = true` の依存が kind の構成で満たせなければ定義解決時にエラーになる。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentRequire {
+    /// 依存先の値を props に混ぜるときのローカル名。
+    pub name: String,
+    pub capability: ComponentCapability,
+    #[serde(default)]
+    pub required: bool,
 }
 
 impl ComponentDefinition {
-    /// `FrameProvider` 能力を持つプロパティの `member_capabilities` から、
-    /// 指定能力を持つメンバーのキーを逆引きする。
+    /// `FrameProvider` 能力を持つプロパティのメンバーのうち、指定能力を
+    /// 宣言するメンバーのキーを逆引きする。
     ///
     /// ハードコードされたメンバキー（`"source_offset"` 等）に依存せず、
-    /// コンポーネントが宣言する能力からプロパティを参照する（AGENTS.md 第9条）。
-    ///
-    /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider`
-    /// 能力を宣言している場合、そのメンバーのキーを返す。
-    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
+    /// メンバー自身が宣言する能力から参照する（AGENTS.md 第9条）。
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
         self.properties
             .iter()
             .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
-            .and_then(|p| {
-                p.member_capabilities
-                    .iter()
-                    .find(|(_, cap)| *cap == capability)
-                    .map(|(key, _)| key)
-            })
+            .and_then(|p| p.member_key_by_capability(capability))
     }
 }
 
@@ -102,7 +110,7 @@ impl RuntimeDefinition {
     }
 
     /// 構成全体から、指定メンバー能力を持つメンバーキーを逆引きする。
-    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
         self.components
             .iter()
             .find_map(|component| component.member_key_by_capability(capability))
@@ -111,7 +119,7 @@ impl RuntimeDefinition {
     /// プロパティ能力とメンバー能力からプロパティパスを能力ベースで解決する。
     ///
     /// ルートは `property_capability` を持つプロパティのキー、メンバーはその
-    /// プロパティの `member_capabilities` で `member_capability` を持つメンバー。
+    /// プロパティのメンバーのうち `member_capability` を宣言するメンバー。
     /// どちらかの宣言が無ければ `None`。
     pub fn member_path(
         &self,
@@ -119,13 +127,60 @@ impl RuntimeDefinition {
         member_capability: &ComponentCapability,
     ) -> Option<PropertyPath> {
         let property = self.property_by_capability(property_capability)?;
-        let member = property
-            .member_capabilities
-            .iter()
-            .find(|(_, cap)| *cap == member_capability)
-            .map(|(key, _)| key)?;
+        let member = property.member_key_by_capability(member_capability)?;
         PropertyPath::from(property.key.clone()).child(member).ok()
     }
+
+    /// `[[requires]]` の依存先を capability で解決する単一の規則。
+    ///
+    /// 構成コンポーネントを宣言順に（依存元自身を除いて）探し、最初に一致したものを
+    /// 返す。Scheduler の props 構築と、必須依存の検証（`resolve_definition`）は
+    /// この規則を共有する。満たせない場合は `None`。
+    pub fn resolve_requirement<'a>(
+        &'a self,
+        owner: &ComponentDefinition,
+        require: &ComponentRequire,
+    ) -> Option<RequirementResolution<'a>> {
+        for component in &self.components {
+            if component.id == owner.id {
+                continue;
+            }
+            for schema in &component.properties {
+                if schema.capability.as_ref() == Some(&require.capability) {
+                    return Some(RequirementResolution::Property { component, schema });
+                }
+                if let Some(member) = schema.member_key_by_capability(&require.capability) {
+                    return Some(RequirementResolution::Member {
+                        component,
+                        schema,
+                        member,
+                    });
+                }
+            }
+            if component.capabilities.contains(&require.capability) {
+                return Some(RequirementResolution::DeclaredOnly { component });
+            }
+        }
+        None
+    }
+}
+
+/// `[[requires]]` の解決結果。依存先コンポーネントと、capability に紐づく対象を示す。
+pub enum RequirementResolution<'a> {
+    /// プロパティ自体が capability を宣言している。値全体が依存先として渡る。
+    Property {
+        component: &'a ComponentDefinition,
+        schema: &'a PropertySchema,
+    },
+    /// グループプロパティのメンバーが capability を宣言している。
+    /// そのメンバーの値だけが依存先として渡る。
+    Member {
+        component: &'a ComponentDefinition,
+        schema: &'a PropertySchema,
+        member: &'a str,
+    },
+    /// コンポーネント自体が capability を持つ。渡す値はないが必須依存は満たす。
+    DeclaredOnly { component: &'a ComponentDefinition },
 }
 
 /// コンポーネントの実行時インスタンス。
@@ -136,7 +191,7 @@ impl RuntimeDefinition {
 #[derive(Debug, Clone)]
 pub struct ClipInstance {
     pub kind_id: NamespacedID,
-    pub properties: HashMap<NamespacedID, ClipBindingValue>,
+    pub properties: HashMap<PropertyKey, ClipBindingValue>,
     /// コンポーネントごとの実行時状態。キーはコンポーネント id。
     pub state: HashMap<NamespacedID, FieldValue>,
 }
@@ -230,10 +285,26 @@ impl ComponentRegistry {
                 .with_context(|| format!("component definition `{}` not found", id.full()))?;
             components.push(def.clone());
         }
-        Ok(RuntimeDefinition {
+        let definition = RuntimeDefinition {
             kind_id: kind_id.clone(),
             components,
-        })
+        };
+        for component in &definition.components {
+            for require in &component.requires {
+                if require.required
+                    && definition.resolve_requirement(component, require).is_none()
+                {
+                    bail!(
+                        "component `{}` requires capability `{:?}` as `{}` but no component of kind `{}` provides it",
+                        component.id.full(),
+                        require.capability,
+                        require.name,
+                        kind_id.full()
+                    );
+                }
+            }
+        }
+        Ok(definition)
     }
 }
 
@@ -251,7 +322,6 @@ pub(crate) fn resolve_namespaced(value: &str, plugin_id: &str) -> anyhow::Result
 pub(crate) struct ComponentDefinitionRaw {
     pub id: String,
     pub name: String,
-    pub kind: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default)]
@@ -260,6 +330,17 @@ pub(crate) struct ComponentDefinitionRaw {
     pub script: Option<String>,
     #[serde(default)]
     pub properties: Vec<PropertySchemaRaw>,
+    #[serde(default)]
+    pub requires: Vec<ComponentRequireRaw>,
+}
+
+/// TOML の `[[requires]]` の中間表現。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct ComponentRequireRaw {
+    pub name: String,
+    pub capability: String,
+    #[serde(default)]
+    pub required: bool,
 }
 
 impl ComponentDefinitionRaw {
@@ -270,8 +351,6 @@ impl ComponentDefinitionRaw {
                 self.id, plugin_id
             )
         })?;
-        let kind = resolve_namespaced(&self.kind, plugin_id)
-            .with_context(|| format!("invalid component kind `{}`", self.kind))?;
         let mut capabilities = BTreeSet::new();
         for cap in &self.capabilities {
             capabilities.insert(cap.parse().with_context(|| {
@@ -280,16 +359,45 @@ impl ComponentDefinitionRaw {
         }
         let mut properties = Vec::new();
         for raw in &self.properties {
-            properties.push(PropertySchema::parse_one(raw.clone(), plugin_id)?);
+            properties.push(PropertySchema::parse_for_component(raw.clone(), &id)?);
+        }
+        let mut requires = Vec::new();
+        let mut require_names = HashSet::new();
+        for raw in &self.requires {
+            crate::plugin::property::validate_local_name(&raw.name).with_context(|| {
+                format!("invalid require name `{}` in `{}`", raw.name, id.full())
+            })?;
+            if properties.iter().any(|p| p.key.name() == raw.name) {
+                bail!(
+                    "require name `{}` collides with a property of `{}`",
+                    raw.name,
+                    id.full()
+                );
+            }
+            if !require_names.insert(raw.name.clone()) {
+                bail!("duplicate require name `{}` in `{}`", raw.name, id.full());
+            }
+            let capability = raw.capability.parse().with_context(|| {
+                format!(
+                    "invalid require capability `{}` in `{}`",
+                    raw.capability,
+                    id.full()
+                )
+            })?;
+            requires.push(ComponentRequire {
+                name: raw.name.clone(),
+                capability,
+                required: raw.required,
+            });
         }
         Ok(ComponentDefinition {
             id,
             name: self.name,
-            kind,
             capabilities,
             editor: self.editor,
             script: self.script,
             properties,
+            requires,
         })
     }
 }
@@ -348,7 +456,7 @@ impl Scheduler {
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
         for component in &definition.components {
-            self.run_component(engine, loader, instance, component, ctx)?;
+            self.run_component(engine, loader, instance, definition, component, ctx)?;
         }
         Ok(())
     }
@@ -360,7 +468,7 @@ impl Scheduler {
         loader: &PluginLoader,
         kind_id: &NamespacedID,
         source_path: &str,
-    ) -> anyhow::Result<HashMap<NamespacedID, ClipBindingValue>> {
+    ) -> anyhow::Result<HashMap<PropertyKey, ClipBindingValue>> {
         let definition = loader.resolve_component_definition(kind_id)?;
         let handlers: Vec<_> = definition
             .components
@@ -417,9 +525,12 @@ impl Scheduler {
         }
 
         for (property_id, value) in returned_properties {
-            let property_id = NamespacedID::parse(&property_id).with_context(|| {
-                format!("invalid property ID returned by `{}`", handler.id.full())
-            })?;
+            // 戻り値のキーはプロパティアドレス。ハンドラ自身のプロパティは
+            // 所有者を省略した相対形（`:#name`）でも書ける。
+            let property_id = PropertyKey::parse_in_context(&property_id, &handler.id)
+                .with_context(|| {
+                    format!("invalid property ID returned by `{}`", handler.id.full())
+                })?;
             let schema = schemas.get(&property_id).with_context(|| {
                 format!(
                     "file-drop-handler `{}` returned undeclared property `{property_id}`",
@@ -443,6 +554,7 @@ impl Scheduler {
         engine: &Engine,
         loader: &PluginLoader,
         instance: &ClipInstance,
+        definition: &RuntimeDefinition,
         component: &ComponentDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
@@ -451,12 +563,10 @@ impl Scheduler {
             return Ok(());
         };
 
-        // クリップインスタンスのプロパティ全体を渡す。コンポーネントはクリップ
-        // 種別の中で組み合わされる独立部品であり、ある部品のスクリプトが兄弟部品の
-        // 宣言したプロパティを参照するのは正規の使い方である（例: media の描画
-        // スクリプトが transform コンポーネントの変換プロパティを読む）。
-        let props = field_values_to_rhai_map(&instance.properties);
-        let props_dynamic = Dynamic::from_map(props);
+        // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
+        // 依存だけが解決できる（例: video の描画スクリプトは requires 経由で
+        // transform の変換プロパティを読む）。
+        let props = ComponentProps::build(definition, instance, component)?;
 
         // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
         let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
@@ -472,7 +582,7 @@ impl Scheduler {
 
         for (_, fn_name) in calls {
             script
-                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props_dynamic.clone()))
+                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props.clone()))
                 .with_context(|| {
                     format!(
                         "capability function `{fn_name}` of component `{}` failed",

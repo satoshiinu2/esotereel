@@ -8,12 +8,12 @@
 
 ## Handler の契約
 
-Handler はプロパティ ID をキー、プロパティ値を値とする Rhai map を返します。キーは `NamespacedID` の文字列表現です。値は `FieldValue` に変換可能な値で、グループ／マップの部分指定もできます。指定しなかったプロパティやメンバーはスキーマのデフォルト値を保ちます。
+Handler はプロパティ ID をキー、プロパティ値を値とする Rhai map を返します。キーはプロパティアドレスの正規形（`std:media#media`）で、Handler 自身のプロパティについては所有者を省略した相対形（`:#media`）でも書けます。値は `FieldValue` に変換可能な値で、グループ／マップの部分指定もできます。指定しなかったプロパティやメンバーはスキーマのデフォルト値を保ちます。
 
 ```rhai
 fn handle_file_drop(source_path) {
     #{
-        "std:video:media": #{
+        "std:media#media": #{
             source: source_path,
         },
     }

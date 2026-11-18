@@ -1,0 +1,13 @@
+[[components]]
+id = "video"
+name = "Video"
+
+[[components.requires]]
+name = "media"
+capability = "frame-provider"
+required = true
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true

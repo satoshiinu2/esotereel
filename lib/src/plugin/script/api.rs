@@ -82,7 +82,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
 
     /// クリップのプロパティをパス指定で設定します。
     ///
-    /// Rhai スクリプトから `set_property(clip_id, "std:video:media/source_offset", 100)` のように
+    /// Rhai スクリプトから `set_property(clip_id, "std:media#media/source_offset", 100)` のように
     /// 呼び出し、値を型に応じて正規化（int⇄float 相互変換、文字列→数値パース、bool パースなど）
     /// した上でクリッププロパティに書き込みます。
     pub fn set_clip_property(
@@ -421,6 +421,7 @@ fn read_rhai_vector(
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
 pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
+    super::props::register_props_api(engine);
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
     engine.register_fn("mat4_trs", transform_matrix);

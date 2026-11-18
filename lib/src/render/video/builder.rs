@@ -57,7 +57,7 @@ pub struct ClipDeformation {
 ///
 /// # 能力ベースプロパティ参照
 ///
-/// プロパティ ID（`std:video:media` 等）をコード中にハードコードせず、
+/// プロパティ ID（`std:media#media` 等）をコード中にハードコードせず、
 /// コンポーネント定義の `capability` フィールドから `FrameProvider` などの能力を
 /// 逆引きしてプロパティキーを解決します。メディアプロパティのメンバー能力が
 /// 未宣言の場合は宣言不備として、そのクリップを描画しません。
@@ -103,17 +103,12 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         let media_property = runtime_def.property_by_capability(&ComponentCapability::FrameProvider);
         let media_property_key = media_property.map(|p| p.key.clone());
 
-        // メンバキーもハードコードせず、プロパティ定義の `member_capabilities`
-        // から能力ベースで解決する。メディアプロパティがあるのにメンバー能力が
-        // 宣言されていない場合は宣言不備として、そのクリップを描画しない。
+        // メンバキーもハードコードせず、メンバー自身が宣言する能力から
+        // 解決する。メディアプロパティがあるのにメンバー能力が宣言されて
+        // いない場合は宣言不備として、そのクリップを描画しない。
         // メンバー名を推測して続行はしない。
         let member_key = |capability: ComponentCapability| -> Option<&str> {
-            media_property.and_then(|p| {
-                p.member_capabilities
-                    .iter()
-                    .find(|(_, cap)| **cap == capability)
-                    .map(|(key, _)| key.as_str())
-            })
+            media_property.and_then(|p| p.member_key_by_capability(&capability))
         };
         let source_member_key = member_key(ComponentCapability::MediaSource);
         let offset_member_key = member_key(ComponentCapability::MediaOffsetProvider);

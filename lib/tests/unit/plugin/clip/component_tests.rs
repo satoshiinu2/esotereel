@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use super::*;
 use crate::plugin::property::value::FieldTypeKind;
 
@@ -7,10 +5,10 @@ fn make_def(id_local: &str) -> ComponentDefinition {
     ComponentDefinition {
         id: NamespacedID::new("std", id_local).unwrap(),
         name: id_local.to_string(),
-        kind: NamespacedID::new("std", "transform").unwrap(),
         capabilities: BTreeSet::from([ComponentCapability::Transformable]),
         editor: Some("transform".to_string()),
         script: None,
+        requires: Vec::new(),
         properties: Vec::new(),
     }
 }
@@ -24,7 +22,6 @@ fn registry_insert_and_lookup() {
         .merge_component_definitions(HashMap::from([(id.clone(), def)]))
         .unwrap();
     assert!(registry.contains(&id));
-    assert_eq!(registry.get(&id).unwrap().kind.full(), "std:transform");
     assert_eq!(registry.len(), 1);
 }
 
@@ -36,13 +33,13 @@ fn by_capability_filter() {
     let media = ComponentDefinition {
         id: NamespacedID::new("std", "video").unwrap(),
         name: "Video".to_string(),
-        kind: NamespacedID::new("std", "media-provider").unwrap(),
         capabilities: BTreeSet::from([
             ComponentCapability::FrameProvider,
             ComponentCapability::Prefetchable,
         ]),
         editor: Some("video".to_string()),
         script: None,
+        requires: Vec::new(),
         properties: Vec::new(),
     };
     let media_id = media.id.clone();
@@ -89,14 +86,12 @@ fn parse_component_definitions_from_toml() {
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
 capabilities = ["frame-provider", "prefetchable"]
 editor = "video"
 
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 "#;
@@ -106,7 +101,6 @@ editor = "transform"
     let media = map
         .get(&NamespacedID::new("std", "media").unwrap())
         .unwrap();
-    assert_eq!(media.kind.full(), "std:media-provider");
     assert!(
         media
             .capabilities
@@ -130,7 +124,6 @@ editor = "transform"
     let transform = map
         .get(&NamespacedID::new("std", "transform").unwrap())
         .unwrap();
-    assert_eq!(transform.kind.full(), "std:transform");
     assert!(
         transform
             .capabilities
@@ -144,7 +137,6 @@ fn parse_component_definitions_with_properties() {
 [[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 properties = [
   { key = "source", label = "Source", kind = { type = "string" } },
@@ -160,7 +152,7 @@ properties = [
     let source = video
         .properties
         .iter()
-        .find(|p| p.key.full() == "std:source")
+        .find(|p| p.key.address() == "std:video#source")
         .unwrap();
     assert_eq!(source.label, "Source");
     assert!(matches!(source.kind, FieldTypeKind::String));
@@ -169,7 +161,7 @@ properties = [
     let volume = video
         .properties
         .iter()
-        .find(|p| p.key.full() == "std:volume")
+        .find(|p| p.key.address() == "std:video#volume")
         .unwrap();
     assert_eq!(volume.label, "Volume");
     assert_eq!(volume.default, FieldValue::Float(1.0));
@@ -181,7 +173,6 @@ fn unknown_capability_is_rejected() {
 [[components]]
 id = "custom"
 name = "Custom"
-kind = "custom-kind"
 capabilities = ["my-custom-cap"]
 "#;
     assert!(parse_component_definitions(text, "std").is_err());
@@ -230,7 +221,7 @@ fn file_drop_values_merge_into_defaults_and_reject_unknown_fields() {
         FieldValue::String("/media/clip.mp4".to_string()),
     )]));
 
-    merge_field_value(&mut defaults, returned, "std:video:media").unwrap();
+    merge_field_value(&mut defaults, returned, "std:media#media").unwrap();
 
     assert_eq!(
         defaults,
@@ -251,7 +242,7 @@ fn file_drop_values_merge_into_defaults_and_reject_unknown_fields() {
         FieldValue::String("value".to_string()),
     )]));
     assert!(
-        merge_field_value(&mut defaults, unknown_field, "std:video:media")
+        merge_field_value(&mut defaults, unknown_field, "std:media#media")
             .unwrap_err()
             .to_string()
             .contains("undeclared field")
@@ -264,14 +255,14 @@ fn file_drop_handler_returns_property_map() {
     let ast = engine
         .compile(
             r#"
-                fn handle_file_drop(source_path) {
-                    #{
-                        "std:video:media": #{
-                            source: source_path,
-                        },
+                    fn handle_file_drop(source_path) {
+                        #{
+                            "std:media#media": #{
+                                source: source_path,
+                            },
+                        }
                     }
-                }
-            "#,
+                "#,
         )
         .unwrap();
     let script = crate::plugin::script::CompiledScript {
@@ -289,7 +280,7 @@ fn file_drop_handler_returns_property_map() {
     let FieldValue::Map(properties) = dynamic_to_field_value(result).unwrap() else {
         panic!("handler should return a property map");
     };
-    let FieldValue::Map(media) = properties.get("std:video:media").unwrap() else {
+    let FieldValue::Map(media) = properties.get("std:media#media").unwrap() else {
         panic!("media property should be a map");
     };
     assert_eq!(
@@ -304,19 +295,19 @@ fn resolve_definition_expands_kind_components_in_order() {
     let media = ComponentDefinition {
         id: NamespacedID::new("std", "media").unwrap(),
         name: "Media".to_string(),
-        kind: NamespacedID::new("std", "media-provider").unwrap(),
         capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
         editor: None,
         script: None,
+        requires: Vec::new(),
         properties: Vec::new(),
     };
     let transform = ComponentDefinition {
         id: NamespacedID::new("std", "transform").unwrap(),
         name: "Transform".to_string(),
-        kind: NamespacedID::new("std", "transform").unwrap(),
         capabilities: BTreeSet::from([ComponentCapability::Transformable]),
         editor: None,
         script: None,
+        requires: Vec::new(),
         properties: Vec::new(),
     };
     registry
@@ -375,22 +366,21 @@ fn clip_instance_new_populates_component_property_defaults() {
     let video_def = ComponentDefinition {
         id: NamespacedID::new("std", "video").unwrap(),
         name: "Video".to_string(),
-        kind: NamespacedID::new("std", "media-provider").unwrap(),
         capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
         editor: None,
         script: None,
+        requires: Vec::new(),
         properties: vec![
             PropertySchema {
-                key: NamespacedID::new("std", "source").unwrap(),
+                key: PropertyKey::from_namespaced(NamespacedID::new("std", "source").unwrap()),
                 category: vec!["Media".to_string()],
                 label: "Source".to_string(),
                 kind: FieldTypeKind::String,
                 default: FieldValue::String("default.mp4".to_string()),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             },
             PropertySchema {
-                key: NamespacedID::new("std", "volume").unwrap(),
+                key: PropertyKey::from_namespaced(NamespacedID::new("std", "volume").unwrap()),
                 category: vec![],
                 label: "Volume".to_string(),
                 kind: FieldTypeKind::Float {
@@ -400,7 +390,6 @@ fn clip_instance_new_populates_component_property_defaults() {
                 },
                 default: FieldValue::Float(1.0),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             },
         ],
     };
@@ -409,11 +398,15 @@ fn clip_instance_new_populates_component_property_defaults() {
     assert_eq!(instance.properties.len(), 2);
 
     assert!(matches!(
-        instance.properties.get(&NamespacedID::new("std", "source").unwrap()),
+        instance.properties.get(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "source").unwrap(),
+        )),
         Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "default.mp4"
     ));
     assert!(matches!(
-        instance.properties.get(&NamespacedID::new("std", "volume").unwrap()),
+        instance.properties.get(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "volume").unwrap(),
+        )),
         Some(ClipBindingValue::Static(FieldValue::Float(v))) if *v == 1.0
     ));
     assert!(instance.state.is_empty());
@@ -424,29 +417,28 @@ fn clip_instance_new_merges_multiple_components_properties() {
     let a = ComponentDefinition {
         id: NamespacedID::new("std", "a").unwrap(),
         name: "A".to_string(),
-        kind: NamespacedID::new("std", "effect").unwrap(),
         capabilities: BTreeSet::new(),
         editor: None,
         script: None,
+        requires: Vec::new(),
         properties: vec![PropertySchema {
-            key: NamespacedID::new("std", "prop_a").unwrap(),
+            key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_a").unwrap()),
             category: vec![],
             label: "Prop A".to_string(),
             kind: FieldTypeKind::String,
             default: FieldValue::String("a".to_string()),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         }],
     };
     let b = ComponentDefinition {
         id: NamespacedID::new("std", "b").unwrap(),
         name: "B".to_string(),
-        kind: NamespacedID::new("std", "effect").unwrap(),
         capabilities: BTreeSet::new(),
         editor: None,
         script: None,
+        requires: Vec::new(),
         properties: vec![PropertySchema {
-            key: NamespacedID::new("std", "prop_b").unwrap(),
+            key: PropertyKey::from_namespaced(NamespacedID::new("std", "prop_b").unwrap()),
             category: vec![],
             label: "Prop B".to_string(),
             kind: FieldTypeKind::Int {
@@ -455,7 +447,6 @@ fn clip_instance_new_merges_multiple_components_properties() {
             },
             default: FieldValue::Int(42),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         }],
     };
 
@@ -463,11 +454,15 @@ fn clip_instance_new_merges_multiple_components_properties() {
     assert_eq!(instance.properties.len(), 2);
 
     assert!(matches!(
-        instance.properties.get(&NamespacedID::new("std", "prop_a").unwrap()),
+        instance.properties.get(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "prop_a").unwrap(),
+        )),
         Some(ClipBindingValue::Static(FieldValue::String(v))) if v == "a"
     ));
     assert!(matches!(
-        instance.properties.get(&NamespacedID::new("std", "prop_b").unwrap()),
+        instance.properties.get(&PropertyKey::from_namespaced(
+            NamespacedID::new("std", "prop_b").unwrap(),
+        )),
         Some(ClipBindingValue::Static(FieldValue::Int(v))) if *v == 42
     ));
 }
@@ -478,7 +473,6 @@ fn parse_component_definitions_properties_default_empty() {
 [[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 "#;
     let map = parse_component_definitions(text, "std").unwrap();
@@ -533,7 +527,6 @@ version = "0.1.0"
         r#"[[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 script = "video.rhai"
 "#,
@@ -559,10 +552,10 @@ script = "video.rhai"
         components: vec![ComponentDefinition {
             id: NamespacedID::new("sched-test", "video").unwrap(),
             name: "Video".to_string(),
-            kind: NamespacedID::new("sched-test", "media-provider").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: Some("video.rhai".to_string()),
+            requires: Vec::new(),
             properties: Vec::new(),
         }],
     };

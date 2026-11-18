@@ -38,9 +38,9 @@ var<storage, read_write> vertices: array<f32>;
 
 @compute @workgroup_size(64)
 fn deform_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-if (gid.x < arrayLength(&vertices) / CLIP_VERTEX_FLOATS) {
-    vertices[gid.x * CLIP_VERTEX_FLOATS + 1u] += 1.0;
-}
+    if (gid.x < arrayLength(&vertices) / CLIP_VERTEX_FLOATS) {
+        vertices[gid.x * CLIP_VERTEX_FLOATS + 1u] += 1.0;
+    }
 }
 "#,
     )

@@ -16,11 +16,10 @@ fn parse_one_string_with_default() {
         ),
         default: Some(toml::Value::String("default.mp4".to_string())),
         capability: None,
-        member_capabilities: BTreeMap::new(),
         fields: None,
     };
     let schema = PropertySchema::parse_one(raw, "std").unwrap();
-    assert_eq!(schema.key.full(), "std:source");
+    assert_eq!(schema.key.address(), "std:source");
     assert_eq!(schema.label, "Source");
     assert_eq!(schema.category, vec!["Media"]);
     assert!(matches!(schema.kind, FieldTypeKind::String));
@@ -43,7 +42,6 @@ fn parse_one_derives_default_when_omitted() {
         ),
         default: None,
         capability: None,
-        member_capabilities: BTreeMap::new(),
         fields: None,
     };
     let schema = PropertySchema::parse_one(raw, "std").unwrap();
@@ -59,7 +57,6 @@ fn parse_one_rejects_unknown_kind() {
         kind: toml::Value::String("not-a-kind".to_string()),
         default: None,
         capability: None,
-        member_capabilities: BTreeMap::new(),
         fields: None,
     };
     assert!(PropertySchema::parse_one(raw, "std").is_err());
@@ -67,7 +64,7 @@ fn parse_one_rejects_unknown_kind() {
 
 #[test]
 fn validate_properties_rejects_duplicate_keys() {
-    let key = NamespacedID::new("std", "dup").unwrap();
+    let key = PropertyKey::from_namespaced(NamespacedID::new("std", "dup").unwrap());
     let props = vec![
         PropertySchema {
             key: key.clone(),
@@ -76,7 +73,6 @@ fn validate_properties_rejects_duplicate_keys() {
             kind: FieldTypeKind::String,
             default: FieldValue::String("a".to_string()),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         },
         PropertySchema {
             key,
@@ -85,7 +81,6 @@ fn validate_properties_rejects_duplicate_keys() {
             kind: FieldTypeKind::String,
             default: FieldValue::String("b".to_string()),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         },
     ];
     assert!(PropertySchema::validate_properties(&props).is_err());
@@ -94,7 +89,7 @@ fn validate_properties_rejects_duplicate_keys() {
 #[test]
 fn group_constructor_builds_nested_default() {
     let child = PropertySchema {
-        key: NamespacedID::new("std", "font_size").unwrap(),
+        key: PropertyKey::from_namespaced(NamespacedID::new("std", "font_size").unwrap()),
         category: vec![],
         label: "Font Size".to_string(),
         kind: FieldTypeKind::Float {
@@ -104,10 +99,9 @@ fn group_constructor_builds_nested_default() {
         },
         default: FieldValue::Float(24.0),
         capability: None,
-        member_capabilities: BTreeMap::new(),
     };
     let group = PropertySchema::group(
-        NamespacedID::new("std", "style").unwrap(),
+        PropertyKey::from_namespaced(NamespacedID::new("std", "style").unwrap()),
         "Style".to_string(),
         vec![child],
     );
@@ -116,7 +110,7 @@ fn group_constructor_builds_nested_default() {
     assert!(matches!(
         group.kind,
         FieldTypeKind::Group { ref fields, .. }
-            if fields.len() == 1 && fields[0].key.full() == "std:font_size"
+            if fields.len() == 1 && fields[0].key.address() == "std:font_size"
     ));
     assert!(matches!(
         group.default,
@@ -142,7 +136,7 @@ kind = { type = "string" }
 #[test]
 fn leaf_fields_flattens_group_members() {
     let inner = PropertySchema {
-        key: NamespacedID::new("std", "x").unwrap(),
+        key: PropertyKey::from_namespaced(NamespacedID::new("std", "x").unwrap()),
         category: vec![],
         label: "X".to_string(),
         kind: FieldTypeKind::Int {
@@ -151,10 +145,9 @@ fn leaf_fields_flattens_group_members() {
         },
         default: FieldValue::Int(1),
         capability: None,
-        member_capabilities: BTreeMap::new(),
     };
     let group = PropertySchema::group(
-        NamespacedID::new("std", "g").unwrap(),
+        PropertyKey::from_namespaced(NamespacedID::new("std", "g").unwrap()),
         "Group".to_string(),
         vec![inner],
     );

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 use anyhow::{Context, bail};
 use serde::Deserialize;
@@ -131,7 +131,6 @@ fn parse_shader_property(
         })?,
         default: raw.default,
         capability: None,
-        member_capabilities: BTreeMap::new(),
         fields: None,
     };
     let schema = PropertySchema::parse_one(schema_raw, plugin_id)

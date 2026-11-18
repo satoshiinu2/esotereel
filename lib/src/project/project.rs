@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use crate::plugin::NamespacedID;
+use crate::plugin::{NamespacedID, property::PropertyKey};
 use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
@@ -149,7 +149,7 @@ impl Project {
         position: i64,
         duration: i64,
         kind_id: NamespacedID,
-        properties: HashMap<NamespacedID, ClipBindingValue>,
+        properties: HashMap<PropertyKey, ClipBindingValue>,
     ) -> anyhow::Result<ClipId> {
         let timeline = self
             .timelines
