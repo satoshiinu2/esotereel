@@ -1,8 +1,6 @@
 [[components]]
 id = "video"
 name = "Video"
-capabilities = ["frame-provider"]
-script = "video.rhai"
 
 [[components.requires]]
 name = "media"

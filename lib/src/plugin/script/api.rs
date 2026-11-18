@@ -656,9 +656,9 @@ mod render_tests {
         transform_map.insert("rotation".into(), vec([0.0, 0.0, 0.0]));
         transform_map.insert("scale".into(), vec([1.0, 1.0, 1.0]));
 
-        // Scheduler と同じ経路で props を構築する: 描画役の video コンポーネントは
-        // 自プロパティを持たず、[[requires]] で宣言した media / transform 依存だけが
-        // ローカル名で解決できる。
+        // Scheduler と同じ経路で props を構築する: render_frame を担う media
+        // コンポーネントは、自プロパティと [[requires]] で宣言した transform
+        // 依存がローカル名で解決できる。
         let definition = RuntimeDefinition {
             kind_id: crate::plugin::NamespacedID::new("std", "video").unwrap(),
             components: vec![
@@ -689,7 +689,7 @@ mod render_tests {
         register_render_api(&mut engine);
         let script = plugin
             .component_scripts
-            .get(&crate::plugin::NamespacedID::new("std", "video").unwrap())
+            .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
             .unwrap();
         script
             .call::<()>(
@@ -697,7 +697,7 @@ mod render_tests {
                 "render_frame",
                 (
                     context.clone(),
-                    ComponentProps::build(&definition, &instance, video_component).unwrap(),
+                    ComponentProps::build(&definition, &instance, media_component).unwrap(),
                 ),
             )
             .unwrap();
@@ -754,7 +754,7 @@ mod render_tests {
                     "render_frame",
                     (
                         context.clone(),
-                        ComponentProps::build(&definition, &instance, video_component).unwrap(),
+                        ComponentProps::build(&definition, &instance, media_component).unwrap(),
                     ),
                 )
                 .unwrap();
