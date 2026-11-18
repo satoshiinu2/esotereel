@@ -29,8 +29,8 @@ pub enum ComponentHook {
 /// コンポーネントの定義。
 ///
 /// プラグインが TOML で宣言し、Component Registry に登録される。
-/// `kind` は `NamespacedID`（例: `std:media-provider`）であり、ネイティブ側では
-/// 種別判定より `capabilities` を通じた能力ベースのアクセスを原則とする。
+/// ネイティブ側では ID による種別判定より `capabilities` を通じた
+/// 能力ベースのアクセスを原則とする。
 /// コンポーネントは独立した部品であり、どのクリップ種別がどのコンポーネントで
 /// 構成されるかはクリップ種別（`ClipKind`）側が宣言する。定義は Kind ごとに1つ、
 /// 状態（Runtime State）は Clip Instance ごとに独立する。
@@ -38,9 +38,6 @@ pub enum ComponentHook {
 pub struct ComponentDefinition {
     pub id: NamespacedID,
     pub name: String,
-    /// このコンポーネントの種別を参照する NamespacedID。
-    /// Capability 経由でのアクセスが基本のため、ここでは単なる参照として保持する。
-    pub kind: NamespacedID,
     pub capabilities: BTreeSet<ComponentCapability>,
     pub editor: Option<String>,
     /// このコンポーネント専用の Rhai スクリプトファイルパス（プラグインディレクトリからの相対パス）。
@@ -341,7 +338,6 @@ pub(crate) fn resolve_namespaced(value: &str, plugin_id: &str) -> anyhow::Result
 pub(crate) struct ComponentDefinitionRaw {
     pub id: String,
     pub name: String,
-    pub kind: String,
     #[serde(default)]
     pub capabilities: Vec<String>,
     #[serde(default)]
@@ -371,8 +367,6 @@ impl ComponentDefinitionRaw {
                 self.id, plugin_id
             )
         })?;
-        let kind = resolve_namespaced(&self.kind, plugin_id)
-            .with_context(|| format!("invalid component kind `{}`", self.kind))?;
         let mut capabilities = BTreeSet::new();
         for cap in &self.capabilities {
             capabilities.insert(cap.parse().with_context(|| {
@@ -415,7 +409,6 @@ impl ComponentDefinitionRaw {
         Ok(ComponentDefinition {
             id,
             name: self.name,
-            kind,
             capabilities,
             editor: self.editor,
             script: self.script,
@@ -731,7 +724,6 @@ mod tests {
         ComponentDefinition {
             id: NamespacedID::new("std", id_local).unwrap(),
             name: id_local.to_string(),
-            kind: NamespacedID::new("std", "transform").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: Some("transform".to_string()),
             script: None,
@@ -749,7 +741,6 @@ mod tests {
             .merge_component_definitions(HashMap::from([(id.clone(), def)]))
             .unwrap();
         assert!(registry.contains(&id));
-        assert_eq!(registry.get(&id).unwrap().kind.full(), "std:transform");
         assert_eq!(registry.len(), 1);
     }
 
@@ -761,7 +752,6 @@ mod tests {
         let media = ComponentDefinition {
             id: NamespacedID::new("std", "video").unwrap(),
             name: "Video".to_string(),
-            kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: BTreeSet::from([
                 ComponentCapability::FrameProvider,
                 ComponentCapability::Prefetchable,
@@ -815,14 +805,12 @@ mod tests {
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
 capabilities = ["frame-provider", "prefetchable"]
 editor = "video"
 
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 "#;
@@ -832,7 +820,6 @@ editor = "transform"
         let media = map
             .get(&NamespacedID::new("std", "media").unwrap())
             .unwrap();
-        assert_eq!(media.kind.full(), "std:media-provider");
         assert!(
             media
                 .capabilities
@@ -856,7 +843,6 @@ editor = "transform"
         let transform = map
             .get(&NamespacedID::new("std", "transform").unwrap())
             .unwrap();
-        assert_eq!(transform.kind.full(), "std:transform");
         assert!(
             transform
                 .capabilities
@@ -870,7 +856,6 @@ editor = "transform"
 [[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 properties = [
   { key = "source", label = "Source", kind = { type = "string" } },
@@ -907,7 +892,6 @@ properties = [
 [[components]]
 id = "custom"
 name = "Custom"
-kind = "custom-kind"
 capabilities = ["my-custom-cap"]
 "#;
         assert!(parse_component_definitions(text, "std").is_err());
@@ -1030,7 +1014,6 @@ capabilities = ["my-custom-cap"]
         let media = ComponentDefinition {
             id: NamespacedID::new("std", "media").unwrap(),
             name: "Media".to_string(),
-            kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
@@ -1040,7 +1023,6 @@ capabilities = ["my-custom-cap"]
         let transform = ComponentDefinition {
             id: NamespacedID::new("std", "transform").unwrap(),
             name: "Transform".to_string(),
-            kind: NamespacedID::new("std", "transform").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::Transformable]),
             editor: None,
             script: None,
@@ -1103,7 +1085,6 @@ capabilities = ["my-custom-cap"]
         let video_def = ComponentDefinition {
             id: NamespacedID::new("std", "video").unwrap(),
             name: "Video".to_string(),
-            kind: NamespacedID::new("std", "media-provider").unwrap(),
             capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
             editor: None,
             script: None,
@@ -1157,7 +1138,6 @@ capabilities = ["my-custom-cap"]
         let a = ComponentDefinition {
             id: NamespacedID::new("std", "a").unwrap(),
             name: "A".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: BTreeSet::new(),
             editor: None,
             script: None,
@@ -1175,7 +1155,6 @@ capabilities = ["my-custom-cap"]
         let b = ComponentDefinition {
             id: NamespacedID::new("std", "b").unwrap(),
             name: "B".to_string(),
-            kind: NamespacedID::new("std", "effect").unwrap(),
             capabilities: BTreeSet::new(),
             editor: None,
             script: None,
@@ -1217,7 +1196,6 @@ capabilities = ["my-custom-cap"]
 [[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 "#;
         let map = parse_component_definitions(text, "std").unwrap();
@@ -1272,7 +1250,6 @@ version = "0.1.0"
             r#"[[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider"]
 script = "video.rhai"
 "#,
@@ -1298,7 +1275,6 @@ script = "video.rhai"
             components: vec![ComponentDefinition {
                 id: NamespacedID::new("sched-test", "video").unwrap(),
                 name: "Video".to_string(),
-                kind: NamespacedID::new("sched-test", "media-provider").unwrap(),
                 capabilities: BTreeSet::from([ComponentCapability::FrameProvider]),
                 editor: None,
                 script: Some("video.rhai".to_string()),

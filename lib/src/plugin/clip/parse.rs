@@ -120,7 +120,6 @@ components = ["media", "other:transform"]
 [[components]]
 id = "video"
 name = "Video"
-kind = "media-provider"
 capabilities = ["frame-provider", "prefetchable"]
 editor = "video"
 script = "video.rhai"
@@ -134,7 +133,6 @@ properties = [
         let video = map
             .get(&NamespacedID::new("std", "video").unwrap())
             .unwrap();
-        assert_eq!(video.kind.full(), "std:media-provider");
         assert!(video.capabilities.contains(&ComponentCapability::FrameProvider));
         assert_eq!(video.properties.len(), 1);
         assert_eq!(video.properties[0].key.address(), "std:video#source");
@@ -146,11 +144,9 @@ properties = [
 [[components]]
 id = "dup"
 name = "Dup"
-kind = "effect"
 [[components]]
 id = "dup"
 name = "Dup again"
-kind = "effect"
 "#;
         assert!(parse_component_definitions(text, "std").is_err());
     }

@@ -235,7 +235,6 @@ mod tests {
         ComponentDefinition {
             id: id.clone(),
             name: id.local_id().to_string(),
-            kind: id.clone(),
             capabilities: capabilities.iter().cloned().collect::<BTreeSet<_>>(),
             editor: None,
             script: None,

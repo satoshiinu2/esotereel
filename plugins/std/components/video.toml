@@ -1,7 +1,6 @@
 [[components]]
 id = "video"
 name = "Video"
-kind = "renderer"
 capabilities = ["frame-provider"]
 script = "video.rhai"
 

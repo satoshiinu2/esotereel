@@ -1,7 +1,6 @@
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
 capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
 script = "media.rhai"
