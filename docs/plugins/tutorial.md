@@ -79,11 +79,10 @@ video クリップは、次のファイルの組み合わせでできていま�
      { key = "media", label = "Media",
        kind = { type = "group" },
        fields = [
-         { key = "source", label = "Source", kind = { type = "string" }, default = "" },
-         { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
+         { key = "source", label = "Source", kind = { type = "string" }, default = "", capability = "media-source" },
+         { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0", capability = "media-offset-provider" },
        ],
        capability = "frame-provider",
-       member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
        default = { source = "", source_offset = "0" } },
    ]
 
