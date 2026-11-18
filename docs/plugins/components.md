@@ -11,7 +11,6 @@
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
 capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
 script = "media.rhai"
@@ -31,7 +30,6 @@ properties = [
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
@@ -50,7 +48,6 @@ properties = [
 [[components]]
 id = "video"
 name = "Video"
-kind = "renderer"
 capabilities = ["frame-provider"]
 script = "video.rhai"
 
@@ -71,7 +68,6 @@ required = true
 |------------|------|------|------|
 | `id` | 文字列 | ○ | コンポーネントのローカル ID。名前空間付き ID は `<plugin_id>:<id>` になります |
 | `name` | 文字列 | ○ | コンポーネントの表示名 |
-| `kind` | 文字列 | ○ | コンポーネントの種別への参照。ローカル名で書くと自プラグインの名前空間で解決され、`plugin:local` 形式で他プラグインの種別も参照できます |
 | `capabilities` | 文字列の配列 | ― | このコンポーネントが提供する能力の一覧（第 2 節）。省略時は空 |
 | `editor` | 文字列 | ― | GUI 側でこのコンポーネントの編集に使うエディタの識別子 |
 | `script` | 文字列 | ― | このコンポーネント専用の Rhai スクリプト。`components/` ディレクトリからの相対パスで指定します。省略したコンポーネントはスクリプト実行の対象外になります（GUI 専用定義など） |
@@ -80,7 +76,7 @@ required = true
 
 ## 2. capability（能力）
 
-capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの `kind` や ID ではなく capability を見て連携します。
+capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの ID ではなく capability を見て連携します。
 
 標準の capability は次のとおりです。文字列は TOML に書く小文字 kebab-case 表記です。
 

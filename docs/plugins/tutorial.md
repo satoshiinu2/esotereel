@@ -73,7 +73,6 @@ video クリップは、次のファイルの組み合わせでできていま�
    [[components]]
    id = "photo"
    name = "Photo"
-   kind = "media-provider"
    capabilities = ["frame-provider", "prefetchable"]
    editor = "video"
    script = "photo.rhai"
@@ -97,7 +96,6 @@ video クリップは、次のファイルの組み合わせでできていま�
    [[components]]
    id = "photo-transform"
    name = "Photo Transform"
-   kind = "transform"
    capabilities = ["transformable"]
    editor = "transform"
    properties = [

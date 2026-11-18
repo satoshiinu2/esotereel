@@ -19,7 +19,6 @@
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
 capabilities = ["prefetchable", "file-drop-handler"]
 editor = "video"
 script = "media.rhai"
@@ -31,7 +30,6 @@ properties = [
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
@@ -42,7 +40,6 @@ properties = [
 [[components]]
 id = "video"
 name = "Video"
-kind = "renderer"
 capabilities = ["frame-provider"]
 script = "video.rhai"
 
