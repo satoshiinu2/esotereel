@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     str::FromStr,
 };
 
@@ -122,13 +122,6 @@ pub struct PropertySchema {
     /// 設定スキーマなど能力に関係ないプロパティは None。
     #[serde(default)]
     pub capability: Option<ComponentCapability>,
-    /// マップ型プロパティのメンバー（キー名）に対する能力マッピング。
-    /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider` 能力を持つ場合、
-    /// レンダラーは能力からどのメンバーを読むかを解決できる。
-    /// ハードコードされたメンバキー文字列（"source", "source_offset" など）に依存しないため、
-    /// プラグインは任意のメンバー名を宣言できる。
-    #[serde(default)]
-    pub member_capabilities: BTreeMap<String, ComponentCapability>,
 }
 
 /// プロパティキーの名前空間スコープ。パース時にキーの所有者を決めます。
@@ -176,8 +169,20 @@ impl PropertySchema {
             kind: FieldTypeKind::Group { fields },
             default,
             capability: None,
-            member_capabilities: BTreeMap::new(),
         }
+    }
+
+    /// グループ型プロパティのメンバーのうち、指定能力を宣言するメンバーの
+    /// ローカル名を逆引きする。メンバー自身が `capability` を宣言するため、
+    /// 存在しないメンバーを指すことはない。
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
+        let FieldTypeKind::Group { fields } = &self.kind else {
+            return None;
+        };
+        fields
+            .iter()
+            .find(|field| field.capability.as_ref() == Some(capability))
+            .map(|field| field.key.local_name())
     }
 
     /// グループ構造を「エディタ用の平坦な葉（leaf）一覧」に展開します。
@@ -314,22 +319,6 @@ impl PropertySchema {
             None => None,
         };
 
-        // メンバーレベルの能力マッピング（マップ型プロパティ用）
-        let member_capabilities = raw
-            .member_capabilities
-            .iter()
-            .map(|(member_key, cap_str)| {
-                ComponentCapability::from_str(cap_str)
-                    .map(|cap| (member_key.clone(), cap))
-                    .with_context(|| {
-                        format!(
-                            "invalid `member_capabilities` capability `{cap_str}` for member `{member_key}` on key `{}` in `{plugin_id}`",
-                            raw.key
-                        )
-                    })
-            })
-            .collect::<anyhow::Result<BTreeMap<String, ComponentCapability>>>()?;
-
         // default定義されていなかったらフォールバック
         let default = match raw.default {
             Some(v) => kind.parse_toml_to(&v).with_context(|| {
@@ -353,7 +342,6 @@ impl PropertySchema {
             kind,
             default,
             capability,
-            member_capabilities,
         })
     }
 
@@ -431,7 +419,6 @@ mod tests {
             ),
             default: Some(toml::Value::String("default.mp4".to_string())),
             capability: None,
-            member_capabilities: BTreeMap::new(),
             fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
@@ -458,7 +445,6 @@ mod tests {
             ),
             default: None,
             capability: None,
-            member_capabilities: BTreeMap::new(),
             fields: None,
         };
         let schema = PropertySchema::parse_one(raw, "std").unwrap();
@@ -474,7 +460,6 @@ mod tests {
             kind: toml::Value::String("not-a-kind".to_string()),
             default: None,
             capability: None,
-            member_capabilities: BTreeMap::new(),
             fields: None,
         };
         assert!(PropertySchema::parse_one(raw, "std").is_err());
@@ -491,7 +476,6 @@ mod tests {
                 kind: FieldTypeKind::String,
                 default: FieldValue::String("a".to_string()),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             },
             PropertySchema {
                 key,
@@ -500,7 +484,6 @@ mod tests {
                 kind: FieldTypeKind::String,
                 default: FieldValue::String("b".to_string()),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             },
         ];
         assert!(PropertySchema::validate_properties(&props).is_err());
@@ -519,7 +502,6 @@ mod tests {
             },
             default: FieldValue::Float(24.0),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         };
         let group = PropertySchema::group(
             PropertyKey::from_namespaced(NamespacedID::new("std", "style").unwrap()),
@@ -566,7 +548,6 @@ kind = { type = "string" }
             },
             default: FieldValue::Int(1),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         };
         let group = PropertySchema::group(
             PropertyKey::from_namespaced(NamespacedID::new("std", "g").unwrap()),

@@ -73,24 +73,16 @@ pub struct ComponentRequire {
 }
 
 impl ComponentDefinition {
-    /// `FrameProvider` 能力を持つプロパティの `member_capabilities` から、
-    /// 指定能力を持つメンバーのキーを逆引きする。
+    /// `FrameProvider` 能力を持つプロパティのメンバーのうち、指定能力を
+    /// 宣言するメンバーのキーを逆引きする。
     ///
     /// ハードコードされたメンバキー（`"source_offset"` 等）に依存せず、
-    /// コンポーネントが宣言する能力からプロパティを参照する（AGENTS.md 第9条）。
-    ///
-    /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider`
-    /// 能力を宣言している場合、そのメンバーのキーを返す。
-    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
+    /// メンバー自身が宣言する能力から参照する（AGENTS.md 第9条）。
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
         self.properties
             .iter()
             .find(|p| p.capability == Some(ComponentCapability::FrameProvider))
-            .and_then(|p| {
-                p.member_capabilities
-                    .iter()
-                    .find(|(_, cap)| *cap == capability)
-                    .map(|(key, _)| key)
-            })
+            .and_then(|p| p.member_key_by_capability(capability))
     }
 }
 
@@ -118,7 +110,7 @@ impl RuntimeDefinition {
     }
 
     /// 構成全体から、指定メンバー能力を持つメンバーキーを逆引きする。
-    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&String> {
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
         self.components
             .iter()
             .find_map(|component| component.member_key_by_capability(capability))
@@ -127,7 +119,7 @@ impl RuntimeDefinition {
     /// プロパティ能力とメンバー能力からプロパティパスを能力ベースで解決する。
     ///
     /// ルートは `property_capability` を持つプロパティのキー、メンバーはその
-    /// プロパティの `member_capabilities` で `member_capability` を持つメンバー。
+    /// プロパティのメンバーのうち `member_capability` を宣言するメンバー。
     /// どちらかの宣言が無ければ `None`。
     pub fn member_path(
         &self,
@@ -135,11 +127,7 @@ impl RuntimeDefinition {
         member_capability: &ComponentCapability,
     ) -> Option<PropertyPath> {
         let property = self.property_by_capability(property_capability)?;
-        let member = property
-            .member_capabilities
-            .iter()
-            .find(|(_, cap)| *cap == member_capability)
-            .map(|(key, _)| key)?;
+        let member = property.member_key_by_capability(member_capability)?;
         PropertyPath::from(property.key.clone()).child(member).ok()
     }
 
@@ -161,15 +149,11 @@ impl RuntimeDefinition {
                 if schema.capability.as_ref() == Some(&require.capability) {
                     return Some(RequirementResolution::Property { component, schema });
                 }
-                if let Some((member, _)) = schema
-                    .member_capabilities
-                    .iter()
-                    .find(|(_, cap)| **cap == require.capability)
-                {
+                if let Some(member) = schema.member_key_by_capability(&require.capability) {
                     return Some(RequirementResolution::Member {
                         component,
                         schema,
-                        member: member.as_str(),
+                        member,
                     });
                 }
             }
@@ -715,8 +699,6 @@ fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
     use crate::plugin::property::value::FieldTypeKind;
 
@@ -1097,7 +1079,6 @@ capabilities = ["my-custom-cap"]
                     kind: FieldTypeKind::String,
                     default: FieldValue::String("default.mp4".to_string()),
                     capability: None,
-                    member_capabilities: BTreeMap::new(),
                 },
                 PropertySchema {
                     key: PropertyKey::from_namespaced(NamespacedID::new("std", "volume").unwrap()),
@@ -1110,7 +1091,6 @@ capabilities = ["my-custom-cap"]
                     },
                     default: FieldValue::Float(1.0),
                     capability: None,
-                    member_capabilities: BTreeMap::new(),
                 },
             ],
         };
@@ -1149,7 +1129,6 @@ capabilities = ["my-custom-cap"]
                 kind: FieldTypeKind::String,
                 default: FieldValue::String("a".to_string()),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             }],
         };
         let b = ComponentDefinition {
@@ -1169,7 +1148,6 @@ capabilities = ["my-custom-cap"]
                 },
                 default: FieldValue::Int(42),
                 capability: None,
-                member_capabilities: BTreeMap::new(),
             }],
         };
 

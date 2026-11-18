@@ -74,7 +74,6 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
             kind: level_kind.clone(),
             default: FieldValue::Enum("Info".to_owned()),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         },
         PropertySchema {
             key: PropertyKey::from_namespaced(NamespacedID::new("core", "log.filters")?),
@@ -86,7 +85,6 @@ fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
             },
             default: FieldValue::Map(BTreeMap::new()),
             capability: None,
-            member_capabilities: BTreeMap::new(),
         },
     ])
 }

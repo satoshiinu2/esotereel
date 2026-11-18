@@ -198,7 +198,7 @@ pub fn register_props_api(engine: &mut Engine) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, BTreeSet, HashMap};
+    use std::collections::{BTreeSet, HashMap};
 
     use rhai::{Engine, Scope};
 
@@ -222,7 +222,6 @@ mod tests {
             },
             default: FieldValue::Int(0),
             capability,
-            member_capabilities: BTreeMap::new(),
         }
     }
 
