@@ -5,7 +5,8 @@ use rhai::{Dynamic, Engine};
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
-    ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
+    CapabilityCall, ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw,
+    value::FieldValue,
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
@@ -486,9 +487,10 @@ impl Scheduler {
             );
         };
 
-        let fn_name = ComponentCapability::FileDropHandler
-            .standard_fn()
-            .context("file-drop-handler capability has no function mapping")?;
+        let CapabilityCall::FileDrop { fn_name } = ComponentCapability::FileDropHandler.call()
+        else {
+            anyhow::bail!("file-drop-handler capability has no function mapping");
+        };
         let script = loader.get_component_script(&handler.id).with_context(|| {
             format!(
                 "file-drop-handler component `{}` has no script",
@@ -568,14 +570,12 @@ impl Scheduler {
         // transform の変換プロパティを読む）。
         let props = ComponentProps::build(definition, instance, component)?;
 
-        // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
+        // Scheduler 呼び出しの性質を持つ能力だけを、フックタイミング順に呼び出す。
+        // FileDrop や Marker の能力は呼び出し規約が異なるため、ここでは対象外。
         let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
         for cap in &component.capabilities {
-            if *cap == ComponentCapability::FileDropHandler {
-                continue;
-            }
-            if let Some(fn_name) = cap.standard_fn() {
-                calls.push((cap.hook_timing(), fn_name));
+            if let CapabilityCall::Scheduler { fn_name, hook } = cap.call() {
+                calls.push((hook, fn_name));
             }
         }
         calls.sort_by_key(|(hook, _)| hook.clone());
@@ -889,22 +889,37 @@ capabilities = ["my-custom-cap"]
     }
 
     #[test]
-    fn capability_standard_fn_mappings() {
+    fn capability_call_mappings() {
         assert_eq!(
-            ComponentCapability::FrameProvider.standard_fn(),
-            Some("render_frame")
+            ComponentCapability::FrameProvider.call(),
+            CapabilityCall::Scheduler {
+                fn_name: "render_frame",
+                hook: ComponentHook::Evaluate
+            }
         );
         assert_eq!(
-            ComponentCapability::Prefetchable.standard_fn(),
-            Some("prefetch")
+            ComponentCapability::Prefetchable.call(),
+            CapabilityCall::Scheduler {
+                fn_name: "prefetch",
+                hook: ComponentHook::Prefetch
+            }
         );
         assert_eq!(
-            ComponentCapability::Transformable.standard_fn(),
-            Some("get_transform")
+            ComponentCapability::Transformable.call(),
+            CapabilityCall::Scheduler {
+                fn_name: "get_transform",
+                hook: ComponentHook::Process
+            }
         );
         assert_eq!(
-            ComponentCapability::FileDropHandler.standard_fn(),
-            Some("handle_file_drop")
+            ComponentCapability::FileDropHandler.call(),
+            CapabilityCall::FileDrop {
+                fn_name: "handle_file_drop"
+            }
+        );
+        assert_eq!(
+            ComponentCapability::MediaSource.call(),
+            CapabilityCall::Marker
         );
     }
 

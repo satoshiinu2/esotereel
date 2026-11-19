@@ -16,12 +16,30 @@ use crate::plugin::{
     },
 };
 
+/// コンポーネント能力の呼び出しの性質。
+///
+/// 能力ごとに呼び出し規約が異なるため、関数名やタイミングを個別の
+/// メソッドで分散させず、この enum で性質ごと表す。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CapabilityCall {
+    /// `Scheduler` が通常実行時に `(ctx, props)` で呼ぶ。
+    Scheduler {
+        fn_name: &'static str,
+        hook: ComponentHook,
+    },
+    /// ファイルドロップ時に生成専用経路が `(source_path)` で1回だけ呼ぶ。
+    /// 戻り値は初期プロパティとして適用される。
+    FileDrop { fn_name: &'static str },
+    /// 対応する関数を持たない。プロパティのメンバー等を能力で参照するためだけに使う。
+    Marker,
+}
+
 /// `ComponentCapability` の全バリアントを1つの表から生成するマクロ。
-/// `as_str` / `standard_fn` / `hook_timing` / `FromStr` をすべて生成する。
+/// `as_str` / `call` / `FromStr` をすべて生成する。
 macro_rules! component_capabilities {
     ($(
         $(#[$doc:meta])*
-        $variant:ident: $name:literal, $standard_fn:expr, $hook:ident;
+        $variant:ident: $name:literal, $call:expr;
     )*) => {
         /// コンポーネントが何を提供できるか（能力）。
         ///
@@ -46,19 +64,11 @@ macro_rules! component_capabilities {
                 }
             }
 
-            /// この能力が要求する標準関数名を返す（Rust の trait メソッドに相当）。
+            /// この能力の呼び出しの性質を返す。
             /// 各コンポーネントスクリプトは、宣言する能力に対応する標準関数を実装する必要がある。
-            pub fn standard_fn(&self) -> Option<&'static str> {
+            pub fn call(&self) -> CapabilityCall {
                 match self {
-                    $(ComponentCapability::$variant => $standard_fn,)*
-                }
-            }
-
-            /// この能力の関数を呼び出すべきフックタイミング（実行順序決定用）。
-            /// `Scheduler` はこのタイミング順に標準関数を呼び出します。
-            pub fn hook_timing(&self) -> ComponentHook {
-                match self {
-                    $(ComponentCapability::$variant => ComponentHook::$hook,)*
+                    $(ComponentCapability::$variant => $call,)*
                 }
             }
         }
@@ -78,23 +88,23 @@ macro_rules! component_capabilities {
 
 component_capabilities! {
     /// 時刻に対応する映像フレームを供給する。
-    FrameProvider: "frame-provider", Some("render_frame"), Evaluate;
+    FrameProvider: "frame-provider", CapabilityCall::Scheduler { fn_name: "render_frame", hook: ComponentHook::Evaluate };
     /// 音声データを供給する。
-    AudioProvider: "audio-provider", Some("render_audio"), Evaluate;
+    AudioProvider: "audio-provider", CapabilityCall::Scheduler { fn_name: "render_audio", hook: ComponentHook::Evaluate };
     /// 位置・回転・拡大縮小を提供する。
-    Transformable: "transformable", Some("get_transform"), Process;
+    Transformable: "transformable", CapabilityCall::Scheduler { fn_name: "get_transform", hook: ComponentHook::Process };
     /// タイムライン上での位置・長さ編集を提供する。
-    TimelinePositionable: "timeline-positionable", Some("get_timeline_position"), Process;
+    TimelinePositionable: "timeline-positionable", CapabilityCall::Scheduler { fn_name: "get_timeline_position", hook: ComponentHook::Process };
     /// データの先読みを提供する。
-    Prefetchable: "prefetchable", Some("prefetch"), Prefetch;
+    Prefetchable: "prefetchable", CapabilityCall::Scheduler { fn_name: "prefetch", hook: ComponentHook::Prefetch };
     /// キーフレーム編集を提供する。
-    Keyframeable: "keyframeable", Some("get_keyframes"), Process;
+    Keyframeable: "keyframeable", CapabilityCall::Scheduler { fn_name: "get_keyframes", hook: ComponentHook::Process };
     /// メディアソースファイルパスを提供する（マップ型プロパティのメンバーとして）。
-    MediaSource: "media-source", None, Evaluate;
+    MediaSource: "media-source", CapabilityCall::Marker;
     /// メディアオフセット（ティック単位のソース時間オフセット）を提供する（マップ型プロパティのメンバーとして）。
-    MediaOffsetProvider: "media-offset-provider", None, Evaluate;
+    MediaOffsetProvider: "media-offset-provider", CapabilityCall::Marker;
     /// ファイルのドロップ時に初期プロパティを生成する。
-    FileDropHandler: "file-drop-handler", Some("handle_file_drop"), Prepare;
+    FileDropHandler: "file-drop-handler", CapabilityCall::FileDrop { fn_name: "handle_file_drop" };
 }
 
 pub mod key;
