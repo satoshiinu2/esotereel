@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashSet},
+    collections::HashSet,
     str::FromStr,
 };
 
@@ -122,13 +122,6 @@ pub struct PropertySchema {
     /// 設定スキーマなど能力に関係ないプロパティは None。
     #[serde(default)]
     pub capability: Option<ComponentCapability>,
-    /// マップ型プロパティのメンバー（キー名）に対する能力マッピング。
-    /// 例: メディアマップ内の `source_offset` メンバーが `media-offset-provider` 能力を持つ場合、
-    /// レンダラーは能力からどのメンバーを読むかを解決できる。
-    /// ハードコードされたメンバキー文字列（"source", "source_offset" など）に依存しないため、
-    /// プラグインは任意のメンバー名を宣言できる。
-    #[serde(default)]
-    pub member_capabilities: BTreeMap<String, ComponentCapability>,
 }
 
 /// プロパティキーの名前空間スコープ。パース時にキーの所有者を決めます。
@@ -176,8 +169,20 @@ impl PropertySchema {
             kind: FieldTypeKind::Group { fields },
             default,
             capability: None,
-            member_capabilities: BTreeMap::new(),
         }
+    }
+
+    /// グループ型プロパティのメンバーのうち、指定能力を宣言するメンバーの
+    /// ローカル名を逆引きする。メンバー自身が `capability` を宣言するため、
+    /// 存在しないメンバーを指すことはない。
+    pub fn member_key_by_capability(&self, capability: &ComponentCapability) -> Option<&str> {
+        let FieldTypeKind::Group { fields } = &self.kind else {
+            return None;
+        };
+        fields
+            .iter()
+            .find(|field| field.capability.as_ref() == Some(capability))
+            .map(|field| field.key.local_name())
     }
 
     /// グループ構造を「エディタ用の平坦な葉（leaf）一覧」に展開します。
@@ -314,22 +319,6 @@ impl PropertySchema {
             None => None,
         };
 
-        // メンバーレベルの能力マッピング（マップ型プロパティ用）
-        let member_capabilities = raw
-            .member_capabilities
-            .iter()
-            .map(|(member_key, cap_str)| {
-                ComponentCapability::from_str(cap_str)
-                    .map(|cap| (member_key.clone(), cap))
-                    .with_context(|| {
-                        format!(
-                            "invalid `member_capabilities` capability `{cap_str}` for member `{member_key}` on key `{}` in `{plugin_id}`",
-                            raw.key
-                        )
-                    })
-            })
-            .collect::<anyhow::Result<BTreeMap<String, ComponentCapability>>>()?;
-
         // default定義されていなかったらフォールバック
         let default = match raw.default {
             Some(v) => kind.parse_toml_to(&v).with_context(|| {
@@ -353,7 +342,6 @@ impl PropertySchema {
             kind,
             default,
             capability,
-            member_capabilities,
         })
     }
 
@@ -412,170 +400,5 @@ pub trait PropertyHost {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_one_string_with_default() {
-        let raw = PropertySchemaRaw {
-            key: "source".to_string(),
-            label: "Source".to_string(),
-            category: vec!["Media".to_string()],
-            kind: toml::Value::Table(
-                [(
-                    "type".to_string(),
-                    toml::Value::String("string".to_string()),
-                )]
-                .into_iter()
-                .collect(),
-            ),
-            default: Some(toml::Value::String("default.mp4".to_string())),
-            capability: None,
-            member_capabilities: BTreeMap::new(),
-            fields: None,
-        };
-        let schema = PropertySchema::parse_one(raw, "std").unwrap();
-        assert_eq!(schema.key.address(), "std:source");
-        assert_eq!(schema.label, "Source");
-        assert_eq!(schema.category, vec!["Media"]);
-        assert!(matches!(schema.kind, FieldTypeKind::String));
-        assert_eq!(
-            schema.default,
-            FieldValue::String("default.mp4".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_one_derives_default_when_omitted() {
-        let raw = PropertySchemaRaw {
-            key: "count".to_string(),
-            label: "Count".to_string(),
-            category: vec![],
-            kind: toml::Value::Table(
-                [("type".to_string(), toml::Value::String("int".to_string()))]
-                    .into_iter()
-                    .collect(),
-            ),
-            default: None,
-            capability: None,
-            member_capabilities: BTreeMap::new(),
-            fields: None,
-        };
-        let schema = PropertySchema::parse_one(raw, "std").unwrap();
-        assert_eq!(schema.default, FieldValue::Int(0));
-    }
-
-    #[test]
-    fn parse_one_rejects_unknown_kind() {
-        let raw = PropertySchemaRaw {
-            key: "bad".to_string(),
-            label: "Bad".to_string(),
-            category: vec![],
-            kind: toml::Value::String("not-a-kind".to_string()),
-            default: None,
-            capability: None,
-            member_capabilities: BTreeMap::new(),
-            fields: None,
-        };
-        assert!(PropertySchema::parse_one(raw, "std").is_err());
-    }
-
-    #[test]
-    fn validate_properties_rejects_duplicate_keys() {
-        let key = PropertyKey::from_namespaced(NamespacedID::new("std", "dup").unwrap());
-        let props = vec![
-            PropertySchema {
-                key: key.clone(),
-                category: vec![],
-                label: "First".to_string(),
-                kind: FieldTypeKind::String,
-                default: FieldValue::String("a".to_string()),
-                capability: None,
-                member_capabilities: BTreeMap::new(),
-            },
-            PropertySchema {
-                key,
-                category: vec![],
-                label: "Second".to_string(),
-                kind: FieldTypeKind::String,
-                default: FieldValue::String("b".to_string()),
-                capability: None,
-                member_capabilities: BTreeMap::new(),
-            },
-        ];
-        assert!(PropertySchema::validate_properties(&props).is_err());
-    }
-
-    #[test]
-    fn group_constructor_builds_nested_default() {
-        let child = PropertySchema {
-            key: PropertyKey::from_namespaced(NamespacedID::new("std", "font_size").unwrap()),
-            category: vec![],
-            label: "Font Size".to_string(),
-            kind: FieldTypeKind::Float {
-                min: None,
-                max: None,
-                step: 1.0,
-            },
-            default: FieldValue::Float(24.0),
-            capability: None,
-            member_capabilities: BTreeMap::new(),
-        };
-        let group = PropertySchema::group(
-            PropertyKey::from_namespaced(NamespacedID::new("std", "style").unwrap()),
-            "Style".to_string(),
-            vec![child],
-        );
-        // グループはフィールド宣言だけで構成され、デフォルト値は
-        // 子フィールドのデフォルトを集めた Map になる。
-        assert!(matches!(
-            group.kind,
-            FieldTypeKind::Group { ref fields, .. }
-                if fields.len() == 1 && fields[0].key.address() == "std:font_size"
-        ));
-        assert!(matches!(
-            group.default,
-            FieldValue::Map(ref m) if m.get("font_size") == Some(&FieldValue::Float(24.0))
-        ));
-    }
-
-    #[test]
-    fn parse_toml_rejects_duplicate_property_keys() {
-        let text = r#"
-[[fields]]
-key = "dup"
-label = "Dup"
-kind = { type = "string" }
-[[fields]]
-key = "dup"
-label = "Dup again"
-kind = { type = "string" }
-"#;
-        assert!(PropertySchema::parse_toml(text, "std").is_err());
-    }
-
-    #[test]
-    fn leaf_fields_flattens_group_members() {
-        let inner = PropertySchema {
-            key: PropertyKey::from_namespaced(NamespacedID::new("std", "x").unwrap()),
-            category: vec![],
-            label: "X".to_string(),
-            kind: FieldTypeKind::Int {
-                min: None,
-                max: None,
-            },
-            default: FieldValue::Int(1),
-            capability: None,
-            member_capabilities: BTreeMap::new(),
-        };
-        let group = PropertySchema::group(
-            PropertyKey::from_namespaced(NamespacedID::new("std", "g").unwrap()),
-            "Group".to_string(),
-            vec![inner],
-        );
-        let leaves = PropertySchema::leaf_fields(&[group]).unwrap();
-        assert_eq!(leaves.len(), 1);
-        assert_eq!(leaves[0].0.to_string(), "std:g/x");
-        assert_eq!(leaves[0].1.label, "X");
-    }
-}
+#[path = "../../../tests/unit/plugin/property/mod_tests.rs"]
+mod tests;

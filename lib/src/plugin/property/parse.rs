@@ -17,10 +17,6 @@ pub struct PropertySchemaRaw {
     /// 設定スキーマなど能力に関係ないプロパティは省略可能。
     #[serde(default)]
     pub capability: Option<String>,
-    /// マップ型プロパティのメンバーに対する能力マッピング（例: { source_offset = "media-offset-provider" }）。
-    /// メンバーレベルの参照をハードコード文字列ではなく能力で解決するために使用する。
-    #[serde(default)]
-    pub member_capabilities: BTreeMap<String, String>,
     /// Group 型プロパティの子フィールド定義。
     #[serde(default)]
     pub fields: Option<Vec<PropertySchemaRaw>>,

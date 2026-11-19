@@ -19,19 +19,22 @@
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
-capabilities = ["prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler", "frame-provider"]
 editor = "video"
 script = "media.rhai"
 properties = [
-  { key = "media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" } ], capability = "frame-provider", member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }, default = { source = "", source_offset = "0" } },
+  { key = "media", label = "Media", kind = { type = "group" }, fields = [ { key = "source", label = "Source", kind = { type = "string" }, default = "", capability = "media-source" }, { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0", capability = "media-offset-provider" } ], capability = "frame-provider", default = { source = "", source_offset = "0" } },
 ]
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 
 # components/transform.toml
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
@@ -42,9 +45,6 @@ properties = [
 [[components]]
 id = "video"
 name = "Video"
-kind = "renderer"
-capabilities = ["frame-provider"]
-script = "video.rhai"
 
 [[components.requires]]
 name = "media"
@@ -68,9 +68,9 @@ components = ["media", "transform", "video"]
 レンダラー等は `FrameProvider` 能力を持つプロパティからメディア情報を、
 `Transformable` 能力を持つプロパティから変換情報を逆引きする。
 
-グループ型プロパティのメンバー（`source`, `source_offset` 等）もまた、`member_capabilities`
-で能力を紐付けられる。レンダラーはハードコードされたメンバキー文字列ではなく、
-`member_capabilities` から能力ベースでメンバキーを逆引きする。これによりプラグインは
+グループ型プロパティのメンバー（`source`, `source_offset` 等）もまた、メンバー自身が
+`capability` を宣言して能力を紐付けられる。レンダラーはハードコードされたメンバキー
+文字列ではなく、能力ベースでメンバキーを逆引きする。これによりプラグインは
 任意のメンバー名を宣言できる。
 
 グループ内のキーはローカル名で扱う。異なるグループには同じキーを配置できるが、

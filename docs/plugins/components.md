@@ -11,27 +11,29 @@
 [[components]]
 id = "media"
 name = "Media"
-kind = "media-provider"
-capabilities = ["prefetchable", "file-drop-handler"]
+capabilities = ["prefetchable", "file-drop-handler", "frame-provider"]
 editor = "video"
 script = "media.rhai"
 properties = [
   { key = "media", label = "Media",
     kind = { type = "group" },
     fields = [
-      { key = "source", label = "Source", kind = { type = "string" }, default = "" },
-      { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0" },
+      { key = "source", label = "Source", kind = { type = "string" }, default = "", capability = "media-source" },
+      { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0", capability = "media-offset-provider" },
     ],
     capability = "frame-provider",
-    member_capabilities = { source = "media-source", source_offset = "media-offset-provider" },
     default = { source = "", source_offset = "0" } },
 ]
+
+[[components.requires]]
+name = "transform"
+capability = "transformable"
+required = true
 
 # components/transform.toml
 [[components]]
 id = "transform"
 name = "Transform"
-kind = "transform"
 capabilities = ["transformable"]
 editor = "transform"
 properties = [
@@ -50,9 +52,6 @@ properties = [
 [[components]]
 id = "video"
 name = "Video"
-kind = "renderer"
-capabilities = ["frame-provider"]
-script = "video.rhai"
 
 [[components.requires]]
 name = "media"
@@ -71,7 +70,6 @@ required = true
 |------------|------|------|------|
 | `id` | 文字列 | ○ | コンポーネントのローカル ID。名前空間付き ID は `<plugin_id>:<id>` になります |
 | `name` | 文字列 | ○ | コンポーネントの表示名 |
-| `kind` | 文字列 | ○ | コンポーネントの種別への参照。ローカル名で書くと自プラグインの名前空間で解決され、`plugin:local` 形式で他プラグインの種別も参照できます |
 | `capabilities` | 文字列の配列 | ― | このコンポーネントが提供する能力の一覧（第 2 節）。省略時は空 |
 | `editor` | 文字列 | ― | GUI 側でこのコンポーネントの編集に使うエディタの識別子 |
 | `script` | 文字列 | ― | このコンポーネント専用の Rhai スクリプト。`components/` ディレクトリからの相対パスで指定します。省略したコンポーネントはスクリプト実行の対象外になります（GUI 専用定義など） |
@@ -80,7 +78,7 @@ required = true
 
 ## 2. capability（能力）
 
-capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの `kind` や ID ではなく capability を見て連携します。
+capability は「コンポーネントが何を提供できるか」の宣言です。本体（レンダラーや GUI）は、コンポーネントの ID ではなく capability を見て連携します。
 
 標準の capability は次のとおりです。文字列は TOML に書く小文字 kebab-case 表記です。
 
@@ -97,7 +95,7 @@ capability は「コンポーネントが何を提供できるか」の宣言で
 | `file-drop-handler` | ファイルドロップ時に初期プロパティを返す | `handle_file_drop` | Prepare |
 
 - **標準関数がある capability を宣言した場合、スクリプトに対応する関数を実装する必要があります**。未実装だとスケジューラの呼び出しがエラーになり、そのクリップは描画されません
-- 標準関数のない capability は、プロパティやメンバーへの目印として使います（第 5 節の `capability` / `member_capabilities`）
+- 標準関数のない capability は、プロパティやメンバーへの目印として使います（第 5 節の `capability`）
 - 上記以外の文字列は書けません。未知の capability 文字列を指定すると、コンポーネント定義の読み込み時にエラーになります
 
 ## 3. フックと実行順序
@@ -157,8 +155,7 @@ required = true
 | `kind` | テーブル | ○ | 値の型（第 5.1 節） |
 | `category` | 文字列の配列 | ― | GUI での分類。省略時は空 |
 | `default` | 任意の TOML 値 | ― | 既定値。省略した場合は `kind` から導出されます（第 5.2 節） |
-| `capability` | 文字列 | ― | このプロパティが提供する能力。本体はこの宣言を使ってプロパティを逆引きします |
-| `member_capabilities` | テーブル | ― | マップ型・グループ型のメンバー名 → capability の対応付け |
+| `capability` | 文字列 | ― | このプロパティ（グループの場合はそのメンバー）が提供する能力。本体はこの宣言を使ってプロパティやメンバーを逆引きします |
 | `fields` | スキーマの配列 | ― | `group` 型の場合の子フィールド定義 |
 
 同じ一覧内での `key` の重複はエラーになります。
@@ -202,10 +199,10 @@ required = true
 `plugins/std` の例（コンポーネントは第 4 節のとおり media / transform に分かれています）:
 
 - media コンポーネントのプロパティ `media`（group）に `capability = "frame-provider"` を宣言し、このプロパティがメディア情報の提供者であることを示す
-- そのメンバーには `member_capabilities = { source = "media-source", source_offset = "media-offset-provider" }` を宣言する
+- そのメンバーは各フィールド自身が `capability` を宣言する（`source` に `"media-source"`、`source_offset` に `"media-offset-provider"`）
 - transform コンポーネントのプロパティ `transform`（group。メンバーは `position` / `rotation` / `scale`）には `capability = "transformable"` を宣言する
 
-レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `member_capabilities` の `media-source` から、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
+レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `media-source` 能力を宣言するメンバーから、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
 
 #### プロパティアドレス
 
