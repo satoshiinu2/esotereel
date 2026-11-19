@@ -21,13 +21,21 @@ jobs:
             qt_arch: ""
             rust_target: ""
             arch: "x86_64"
+            appimage: true
+            dist: "error"
           - os: windows-latest
             qt_arch: "win64_msvc2022_64"
             rust_target: "x86_64-pc-windows-msvc"
             arch: "x86_64"
+            ffmpeg_arch: "win64"
+            msvc_arch: "x64"
+            qt_kit: "qt6_6120_msvc2022_64"
+            qt_pkg: "win64_msvc2022_64"
+            qt_dir: "msvc2022_64"
+            dist: "error"
           # macos-14 runners were retired by GitHub (jobs fail to start with
           # "The configuration 'macos-14-arm64-us-default' is not supported"),
-          # so the macOS job follows macos-latest. Qt is unified on 6.10:
+          # so the macOS job follows macos-latest. Qt is unified on 6.12:
           # 6.8 fails to link the Qt docking library on the macos-latest
           # SDK because the AGL framework was removed
           # ("ld: framework 'AGL' not found").
@@ -35,6 +43,40 @@ jobs:
             qt_arch: "clang_64"
             rust_target: ""
             arch: "arm64"
+            dist: "error"
+          # Intel Mac build on the native x86_64 runner. The Qt package
+          # (clang_64) is universal, and the artifact name differs from
+          # the arm64 job via matrix.os.
+          - os: macos-15-intel
+            qt_arch: "clang_64"
+            rust_target: ""
+            arch: "x86_64"
+            dist: "error"
+          # Linux ARM (aarch64). Pinned to ubuntu-24.04-arm: there is no
+          # 22.04 ARM runner image. AppImage packaging is skipped on this
+          # job: linuxdeployqt and appimagetool are only distributed as
+          # x86_64 AppImages, and linuxdeployqt also refuses hosts with
+          # glibc >= 2.36 (24.04 ships a newer glibc). The job covers
+          # build + tests + a launch smoke test of the raw binary.
+          - os: ubuntu-24.04-arm
+            qt_arch: ""
+            rust_target: ""
+            arch: "aarch64"
+            appimage: false
+            dist: "warn"
+          # Windows ARM64 on the native ARM runner. Qt ships an ARM64
+          # MSVC 2022 kit and BtbN publishes winarm64 FFmpeg builds, so
+          # the same flow as the x86_64 Windows job applies.
+          - os: windows-11-arm
+            qt_arch: "win64_msvc2022_arm64"
+            rust_target: "aarch64-pc-windows-msvc"
+            arch: "arm64"
+            ffmpeg_arch: "winarm64"
+            msvc_arch: "arm64"
+            qt_kit: "qt6_6120_msvc2022_arm64_cross_compiled"
+            qt_pkg: "win64_msvc2022_arm64_cross_compiled"
+            qt_dir: "msvc2022_arm64"
+            dist: "error"
 
     runs-on: ${{ matrix.os }}
 
@@ -45,6 +87,8 @@ jobs:
       - name: Setup MSVC dev environment (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -60,11 +104,53 @@ jobs:
           workspaces: "."
 
       - name: Install Qt6
+        if: runner.os != 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.10.*"
+          # Pinned to 6.12.0 like the Windows direct download below:
+          # "6.12.*" now resolves to 6.12.1, whose archive checksums
+          # aqt cannot download yet, failing every non-Windows job.
+          version: "6.12.0"
           arch: ${{ matrix.qt_arch }}
           cache: true
+
+      # Windows jobs cannot use install-qt-action: since Qt 6.11 the
+      # Windows repository uses per-kit directories
+      # (qt6_6120/qt6_6120_msvc2022_64/...) and aqt still looks for
+      # qt6_6120/qt6_6120/Updates.xml, which no longer exists, so the
+      # install fails with "Failed to locate XML data". Download the
+      # component archives listed in the kit's Updates.xml directly
+      # instead. qtdoc/qtdeclarative archives are skipped: the build
+      # only needs qtbase/qttools (plus the runtime helpers below).
+      - name: Install Qt6 (Windows, direct download)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '6.12.0'
+          $kit = '${{ matrix.qt_kit }}'
+          $pkg = "qt.qt6.6120.${{ matrix.qt_pkg }}"
+          $repo = "https://download.qt.io/online/qtsdkrepository/windows_x86/desktop/qt6_6120/$kit"
+          $dest = Join-Path $env:GITHUB_WORKSPACE "Qt\$version\${{ matrix.qt_dir }}"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          [xml]$updates = (Invoke-WebRequest -Uri "$repo/Updates.xml" -UseBasicParsing).Content
+          $node = $updates.Updates.PackageUpdate | Where-Object { $_.Name -eq $pkg } | Select-Object -First 1
+          if (-not $node) { throw "package $pkg not found in $repo/Updates.xml" }
+          $archives = ($node.DownloadableArchives -split ',\s*') | Where-Object { $_ -match '^(qtbase|qtsvg|qttools|qttranslations|d3dcompiler|opengl32sw)' }
+          $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+          if (-not (Test-Path $sevenZip)) { $sevenZip = (Get-Command 7z.exe).Source }
+          foreach ($a in $archives) {
+            $url = "$repo/$pkg/$($node.Version)$a"
+            $file = Join-Path $env:RUNNER_TEMP $a
+            Write-Host "Downloading $url"
+            curl.exe -L --fail -o $file $url
+            if ($LASTEXITCODE -ne 0) { throw "download failed: $url" }
+            & $sevenZip x $file "-o$dest" -y | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "extract failed: $a" }
+          }
+          echo "QT_ROOT_DIR=$dest" >> $env:GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$dest" >> $env:GITHUB_ENV
+          echo "$dest\bin" >> $env:GITHUB_PATH
 
       - name: Install Ninja
         run: |
@@ -89,13 +175,13 @@ jobs:
             libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavdevice-dev
 
       - name: Install linuxdeployqt (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.appimage
         run: |
           sudo wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage -O /usr/local/bin/linuxdeployqt
           sudo chmod +x /usr/local/bin/linuxdeployqt
 
       - name: Install appimagetool (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.appimage
         run: |
           sudo wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /usr/local/bin/appimagetool
           sudo chmod +x /usr/local/bin/appimagetool
@@ -108,7 +194,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-lgpl-shared-9.0.zip"
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-${{ matrix.ffmpeg_arch }}-lgpl-shared-9.0.zip"
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
           Expand-Archive -Path ffmpeg.zip -DestinationPath C:\ffmpeg
           $dir = Get-ChildItem C:\ffmpeg | Select-Object -First 1
@@ -138,7 +224,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/cmake/_deps
-          key: ${{ runner.os }}-ads-5.0.0
+          key: ${{ runner.os }}-${{ matrix.arch }}-ads-5.0.0
 
       # The FFI header generated by cbindgen declares extern "C" functions
       # returning the C++ template type FfiResult<T>. MSVC's conformance
@@ -164,6 +250,22 @@ jobs:
         run: cargo test --workspace --release
 
       # ========== パッケージ化ステップ ==========
+      # The installer scripts locate objdump.exe via PATH, but the
+      # MinGW objdump available on the ARM64 runner cannot read ARM64
+      # PE files, so build_installer.ps1 fails at its first inspection.
+      # Shim objdump.exe to llvm-objdump (same -p "DLL Name:" output)
+      # ahead of it in PATH for this job only.
+      - name: Shim objdump to llvm-objdump (Windows ARM64)
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        shell: pwsh
+        run: |
+          $llvmObjdump = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\Llvm\ARM64\bin\llvm-objdump.exe' | Select-Object -First 1
+          if (-not $llvmObjdump) { throw 'llvm-objdump.exe not found in the VS LLVM ARM64 toolchain' }
+          $shim = Join-Path $env:RUNNER_TEMP 'objdump-shim'
+          New-Item -ItemType Directory -Force -Path $shim | Out-Null
+          Copy-Item $llvmObjdump.FullName (Join-Path $shim 'objdump.exe')
+          echo $shim >> $env:GITHUB_PATH
+
       - name: Package Windows Installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -190,13 +292,13 @@ jobs:
           Write-Host "smoke OK: alive after 15s"
 
       - name: Package Linux AppImage
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.appimage
         run: bash installer/linux/build_appimage.sh
 
       # Launch smoke test (Linux): run the packaged AppImage headlessly
       # under Xvfb. --appimage-extract-and-run avoids needing FUSE.
       - name: Smoke test Linux app launch
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.appimage
         run: |
           set -u
           LOG="$RUNNER_TEMP/esotereel-smoke.log"
@@ -208,6 +310,31 @@ jobs:
             CODE=0
             wait "$PID" || CODE=$?
             echo "::error::esotereel exited within 15s (code $CODE)"
+            cat "$LOG"
+            exit 1
+          fi
+          kill "$PID" 2>/dev/null || true
+          pkill -f esotereel 2>/dev/null || true
+          echo "smoke OK: alive after 15s"
+
+      # Launch smoke test (Linux, no AppImage): jobs without AppImage
+      # packaging (ARM) smoke-test the build-tree binary directly. The
+      # GUI helper library is not installed anywhere, so point
+      # LD_LIBRARY_PATH at the Rust build output.
+      - name: Smoke test Linux app launch (unpacked binary)
+        if: runner.os == 'Linux' && !matrix.appimage
+        run: |
+          set -u
+          LOG="$RUNNER_TEMP/esotereel-smoke.log"
+          sudo apt-get install -y xvfb
+          export LD_LIBRARY_PATH="$PWD/build/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          xvfb-run -a build/cmake/esotereel_gui >"$LOG" 2>&1 &
+          PID=$!
+          sleep 15
+          if ! kill -0 "$PID" 2>/dev/null; then
+            CODE=0
+            wait "$PID" || CODE=$?
+            echo "::error::esotereel_gui exited within 15s (code $CODE)"
             cat "$LOG"
             exit 1
           fi
@@ -276,4 +403,4 @@ jobs:
         with:
           name: esotereel-${{ matrix.os }}-dist
           path: dist/*
-          if-no-files-found: error
+          if-no-files-found: ${{ matrix.dist }}

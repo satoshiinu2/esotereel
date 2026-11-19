@@ -227,9 +227,12 @@ function Resolve-EsotereelRuntimeDependencies {
             continue
         }
 
+        # Case-sensitive match: llvm-objdump also prints an export-table
+        # "DLL name:" line for the file itself, which must not be mistaken
+        # for an import. GNU objdump import lines use this exact casing.
         $imports = @(
             $output | ForEach-Object {
-                if ($_ -match 'DLL Name:\s*(.+?)\s*$') {
+                if ($_ -cmatch 'DLL Name:\s*(.+?)\s*$') {
                     $Matches[1].Trim()
                 }
             } | Select-Object -Unique

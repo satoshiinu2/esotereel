@@ -52,7 +52,7 @@ $exeImports = & $Objdump -p $CmakeExe 2>$null
 if ($LASTEXITCODE -ne 0) {
     throw "Could not inspect executable: $CmakeExe"
 }
-if (($exeImports | Where-Object { $_ -match 'DLL Name:\s*libqtadvanceddocking-qt6d\.dll\s*$' })) {
+if (($exeImports | Where-Object { $_ -cmatch 'DLL Name:\s*libqtadvanceddocking-qt6d\.dll\s*$' })) {
     throw 'The EXE imports libqtadvanceddocking-qt6d.dll (Debug). Reconfigure/rebuild build\cmake in Release against the Release Qt Advanced Docking System library before packaging.'
 }
 
