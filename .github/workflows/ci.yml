@@ -107,7 +107,10 @@ jobs:
         if: runner.os != 'Windows'
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.12.*"
+          # Pinned to 6.12.0 like the Windows direct download below:
+          # "6.12.*" now resolves to 6.12.1, whose archive checksums
+          # aqt cannot download yet, failing every non-Windows job.
+          version: "6.12.0"
           arch: ${{ matrix.qt_arch }}
           cache: true
 
