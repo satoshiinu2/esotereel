@@ -1,4 +1,4 @@
-use esotereel_lib::network::NetworkHandler;
+use esotereel_lib::network::{NetworkHandler, MAX_FRAME_SIZE};
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
@@ -110,6 +110,12 @@ impl ServerNetworkHandler {
                     let mut size_buf = [0u8; 4];
                     while reader.read_exact(&mut size_buf).await.is_ok() {
                         let size = u32::from_le_bytes(size_buf) as usize;
+                        if size > MAX_FRAME_SIZE {
+                            log::error!(
+                                "Client {client_id}: frame size {size} exceeds limit {MAX_FRAME_SIZE}, disconnecting"
+                            );
+                            break;
+                        }
                         let mut buf = vec![0u8; size];
                         if reader.read_exact(&mut buf).await.is_err() {
                             break;
