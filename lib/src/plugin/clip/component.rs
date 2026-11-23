@@ -456,8 +456,22 @@ impl Scheduler {
         definition: &RuntimeDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
+        self.run_clip_with_properties(engine, loader, &instance.properties, definition, ctx)
+    }
+
+    /// `run_clip` のプロパティマップ直接渡し版。呼び出し側が既に
+    /// プロパティマップへの参照を持っている場合に、`ClipInstance` を
+    /// 構築（＝マップ全体の clone）せずに実行できる。
+    pub fn run_clip_with_properties(
+        &self,
+        engine: &Engine,
+        loader: &PluginLoader,
+        properties: &HashMap<PropertyKey, ClipBindingValue>,
+        definition: &RuntimeDefinition,
+        ctx: &mut PluginRenderContext,
+    ) -> anyhow::Result<()> {
         for component in &definition.components {
-            self.run_component(engine, loader, instance, definition, component, ctx)?;
+            self.run_component(engine, loader, properties, definition, component, ctx)?;
         }
         Ok(())
     }
@@ -555,7 +569,7 @@ impl Scheduler {
         &self,
         engine: &Engine,
         loader: &PluginLoader,
-        instance: &ClipInstance,
+        properties: &HashMap<PropertyKey, ClipBindingValue>,
         definition: &RuntimeDefinition,
         component: &ComponentDefinition,
         ctx: &mut PluginRenderContext,
@@ -568,7 +582,7 @@ impl Scheduler {
         // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
         // 依存だけが解決できる（例: video の描画スクリプトは requires 経由で
         // transform の変換プロパティを読む）。
-        let props = ComponentProps::build(definition, instance, component)?;
+        let props = ComponentProps::build_from_properties(definition, properties, component)?;
 
         // Scheduler 呼び出しの性質を持つ能力だけを、フックタイミング順に呼び出す。
         // FileDrop や Marker の能力は呼び出し規約が異なるため、ここでは対象外。
@@ -578,11 +592,23 @@ impl Scheduler {
                 calls.push((hook, fn_name));
             }
         }
-        calls.sort_by_key(|(hook, _)| hook.clone());
+        calls.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (_, fn_name) in calls {
-            script
+        // 最後の呼び出しへは props を move し、それ以外は clone を渡す。
+        let last_call = calls.pop();
+        for (_, fn_name) in &calls {
+            let _ = script
                 .call::<Dynamic>(engine, fn_name, (ctx.clone(), props.clone()))
+                .with_context(|| {
+                    format!(
+                        "capability function `{fn_name}` of component `{}` failed",
+                        component.id.full()
+                    )
+                })?;
+        }
+        if let Some((_, fn_name)) = last_call {
+            let _ = script
+                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props))
                 .with_context(|| {
                     format!(
                         "capability function `{fn_name}` of component `{}` failed",
