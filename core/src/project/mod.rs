@@ -51,6 +51,19 @@ pub(crate) fn clip_move_mul_core(
     timeline_id: TimelineId,
     moved_clips: &[ClipMoveHistoryCtx],
 ) -> anyhow::Result<()> {
+    // 移動先レイヤーの存在を、クリップを取り出す前に確認する。
+    // 取り出し後に配置が失敗すると、クリップが行き場を失って消えてしまう。
+    {
+        let timeline = project
+            .timeline_ref(timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+        for ctx in moved_clips {
+            if timeline.get_layer(ctx.new_layer_id).is_none() {
+                return Err(EsotereelError::LayerNotFound(ctx.new_layer_id).into());
+            }
+        }
+    }
+
     let extracted = {
         let timeline = project
             .timeline_mut(timeline_id)
@@ -107,7 +120,7 @@ pub(crate) fn clip_move_mul_core(
         {
             clip.set_position(orig_pos);
             clip.duration = orig_dur;
-            let _ = timeline.place_clip(src_layer_id, clip);
+            timeline.place_clip(src_layer_id, clip)?;
         }
         return Ok(());
     }
@@ -117,7 +130,7 @@ pub(crate) fn clip_move_mul_core(
     {
         clip.set_position(new_pos);
         clip.duration = new_dur;
-        let _ = timeline.place_clip(dest_layer_id, clip);
+        timeline.place_clip(dest_layer_id, clip)?;
     }
 
     Ok(())
