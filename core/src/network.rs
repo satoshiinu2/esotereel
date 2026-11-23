@@ -229,11 +229,20 @@ impl ServerNetworkHandler {
         };
 
         if let Ok(clients) = self.clients.read_or_err() {
-            for id in client_ids {
-                if let Some(tx) = clients.get(id) {
-                    if let Err(_) = tx.send(bytes.clone()) {
-                        log::error!("Failed to send to client {}: channel closed", id);
-                    }
+            let mut targets: Vec<(&u32, &ClientSender)> = client_ids
+                .iter()
+                .filter_map(|id| clients.get_key_value(id))
+                .collect();
+            // 最後の送信先へは clone せず move する
+            let last = targets.pop();
+            for (id, tx) in &targets {
+                if tx.send(bytes.clone()).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", id);
+                }
+            }
+            if let Some((id, tx)) = last {
+                if tx.send(bytes).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", id);
                 }
             }
         }
@@ -241,8 +250,16 @@ impl ServerNetworkHandler {
 
     fn send_bytes_all(&self, bytes: AlignedVec) {
         if let Ok(clients) = self.clients.read_or_err() {
-            for (client_id, tx) in clients.iter() {
-                if let Err(_) = tx.send(bytes.clone()) {
+            let mut targets: Vec<(&u32, &ClientSender)> = clients.iter().collect();
+            // 最後の送信先へは clone せず move する
+            let last = targets.pop();
+            for (client_id, tx) in &targets {
+                if tx.send(bytes.clone()).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", client_id);
+                }
+            }
+            if let Some((client_id, tx)) = last {
+                if tx.send(bytes).is_err() {
                     log::error!("Failed to send to client {}: channel closed", client_id);
                 }
             }

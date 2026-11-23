@@ -159,9 +159,9 @@ pub fn command_to_history(
 
             CommandHistory::SetClipPropertyValue {
                 clip_id,
-                key: key.clone(),
+                key,
                 old_value,
-                new_value: value.clone(),
+                new_value: value,
             }
         }
     };

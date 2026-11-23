@@ -318,13 +318,13 @@ pub fn on_request_receive(
                         if let Err(e) = execute_command_with_history(
                             project,
                             *timeline_id,
-                            command_history.clone(),
+                            command_history,
                             history,
                             media_paths.as_ref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
                         } else {
-                            log::debug!(target:"core_packet_history","history: {:?}", command_history);
+                            log::debug!(target:"core_packet_history","history: {:?}", history.last_undo());
                         }
                     }
                     Err(e) => {
