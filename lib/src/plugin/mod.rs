@@ -14,7 +14,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, RwLock},
 };
 
 use anyhow::Context;
@@ -501,6 +501,9 @@ pub struct PluginLoader {
     component_registry: ComponentRegistry,
     shader_registry: ShaderRegistry,
 
+    /// 解決済み RuntimeDefinition のキャッシュ。レジストリ再構築時にクリアする。
+    resolved_definitions: RwLock<HashMap<NamespacedID, Arc<RuntimeDefinition>>>,
+
     // インデックスで検索コストを最小化
     scripts_index: HashMap<String, CompiledScript>,
     component_scripts_index: HashMap<NamespacedID, CompiledScript>,
@@ -517,6 +520,7 @@ impl PluginLoader {
             clip_kinds: ClipKindStore::new(),
             component_registry: ComponentRegistry::default(),
             shader_registry: ShaderRegistry::default(),
+            resolved_definitions: RwLock::new(HashMap::new()),
             scripts_index: HashMap::new(),
             component_scripts_index: HashMap::new(),
             toolbar_button_scripts_index: HashMap::new(),
@@ -743,6 +747,9 @@ impl PluginLoader {
         self.toolbar_button_scripts_index = toolbar_button_scripts_index;
         self.schemas_index = schemas_index;
         self.toolbars_index = toolbars_index;
+        if let Ok(mut cache) = self.resolved_definitions.write() {
+            cache.clear();
+        }
 
         log::info!(
             "Plugin indices rebuilt: clip_kinds={}, scripts={}, schemas={}, toolbars={}, shaders={}",
@@ -853,16 +860,30 @@ impl PluginLoader {
 
     /// クリップ種別 ID から、その種別が宣言するコンポーネント列を解決し、
     /// フラットな `RuntimeDefinition` を返します。
+    ///
+    /// 解決結果はキャッシュし、同じ種別への再解決では再構築しません。
+    /// キャッシュはレジストリ再構築（`rebuild_indices`）時にクリアされます。
     pub fn resolve_component_definition(
         &self,
         kind_id: &NamespacedID,
-    ) -> anyhow::Result<RuntimeDefinition> {
+    ) -> anyhow::Result<Arc<RuntimeDefinition>> {
+        if let Ok(cache) = self.resolved_definitions.read() {
+            if let Some(definition) = cache.get(kind_id) {
+                return Ok(Arc::clone(definition));
+            }
+        }
         let kind = self
             .clip_kinds
             .get(kind_id)
             .with_context(|| format!("clip kind `{}` not found", kind_id.full()))?;
-        self.component_registry
-            .resolve_definition(kind_id, &kind.components)
+        let definition = Arc::new(
+            self.component_registry
+                .resolve_definition(kind_id, &kind.components)?,
+        );
+        if let Ok(mut cache) = self.resolved_definitions.write() {
+            cache.insert(kind_id.clone(), Arc::clone(&definition));
+        }
+        Ok(definition)
     }
 
     /// 指定 `Capability` を提供する `ComponentDefinition` をすべて返します。
