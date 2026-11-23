@@ -125,6 +125,7 @@ impl ServerNetworkHandler {
                     if let Ok(mut guard) = instance.clients.write_or_err() {
                         guard.remove(&client_id);
                     }
+                    instance.remove_client_view(client_id);
                 });
             });
         }
