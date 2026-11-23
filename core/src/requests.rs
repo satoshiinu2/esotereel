@@ -1,5 +1,6 @@
 use std::{
     ops::Range,
+    path::Path,
     sync::{Arc, RwLock},
 };
 
@@ -355,7 +356,19 @@ pub fn on_request_receive(
         ArchivedRequest::InitStream { path } => {
             let path = path.as_ref();
 
-            let streamer = VideoStreamer::new(path).map_err(|e| {
+            // 対象パスがアップロード中なら、未到着バイトで待つ入力で開き、
+            // アップロード完了前にデコードを開始できるようにする。
+            let uploads = Arc::clone(&state.uploads);
+            let progress = {
+                let uploads = uploads.lock_or_err()?;
+                uploads.progress_for_path(Path::new(path))
+            };
+
+            let streamer = match progress {
+                Some(progress) => VideoStreamer::new_growing(path, progress),
+                None => VideoStreamer::new(path),
+            }
+            .map_err(|e| {
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
 

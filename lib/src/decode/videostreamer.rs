@@ -2,14 +2,17 @@ extern crate ffmpeg_next as ffmpeg;
 
 use ffmpeg::codec::Id as CodecId;
 use ffmpeg::codec::decoder::Video as VideoDecoder;
-use ffmpeg::format::{Pixel, context::Input, input};
+use ffmpeg::format::{Pixel, context::{Input, StreamIo}, input};
 use ffmpeg::media::Type;
 use ffmpeg::software::scaling::{context::Context as Scaler, flag::Flags};
 use ffmpeg::util::frame::video::Video;
+use std::fs::File;
 use std::mem;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
+use crate::decode::growing::{GrowingFile, UploadProgress};
 use crate::project::MediaSec;
 use crate::responces::Response;
 use crate::util::result::EsotereelResult;
@@ -40,8 +43,32 @@ impl VideoStreamer {
     ///
     /// 出力サイズを指定できるため、プレビュー時に低解像度でデコードして高速化できます。
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self, ffmpeg::Error> {
-        let ictx = input(&path)?;
+        Self::from_input(input(&path)?)
+    }
 
+    /// アップロード中のファイルを開き、デコーダとスケーラを初期化します。
+    ///
+    /// 入力は [`GrowingFile`] 経由で、未到着バイトでは EOF を返さず到着を
+    /// 待つため、アップロード完了前にデコードを開始できます。読み進められる
+    /// 範囲やシークの制約は `decode::growing` のドキュメントを参照してください。
+    pub fn new_growing<P: AsRef<Path>>(
+        path: P,
+        progress: Arc<UploadProgress>,
+    ) -> Result<Self, ffmpeg::Error> {
+        let path = path.as_ref();
+        let file = File::open(path).map_err(|error| match error.raw_os_error() {
+            Some(errno) => ffmpeg::Error::from(-errno),
+            None => ffmpeg::Error::Unknown,
+        })?;
+        let growing = GrowingFile::new(file, progress);
+        let io = StreamIo::from_read_seek(growing)?;
+        let hint = path.file_name().and_then(|name| name.to_str());
+        let ictx = ffmpeg::format::input_from_stream(io, hint, None)?;
+        Self::from_input(ictx)
+    }
+
+    /// 開かれた入力からデコーダとスケーラを初期化します。
+    fn from_input(ictx: Input) -> Result<Self, ffmpeg::Error> {
         let stream = ictx
             .streams()
             .best(Type::Video)

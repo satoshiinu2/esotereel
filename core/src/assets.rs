@@ -3,9 +3,10 @@ use std::{
     fs,
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use esotereel_lib::{dirs::Directories, project::ids::AssetId};
+use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetId};
 
 /// 進行中のアップロード1件分の転送状態。
 struct UploadSession {
@@ -13,6 +14,16 @@ struct UploadSession {
     path: PathBuf,
     total_size: u64,
     received_size: u64,
+    /// 到着済み接頭辞と完了/中断を読み側と共有する進捗。
+    progress: Arc<UploadProgress>,
+}
+
+impl Drop for UploadSession {
+    /// 完了せずに破棄されたセッションは中断として扱い、
+    /// 部分ファイルを読んでいる側をエラーで目覚めさせます。
+    fn drop(&mut self) {
+        self.progress.abort();
+    }
 }
 
 /// クライアントからのアップロードを受け付ける処理器。
@@ -65,9 +76,21 @@ impl UploadManager {
                 path,
                 total_size,
                 received_size: 0,
+                progress: Arc::new(UploadProgress::new(total_size)),
             },
         );
         Ok(())
+    }
+
+    /// 指定パスへアップロード中のセッションの進捗を返します。
+    ///
+    /// ストリーム初期化時に、対象ファイルがアップロード中かどうかを
+    /// 判定するために使います。該当セッションが無ければ `None` です。
+    pub fn progress_for_path(&self, path: &Path) -> Option<Arc<UploadProgress>> {
+        self.sessions
+            .values()
+            .find(|session| session.path == path)
+            .map(|session| Arc::clone(&session.progress))
     }
 
     /// アップロードの一部を、指定オフセットへ書き込む。
@@ -99,6 +122,7 @@ impl UploadManager {
         }
         file.write_all(data)?;
         session.received_size = session.received_size.max(end);
+        session.progress.record_range(offset, data.len() as u64);
         Ok(())
     }
 
@@ -128,11 +152,13 @@ impl UploadManager {
             );
         }
 
+        session.progress.finish();
+
         let session = self
             .sessions
             .remove(&asset_id)
             .ok_or_else(|| anyhow::anyhow!("asset `{asset_id}` has no active upload"))?;
-        Ok((session.file_name, session.path))
+        Ok((session.file_name.clone(), session.path.clone()))
     }
 }
 
@@ -150,43 +176,5 @@ fn validate_file_name(file_name: &str) -> anyhow::Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn manager_in_temp_dir(tag: &str) -> (UploadManager, PathBuf) {
-        let working_dir =
-            std::env::temp_dir().join(format!("esotereel-upload-test-{}-{tag}", std::process::id()));
-        let _ = fs::remove_dir_all(&working_dir);
-        let dirs = Directories::new(None, Some(working_dir.clone()));
-        (UploadManager::new(&dirs), working_dir)
-    }
-
-    #[test]
-    fn begin_rejects_file_names_with_path_separators() {
-        let (mut manager, working_dir) = manager_in_temp_dir("traversal");
-        let asset_id = AssetId::new_v4();
-
-        assert!(manager.begin(asset_id, "../evil.mp4", 0).is_err());
-        assert!(manager.begin(asset_id, "sub/dir.mp4", 0).is_err());
-        assert!(manager.begin(asset_id, "clip.mp4", 0).is_ok());
-
-        let _ = fs::remove_dir_all(&working_dir);
-    }
-
-    #[test]
-    fn complete_requires_the_full_declared_size() {
-        let (mut manager, working_dir) = manager_in_temp_dir("size");
-        let asset_id = AssetId::new_v4();
-
-        manager.begin(asset_id, "clip.mp4", 5).unwrap();
-        manager.write_chunk(asset_id, 0, b"abc").unwrap();
-        assert!(manager.complete(asset_id).is_err());
-
-        manager.write_chunk(asset_id, 3, b"de").unwrap();
-        let (name, path) = manager.complete(asset_id).unwrap();
-        assert_eq!(name, "clip.mp4");
-        assert_eq!(fs::metadata(&path).unwrap().len(), 5);
-
-        let _ = fs::remove_dir_all(&working_dir);
-    }
-}
+#[path = "../tests/unit/assets_tests.rs"]
+mod tests;
