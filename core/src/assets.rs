@@ -13,7 +13,6 @@ struct UploadSession {
     file_name: String,
     path: PathBuf,
     total_size: u64,
-    received_size: u64,
     /// 到着済み接頭辞と完了/中断を読み側と共有する進捗。
     progress: Arc<UploadProgress>,
 }
@@ -75,7 +74,6 @@ impl UploadManager {
                 file_name,
                 path,
                 total_size,
-                received_size: 0,
                 progress: Arc::new(UploadProgress::new(total_size)),
             },
         );
@@ -121,7 +119,6 @@ impl UploadManager {
             file.seek(SeekFrom::Start(offset))?;
         }
         file.write_all(data)?;
-        session.received_size = session.received_size.max(end);
         session.progress.record_range(offset, data.len() as u64);
         Ok(())
     }
@@ -136,10 +133,14 @@ impl UploadManager {
             .get(&asset_id)
             .ok_or_else(|| anyhow::anyhow!("asset `{asset_id}` has no active upload"))?;
 
-        if session.received_size != session.total_size {
+        // 受信済み範囲の末尾ではなく、先頭から連続して届いた長さで判定する。
+        // 末尾だけ届いた場合、ファイル長は total_size と一致しても
+        // 途中がゼロ埋めのまま完了扱いになってしまう。
+        let received = session.progress.prefix_len();
+        if received != session.total_size {
             anyhow::bail!(
                 "upload for asset `{asset_id}` is incomplete: {} of {} bytes received",
-                session.received_size,
+                received,
                 session.total_size
             );
         }
