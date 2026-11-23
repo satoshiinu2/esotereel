@@ -156,7 +156,7 @@ fn dynamic_to_field_value(
         }
         return Ok(FieldValue::Array(result));
     }
-    if let Some(map) = value.clone().try_cast::<rhai::Map>() {
+    if let Some(map) = value.try_cast::<rhai::Map>() {
         let mut result = BTreeMap::new();
         for (k, v) in map {
             result.insert(k.to_string(), dynamic_to_field_value(v)?);
