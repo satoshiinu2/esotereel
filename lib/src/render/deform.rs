@@ -76,7 +76,7 @@ pub fn apply_shader_stacks(
                 );
                 continue;
             }
-            entries.push((entry, definition.clone()));
+            entries.push((entry, Arc::clone(&definition)));
         }
         if entries.is_empty() {
             continue;

@@ -108,7 +108,7 @@ pub fn on_request_receive(
                 Arc::clone(&state.project),
                 Arc::clone(&state.network),
                 Arc::clone(&state.common.plugin_loader),
-                state.common.script_engine.clone(),
+                Arc::clone(&state.common.script_engine),
             );
             let asset_id_raw: &str = asset_id;
             let path_str: &str = path;
@@ -187,7 +187,7 @@ pub fn on_request_receive(
                 Arc::clone(&state.network),
                 Arc::clone(&state.uploads),
                 Arc::clone(&state.common.plugin_loader),
-                state.common.script_engine.clone(),
+                Arc::clone(&state.common.script_engine),
             );
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<bool> {
@@ -236,7 +236,7 @@ pub fn on_request_receive(
                 Arc::clone(&state.network),
                 Arc::clone(&state.histories),
                 Arc::clone(&state.common.plugin_loader),
-                state.common.script_engine.clone(),
+                Arc::clone(&state.common.script_engine),
             );
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
@@ -485,7 +485,7 @@ pub fn on_request_receive(
             let project_arc = Arc::clone(&state.project);
             let histories_arc = Arc::clone(&state.histories);
             let loader_arc = Arc::clone(&state.common.plugin_loader);
-            let script_engine = state.common.script_engine.clone();
+            let script_engine = Arc::clone(&state.common.script_engine);
 
             let context = PluginActionContext::new(
                 Arc::clone(&network),

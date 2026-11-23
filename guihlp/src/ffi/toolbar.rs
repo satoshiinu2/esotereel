@@ -208,7 +208,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
 
         // script_engine は Arc なので、クローンを取り出しておけば
         // 他のロックを保持せずにスクリプトを実行できる。
-        let script_engine = state.common.script_engine.clone();
+        let script_engine = Arc::clone(&state.common.script_engine);
         script
             .call::<()>(&script_engine, &func_name, (context.clone(),))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;

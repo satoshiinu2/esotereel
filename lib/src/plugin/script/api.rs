@@ -41,10 +41,10 @@ pub struct PluginActionContext<N: NetworkHandler> {
 impl<N: NetworkHandler> Clone for PluginActionContext<N> {
     fn clone(&self) -> Self {
         Self {
-            project: self.project.clone(),
+            project: Arc::clone(&self.project),
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
-            network: self.network.clone(),
+            packets: Arc::clone(&self.packets),
+            network: Arc::clone(&self.network),
         }
     }
 }
@@ -66,7 +66,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
     pub fn network(&self) -> PluginNetworkContext<Request> {
         PluginNetworkContext {
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
+            packets: Arc::clone(&self.packets),
         }
     }
 
@@ -179,7 +179,7 @@ impl<T> Clone for PluginNetworkContext<T> {
     fn clone(&self) -> Self {
         Self {
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
+            packets: Arc::clone(&self.packets),
         }
     }
 }

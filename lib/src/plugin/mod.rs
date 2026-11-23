@@ -689,7 +689,7 @@ impl PluginLoader {
         let mut merged_shaders: HashMap<NamespacedID, Arc<ShaderDefinition>> = HashMap::new();
         for plugin in &self.plugins {
             for (id, def) in &plugin.shader_definitions {
-                if merged_shaders.insert(id.clone(), def.clone()).is_some() {
+                if merged_shaders.insert(id.clone(), Arc::clone(def)).is_some() {
                     anyhow::bail!("duplicate shader definition id `{}` across plugins", id);
                 }
             }

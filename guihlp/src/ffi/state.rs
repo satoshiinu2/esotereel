@@ -95,7 +95,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
         let async_error = state.async_error_arc();
 
         std::thread::spawn(move || {
-            let async_error_inner = async_error.clone();
+            let async_error_inner = Arc::clone(&async_error);
             let result = catch_unwind(AssertUnwindSafe(move || {
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
@@ -106,7 +106,7 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
                         return;
                     }
                 };
-                let state_arc = state.clone();
+                let state_arc = Arc::clone(&state);
 
                 // Phase 1: プラグインローダーとディレクトリを取得する
                 // （ClientState 自体にロックは無く、メンバーは Arc で取り出す）
@@ -178,7 +178,7 @@ pub extern "C" fn client_state_network_run(
 
         // Rust側でバックグラウンドスレッドを生成してワーカーを開始する
         std::thread::spawn(move || {
-            let async_error_inner = async_error.clone();
+            let async_error_inner = Arc::clone(&async_error);
             let result = catch_unwind(AssertUnwindSafe(move || {
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
