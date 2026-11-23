@@ -195,7 +195,7 @@ impl VideoStreamer {
         mut ranges: Vec<Range<MediaSec>>,
         generation: u64,
     ) -> EsotereelResult<Vec<Response>> {
-        ranges.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+        ranges.sort_by(|a, b| a.start.total_cmp(&b.start));
 
         let mut to_sends = Vec::new();
         for range in &ranges {

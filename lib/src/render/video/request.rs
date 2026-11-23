@@ -119,7 +119,7 @@ fn collect_request_for_resource(
 
 /// 隣接・重複する範囲を1つに統合します。
 fn merge_overlapping_ranges(ranges: &mut Vec<Range<f64>>) {
-    ranges.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap());
+    ranges.sort_by(|a, b| a.start.total_cmp(&b.start));
     let mut merged: Vec<Range<f64>> = Vec::new();
     for r in ranges.drain(..) {
         if let Some(last) = merged.last_mut() {
