@@ -125,7 +125,7 @@ impl Project {
             .timelines
             .get_mut(&timeline_id)
             .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
-        Ok(timeline.insert_layer(&mut self.ids, name, parent, index))
+        timeline.insert_layer(&mut self.ids, name, parent, index)
     }
 
     pub fn insert_folder_in_timeline(
@@ -139,7 +139,7 @@ impl Project {
             .timelines
             .get_mut(&timeline_id)
             .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
-        Ok(timeline.insert_folder(&mut self.ids, name, parent, index))
+        timeline.insert_folder(&mut self.ids, name, parent, index)
     }
 
     pub fn new_clip_in_timeline(

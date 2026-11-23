@@ -79,7 +79,8 @@ impl Timeline {
         };
 
         for i in 0..4 {
-            tl.insert_layer(ids, format!("Layer {}", i + 1), None, None);
+            tl.insert_layer(ids, format!("Layer {}", i + 1), None, None)
+                .expect("inserting a layer at the root cannot fail");
         }
         tl
     }
@@ -114,7 +115,14 @@ impl Timeline {
         name: String,
         parent: Option<LayerFolderId>,
         index: Option<usize>,
-    ) -> LayerId {
+    ) -> EsotereelResult<LayerId> {
+        // 親フォルダの存在を先に確認する。挿入後に失敗すると
+        // layers と outline が不整合なまま残ってしまう。
+        if let Some(folder_id) = parent {
+            if !self.outline.has_folder(folder_id) {
+                return Err(EsotereelError::LayerFolderNotFound(folder_id).into());
+            }
+        }
         let id = ids.next_layer_id();
         self.layers.insert(id, Layer::new(id, name));
         self.changes.mark_layer_upserted(id);
@@ -122,7 +130,7 @@ impl Timeline {
         self.outline.insert_layer(id, parent, index);
         self.changes.mark_outline_children_changed(parent);
 
-        id
+        Ok(id)
     }
 
     pub fn insert_folder(
@@ -131,12 +139,17 @@ impl Timeline {
         name: String,
         parent: Option<LayerFolderId>,
         index: Option<usize>,
-    ) -> LayerFolderId {
+    ) -> EsotereelResult<LayerFolderId> {
+        if let Some(folder_id) = parent {
+            if !self.outline.has_folder(folder_id) {
+                return Err(EsotereelError::LayerFolderNotFound(folder_id).into());
+            }
+        }
         let id = ids.next_folder_id();
         self.outline.insert_folder(id, name, parent, index);
         self.changes.mark_outline_folder_upserted(id);
         self.changes.mark_outline_children_changed(parent);
-        id
+        Ok(id)
     }
 
     pub fn remove_layer(&mut self, id: LayerId) -> Option<Layer> {

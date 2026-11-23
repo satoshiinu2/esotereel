@@ -68,7 +68,9 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
     );
     let mut ids = IdGenerator::default();
     let mut timeline = Timeline::new_empty(1, 60.0);
-    let layer = timeline.insert_layer(&mut ids, "Video".into(), None, None);
+    let layer = timeline
+        .insert_layer(&mut ids, "Video".into(), None, None)
+        .unwrap();
     timeline
         .new_clip_in(layer, &mut ids, 0, 60, kind, properties)
         .unwrap();
