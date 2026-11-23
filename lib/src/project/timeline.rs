@@ -1,10 +1,9 @@
-use rkyv::{CheckBytes, bytecheck};
+use rkyv::{bytecheck, CheckBytes};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::RwLock;
+use std::sync::Mutex;
 
-use crate::plugin::{NamespacedID, property::PropertyKey};
-use crate::project::TimelineTick;
+use crate::plugin::{property::PropertyKey, NamespacedID};
 use crate::project::change::{ChangeSet, RemovedClipInfo};
 use crate::project::chunk_index::ChunkIndex;
 use crate::project::clip::Clip;
@@ -12,7 +11,8 @@ use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
-use crate::util::result::{EsotereelError, EsotereelResult, LockExt};
+use crate::project::TimelineTick;
+use crate::util::result::{EsotereelError, EsotereelResult, MutexExt};
 
 /// Composite / Script / Mirror の入れ子実行を無限ループさせないための上限。
 pub const MAX_NESTED_DEPTH: u32 = 32;
@@ -42,7 +42,7 @@ pub struct Timeline {
     /// 位置検索用の遅延構築キャッシュ。保存対象外、壊れても再構築可能。
     #[with(rkyv::with::Skip)]
     #[serde(skip)]
-    chunk_index: RwLock<Option<ChunkIndex>>,
+    chunk_index: Mutex<Option<ChunkIndex>>,
 
     /// 未同期の差分。
     #[with(rkyv::with::Skip)]
@@ -59,7 +59,7 @@ impl Clone for Timeline {
             outline: self.outline.clone(),
             clips: self.clips.clone(),
             // キャッシュは持ち越さない。次回query_range時に再構築される。
-            chunk_index: RwLock::new(None),
+            chunk_index: Mutex::new(None),
             changes: ChangeSet::default(),
         }
     }
@@ -73,7 +73,7 @@ impl Timeline {
             tps: fps,
             layers: HashMap::new(),
             clips: HashMap::new(),
-            chunk_index: RwLock::new(None),
+            chunk_index: Mutex::new(None),
             changes: ChangeSet::default(),
             outline: LayerOutline::default(),
         };
@@ -92,15 +92,15 @@ impl Timeline {
             layers: HashMap::new(),
             outline: LayerOutline::default(),
             clips: HashMap::new(),
-            chunk_index: RwLock::new(None),
+            chunk_index: Mutex::new(None),
             changes: ChangeSet::default(),
         }
     }
 
     fn invalidate_index(&self) {
         // Use write lock consistently for index invalidation
-        let Ok(mut guard) = self.chunk_index.write_or_err() else {
-            log::warn!("timeline: chunk_index write lock poisoned");
+        let Ok(mut guard) = self.chunk_index.lock_or_err() else {
+            log::warn!("timeline: chunk_index lock poisoned");
             return;
         };
         *guard = None;
@@ -448,10 +448,10 @@ impl Timeline {
     ///
     /// `chunk_index` が無ければ遅延構築します。
     pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
-        // Single lock strategy: use write lock to handle both check and build
-        // This avoids read-write lock upgrade deadlock
-        let Ok(mut idx_guard) = self.chunk_index.write_or_err() else {
-            log::warn!("timeline: chunk_index write lock poisoned");
+        // Single lock strategy: one Mutex handles both check and build,
+        // since every access here mutates (invalidate or lazy build)
+        let Ok(mut idx_guard) = self.chunk_index.lock_or_err() else {
+            log::warn!("timeline: chunk_index lock poisoned");
             return Vec::new();
         };
 
@@ -553,7 +553,7 @@ impl Timeline {
             layers,
             outline: meta.outline.clone(),
             clips: HashMap::new(),
-            chunk_index: RwLock::new(None),
+            chunk_index: Mutex::new(None),
             changes: ChangeSet::default(),
         }
     }
