@@ -3,15 +3,15 @@ use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
 use esotereel_lib::util::result::LockExt;
-use rkyv::ser::Serializer;
 use rkyv::ser::serializers::AllocSerializer;
-use rkyv::{AlignedVec, check_archived_root};
+use rkyv::ser::Serializer;
+use rkyv::{check_archived_root, AlignedVec};
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::{Arc, Mutex, RwLock};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
+use std::sync::{Arc, RwLock};
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{mpsc, Notify};
 
 use crate::requests::on_request_receive;
 use crate::state::ServerState;
@@ -41,7 +41,7 @@ impl ServerNetworkHandler {
 
     pub async fn run<F>(
         self: Arc<Self>,
-        state: Arc<Mutex<ServerState>>,
+        state: Arc<ServerState>,
         addr: &str,
         on_server_ready: Option<F>,
     ) -> Result<(), std::io::Error>
@@ -130,12 +130,7 @@ impl ServerNetworkHandler {
         }
     }
 
-    fn parse_and_handle_request(
-        &self,
-        state: &Arc<Mutex<ServerState>>,
-        bytes: &Vec<u8>,
-        client_id: u32,
-    ) {
+    fn parse_and_handle_request(&self, state: &Arc<ServerState>, bytes: &Vec<u8>, client_id: u32) {
         match check_archived_root::<Request>(bytes) {
             Ok(archived_req) => {
                 if let Err(e) = on_request_receive(archived_req, client_id, state) {

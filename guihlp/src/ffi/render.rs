@@ -1,20 +1,16 @@
 use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
-    sync::{Arc, Mutex},
+    panic::{catch_unwind, AssertUnwindSafe},
+    sync::Arc,
 };
 
 use esotereel_lib::{
     project::{camera::CameraInfo, ids::TimelineId},
     render::wgpuutil::{OffscreenTarget, WGpuUtil},
-    util::result::{EsotereelError, MutexExt},
+    util::result::EsotereelError,
 };
 
 use crate::{
-    ffi::{
-        array::FfiArray,
-        result::FfiResult,
-        state::ClientStateHandle,
-    },
+    ffi::{array::FfiArray, result::FfiResult, state::ClientStateHandle},
     render::{render_frame_offscreen_ffi, FrameRenderResult},
     state::ClientState,
 };
@@ -37,8 +33,8 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
             return Err(EsotereelError::NullPointer("pointer is null".to_string()).into());
         }
 
-        let raw = ptr_state as *const Mutex<ClientState>;
-        let state_arc: Arc<Mutex<ClientState>> = unsafe {
+        let raw = ptr_state as *const ClientState;
+        let state_arc: Arc<ClientState> = unsafe {
             Arc::increment_strong_count(raw);
             Arc::from_raw(raw)
         };
@@ -46,23 +42,18 @@ pub unsafe extern "C" fn wgpuutil_render_frame_offscreen(
         let offscreen = unsafe { &*ptr_offscreen };
         let camera_info = unsafe { &*ptr_camera_info };
 
-        // Phase 1: ClientStateロックを保持してGPUレンダリングコマンドを記録（高速）
-        {
-            let state_guard = state_arc
-                .lock_or_err()?;
+        // Phase 1: GPUレンダリングコマンドを記録（高速）。
+        // 内部で保持するのは Project の read ロックのみ。
+        render_frame_offscreen_ffi(
+            wgpuutil,
+            offscreen,
+            &state_arc,
+            camera_info,
+            timeline_id,
+            current_frame,
+        )?;
 
-            render_frame_offscreen_ffi(
-                wgpuutil,
-                offscreen,
-                &state_guard,
-                camera_info,
-                timeline_id,
-                current_frame,
-            )?;
-        } // ClientState ロック解放（ブロック終了でガードドロップ）
-
-        // Phase 2: GPU readbackをClientStateロックなしで実行（低速）。
-        // ここでブロックしてもGUIスレッドはClientStateロックを取得できるためフリーズしない。
+        // Phase 2: GPU readbackを実行（低速）。
         let bytes = offscreen
             .readback(&wgpuutil.device)
             .map_err(|msg| EsotereelError::RenderError(msg))?;

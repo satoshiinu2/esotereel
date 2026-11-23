@@ -3,11 +3,10 @@ use crate::ffi::state::ClientStateHandle;
 use crate::ffi::stringview::FfiStringView;
 use esotereel_core::server_network_start;
 use esotereel_lib::dirs::Directories;
-use esotereel_lib::util::result::{EsotereelError, MutexExt};
+use esotereel_lib::util::result::EsotereelError;
 use std::f32::consts::E;
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 pub type OnServerReadyCFn = extern "C" fn(bool, FfiStringView); // 起動成功したか
 
@@ -31,9 +30,7 @@ pub extern "C" fn internal_server_start(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
-        let plugin_loader_clone = Arc::clone(&state.plugin_loader);
+        let plugin_loader_clone = state.plugin_loader_arc();
 
         let addr_str = addr.as_str()?;
 

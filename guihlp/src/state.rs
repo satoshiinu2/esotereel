@@ -1,34 +1,34 @@
 use std::{
     collections::BTreeMap,
     ops::Range,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use dashmap::DashMap;
 use esotereel_lib::{
-    HostRole,
     decode::streamplayer::StreamPlayer,
     dirs::Directories,
     plugin::{
-        NamespacedID,
         property::{
-            PropertyKey, PropertySchema,
             value::{FieldTypeKind, FieldValue},
+            PropertyKey, PropertySchema,
         },
         settings::SettingsStore,
         toolbar::ToolbarStore,
+        NamespacedID, PluginLoader,
     },
     prebootstrap::PreBootstrapSettings,
     project::{
-        MediaSec, TimelineTick,
         ids::{ResourceId, TimelineId},
+        MediaSec, Project, TimelineTick,
     },
     render::video::MediaFetchCache,
     state::{CommonState, HostState},
     util::result::LockExt,
+    HostRole,
 };
 
-use crate::{GuiCallbacks, network::ClientNetworkHandler};
+use crate::{network::ClientNetworkHandler, GuiCallbacks};
 
 pub struct ClientState {
     pub common: CommonState,
@@ -47,8 +47,11 @@ pub struct ClientState {
 
     pub media_fetch_cache: Arc<MediaFetchCache>,
 
-    pub settings: SettingsStore,
-    pub toolbar: ToolbarStore,
+    /// 設定ストア。読み取りが支配的で書き込みは設定変更時のみのため、
+    /// ストア単位の `RwLock` で保護し、ClientState 全体のロックは持たない。
+    pub settings: Arc<RwLock<SettingsStore>>,
+    /// ツールバーストア。settings と同じくストア単位の `RwLock` で保護する。
+    pub toolbar: Arc<RwLock<ToolbarStore>>,
 
     pub gui_callbacks: GuiCallbacks,
 
@@ -128,8 +131,8 @@ impl ClientState {
             stream_players: Arc::new(DashMap::new()),
             last_clips_fetch: DashMap::new(),
             last_stream_fetch: DashMap::new(),
-            settings,
-            toolbar: ToolbarStore::default(),
+            settings: Arc::new(RwLock::new(settings)),
+            toolbar: Arc::new(RwLock::new(ToolbarStore::default())),
             media_fetch_cache: Arc::new(MediaFetchCache::default()),
             gui_callbacks,
             async_error: Arc::new(Mutex::new(None)),
@@ -142,15 +145,19 @@ impl ClientState {
         let level_key = NamespacedID::new("core", "log.level").expect("valid core settings ID");
         let filters_key = NamespacedID::new("core", "log.filters").expect("valid core settings ID");
 
+        let Ok(settings) = self.settings.read_or_err() else {
+            return;
+        };
+
         if let Some(FieldValue::Enum(level) | FieldValue::String(level)) =
-            self.settings.get_value(&level_key)
+            settings.get_value(&level_key)
         {
             if let Some(level) = crate::logger::level_filter_from_name(level) {
                 crate::logger::set_default_log_level(level);
             }
         }
 
-        if let Some(FieldValue::Map(filters)) = self.settings.get_value(&filters_key) {
+        if let Some(FieldValue::Map(filters)) = settings.get_value(&filters_key) {
             let filters = filters
                 .iter()
                 .filter_map(|(target, value)| {
@@ -171,14 +178,16 @@ impl ClientState {
         let level_key = NamespacedID::new("core", "log.level")?;
         let filters_key = NamespacedID::new("core", "log.filters")?;
 
+        let store = self.settings.read_or_err()?;
+
         if let Some(FieldValue::Enum(level) | FieldValue::String(level)) =
-            self.settings.get_value(&level_key)
+            store.get_value(&level_key)
         {
             if let Some(level) = esotereel_lib::prebootstrap::LogLevel::parse(level) {
                 settings.logging.level = level;
             }
         }
-        if let Some(FieldValue::Map(filters)) = self.settings.get_value(&filters_key) {
+        if let Some(FieldValue::Map(filters)) = store.get_value(&filters_key) {
             settings.logging.filters = filters
                 .iter()
                 .filter_map(|(target, value)| {
@@ -195,13 +204,52 @@ impl ClientState {
         let path = self.dir.prebootstrap_settings_path()?;
         settings.save(&path)
     }
+
+    // メンバー取得アクセサ群。FFI やレスポンス処理は ClientState 全体を
+    // ロックせず、必要なメンバーを `Arc` で取り出してから処理する。
+
+    pub fn project_arc(&self) -> Arc<RwLock<Option<Project>>> {
+        Arc::clone(&self.common.project)
+    }
+
+    pub fn network_arc(&self) -> Arc<ClientNetworkHandler> {
+        Arc::clone(&self.network)
+    }
+
+    pub fn plugin_loader_arc(&self) -> Arc<RwLock<PluginLoader>> {
+        Arc::clone(&self.common.plugin_loader)
+    }
+
+    pub fn stream_players_arc(&self) -> Arc<DashMap<ResourceId, StreamPlayer>> {
+        Arc::clone(&self.stream_players)
+    }
+
+    pub fn stream_state_map_arc(&self) -> Arc<DashMap<String, esotereel_lib::StreamState>> {
+        Arc::clone(&self.common.stream_state_map)
+    }
+
+    pub fn media_fetch_cache_arc(&self) -> Arc<MediaFetchCache> {
+        Arc::clone(&self.media_fetch_cache)
+    }
+
+    pub fn settings_arc(&self) -> Arc<RwLock<SettingsStore>> {
+        Arc::clone(&self.settings)
+    }
+
+    pub fn toolbar_arc(&self) -> Arc<RwLock<ToolbarStore>> {
+        Arc::clone(&self.toolbar)
+    }
+
+    pub fn async_error_arc(&self) -> Arc<Mutex<Option<String>>> {
+        Arc::clone(&self.async_error)
+    }
 }
 
 impl HostState for ClientState {
     const ROLE: HostRole = HostRole::Client;
     type NetworkHandler = ClientNetworkHandler;
 
-    fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_extra_plugin_fields(&self) -> anyhow::Result<()> {
         let (schemas, toolbar_buttons) = {
             let loader = self.plugin_loader.read_or_err()?;
             (
@@ -210,17 +258,23 @@ impl HostState for ClientState {
             )
         };
 
-        self.settings.merge_fields(schemas)?;
-        self.settings.add_missing_from_schema();
-        if let Ok(path) = self.dir.client_settings_path() {
-            if let Err(error) = self.settings.load_from_path_sync(&path) {
-                log::warn!("Failed to load normal settings: {error}");
+        {
+            let mut settings = self.settings.write_or_err()?;
+            settings.merge_fields(schemas)?;
+            settings.add_missing_from_schema();
+            if let Ok(path) = self.dir.client_settings_path() {
+                if let Err(error) = settings.load_from_path_sync(&path) {
+                    log::warn!("Failed to load normal settings: {error}");
+                }
             }
-        }
+        } // settings の write ガードはここで解放（apply_logging_settings が read を取るため）
         self.apply_logging_settings();
 
-        self.toolbar = ToolbarStore::from_plugin_buttons(toolbar_buttons);
-        self.toolbar.fill_missing_from_registry();
+        {
+            let mut toolbar = self.toolbar.write_or_err()?;
+            *toolbar = ToolbarStore::from_plugin_buttons(toolbar_buttons);
+            toolbar.fill_missing_from_registry();
+        }
 
         Ok(())
     }
@@ -232,10 +286,5 @@ impl std::ops::Deref for ClientState {
 
     fn deref(&self) -> &Self::Target {
         &self.common
-    }
-}
-impl std::ops::DerefMut for ClientState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.common
     }
 }

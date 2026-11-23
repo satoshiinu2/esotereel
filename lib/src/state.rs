@@ -83,10 +83,11 @@ impl CommonState {
 
 /// ホスト固有のステートを表すトレイトです。
 ///
-/// `CommonState` を `Deref` して共有ステートにアクセスし、`DerefMut` で
-/// ホスト固有のフィールドを変更できます。`Client` と `Server` で
-/// `ROLE` 定数と `NetworkHandler` 型を分岐させます。
-pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut {
+/// `CommonState` を `Deref` して共有ステートにアクセスします。ホスト固有の
+/// 可変状態は各フィールド側の内部同期（`Arc` / `RwLock` / `DashMap` 等）で
+/// 保護し、ステート自体への `&mut` アクセスは要求しません。`Client` と
+/// `Server` で `ROLE` 定数と `NetworkHandler` 型を分岐させます。
+pub trait HostState: std::ops::Deref<Target = CommonState> {
     /// 使用するネットワークハンドラの型。
     type NetworkHandler: NetworkHandler;
 
@@ -94,7 +95,7 @@ pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut 
     const ROLE: HostRole;
 
     /// 起動時にプラグイン読み込みと設定適用を行います。
-    async fn boot_strap(&mut self) {
+    async fn boot_strap(&self) {
         if let Err(e) = self.load_plugins().await {
             log::error!("Failed to load plugins: {:?}", e);
         } else {
@@ -111,12 +112,12 @@ pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut 
     /// クライアント／サーバー固有の追加フィールドを適用します。
     ///
     /// 何もしない場合はデフォルトのままとなります。サブトレイトでオーバーライド可能。
-    fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_extra_plugin_fields(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// プラグインフィールドを適用します（デフォルトは `apply_extra_plugin_fields` のみ）。
-    fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_plugin_fields(&self) -> anyhow::Result<()> {
         self.apply_extra_plugin_fields()
     }
 }

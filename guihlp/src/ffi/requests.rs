@@ -1,26 +1,21 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use esotereel_lib::{
     decode::streamplayer::FetchState,
-    project::{TimelineTick, command::CommandRequest, ids::TimelineId},
+    project::{command::CommandRequest, ids::TimelineId, TimelineTick},
     render::video::request::request_stream_packets_for_time,
     requests::Request,
-    util::result::{EsotereelError, LockExt, MutexExt},
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::ffi::{result::FfiResultVoid, state::ClientStateHandle, stringview::FfiStringView};
 use crate::network::ClientNetworkHandler;
 
-/// State Mutex は network の `Arc` を取り出す間だけ保持し、送信前に解放する。
-/// 送信（ネットワーク内部ロック取得）を State 保持中に行わないため
-/// （docs/architecture/lock-order.md）。
-fn network_of(ptr_state: *const ClientStateHandle) -> anyhow::Result<Arc<ClientNetworkHandler>> {
-    let state = ClientStateHandle::from_ptr(ptr_state);
-    let state_guard = state
-        .lock_or_err()?;
-    Ok(Arc::clone(&state_guard.network))
-} // state_guard はここで drop される
+/// network の `Arc` を取り出す。ClientState 自体にロックは無い。
+fn network_of(ptr_state: *const ClientStateHandle) -> Arc<ClientNetworkHandler> {
+    ClientStateHandle::from_ptr(ptr_state).network_arc()
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid {
@@ -29,7 +24,7 @@ pub extern "C" fn req_test(ptr_state: *const ClientStateHandle) -> FfiResultVoid
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let network = network_of(ptr_state)?;
+        let network = network_of(ptr_state);
 
         network.send(&Request::Test);
         Ok(())
@@ -48,7 +43,7 @@ pub extern "C" fn req_new_project(ptr_state: *const ClientStateHandle) -> FfiRes
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let network = network_of(ptr_state)?;
+        let network = network_of(ptr_state);
 
         network.send(&Request::NewProject);
         Ok(())
@@ -82,20 +77,16 @@ pub unsafe extern "C" fn req_fetch_frame(
         }
 
         // ロックの取り方（docs/architecture/lock-order.md）:
-        // State と Project を同時に保持しない。
-        // Phase 1: State は Arc の取り出しだけですぐ解放する。
+        // Project ロックと他のメンバーのロックを同時に保持しない。
+        // Phase 1: 必要な Arc を取り出す。
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let (network, project_arc, stream_state_map, stream_players, media_fetch_cache) = {
-            let state_guard = state
-                .lock_or_err()?;
-            (
-                Arc::clone(&state_guard.network),
-                Arc::clone(&state_guard.project),
-                Arc::clone(&state_guard.stream_state_map),
-                Arc::clone(&state_guard.stream_players),
-                Arc::clone(&state_guard.media_fetch_cache),
-            )
-        };
+        let (network, project_arc, stream_state_map, stream_players, media_fetch_cache) = (
+            state.network_arc(),
+            state.project_arc(),
+            state.stream_state_map_arc(),
+            state.stream_players_arc(),
+            state.media_fetch_cache_arc(),
+        );
 
         // Phase 2: Project の read ロックだけでフェッチ要求を組み立てる。
         let req = {
@@ -108,18 +99,13 @@ pub unsafe extern "C" fn req_fetch_frame(
                 .timeline_ref(timeline_id)
                 .ok_or_else(|| anyhow::anyhow!("invalid timeline id"))?;
 
-            request_stream_packets_for_time(
-                &stream_state_map,
-                &stream_players,
-                &media_fetch_cache,
-            )
+            request_stream_packets_for_time(&stream_state_map, &stream_players, &media_fetch_cache)
         };
 
-        // Phase 3: 重複抑制の記録だけ State を短時間ロックする
+        // Phase 3: 重複抑制の記録だけを行う
         // （この時点では Project ロックは保持していない）。
         let (requests_to_send, send_clips, clips_range) = {
-            let state_guard = state
-                .lock_or_err()?;
+            let state_guard = &state;
 
             // 組み立てたフェッチ要求のうち、直前と全く同じもの（同一リソースへの
             // 同一レンジ要求）は重複パケットになるため間引く。クリップ範囲要求
@@ -143,8 +129,7 @@ pub unsafe extern "C" fn req_fetch_frame(
                             );
                             // 実際には送信しないため、request_stream_packets_for_time が
                             // 設定したフェッチ中状態をアイドルに戻す
-                            if let Some(mut player) = stream_players.get_mut(&resource_id)
-                            {
+                            if let Some(mut player) = stream_players.get_mut(&resource_id) {
                                 player.fetch_state = FetchState::Idle;
                             }
                             continue;
@@ -218,7 +203,7 @@ pub unsafe extern "C" fn req_project_log(ptr_state: *const ClientStateHandle) ->
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        let network = network_of(ptr_state)?;
+        let network = network_of(ptr_state);
 
         network.send(&Request::DebugFetchProjectStruct);
         Ok(())
@@ -241,7 +226,7 @@ pub extern "C" fn req_load_stream(
         }
 
         let path = path.as_str()?.to_string();
-        let network = network_of(ptr_state)?;
+        let network = network_of(ptr_state);
 
         network.send(&Request::InitStream { path });
         Ok(())

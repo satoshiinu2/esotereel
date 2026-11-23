@@ -1,5 +1,3 @@
-use esotereel_lib::util::result::MutexExt;
-
 use crate::ffi::state::ClientStateHandle;
 
 #[unsafe(no_mangle)]
@@ -11,9 +9,6 @@ pub extern "C" fn debug_streams_get_resources_arr_size(
     }
 
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let Ok(state) = state.lock_or_err() else {
-        return 0;
-    };
 
     state.stream_players.len()
 }
@@ -29,9 +24,6 @@ pub extern "C" fn debug_streams_write_resources_arr(
     }
 
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let Ok(state) = state.lock_or_err() else {
-        return false;
-    };
 
     if ptr_out_arr.is_null() && safety_size != 0 {
         return false;
@@ -59,9 +51,6 @@ pub extern "C" fn debug_streams_get_loaded_streams_sec_arr_size(
     }
 
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let Ok(state) = state.lock_or_err() else {
-        return 0;
-    };
 
     let Some(stream) = state.stream_players.get(&resource_id) else {
         return 0;
@@ -82,9 +71,6 @@ pub extern "C" fn debug_streams_write_loaded_streams_sec_arr(
     }
 
     let state = ClientStateHandle::from_ptr(ptr_state);
-    let Ok(state) = state.lock_or_err() else {
-        return false;
-    };
 
     let Some(stream) = state.stream_players.get(&resource_id) else {
         return false;

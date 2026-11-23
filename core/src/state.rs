@@ -1,20 +1,20 @@
 use std::{
     collections::HashMap,
     sync::{
-        Arc, Mutex, RwLock,
         atomic::{AtomicU32, Ordering},
+        Arc, Mutex, RwLock,
     },
 };
 
 use dashmap::DashMap;
 use esotereel_lib::{
-    HostRole,
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
     plugin::PluginLoader,
     project::ids::ResourceId,
     project::ids::TimelineId,
     state::{CommonState, HostState},
+    HostRole,
 };
 use tokio::sync::Notify;
 
@@ -56,7 +56,7 @@ impl ServerState {
         }
     }
 
-    pub fn get_or_create_resource_id(&mut self, path: &str) -> u32 {
+    pub fn get_or_create_resource_id(&self, path: &str) -> u32 {
         self.stream_state_map
             .get(path)
             .and_then(|s| s.as_option())
@@ -68,7 +68,7 @@ impl HostState for ServerState {
     type NetworkHandler = ServerNetworkHandler;
     const ROLE: HostRole = HostRole::Server;
 
-    fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_extra_plugin_fields(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -79,10 +79,5 @@ impl std::ops::Deref for ServerState {
 
     fn deref(&self) -> &Self::Target {
         &self.common
-    }
-}
-impl std::ops::DerefMut for ServerState {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.common
     }
 }
