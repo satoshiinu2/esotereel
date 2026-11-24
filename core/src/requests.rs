@@ -19,8 +19,6 @@ use esotereel_lib::{
     util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
     StreamState,
 };
-use rkyv::Deserialize;
-
 use uuid::Uuid;
 
 use crate::{
@@ -51,7 +49,9 @@ pub fn on_request_receive(
             let placeholder_fps = 60.0;
             let timeline_key = new_project.insert_timeline(placeholder_fps);
 
-            assert!(timeline_key == 0, "main timeline should be first");
+            if timeline_key != 0 {
+                anyhow::bail!("main timeline should be first, got key {timeline_key}");
+            }
 
             // Timeline::new()ですでに4つのデフォルトレイヤーを作成しているので、
             // ここで重複して挿入する必要はない
@@ -251,7 +251,7 @@ pub fn on_request_receive(
             let mut pending_file_drop_failures: Vec<Response> = Vec::new();
 
             for (timeline_id, command) in commands.iter() {
-                let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
+                let command: CommandRequest = deserialize_validated(command);
                 let command = match command {
                     CommandRequest::AddClipFromFile {
                         layer_id,
@@ -405,7 +405,7 @@ pub fn on_request_receive(
                 ranges
             );
 
-            let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
+            let ranges: Vec<Range<f64>> = deserialize_validated(ranges);
 
             let (network, to_send) = {
                 let mut streamer = state
@@ -432,7 +432,7 @@ pub fn on_request_receive(
                 timeline_key,
                 range
             );
-            let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
+            let range: Range<i64> = deserialize_validated(range);
 
             // query_range は読み取り専用なので
             // Project は read ロックでよい。送信は全ガード解放後に行う。
@@ -737,15 +737,26 @@ fn parse_asset_id(asset_id: &str) -> anyhow::Result<Uuid> {
     Uuid::parse_str(asset_id).map_err(|_| anyhow::anyhow!("invalid asset id `{asset_id}`"))
 }
 
+/// `check_archived_root` で検証済みのペイロードをデシリアライズする。
+///
+/// エラー型が `Infallible` なので失敗し得ないが、検証の前提が崩れた場合に
+/// panic ではなくコンパイルエラーで気付けるよう、網羅的に受ける。
+fn deserialize_validated<T, A>(archived: &A) -> T
+where
+    A: rkyv::Deserialize<T, rkyv::Infallible>,
+{
+    match archived.deserialize(&mut rkyv::Infallible) {
+        Ok(value) => value,
+        Err(error) => match error {},
+    }
+}
+
 fn deserialize_add_clip(
     add_clip: &rkyv::option::ArchivedOption<ArchivedAddClipFromAsset>,
 ) -> anyhow::Result<Option<AddClipFromAsset>> {
     match add_clip.as_ref() {
         None => Ok(None),
-        Some(archived) => match archived.deserialize(&mut rkyv::Infallible) {
-            Ok(value) => Ok(Some(value)),
-            Err(error) => match error {},
-        },
+        Some(archived) => Ok(Some(deserialize_validated(archived))),
     }
 }
 
