@@ -123,9 +123,24 @@ impl<N: NetworkHandler> PluginActionContext<N> {
 ///
 /// 型に応じて `Int`/`Float`/`Bool`/`String`/`Array`/`Map` に変換し、
 /// 文字列からの数値パースや int⇄float 相互変換などを行います。
+/// スクリプト値の入れ子の深さの上限（スタック溢れの防止）。
+const MAX_VALUE_DEPTH: usize = 64;
+
 fn dynamic_to_field_value(
     value: rhai::Dynamic,
 ) -> Result<FieldValue, Box<rhai::EvalAltResult>> {
+    dynamic_to_field_value_with_depth(value, 0)
+}
+
+fn dynamic_to_field_value_with_depth(
+    value: rhai::Dynamic,
+    depth: usize,
+) -> Result<FieldValue, Box<rhai::EvalAltResult>> {
+    if depth > MAX_VALUE_DEPTH {
+        return Err(Box::<rhai::EvalAltResult>::from(
+            "value nested too deeply for property setting",
+        ));
+    }
     // まず現在の型をチェックし、そのまま変換できる場合はそのまま使う
     if let Some(b) = value.clone().try_cast::<bool>() {
         return Ok(FieldValue::Bool(b));
@@ -152,14 +167,14 @@ fn dynamic_to_field_value(
     if let Some(arr) = value.clone().try_cast::<rhai::Array>() {
         let mut result = Vec::with_capacity(arr.len());
         for item in arr {
-            result.push(dynamic_to_field_value(item)?);
+            result.push(dynamic_to_field_value_with_depth(item, depth + 1)?);
         }
         return Ok(FieldValue::Array(result));
     }
     if let Some(map) = value.try_cast::<rhai::Map>() {
         let mut result = BTreeMap::new();
         for (k, v) in map {
-            result.insert(k.to_string(), dynamic_to_field_value(v)?);
+            result.insert(k.to_string(), dynamic_to_field_value_with_depth(v, depth + 1)?);
         }
         return Ok(FieldValue::Map(result));
     }
@@ -317,16 +332,20 @@ impl PluginRenderContext {
 
     pub fn into_parts(self) -> (Vec<VertexBatch>, Vec<String>) {
         // Rhai may retain a cloned context; drain shared output without requiring unique ownership.
-        let batches = self
-            .batches
-            .lock_or_err()
-            .map(|mut g| std::mem::take(&mut *g))
-            .unwrap_or_default();
-        let paths = self
-            .requested_paths
-            .lock_or_err()
-            .map(|mut g| std::mem::take(&mut *g))
-            .unwrap_or_default();
+        let batches = match self.batches.lock_or_err() {
+            Ok(mut g) => std::mem::take(&mut *g),
+            Err(error) => {
+                log::error!("render batches lock poisoned, dropping output: {error}");
+                Vec::new()
+            }
+        };
+        let paths = match self.requested_paths.lock_or_err() {
+            Ok(mut g) => std::mem::take(&mut *g),
+            Err(error) => {
+                log::error!("requested paths lock poisoned, dropping output: {error}");
+                Vec::new()
+            }
+        };
         (batches, paths)
     }
 }

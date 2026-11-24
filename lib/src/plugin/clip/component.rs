@@ -636,21 +636,38 @@ impl Scheduler {
     }
 }
 
+/// スクリプトが組み立てた値の入れ子の深さの上限。
+/// これ以上深い値はスタックを溢れさせる前にエラーにする。
+const MAX_VALUE_DEPTH: usize = 64;
+
 fn merge_field_value(
     default: &mut FieldValue,
     returned: FieldValue,
     property_path: &str,
 ) -> anyhow::Result<()> {
+    merge_field_value_with_depth(default, returned, property_path, 0)
+}
+
+fn merge_field_value_with_depth(
+    default: &mut FieldValue,
+    returned: FieldValue,
+    property_path: &str,
+    depth: usize,
+) -> anyhow::Result<()> {
+    if depth > MAX_VALUE_DEPTH {
+        anyhow::bail!("handler returned a value nested too deeply at `{property_path}`");
+    }
     match (default, returned) {
         (FieldValue::Map(default_values), FieldValue::Map(returned_values)) => {
             for (key, returned_value) in returned_values {
                 let default_value = default_values.get_mut(&key).with_context(|| {
                     format!("handler returned undeclared field `{property_path}/{key}`")
                 })?;
-                merge_field_value(
+                merge_field_value_with_depth(
                     default_value,
                     returned_value,
                     &format!("{property_path}/{key}"),
+                    depth + 1,
                 )?;
             }
         }
@@ -658,10 +675,11 @@ fn merge_field_value(
             if let Some(default_item) = default_values.first() {
                 for (index, returned_item) in returned_values.iter().cloned().enumerate() {
                     let mut expected_item = default_item.clone();
-                    merge_field_value(
+                    merge_field_value_with_depth(
                         &mut expected_item,
                         returned_item,
                         &format!("{property_path}/{index}"),
+                        depth + 1,
                     )?;
                 }
             }
@@ -710,6 +728,13 @@ fn field_value_kind(value: &FieldValue) -> &'static str {
 }
 
 fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
+    dynamic_to_field_value_with_depth(value, 0)
+}
+
+fn dynamic_to_field_value_with_depth(value: Dynamic, depth: usize) -> anyhow::Result<FieldValue> {
+    if depth > MAX_VALUE_DEPTH {
+        anyhow::bail!("file-drop-handler returned a value nested too deeply");
+    }
     if let Some(value) = value.clone().try_cast::<bool>() {
         return Ok(FieldValue::Bool(value));
     }
@@ -725,14 +750,19 @@ fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
     if let Some(values) = value.clone().try_cast::<rhai::Array>() {
         return values
             .into_iter()
-            .map(dynamic_to_field_value)
+            .map(|value| dynamic_to_field_value_with_depth(value, depth + 1))
             .collect::<anyhow::Result<Vec<_>>>()
             .map(FieldValue::Array);
     }
     if let Some(values) = value.try_cast::<rhai::Map>() {
         return values
             .into_iter()
-            .map(|(key, value)| Ok((key.to_string(), dynamic_to_field_value(value)?)))
+            .map(|(key, value)| {
+                Ok((
+                    key.to_string(),
+                    dynamic_to_field_value_with_depth(value, depth + 1)?,
+                ))
+            })
             .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()
             .map(FieldValue::Map);
     }
