@@ -11,7 +11,7 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
-        ids::{AssetId, ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
+        ids::{AssetRef, ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     },
     util::rkyv_with::UuidAsBytes,
 };
@@ -46,8 +46,8 @@ pub enum EsotereelError {
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
-    AssetNotFound(#[with(UuidAsBytes)] AssetId),
-    AssetAlreadyExists(#[with(UuidAsBytes)] AssetId),
+    AssetNotFound(#[with(UuidAsBytes)] AssetRef),
+    AssetAlreadyExists(#[with(UuidAsBytes)] AssetRef),
     UploadFailed(String),
     FileDropFailed(String),
     LayerFolderNotFound(LayerFolderId),

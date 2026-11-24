@@ -114,7 +114,7 @@ pub fn on_request_receive(
             let asset_id_raw: &str = asset_id;
             let path_str: &str = path;
             let result = (|| -> anyhow::Result<bool> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let source_path = std::path::Path::new(path_str);
                 if !source_path.is_file() {
                     anyhow::bail!("asset source `{path_str}` is not an existing file");
@@ -157,7 +157,7 @@ pub fn on_request_receive(
             let asset_id_raw: &str = asset_id;
             let file_name_str: &str = file_name;
             let result = (|| -> anyhow::Result<()> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let mut uploads = uploads.lock_or_err()?;
                 uploads.begin(asset_uuid, file_name_str, *total_size, client_id)
             })();
@@ -173,7 +173,7 @@ pub fn on_request_receive(
             let (network, uploads) = (Arc::clone(&state.network), Arc::clone(&state.uploads));
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<()> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let mut uploads = uploads.lock_or_err()?;
                 uploads.write_chunk(asset_uuid, *offset, data)
             })();
@@ -191,7 +191,7 @@ pub fn on_request_receive(
             );
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<bool> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let add_clip = deserialize_add_clip(add_clip)?;
                 // 先にアップロード側で完了を検証してセッションを閉じ、
                 // その後でプロジェクトの台帳へ登録する（ロックの保持範囲を分ける）。
@@ -761,8 +761,8 @@ log::warn!(
     }
 }
 
-/// ワイヤ形式のアセット ID を `AssetId`（UUID）として解釈する。
-fn parse_asset_id(asset_id: &str) -> anyhow::Result<Uuid> {
+/// ワイヤ形式のアセット ID を `AssetRef`（UUID）として解釈する。
+fn parse_asset_ref(asset_id: &str) -> anyhow::Result<Uuid> {
     Uuid::parse_str(asset_id).map_err(|_| anyhow::anyhow!("invalid asset id `{asset_id}`"))
 }
 

@@ -5,7 +5,7 @@ use crate::plugin::{NamespacedID, property::PropertyKey};
 use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
-use crate::project::ids::{AssetId, ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
+use crate::project::ids::{AssetRef, ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::util::result::EsotereelError;
 
@@ -67,20 +67,20 @@ impl Project {
         &mut self.assets
     }
 
-    /// 外部ファイルをプロジェクトのアセットとして登録し、その `AssetId` を返す。
+    /// 外部ファイルをプロジェクトのアセットとして登録し、その `AssetRef` を返す。
     ///
     /// 同一パスが既に登録済みなら既存の ID を返す。クリップが参照する動画リソース
     /// は、クリップ追加時にここで登録され、`Project.assets` がそのカタログとなる。
-    pub fn register_asset(&mut self, path: &Path) -> anyhow::Result<AssetId> {
+    pub fn register_asset(&mut self, path: &Path) -> anyhow::Result<AssetRef> {
         self.assets.get_or_add_external(path)
     }
 
     /// ID を指定して外部ファイル参照を登録します。
     pub fn register_external_asset(
         &mut self,
-        id: AssetId,
+        id: AssetRef,
         path: &Path,
-    ) -> anyhow::Result<AssetId> {
+    ) -> anyhow::Result<AssetRef> {
         if self.assets.get(id).is_some() {
             if let Ok(existing_path) = self.assets.resolve(id) {
                 if existing_path == path {
@@ -95,10 +95,10 @@ impl Project {
     /// ID を指定して管理対象ファイルを登録します。
     pub fn register_managed_asset(
         &mut self,
-        id: AssetId,
+        id: AssetRef,
         name: String,
         path: PathBuf,
-    ) -> anyhow::Result<AssetId> {
+    ) -> anyhow::Result<AssetRef> {
         if self.assets.get(id).is_some() {
             if let Ok(existing_path) = self.assets.resolve(id) {
                 if existing_path == path.as_path() {

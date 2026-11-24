@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetId};
+use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetRef};
 
 /// 進行中のアップロード1件分の転送状態。
 struct UploadSession {
@@ -35,7 +35,7 @@ impl Drop for UploadSession {
 /// 実体は `Project::register_external_asset` が台帳に載せる。
 pub struct UploadManager {
     root_dir: PathBuf,
-    sessions: HashMap<AssetId, UploadSession>,
+    sessions: HashMap<AssetRef, UploadSession>,
 }
 
 impl UploadManager {
@@ -57,7 +57,7 @@ impl UploadManager {
     /// そのまま使うため、パス区切りを含む名前は受け付けない。
     pub fn begin(
         &mut self,
-        asset_id: AssetId,
+        asset_id: AssetRef,
         file_name: &str,
         total_size: u64,
         client_id: u32,
@@ -118,7 +118,7 @@ impl UploadManager {
     /// アップロードの一部を、指定オフセットへ書き込む。
     pub fn write_chunk(
         &mut self,
-        asset_id: AssetId,
+        asset_id: AssetRef,
         offset: u64,
         data: &[u8],
     ) -> anyhow::Result<()> {
@@ -151,7 +151,7 @@ impl UploadManager {
     ///
     /// 宣言された総サイズと受信量・実ファイルサイズが一致しない場合はエラーにし、
     /// セッションは残す（不足分のチャンクを送って再試行できる）。
-    pub fn complete(&mut self, asset_id: AssetId) -> anyhow::Result<(String, PathBuf)> {
+    pub fn complete(&mut self, asset_id: AssetRef) -> anyhow::Result<(String, PathBuf)> {
         let session = self
             .sessions
             .get(&asset_id)

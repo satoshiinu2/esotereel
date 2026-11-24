@@ -13,7 +13,7 @@ fn manager_in_temp_dir(tag: &str) -> (UploadManager, PathBuf) {
 #[test]
 fn begin_rejects_file_names_with_path_separators() {
     let (mut manager, working_dir) = manager_in_temp_dir("traversal");
-    let asset_id = AssetId::new_v4();
+    let asset_id = AssetRef::new_v4();
 
     assert!(manager.begin(asset_id, "../evil.mp4", 0, 0).is_err());
     assert!(manager.begin(asset_id, "sub/dir.mp4", 0, 0).is_err());
@@ -25,7 +25,7 @@ fn begin_rejects_file_names_with_path_separators() {
 #[test]
 fn progress_tracks_the_contiguous_prefix_of_out_of_order_chunks() {
     let (mut manager, working_dir) = manager_in_temp_dir("progress");
-    let asset_id = AssetId::new_v4();
+    let asset_id = AssetRef::new_v4();
 
     manager.begin(asset_id, "clip.mp4", 5, 0).unwrap();
     let path = working_dir
@@ -55,7 +55,7 @@ fn progress_tracks_the_contiguous_prefix_of_out_of_order_chunks() {
 #[test]
 fn complete_requires_the_full_declared_size() {
     let (mut manager, working_dir) = manager_in_temp_dir("size");
-    let asset_id = AssetId::new_v4();
+    let asset_id = AssetRef::new_v4();
 
     manager.begin(asset_id, "clip.mp4", 5, 0).unwrap();
     manager.write_chunk(asset_id, 0, b"abc").unwrap();
