@@ -295,13 +295,28 @@ pub fn on_request_receive(
                 // 逆引きし、ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
                 let media_paths = match &command {
                     CommandRequest::ClipsResize { clips } if !clips.is_empty() => {
-                        let clip = project
-                            .timeline_ref(*timeline_id)
-                            .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
-                            .get_clip(clips[0].clip_id)
-                            .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
-                        let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
-                        Some(MediaPropertyPaths::resolve(&runtime_def))
+                        // 解決に失敗してもバッチ全体は止めない。このコマンドだけを
+                        // 拒否として通知し、残りは続行する。
+                        let resolved = (|| -> anyhow::Result<MediaPropertyPaths> {
+                            let clip = project
+                                .timeline_ref(*timeline_id)
+                                .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
+                                .get_clip(clips[0].clip_id)
+                                .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
+                            let runtime_def =
+                                loader.resolve_component_definition(&clip.kind_id)?;
+                            Ok(MediaPropertyPaths::resolve(&runtime_def))
+                        })();
+                        match resolved {
+                            Ok(paths) => Some(paths),
+                            Err(error) => {
+                                log::error!("Command rejected: {error:?}");
+                                pending_rejections.push(Response::Failed {
+                                    error: EsotereelError::CommandFailed(format!("{error:#}")),
+                                });
+                                continue;
+                            }
+                        }
                     }
                     CommandRequest::AddClip { kind_id, .. } => loader
                         .resolve_component_definition(kind_id)
@@ -324,6 +339,9 @@ pub fn on_request_receive(
                             media_paths.as_ref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
+                            pending_rejections.push(Response::Failed {
+                                error: EsotereelError::CommandFailed(format!("{e:#}")),
+                            });
                         } else {
                             log::debug!(target:"core_packet_history","history: {:?}", history.last_undo());
                         }
@@ -337,6 +355,12 @@ pub fn on_request_receive(
                             client_id,
                             &command,
                         );
+                        if rejections.is_empty() {
+                            // Move/Resize の陳腐化以外の拒否は、汎用の失敗として必ず通知する
+                            pending_rejections.push(Response::Failed {
+                                error: EsotereelError::CommandFailed(format!("{e:#}")),
+                            });
+                        }
                         pending_rejections.extend(rejections);
                     }
                 }

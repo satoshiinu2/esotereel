@@ -51,6 +51,7 @@ pub enum EsotereelError {
     UploadFailed(String),
     FileDropFailed(String),
     LayerFolderNotFound(LayerFolderId),
+    CommandFailed(String),
 }
 
 impl fmt::Display for EsotereelError {
@@ -82,6 +83,7 @@ impl fmt::Display for EsotereelError {
             EsotereelError::LayerFolderNotFound(id) => {
                 write!(f, "Layer folder '{}' not found", id)
             }
+            EsotereelError::CommandFailed(message) => write!(f, "Command failed: {message}"),
         }
     }
 }
