@@ -117,8 +117,7 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
         Arc::clone(&cache),
     );
     context.set_video_source("test.mp4".into());
-    let mut engine = rhai::Engine::new();
-    register_render_api(&mut engine);
+    let engine = &plugin.engine;
     let script = plugin
         .component_scripts
         .get(&crate::plugin::NamespacedID::new("std", "media").unwrap())
@@ -202,6 +201,46 @@ fn standard_video_script_uses_pixel_dimensions_from_transform_scale() {
             Vec3::new(16.0 * factor as f32, 12.0 * factor as f32, 0.0)
         );
     }
+}
+
+#[test]
+fn media_api_is_registered_only_with_media_permission() {
+    let make_context = || {
+        PluginRenderContext::new(
+            1,
+            0.0,
+            Mat4::IDENTITY,
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+            Arc::new(MediaFetchCache::default()),
+        )
+    };
+    let compile_probe = |engine: &rhai::Engine| {
+        let ast = engine
+            .compile("fn probe(ctx) { ctx.get_texture(\"some.mp4\", 0.0) }")
+            .unwrap();
+        crate::plugin::script::CompiledScript {
+            ast,
+            available_functions: vec!["probe".to_string()],
+        }
+    };
+
+    // 権限なしでは get_texture が登録されず、呼び出しがエラーになる
+    let mut denied_engine = rhai::Engine::new();
+    register_render_api(&mut denied_engine, &[]);
+    let script = compile_probe(&denied_engine);
+    let denied = script.call::<i64>(&denied_engine, "probe", (make_context(),));
+    assert!(
+        denied.is_err(),
+        "get_texture must not be callable without the media permission: {denied:?}"
+    );
+
+    // media 権限があれば呼び出せる（未ロードのパスは -1）
+    let mut allowed_engine = rhai::Engine::new();
+    register_render_api(&mut allowed_engine, &[PluginPermission::Media]);
+    let script = compile_probe(&allowed_engine);
+    let allowed = script.call::<i64>(&allowed_engine, "probe", (make_context(),));
+    assert_eq!(allowed.unwrap(), -1);
 }
 
 #[test]

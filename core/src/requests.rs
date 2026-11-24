@@ -8,6 +8,7 @@ use esotereel_lib::{
     decode::videostreamer::VideoStreamer,
     plugin::{
         clip::component::Scheduler, script::api::PluginActionContext, NamespacedID, PluginLoader,
+        PluginPermission,
     },
     project::{
         command::{CommandHistory, CommandRequest},
@@ -105,11 +106,10 @@ pub fn on_request_receive(
             add_clip,
         } => {
             // 必要な Arc はフィールドから直接取り出す（lock-order.md）
-            let (project_arc, network, loader_arc, script_engine) = (
+            let (project_arc, network, loader_arc) = (
                 Arc::clone(&state.project),
                 Arc::clone(&state.network),
                 Arc::clone(&state.common.plugin_loader),
-                Arc::clone(&state.common.script_engine),
             );
             let asset_id_raw: &str = asset_id;
             let path_str: &str = path;
@@ -127,7 +127,7 @@ pub fn on_request_receive(
                 project.register_external_asset(asset_uuid, source_path)?;
                 let mut clip_added = false;
                 if let Some(add_clip) = add_clip {
-                    add_clip_from_asset(project, &loader_arc, &script_engine, &add_clip, path_str)?;
+                    add_clip_from_asset(project, &loader_arc, &add_clip, path_str)?;
                     clip_added = true;
                 }
                 Ok(clip_added)
@@ -183,12 +183,11 @@ pub fn on_request_receive(
         }
         ArchivedRequest::FinishAssetUpload { asset_id, add_clip } => {
             // 必要な Arc はフィールドから直接取り出す（lock-order.md）
-            let (project_arc, network, uploads, loader_arc, script_engine) = (
+            let (project_arc, network, uploads, loader_arc) = (
                 Arc::clone(&state.project),
                 Arc::clone(&state.network),
                 Arc::clone(&state.uploads),
                 Arc::clone(&state.common.plugin_loader),
-                Arc::clone(&state.common.script_engine),
             );
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<bool> {
@@ -210,7 +209,7 @@ pub fn on_request_receive(
                     let source = path
                         .to_str()
                         .ok_or_else(|| anyhow::anyhow!("asset path is not valid UTF-8"))?;
-                    add_clip_from_asset(project, &loader_arc, &script_engine, &add_clip, source)?;
+                    add_clip_from_asset(project, &loader_arc, &add_clip, source)?;
                     clip_added = true;
                 }
                 Ok(clip_added)
@@ -232,12 +231,11 @@ pub fn on_request_receive(
         }
         ArchivedRequest::Command { commands } => {
             // コマンド実行は取り出した Arc だけで行う（lock-order.md）
-            let (project_arc, network, histories_arc, loader_arc, script_engine) = (
+            let (project_arc, network, histories_arc, loader_arc) = (
                 Arc::clone(&state.project),
                 Arc::clone(&state.network),
                 Arc::clone(&state.histories),
                 Arc::clone(&state.common.plugin_loader),
-                Arc::clone(&state.common.script_engine),
             );
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
@@ -261,7 +259,6 @@ pub fn on_request_receive(
                         source_path,
                     } => {
                         let properties = match Scheduler::new().file_drop_properties(
-                            &script_engine,
                             &loader,
                             &kind_id,
                             &source_path,
@@ -522,12 +519,20 @@ pub fn on_request_receive(
             let project_arc = Arc::clone(&state.project);
             let histories_arc = Arc::clone(&state.histories);
             let loader_arc = Arc::clone(&state.common.plugin_loader);
-            let script_engine = Arc::clone(&state.common.script_engine);
+
+            // エンジンと権限は実行するプラグインの宣言から解決する
+            let script_engine = state.common.script_engine_for::<ServerState>(plugin_id)?;
+            let allow_cross_plugin = {
+                let loader = loader_arc.read_or_err()?;
+                loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+            };
 
             let context = PluginActionContext::new(
                 Arc::clone(&network),
                 Arc::clone(&project_arc),
                 *timeline_id,
+                plugin_id.to_owned(),
+                allow_cross_plugin,
             );
 
             // スクリプトはクローンして所有し、PluginLoader の read ガードは
@@ -788,13 +793,11 @@ fn deserialize_add_clip(
 fn add_clip_from_asset(
     project: &mut Project,
     loader_arc: &Arc<RwLock<PluginLoader>>,
-    script_engine: &rhai::Engine,
     add_clip: &AddClipFromAsset,
     source_path: &str,
 ) -> anyhow::Result<()> {
     let loader_guard = loader_arc.read_or_err()?;
     let properties = Scheduler::new().file_drop_properties(
-        script_engine,
         &loader_guard,
         &add_clip.kind_id,
         source_path,

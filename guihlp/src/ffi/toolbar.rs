@@ -5,12 +5,14 @@ use esotereel_lib::{
     plugin::{
         script::api::PluginActionContext,
         toolbar::{RunOn, ToolbarButtonSpec},
-        NamespacedID,
+        NamespacedID, PluginPermission,
     },
     project::ids::TimelineId,
     requests::Request,
     util::result::{EsotereelError, LockExt},
 };
+
+use crate::state::ClientState;
 
 use crate::ffi::{
     array::FfiArray,
@@ -189,7 +191,18 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // clientまたは指定なしの場合はローカルで実行
         // PluginActionContextを作成
         let project = state.project_arc();
-        let context = PluginActionContext::new(Arc::clone(&network), project, timeline_id);
+        let plugin_id = button_id.plugin_id();
+        let allow_cross_plugin = {
+            let loader = state.common.plugin_loader.read_or_err()?;
+            loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+        };
+        let context = PluginActionContext::new(
+            Arc::clone(&network),
+            project,
+            timeline_id,
+            plugin_id.to_owned(),
+            allow_cross_plugin,
+        );
 
         // スクリプトはクローンして所有し、PluginLoader の read ガードは
         // 実行前に必ず drop する。スクリプトは
@@ -208,7 +221,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
 
         // script_engine は Arc なので、クローンを取り出しておけば
         // 他のロックを保持せずにスクリプトを実行できる。
-        let script_engine = Arc::clone(&state.common.script_engine);
+        let script_engine = state.common.script_engine_for::<ClientState>(plugin_id)?;
         script
             .call::<()>(&script_engine, &func_name, (context.clone(),))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;

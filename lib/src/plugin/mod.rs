@@ -153,6 +153,32 @@ impl std::fmt::Display for NamespacedID {
     }
 }
 
+/// プラグインが要求する権限。
+///
+/// `manifest.toml` の `permissions` で宣言し、未宣言の権限に属するスクリプト
+/// API はそのプラグインのエンジンへ登録されない（デフォルト deny）。
+/// 組み込みの `std` プラグインも例外なく宣言する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub enum PluginPermission {
+    /// メディアファイルの読み取り（`get_texture` 等）。
+    #[serde(rename = "media")]
+    Media,
+    /// プロパティの書き込み（`set_property`）。対象は自プラグインの
+    /// コンポーネントが所有するプロパティに限る。
+    #[serde(rename = "property_write")]
+    PropertyWrite,
+    /// 履歴操作（`undo` / `redo` パケットの発行）。
+    #[serde(rename = "history")]
+    History,
+    /// 他プラグインへの干渉。`property_write` の対象を他プラグインの
+    /// コンポーネントが所有するプロパティまで広げる。
+    #[serde(rename = "cross_plugin")]
+    CrossPlugin,
+    /// 全ての権限（将来追加される権限も含む）。
+    #[serde(rename = "*")]
+    All,
+}
+
 /// プラグインのマニフェスト（`manifest.toml` の内容）を表します。
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct PluginManifest {
@@ -162,6 +188,17 @@ pub struct PluginManifest {
     pub name: String,
     /// プラグインのバージョン。
     pub version: String,
+    /// 要求する権限。省略時は空（何も許可されない）。
+    #[serde(default)]
+    pub permissions: Vec<PluginPermission>,
+}
+
+impl PluginManifest {
+    /// 指定した権限が宣言されているか（`*` は全てを許可する）。
+    pub fn allows(&self, permission: PluginPermission) -> bool {
+        self.permissions.contains(&PluginPermission::All)
+            || self.permissions.contains(&permission)
+    }
 }
 
 /// 読み込まれたプラグインの実体です。
@@ -181,6 +218,9 @@ pub struct Plugin {
     pub toolbar_button_scripts: HashMap<NamespacedID, CompiledScript>,
     pub script: Option<CompiledScript>,
     pub dir: PathBuf,
+    /// このプラグイン専用の描画エンジン。読み込み時に、マニフェストが
+    /// 宣言した権限でゲートした描画系 API を登録して構築する。
+    pub engine: rhai::Engine,
 }
 
 impl Plugin {
@@ -215,6 +255,9 @@ impl Plugin {
         }
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
 
+        let mut engine = script::new_script_engine();
+        script::api::register_render_api(&mut engine, &manifest.permissions);
+
         Ok(Self {
             manifest,
             setting_schemas,
@@ -226,6 +269,7 @@ impl Plugin {
             toolbar_button_scripts,
             script,
             dir: dir.to_path_buf(),
+            engine,
         })
     }
 
@@ -1060,6 +1104,30 @@ impl PluginLoader {
     /// アクセサです（実行中に再読み込みが走ってもデッドロックしません）。
     pub fn get_plugin_script(&self, plugin_id: &str) -> Option<CompiledScript> {
         self.scripts_index.get(plugin_id).cloned()
+    }
+
+    /// プラグインのマニフェストが宣言する権限を返します。
+    pub fn plugin_permissions(&self, plugin_id: &str) -> Option<&[PluginPermission]> {
+        self.plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id == plugin_id)
+            .map(|plugin| plugin.manifest.permissions.as_slice())
+    }
+
+    /// プラグイン専用の描画エンジンを返します。
+    pub fn plugin_engine(&self, plugin_id: &str) -> Option<&rhai::Engine> {
+        self.plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id == plugin_id)
+            .map(|plugin| &plugin.engine)
+    }
+
+    /// プラグインが指定した権限を宣言しているかを返します。
+    pub fn plugin_allows(&self, plugin_id: &str, permission: PluginPermission) -> bool {
+        self.plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id == plugin_id)
+            .is_some_and(|plugin| plugin.manifest.allows(permission))
     }
 }
 

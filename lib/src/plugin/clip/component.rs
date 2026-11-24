@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, bail};
-use rhai::{Dynamic, Engine};
+use rhai::Dynamic;
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
@@ -448,15 +448,16 @@ impl Scheduler {
     }
 
     /// `definition` の各コンポーネントについて、能力に基づく標準関数をフックタイミング順に実行する。
+    ///
+    /// スクリプトはコンポーネントの所属プラグイン専用のエンジンで実行する。
     pub fn run_clip(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         instance: &ClipInstance,
         definition: &RuntimeDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
-        self.run_clip_with_properties(engine, loader, &instance.properties, definition, ctx)
+        self.run_clip_with_properties(loader, &instance.properties, definition, ctx)
     }
 
     /// `run_clip` のプロパティマップ直接渡し版。呼び出し側が既に
@@ -464,7 +465,6 @@ impl Scheduler {
     /// 構築（＝マップ全体の clone）せずに実行できる。
     pub fn run_clip_with_properties(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         properties: &HashMap<PropertyKey, ClipBindingValue>,
         definition: &RuntimeDefinition,
@@ -475,7 +475,7 @@ impl Scheduler {
         let mut first_error: Option<anyhow::Error> = None;
         for component in &definition.components {
             if let Err(error) =
-                self.run_component(engine, loader, properties, definition, component, ctx)
+                self.run_component(loader, properties, definition, component, ctx)
             {
                 log::error!(
                     "component `{}` failed, continuing with the rest: {error:#}",
@@ -495,7 +495,6 @@ impl Scheduler {
     /// FileDropHandler の戻り値を初期プロパティとして適用します。
     pub fn file_drop_properties(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         kind_id: &NamespacedID,
         source_path: &str,
@@ -527,6 +526,9 @@ impl Scheduler {
                 handler.id.full()
             )
         })?;
+        let engine = loader
+            .plugin_engine(handler.id.plugin_id())
+            .ok_or_else(|| anyhow::anyhow!("plugin `{}` not found", handler.id.plugin_id()))?;
         let result = script
             .call::<Dynamic>(engine, fn_name, (source_path.to_owned(),))
             .with_context(|| format!("file-drop-handler `{}` failed", handler.id.full()))?;
@@ -583,7 +585,6 @@ impl Scheduler {
 
     fn run_component(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         properties: &HashMap<PropertyKey, ClipBindingValue>,
         definition: &RuntimeDefinition,
@@ -594,6 +595,11 @@ impl Scheduler {
         let Some(script) = loader.get_component_script(&component.id) else {
             return Ok(());
         };
+        let engine = loader
+            .plugin_engine(component.id.plugin_id())
+            .ok_or_else(|| {
+                anyhow::anyhow!("plugin `{}` not found", component.id.plugin_id())
+            })?;
 
         // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
         // 依存だけが解決できる（例: video の描画スクリプトは requires 経由で

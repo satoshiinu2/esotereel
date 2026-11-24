@@ -266,7 +266,7 @@ fn file_drop_values_merge_into_defaults_and_reject_unknown_fields() {
 
 #[test]
 fn file_drop_handler_returns_property_map() {
-    let engine = Engine::new();
+    let engine = rhai::Engine::new();
     let ast = engine
         .compile(
             r#"
@@ -556,7 +556,6 @@ script = "video.rhai"
             .is_some()
     );
 
-    let engine = Engine::new();
     let instance = ClipInstance {
         kind_id: NamespacedID::new("sched-test", "video").unwrap(),
         properties: HashMap::new(),
@@ -588,7 +587,7 @@ script = "video.rhai"
         Arc::new(MediaFetchCache::default()),
     );
     let scheduler = Scheduler::new();
-    let result = scheduler.run_clip(&engine, &loader, &instance, &def, &mut ctx);
+    let result = scheduler.run_clip(&loader, &instance, &def, &mut ctx);
     assert!(
         result.is_ok(),
         "scheduler should run the Rhai capability function: {result:?}"

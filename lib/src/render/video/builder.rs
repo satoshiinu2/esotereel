@@ -179,7 +179,6 @@ pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
 
         let scheduler = Scheduler::new();
         if let Err(e) = scheduler.run_clip_with_properties(
-            ctx.script_engine,
             &*loader,
             &clip.properties,
             &runtime_def,
