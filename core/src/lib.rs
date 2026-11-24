@@ -79,11 +79,22 @@ async fn on_project_event(state: &Arc<ServerState>) -> anyhow::Result<()> {
     };
 
     // Project ロックを解放してからネットワーク送信を行う（デッドロック回避）
+    // 1タイムラインの失敗で残りの変更まで捨てないよう、全部を配送しきってから
+    // 最初のエラーを返す。
+    let mut first_error: Option<anyhow::Error> = None;
     for (timeline_id, changeset) in changes {
-        dispatch_changeset(state, timeline_id, changeset)?;
+        if let Err(error) = dispatch_changeset(state, timeline_id, changeset) {
+            log::error!("failed to dispatch changeset for timeline {timeline_id}: {error:#}");
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
     }
 
-    Ok(())
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn dispatch_changeset(

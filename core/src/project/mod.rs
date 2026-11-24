@@ -229,7 +229,11 @@ pub(crate) fn clip_add_core(
             get_property_path_from_map(&properties, source_path)
         {
             if !source.is_empty() {
-                let _ = project.register_asset(Path::new(source));
+                // 登録に失敗してもクリップ追加自体は続行するが、無言にはしない。
+                // レジストリに無いソースは後の描画で警告として表面化する。
+                if let Err(error) = project.register_asset(Path::new(source)) {
+                    log::warn!("failed to register asset `{source}`: {error:#}");
+                }
             }
         }
     }

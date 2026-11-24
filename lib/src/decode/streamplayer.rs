@@ -182,7 +182,7 @@ impl StreamPlayer {
         while self.decoder.receive_frame(&mut decoded).is_ok() {
             // 初回フレーム受信時にスケーラを遅延初期化
             if self.scaler.is_none() {
-                self.scaler = Scaler::get(
+                self.scaler = match Scaler::get(
                     decoded.format(),
                     decoded.width(),
                     decoded.height(),
@@ -190,8 +190,14 @@ impl StreamPlayer {
                     self.target_width,
                     self.target_height,
                     Flags::BILINEAR,
-                )
-                .ok();
+                ) {
+                    Ok(scaler) => Some(scaler),
+                    Err(error) => {
+                        // スケーラが作れないとフレームが一切出ない。無言で流さない。
+                        log::error!("failed to create scaler: {error}");
+                        None
+                    }
+                };
             }
 
             if let Some(scaler) = self.scaler.as_mut() {
