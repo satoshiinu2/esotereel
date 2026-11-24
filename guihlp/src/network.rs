@@ -98,8 +98,14 @@ impl ClientNetworkHandler {
     fn parse_and_handle_responce(&self, state: &Arc<ClientState>, bytes: &Vec<u8>) {
         match check_archived_root::<Response>(bytes) {
             Ok(archived_req) => {
-                if let Err(e) = on_responce_recveve(archived_req, state) {
-                    log::error!("Handler Error: {:?}", e);
+                // ハンドラ内の panic で受信タスクごと死なないよう、ここで回収する
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    on_responce_recveve(archived_req, state)
+                }));
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => log::error!("Handler Error: {:?}", e),
+                    Err(e) => log::error!("Response handler panicked: {:?}", e),
                 }
             }
             Err(e) => log::error!("Invalid data format: {:?}", e),

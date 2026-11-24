@@ -25,9 +25,22 @@ use esotereel_lib::{
     StreamState,
 };
 use log::info;
-use rkyv::Deserialize;
 
 use crate::state::ClientState;
+
+/// `check_archived_root` で検証済みのペイロードをデシリアライズする。
+///
+/// エラー型が `Infallible` なので失敗し得ないが、検証の前提が崩れた場合に
+/// panic ではなくコンパイルエラーで気付けるよう、網羅的に受ける。
+fn deserialize_validated<T, A>(archived: &A) -> T
+where
+    A: rkyv::Deserialize<T, rkyv::Infallible>,
+{
+    match archived.deserialize(&mut rkyv::Infallible) {
+        Ok(value) => value,
+        Err(error) => match error {},
+    }
+}
 
 /// project の `Arc` とコールバック関数ポインタを取り出す。
 /// ClientState 自体にロックは無く、メンバーはフィールド側の同期で保護される。
@@ -70,7 +83,7 @@ pub(super) fn on_responce_recveve(
                         })
                         .collect();
 
-                    let outline = archived.outline.deserialize(&mut rkyv::Infallible).unwrap();
+                    let outline = deserialize_validated(&archived.outline);
 
                     TimelineMeta {
                         id: archived.id,
@@ -111,7 +124,7 @@ pub(super) fn on_responce_recveve(
             let mut sources = Vec::new();
             let loader_guard = loader.read_or_err().ok();
             for (layer_id, archived_clip) in clips.iter() {
-                let clip: Clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
+                let clip: Clip = deserialize_validated(archived_clip);
                 if let Some(loader_guard) = loader_guard.as_ref() {
                     if let Ok(definition) = loader_guard.resolve_component_definition(&clip.kind_id)
                     {
@@ -165,9 +178,9 @@ pub(super) fn on_responce_recveve(
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
-                let clip_id: ClipId = clip_id.deserialize(&mut rkyv::Infallible).unwrap();
-                let key: PropertyKey = key.deserialize(&mut rkyv::Infallible).unwrap();
-                let value: ClipBindingValue = value.deserialize(&mut rkyv::Infallible).unwrap();
+                let clip_id: ClipId = deserialize_validated(clip_id);
+                let key: PropertyKey = deserialize_validated(key);
+                let value: ClipBindingValue = deserialize_validated(value);
 
                 // プロパティ変更が動画ソースなら、タイムライン貸し出しを解放した後に
                 // クライアントのアセットレジストリにも反映する。対象かどうかは
@@ -291,7 +304,7 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                 for archived_id in layer_ids.iter() {
-                    let id: LayerId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    let id: LayerId = deserialize_validated(archived_id);
                     timeline.remove_layer_local(id); // サーバー側のremove_layerと違い、
                                                      // parentのchildren書き換えは不要
                                                      // (親も別途upsertで送られてくるので)
@@ -319,13 +332,13 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                 for (id, meta) in folders.iter() {
-                    let meta: Meta = meta.deserialize(&mut rkyv::Infallible).unwrap();
+                    let meta: Meta = deserialize_validated(meta);
                     timeline.apply_outline_folder_meta(*id, meta);
                 }
                 for (parent, kids) in children.iter() {
                     let parent: Option<LayerFolderId> =
-                        parent.deserialize(&mut rkyv::Infallible).unwrap();
-                    let kids: Vec<OutlineNode> = kids.deserialize(&mut rkyv::Infallible).unwrap();
+                        deserialize_validated(parent);
+                    let kids: Vec<OutlineNode> = deserialize_validated(kids);
                     timeline.apply_outline_children(parent, kids);
                 }
             }
@@ -349,7 +362,7 @@ pub(super) fn on_responce_recveve(
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
                 for archived_id in folder_ids.iter() {
-                    let id: LayerFolderId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    let id: LayerFolderId = deserialize_validated(archived_id);
                     timeline.remove_outline_folder_local(id);
                 }
             }
@@ -406,8 +419,8 @@ pub(super) fn on_responce_recveve(
             discontinuous,
             generation,
         } => {
-            let pts: Option<i64> = pts.deserialize(&mut rkyv::Infallible).unwrap();
-            let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
+            let pts: Option<i64> = deserialize_validated(pts);
+            let dts: Option<i64> = deserialize_validated(dts);
 
             {
                 // デコードは重い処理のため、State ロックを保持したまま行わない
@@ -426,7 +439,7 @@ pub(super) fn on_responce_recveve(
             generation: _,
         } => {
             let fetched_ranges: Vec<Range<f64>> =
-                fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
+                deserialize_validated(fetched_ranges);
 
             let stream_players = stream_players_of(state);
             if let Some(mut player) = stream_players.get_mut(resource_id) {
@@ -438,7 +451,7 @@ pub(super) fn on_responce_recveve(
             info!("asset import succeeded: {asset_id}");
         }
         ArchivedResponse::Failed { error } => {
-            let error: EsotereelError = error.deserialize(&mut rkyv::Infallible).unwrap();
+            let error: EsotereelError = deserialize_validated(error);
             return Err(error.into());
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {

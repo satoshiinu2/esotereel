@@ -51,8 +51,17 @@ pub extern "C" fn internal_server_start(
         let dirs_def = Directories::new(std_plugin_dir, working_dir);
 
         std::thread::spawn(move || {
+            let addr_for_panic = addr.clone();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        // 起動失敗を GUI 側へも伝える（待ち続けさせない）
+                        log::error!("Failed to create runtime: {e}");
+                        on_server_ready(false, FfiStringView::from_str(addr.as_str()));
+                        return;
+                    }
+                };
 
                 runtime.block_on(async {
                     server_network_start(
@@ -69,6 +78,7 @@ pub extern "C" fn internal_server_start(
 
             if let Err(e) = result {
                 log::error!("Server thread panicked: {:?}", e);
+                on_server_ready(false, FfiStringView::from_str(addr_for_panic.as_str()));
             }
         });
 
