@@ -151,8 +151,12 @@ pub(super) fn on_responce_recveve(
                 }
                 // クライアント側のアセットレジストリにも動画ソースを登録し、
                 // Project.assets をサーバーと整合したカタログとして保つ。
+                // ソースがアセット参照（UUID）の場合は登録時のエントリが既に
+                // あるはずで、参照文字列をパスとして登録し直してはいけない。
                 for source in sources {
-                    let _ = project.register_asset(Path::new(&source));
+                    if !is_asset_ref(&source) {
+                        let _ = project.register_asset(Path::new(&source));
+                    }
                 }
             }
 
@@ -202,7 +206,9 @@ pub(super) fn on_responce_recveve(
             }
 
             if let Some(source) = new_source {
-                let _ = project.register_asset(Path::new(&source));
+                if !is_asset_ref(&source) {
+                    let _ = project.register_asset(Path::new(&source));
+                }
             }
 
             drop(project_guard);
@@ -474,6 +480,11 @@ pub(super) fn on_responce_recveve(
         }
     }
     Ok(())
+}
+
+/// ソース文字列がアセット参照（UUID 形式）かどうか。
+fn is_asset_ref(source: &str) -> bool {
+    uuid::Uuid::parse_str(source).is_ok()
 }
 
 /// クリッププロパティから動画ソースのパス文字列を取り出す。

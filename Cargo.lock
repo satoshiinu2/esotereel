@@ -698,6 +698,7 @@ dependencies = [
  "rkyv",
  "tokio",
  "toml",
+ "uuid",
 ]
 
 [[package]]

@@ -7,7 +7,7 @@ use esotereel_lib::{
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
         ids::{LayerFolderId, LayerId, TimelineId},
     },
-    requests::Request,
+    requests::{AddClipFromAsset, Request},
     util::result::{EsotereelError, LockExt},
 };
 
@@ -15,26 +15,46 @@ use crate::network::ClientNetworkHandler;
 use crate::slice_from_ptr_or_empty;
 use crate::state::ClientState;
 
+#[derive(Debug)]
+enum PendingRequest {
+    Command((TimelineId, CommandRequest)),
+    Request(Request),
+}
+
 #[derive(Default, Debug)]
 pub struct CommandQueue {
-    pending: VecDeque<(TimelineId, CommandRequest)>,
+    pending: VecDeque<PendingRequest>,
 }
 
 impl CommandQueue {
     pub fn enqueue(&mut self, timeline_id: TimelineId, command: CommandRequest) {
-        self.pending.push_back((timeline_id, command));
+        self.pending.push_back(PendingRequest::Command((timeline_id, command)));
+    }
+
+    pub fn enqueue_request(&mut self, request: Request) {
+        self.pending.push_back(PendingRequest::Request(request));
     }
 
     pub fn send_all(&mut self, network: &ClientNetworkHandler) {
-        if self.pending.is_empty() {
-            return;
+        // キューに入れた順序を保って送る。コマンドは連続する範囲をまとめて
+        // 1つの Command リクエストにし、その他のリクエストは単独で送る。
+        let mut commands: VecDeque<(TimelineId, CommandRequest)> = VecDeque::new();
+        while let Some(item) = self.pending.pop_front() {
+            match item {
+                PendingRequest::Command(command) => commands.push_back(command),
+                PendingRequest::Request(request) => {
+                    if !commands.is_empty() {
+                        network.send(&Request::Command {
+                            commands: std::mem::take(&mut commands),
+                        });
+                    }
+                    network.send(&request);
+                }
+            }
         }
-
-        let req = &Request::Command {
-            commands: std::mem::take(&mut self.pending),
-        };
-
-        network.send(req);
+        if !commands.is_empty() {
+            network.send(&Request::Command { commands });
+        }
     }
 
     pub fn req_cmd_clip_move_mul(
@@ -159,15 +179,30 @@ impl CommandQueue {
         let kind_id = media_clip_kind_id(&loader)?;
         drop(loader);
 
-        let command = CommandRequest::AddClipFromFile {
-            layer_id,
-            position,
-            duration: 50,
-            kind_id,
-            source_path: source_path.to_string(),
-        };
+        // アセット参照（UUID）はクライアントが採番し、サーバーへの参照登録と
+        // クライアント側レジストリへの登録を対にする。こうするとサーバーが
+        // クリップに持たせる参照とクライアントがプレビュー描画で解決する参照が
+        // 一致する。プロジェクトが無い場合はサーバー側でも失敗するので、
+        // ここで同じエラーにする。
+        let project_arc = state.project_arc();
+        let mut project_guard = project_arc.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        let asset_ref = project.register_asset(std::path::Path::new(source_path))?;
+        drop(project_guard);
 
-        self.enqueue(timeline_id, command);
+        self.enqueue_request(Request::RegisterAssetReference {
+            asset_id: asset_ref.to_string(),
+            path: source_path.to_string(),
+            add_clip: Some(AddClipFromAsset {
+                timeline_id,
+                layer_id,
+                position,
+                duration: 50,
+                kind_id,
+            }),
+        });
 
         Ok(())
     }
