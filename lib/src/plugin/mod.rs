@@ -199,8 +199,18 @@ impl Plugin {
         for button in &toolbar_buttons {
             let path = dir.join(&button.script);
             if path.exists() {
-                let compiled = CompiledScript::compile(dir, &path)?;
-                toolbar_button_scripts.insert(button.id.clone(), compiled);
+                match CompiledScript::compile(dir, &path) {
+                    Ok(compiled) => {
+                        toolbar_button_scripts.insert(button.id.clone(), compiled);
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "failed to compile toolbar script `{}` for plugin `{}`: {error:#}",
+                            path.display(),
+                            manifest.id
+                        );
+                    }
+                }
             }
         }
         let script = Self::load_script(&manifest, &dir, &dir.join("script.rhai"))?;
@@ -305,21 +315,31 @@ impl Plugin {
 
         let mut all_kinds = HashMap::new();
         for path in toml_paths {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("failed to read clip kind file at {}", path.display()))?;
-            let kinds = ClipKind::parse_toml(&text, &manifest.id).with_context(|| {
-                format!(
-                    "failed parse clip kinds in `{}` for plugin `{}`",
-                    path.display(),
-                    manifest.id
-                )
-            })?;
+            // 1ファイルの失敗でプラグイン全体を落とさない。壊れたファイルは
+            // ログに残して読み飛ばす。
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) => {
+                    log::error!("failed to read clip kind file at {}: {error}", path.display());
+                    continue;
+                }
+            };
+            let kinds = match ClipKind::parse_toml(&text, &manifest.id) {
+                Ok(kinds) => kinds,
+                Err(error) => {
+                    log::error!(
+                        "failed parse clip kinds in `{}` for plugin `{}`: {error:#}",
+                        path.display(),
+                        manifest.id
+                    );
+                    continue;
+                }
+            };
 
             for (id, kind) in kinds {
                 if all_kinds.insert(id.clone(), kind).is_some() {
-                    anyhow::bail!(
-                        "duplicate clip kind id `{}` across files in `{}`",
-                        id,
+                    log::error!(
+                        "duplicate clip kind id `{id}` across files in `{}`; keeping the first",
                         manifest.id
                     );
                 }
@@ -358,30 +378,50 @@ impl Plugin {
         let mut all_components = HashMap::new();
         let mut all_scripts = HashMap::new();
         for path in toml_paths {
-            let text = std::fs::read_to_string(&path)
-                .with_context(|| format!("failed to read component file at {}", path.display()))?;
-            let components =
-                parse_component_definitions(&text, &manifest.id).with_context(|| {
-                    format!(
-                        "failed parse components in `{}` for plugin `{}`",
+            // 1ファイルの失敗でプラグイン全体を落とさない（load_clip_kinds と同じ方針）。
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(error) => {
+                    log::error!("failed to read component file at {}: {error}", path.display());
+                    continue;
+                }
+            };
+            let components = match parse_component_definitions(&text, &manifest.id) {
+                Ok(components) => components,
+                Err(error) => {
+                    log::error!(
+                        "failed parse components in `{}` for plugin `{}`: {error:#}",
                         path.display(),
                         manifest.id
-                    )
-                })?;
+                    );
+                    continue;
+                }
+            };
 
             for (id, def) in &components {
-                if all_components.insert(id.clone(), def.clone()).is_some() {
-                    anyhow::bail!(
-                        "duplicate component definition id `{}` across files in `{}`",
-                        id,
+                if all_components.contains_key(id) {
+                    log::error!(
+                        "duplicate component definition id `{id}` across files in `{}`; keeping the first",
                         manifest.id
                     );
+                    continue;
                 }
+                all_components.insert(id.clone(), def.clone());
                 if let Some(script_path) = &def.script {
                     let script_path = components_dir.join(script_path);
                     if script_path.exists() {
-                        let compiled = CompiledScript::compile(components_dir, &script_path)?;
-                        all_scripts.insert(id.clone(), compiled);
+                        match CompiledScript::compile(components_dir, &script_path) {
+                            Ok(compiled) => {
+                                all_scripts.insert(id.clone(), compiled);
+                            }
+                            Err(error) => {
+                                log::error!(
+                                    "failed to compile component script `{}` for plugin `{}`: {error:#}",
+                                    script_path.display(),
+                                    manifest.id
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -412,15 +452,25 @@ impl Plugin {
 
         let mut package_modules: Vec<(String, String)> = Vec::new();
         for path in &module_files {
-            let relative = path.strip_prefix(shaders_dir).with_context(|| {
-                format!("failed to resolve shader module path {}", path.display())
-            })?;
-            let module_path = module_path_for(relative)
-                .with_context(|| format!("invalid shader module path {}", path.display()))?;
-            let source = std::fs::read_to_string(path).with_context(|| {
-                format!("failed to read shader source at {}", path.display())
-            })?;
-            package_modules.push((module_path, source));
+            // モジュール1つの失敗は、そのモジュールを import するシェーダ側の
+            // コンパイルエラーとして表面化する。ここでは読み飛ばす。
+            let loaded = (|| -> anyhow::Result<(String, String)> {
+                let relative = path.strip_prefix(shaders_dir).with_context(|| {
+                    format!("failed to resolve shader module path {}", path.display())
+                })?;
+                let module_path = module_path_for(relative)
+                    .with_context(|| format!("invalid shader module path {}", path.display()))?;
+                let source = std::fs::read_to_string(path).with_context(|| {
+                    format!("failed to read shader source at {}", path.display())
+                })?;
+                Ok((module_path, source))
+            })();
+            match loaded {
+                Ok(module) => package_modules.push(module),
+                Err(error) => {
+                    log::error!("skipping shader module {}: {error:#}", path.display());
+                }
+            }
         }
 
         let mut toml_paths: Vec<PathBuf> = std::fs::read_dir(shaders_dir)
@@ -433,36 +483,46 @@ impl Plugin {
 
         let mut all_shaders = HashMap::new();
         for path in toml_paths {
-            let text = std::fs::read_to_string(&path).with_context(|| {
-                format!("failed to read shader file at {}", path.display())
-            })?;
-            let mut def = parse_shader_definition(&text, &manifest.id).with_context(|| {
-                format!(
-                    "failed parse shader in `{}` for plugin `{}`",
-                    path.display(),
-                    manifest.id
-                )
-            })?;
-
-            let main_module = module_path_for(Path::new(&def.source)).with_context(|| {
-                format!(
-                    "invalid shader source path `{}` for plugin `{}`",
-                    def.source, manifest.id
-                )
-            })?;
-            def.compiled_wgsl = compile_and_validate(&main_module, &package_modules)
-                .with_context(|| {
+            // 1ファイルの失敗でプラグイン全体を落とさない（load_clip_kinds と同じ方針）。
+            let loaded = (|| -> anyhow::Result<ShaderDefinition> {
+                let text = std::fs::read_to_string(&path).with_context(|| {
+                    format!("failed to read shader file at {}", path.display())
+                })?;
+                let mut def = parse_shader_definition(&text, &manifest.id).with_context(|| {
                     format!(
-                        "failed to compile shader `{}` for plugin `{}`",
-                        def.id, manifest.id
+                        "failed parse shader in `{}` for plugin `{}`",
+                        path.display(),
+                        manifest.id
                     )
                 })?;
 
+                let main_module = module_path_for(Path::new(&def.source)).with_context(|| {
+                    format!(
+                        "invalid shader source path `{}` for plugin `{}`",
+                        def.source, manifest.id
+                    )
+                })?;
+                def.compiled_wgsl = compile_and_validate(&main_module, &package_modules)
+                    .with_context(|| {
+                        format!(
+                            "failed to compile shader `{}` for plugin `{}`",
+                            def.id, manifest.id
+                        )
+                    })?;
+                Ok(def)
+            })();
+            let def = match loaded {
+                Ok(def) => def,
+                Err(error) => {
+                    log::error!("skipping shader file {}: {error:#}", path.display());
+                    continue;
+                }
+            };
+
             let id = def.id.clone();
             if all_shaders.insert(id.clone(), Arc::new(def)).is_some() {
-                anyhow::bail!(
-                    "duplicate shader definition id `{}` across files in `{}`",
-                    id,
+                log::error!(
+                    "duplicate shader definition id `{id}` across files in `{}`; keeping the first",
                     manifest.id
                 );
             }
@@ -661,17 +721,25 @@ impl PluginLoader {
 
     /// 全プラグインの `clip_kinds` と `component_definitions` をマージし、インデックスを再構築します。
     ///
-    /// ID 衝突がある場合はエラーとなり、どのプラグインがどの ID を所有するかを明確にします。
+    /// ID 衝突がある場合は先に読み込まれたプラグインを優先し、衝突したエントリだけを
+    /// ログに残して落とします（1つの衝突で全プラグインが使えなくならないように）。
     /// 新しいインデックス一式はローカルに構築し、全部成功した場合にだけ現在の
     /// インデックスと差し替えます。失敗時は既存のインデックスが無傷で残ります。
     fn rebuild_indices(&mut self) -> anyhow::Result<()> {
         // 1段階目: 全プラグインのkindsをマージ
+        // ID が衝突した場合は先勝ちとし、衝突した側だけを落とす。
+        // 1つの衝突で全プラグインが使えなくなる事態を避けるため。
         let mut merged_kinds: HashMap<NamespacedID, ClipKind> = HashMap::new();
         for plugin in &self.plugins {
             for (id, kind) in &plugin.clip_kinds {
-                if merged_kinds.insert(id.clone(), kind.clone()).is_some() {
-                    anyhow::bail!("duplicate clip kind id `{}` across plugins", id);
+                if merged_kinds.contains_key(id) {
+                    log::error!(
+                        "duplicate clip kind id `{id}` from plugin `{}`; keeping the first",
+                        plugin.manifest.id
+                    );
+                    continue;
                 }
+                merged_kinds.insert(id.clone(), kind.clone());
             }
         }
 
@@ -681,9 +749,14 @@ impl PluginLoader {
         let mut merged_components: HashMap<NamespacedID, ComponentDefinition> = HashMap::new();
         for plugin in &self.plugins {
             for (id, def) in &plugin.component_definitions {
-                if merged_components.insert(id.clone(), def.clone()).is_some() {
-                    anyhow::bail!("duplicate component definition id `{}` across plugins", id);
+                if merged_components.contains_key(id) {
+                    log::error!(
+                        "duplicate component definition id `{id}` from plugin `{}`; keeping the first",
+                        plugin.manifest.id
+                    );
+                    continue;
                 }
+                merged_components.insert(id.clone(), def.clone());
             }
         }
         let mut component_registry = ComponentRegistry::default();
@@ -693,9 +766,14 @@ impl PluginLoader {
         let mut merged_shaders: HashMap<NamespacedID, Arc<ShaderDefinition>> = HashMap::new();
         for plugin in &self.plugins {
             for (id, def) in &plugin.shader_definitions {
-                if merged_shaders.insert(id.clone(), Arc::clone(def)).is_some() {
-                    anyhow::bail!("duplicate shader definition id `{}` across plugins", id);
+                if merged_shaders.contains_key(id) {
+                    log::error!(
+                        "duplicate shader definition id `{id}` from plugin `{}`; keeping the first",
+                        plugin.manifest.id
+                    );
+                    continue;
                 }
+                merged_shaders.insert(id.clone(), Arc::clone(def));
             }
         }
         let mut shader_registry = ShaderRegistry::default();
@@ -718,13 +796,17 @@ impl PluginLoader {
             if let Some(script) = plugin.script.as_ref() {
                 scripts_index.insert(plugin.manifest.id.clone(), script.clone());
             }
-            // コンポーネントごとの個別スクリプト
+            // コンポーネントごとの個別スクリプト（定義側の先勝ちに合わせる）
             for (id, script) in &plugin.component_scripts {
-                component_scripts_index.insert(id.clone(), script.clone());
+                if !component_scripts_index.contains_key(id) {
+                    component_scripts_index.insert(id.clone(), script.clone());
+                }
             }
             // ツールバーボタンごとの個別スクリプト
             for (id, script) in &plugin.toolbar_button_scripts {
-                toolbar_button_scripts_index.insert(id.clone(), script.clone());
+                if !toolbar_button_scripts_index.contains_key(id) {
+                    toolbar_button_scripts_index.insert(id.clone(), script.clone());
+                }
             }
 
             // schemas index
