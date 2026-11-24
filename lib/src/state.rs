@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use crate::dirs::Directories;
 use crate::network::NetworkHandler;
 use crate::plugin::script::api::register_fn_for;
+use crate::plugin::script::new_script_engine;
 use crate::plugin::{PluginLoadedResult, PluginLoader};
 use crate::project::Project;
 use crate::util::result::LockExt;
@@ -47,7 +48,7 @@ impl CommonState {
         let plugin_loader =
             shared_plugin_loader.unwrap_or(Arc::new(RwLock::new(PluginLoader::new())));
 
-        let mut script_engine = rhai::Engine::new();
+        let mut script_engine = new_script_engine();
         register_fn_for::<T>(&mut script_engine);
 
         Self {

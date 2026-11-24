@@ -11,9 +11,24 @@ pub mod api;
 pub mod bridge;
 pub mod props;
 
+/// 上限付きのスクリプトエンジンを作る。
+///
+/// プラグインスクリプトの無限ループや深い再帰で呼び出し側が固まらないよう、
+/// 実行系のエンジンは必ずこちらを使う。
+pub(crate) fn new_script_engine() -> rhai::Engine {
+    let mut engine = rhai::Engine::new();
+    engine.set_max_operations(10_000_000);
+    engine.set_max_call_levels(128);
+    engine.set_max_expr_depths(128, 64);
+    engine.set_max_array_size(1_000_000);
+    engine.set_max_map_size(10_000);
+    engine.set_max_string_size(10_000_000);
+    engine
+}
+
 thread_local! {
     /// for compile only
-     static SCRIPT_ENGINE: rhai::Engine = rhai::Engine::new();
+     static SCRIPT_ENGINE: rhai::Engine = new_script_engine();
 }
 
 #[derive(Debug, Clone)]
