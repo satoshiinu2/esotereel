@@ -470,10 +470,26 @@ impl Scheduler {
         definition: &RuntimeDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
+        // 1コンポーネントの失敗で後続を巻き込まない。全コンポーネントを実行し、
+        // 失敗はログに残したうえで最初のエラーを返す（呼び出し側の警告は維持する）。
+        let mut first_error: Option<anyhow::Error> = None;
         for component in &definition.components {
-            self.run_component(engine, loader, properties, definition, component, ctx)?;
+            if let Err(error) =
+                self.run_component(engine, loader, properties, definition, component, ctx)
+            {
+                log::error!(
+                    "component `{}` failed, continuing with the rest: {error:#}",
+                    component.id
+                );
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
         }
-        Ok(())
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// FileDropHandler の戻り値を初期プロパティとして適用します。
