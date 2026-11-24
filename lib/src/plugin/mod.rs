@@ -853,7 +853,11 @@ impl PluginLoader {
             .with_context(|| format!("Failed to load plugin at {}", dir.display()))?;
         let manifest = plugin.manifest.clone();
         self.plugins.push(plugin);
-        self.rebuild_indices()?; // 新規分も含めて全体を組み直す
+        // 再構築に失敗したら追加を取り消し、plugins とインデックスの乖離を防ぐ
+        if let Err(error) = self.rebuild_indices() {
+            self.plugins.pop();
+            return Err(error);
+        }
         log::info!("Loaded additional plugin '{}'", manifest.id);
         Ok(manifest)
     }
@@ -877,10 +881,14 @@ impl PluginLoader {
 
         // 成功したら配列内の古いインスタンスを差し替え
         if let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) {
-            self.plugins[index] = reloaded_plugin;
+            let old_plugin = std::mem::replace(&mut self.plugins[index], reloaded_plugin);
             // 他プラグインのpending propertiesが差し替え対象のkindを参照している
             // 可能性があるため、必ず全プラグイン分を再解決する
-            self.rebuild_indices()?;
+            if let Err(error) = self.rebuild_indices() {
+                // 再構築に失敗したら元のインスタンスに戻す
+                self.plugins[index] = old_plugin;
+                return Err(error);
+            }
             log::info!("Reloaded plugin '{}'", plugin_id);
         }
 
@@ -889,12 +897,15 @@ impl PluginLoader {
 
     /// 指定 ID のプラグインをアンロードし、インデックスを再構築します。
     pub fn unload_plugin_by_id(&mut self, plugin_id: &str) -> anyhow::Result<()> {
-        let before = self.plugins.len();
-        self.plugins.retain(|p| p.manifest.id != plugin_id);
-        if self.plugins.len() == before {
+        let Some(index) = self.plugins.iter().position(|p| p.manifest.id == plugin_id) else {
             anyhow::bail!("Plugin `{}` not found in loaded plugins", plugin_id);
+        };
+        let removed = self.plugins.remove(index);
+        // 再構築に失敗したら元に戻す
+        if let Err(error) = self.rebuild_indices() {
+            self.plugins.insert(index, removed);
+            return Err(error);
         }
-        self.rebuild_indices()?; // 依存解決のため全体を組み直す
         log::info!("Unloaded plugin '{}'", plugin_id);
         Ok(())
     }
@@ -1037,11 +1048,18 @@ impl PluginLoader {
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<R> {
         let script = self
-            .scripts_index
-            .get(plugin_id)
+            .get_plugin_script(plugin_id)
             .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?;
 
         script.call(engine, fn_name, args)
+    }
+
+    /// プラグイン共通スクリプトの複製を返します。
+    ///
+    /// 呼び出し側がローダーのガードを解放してから実行できるようにするための
+    /// アクセサです（実行中に再読み込みが走ってもデッドロックしません）。
+    pub fn get_plugin_script(&self, plugin_id: &str) -> Option<CompiledScript> {
+        self.scripts_index.get(plugin_id).cloned()
     }
 }
 

@@ -62,15 +62,22 @@ impl CommonState {
 
     /// プラグイン共通スクリプトの関数を呼び出します。
     ///
-    /// `plugin_loader` の読み取りロックを取得し、`PluginLoader::call_script` に委譲します。
+    /// スクリプトは読み取りロック保持中に複製だけを取り出し、実行はガードを
+    /// 解放してから行います。実行中にプラグインの再読み込み（書き込みロック）が
+    /// 走ってもデッドロックしません。
     pub fn call_script<R: Clone + Send + Sync + 'static>(
         &self,
         plugin_id: &str,
         fn_name: &str,
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<R> {
-        let loader = self.plugin_loader.read_or_err()?;
-        loader.call_script::<R>(&self.script_engine, plugin_id, fn_name, args)
+        let script = {
+            let loader = self.plugin_loader.read_or_err()?;
+            loader
+                .get_plugin_script(plugin_id)
+                .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?
+        };
+        script.call::<R>(&self.script_engine, fn_name, args)
     }
 
     /// ディスクから全プラグインを非同期に読み込みます。
