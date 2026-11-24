@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::decode::growing::{GrowingFile, UploadProgress};
 use crate::project::MediaSec;
 use crate::responces::Response;
-use crate::util::result::EsotereelResult;
+use crate::util::result::{EsotereelError, EsotereelResult};
 use anyhow::Context;
 
 /// FFmpeg の時間基準（マイクロ秒単位）です。
@@ -195,6 +195,25 @@ impl VideoStreamer {
         mut ranges: Vec<Range<MediaSec>>,
         generation: u64,
     ) -> EsotereelResult<Vec<Response>> {
+        // 範囲はネットワーク経由で届く。個数と値域を検証しないと、1リクエストで
+        // ファイル全体の読み直しを何度も強制できてしまう。
+        const MAX_RANGES: usize = 256;
+        if ranges.len() > MAX_RANGES {
+            return Err(EsotereelError::DecodeError(format!(
+                "too many fetch ranges: {} (max {MAX_RANGES})",
+                ranges.len()
+            ))
+            .into());
+        }
+        for range in &ranges {
+            if !range.start.is_finite() || !range.end.is_finite() || range.end < range.start {
+                return Err(EsotereelError::DecodeError(format!(
+                    "invalid fetch range: {range:?}"
+                ))
+                .into());
+            }
+        }
+
         ranges.sort_by(|a, b| a.start.total_cmp(&b.start));
 
         let mut to_sends = Vec::new();
