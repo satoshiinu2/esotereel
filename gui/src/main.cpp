@@ -49,20 +49,22 @@ int main(int argc, char **argv) {
     callbacks.mark_dirty_timeline = +[](TimelineId id) { mainWindow->markDirtyTimeline(id); };
     callbacks.on_connected = +[]() { onConnectedCallBack(); };
 
-    ClientState n(callbacks, stdPluginDir, workingDir);
-    state = &n;
-
-    Settings::applyQtLogSettings(&n);
-    n.logDirectoriesInfo();
-    n.bootstrap();
-
-    window::MainWindow w(n);
-    mainWindow = &w;
-    w.show();
-
-    startInternalServer();
-
+    // 初期化（ClientState 構築・bootstrap・MainWindow 構築）も含めて例外を拾う。
+    // ここで投げられると terminate して理由が残らないため、exec だけを囲わない。
     try {
+        ClientState n(callbacks, stdPluginDir, workingDir);
+        state = &n;
+
+        Settings::applyQtLogSettings(&n);
+        n.logDirectoriesInfo();
+        n.bootstrap();
+
+        window::MainWindow w(n);
+        mainWindow = &w;
+        w.show();
+
+        startInternalServer();
+
         return app.exec();
     } catch (const std::runtime_error &e) {
         qCWarning(logRust) << e.what();
@@ -82,6 +84,10 @@ void startInternalServer() {
 void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi) {
     if (ok) {
         state->run(StringView::toQString(addr_ffi));
+    } else {
+        qCWarning(logRust) << "Internal server failed to start";
+        QMessageBox::critical(nullptr, "Server error",
+                              "Failed to start the internal server.");
     }
 }
 
