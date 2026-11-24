@@ -159,7 +159,7 @@ pub fn on_request_receive(
             let result = (|| -> anyhow::Result<()> {
                 let asset_uuid = parse_asset_id(asset_id_raw)?;
                 let mut uploads = uploads.lock_or_err()?;
-                uploads.begin(asset_uuid, file_name_str, *total_size)
+                uploads.begin(asset_uuid, file_name_str, *total_size, client_id)
             })();
             if let Err(error) = result {
                 send_asset_import_failed(&network, client_id, asset_id_raw, &error);

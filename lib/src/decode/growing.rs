@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Range;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 /// アップロードの進行状態です。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -125,7 +126,12 @@ impl UploadProgress {
     }
 
     /// `pos` のバイトが読めるようになるか、状態が確定するまで待機します。
+    ///
+    /// アップロード側が黙って消えた場合に読み側が永久に止まらないよう、
+    /// 待機には全体の上限を設け、超過したら中断として目覚めさせます。
     fn wait_for(&self, pos: u64) -> WaitOutcome {
+        const MAX_WAIT: Duration = Duration::from_secs(600);
+        let deadline = Instant::now() + MAX_WAIT;
         let mut inner = self.lock();
         loop {
             if inner.state == ProgressState::Aborted {
@@ -137,7 +143,15 @@ impl UploadProgress {
             if inner.state == ProgressState::Finished {
                 return WaitOutcome::Eof;
             }
-            inner = self.changed.wait(inner).unwrap_or_else(|e| e.into_inner());
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return WaitOutcome::Aborted;
+            }
+            let (guard, _) = self
+                .changed
+                .wait_timeout(inner, remaining.min(Duration::from_secs(5)))
+                .unwrap_or_else(|e| e.into_inner());
+            inner = guard;
         }
     }
 

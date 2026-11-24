@@ -13,6 +13,8 @@ struct UploadSession {
     file_name: String,
     path: PathBuf,
     total_size: u64,
+    /// アップロードを開始したクライアント。切断時の後片付けに使う。
+    client_id: u32,
     /// 到着済み接頭辞と完了/中断を読み側と共有する進捗。
     progress: Arc<UploadProgress>,
 }
@@ -58,6 +60,7 @@ impl UploadManager {
         asset_id: AssetId,
         file_name: &str,
         total_size: u64,
+        client_id: u32,
     ) -> anyhow::Result<()> {
         let file_name = validate_file_name(file_name)?;
         let dir = self.root_dir.join(asset_id.to_string());
@@ -74,10 +77,31 @@ impl UploadManager {
                 file_name,
                 path,
                 total_size,
+                client_id,
                 progress: Arc::new(UploadProgress::new(total_size)),
             },
         );
         Ok(())
+    }
+
+    /// 指定クライアントの未完了セッションをすべて破棄します。
+    ///
+    /// セッションの破棄で読み側は中断として目覚め、部分ファイルも消します。
+    /// クライアント切断時に呼び、セッションとファイルが残留しないようにします。
+    pub fn abort_client_sessions(&mut self, client_id: u32) {
+        let aborted: Vec<UploadSession> = self
+            .sessions
+            .extract_if(|_, session| session.client_id == client_id)
+            .map(|(_, session)| session)
+            .collect();
+        for session in &aborted {
+            if let Err(error) = fs::remove_file(&session.path) {
+                log::warn!(
+                    "Failed to remove partial upload {}: {error}",
+                    session.path.display()
+                );
+            }
+        }
     }
 
     /// 指定パスへアップロード中のセッションの進捗を返します。

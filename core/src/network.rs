@@ -2,7 +2,7 @@ use esotereel_lib::network::{NetworkHandler, MAX_FRAME_SIZE};
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
-use esotereel_lib::util::result::LockExt;
+use esotereel_lib::util::result::{LockExt, MutexExt};
 use rkyv::ser::serializers::AllocSerializer;
 use rkyv::ser::Serializer;
 use rkyv::{check_archived_root, AlignedVec};
@@ -132,6 +132,10 @@ impl ServerNetworkHandler {
                         guard.remove(&client_id);
                     }
                     instance.remove_client_view(client_id);
+                    // 未完了のアップロードも残さない（読み側は中断で目覚める）
+                    if let Ok(mut uploads) = state.uploads.lock_or_err() {
+                        uploads.abort_client_sessions(client_id);
+                    }
                 });
             });
         }
