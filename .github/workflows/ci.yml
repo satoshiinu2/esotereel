@@ -233,10 +233,21 @@ jobs:
       # the Windows job with clang-cl (MSVC-compatible clang driver) so
       # the same FFI design compiles without /permissive workarounds,
       # which Qt 6 forbids via a static_assert.
+      #
+      # Use the clang-cl bundled with Visual Studio, not the standalone
+      # LLVM install: on the x86_64 image "C:\Program Files\LLVM\bin"
+      # (Clang 20) precedes the VS-bundled LLVM in PATH, and the MSVC
+      # 14.52 STL rejects Clang older than 22 (error STL1000). The ARM64
+      # image has no standalone LLVM and already used the bundled
+      # Clang 22, which is why only the x86_64 job failed.
       - name: Select clang-cl compiler (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
+          $clangCl = Get-ChildItem "C:\Program Files\Microsoft Visual Studio\*\*\VC\Tools\Llvm\${{ matrix.msvc_arch }}\bin\clang-cl.exe" | Select-Object -First 1
+          if (-not $clangCl) { throw "clang-cl.exe not found in the Visual Studio LLVM tools (${{ matrix.msvc_arch }})" }
+          & $clangCl.FullName --version
+          echo $clangCl.DirectoryName >> $env:GITHUB_PATH
           echo "CC=clang-cl" >> $env:GITHUB_ENV
           echo "CXX=clang-cl" >> $env:GITHUB_ENV
 
