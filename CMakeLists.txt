@@ -13,6 +13,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
+set(ESOTEREEL_GUI_HELPER_HEADER "build/include")
 set(ESOTEREEL_ENABLE_GPU_PREVIEW ON)
 
 # Allow setting Qt6 path via environment variable
@@ -128,7 +129,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_gui_helper
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
-    USES_TERMINAL 
+    USES_TERMINAL
     COMMENT "Building Rust GUI Helper (${RUST_PROFILE})..."
 )
 
@@ -138,7 +139,7 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E env ${RUST_BUILD_ENV} cargo build ${RUST_FLAG} -p esotereel_core
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     DEPENDS ${RUST_SRC_FILES}
-    USES_TERMINAL 
+    USES_TERMINAL
     COMMENT "Building Rust Core Server (${RUST_PROFILE})..."
 )
 
@@ -164,11 +165,11 @@ endif()
 add_executable(esotereel_gui ${SRC_FILES})
 
 # ライブラリリンク
-target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/guihlp/include" "${CMAKE_SOURCE_DIR}/gui/src")
-target_link_libraries(esotereel_gui PRIVATE 
-    Qt6::Widgets 
+target_include_directories(esotereel_gui PRIVATE "${CMAKE_SOURCE_DIR}/${ESOTEREEL_GUI_HELPER_HEADER}" "${CMAKE_SOURCE_DIR}/gui/src")
+target_link_libraries(esotereel_gui PRIVATE
+    Qt6::Widgets
     Qt6::Network
-    qtadvanceddocking-qt6 
+    qtadvanceddocking-qt6
     ${GUI_HLP_LINK_LIB}
 )
 
@@ -181,7 +182,7 @@ endif()
 
 # windows向けの依存関係の解決
 if(WIN32)
-    add_custom_command(TARGET esotereel_gui POST_BUILD  
+    add_custom_command(TARGET esotereel_gui POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
             "$<TARGET_FILE:qtadvanceddocking-qt6>"
             "$<TARGET_FILE_DIR:esotereel_gui>"
@@ -206,11 +207,11 @@ endif()
 #     )
 # endif()
 
-# translate 
+# translate
 qt_add_translations(esotereel_gui
     TS_FILES
-        gui/lang/esotereel_ja.ts  
-        gui/lang/esotereel_en.ts  
+        gui/lang/esotereel_ja.ts
+        gui/lang/esotereel_en.ts
 )
 
 # .clangd ファイルの動的生成設定
@@ -223,7 +224,7 @@ CompileFlags:
 ${CLANGD_REMOVE_FLAG}
   Add: [
     \"-Igui\",
-    \"-Iguihlp/include\",
+    \"-I${ESOTEREEL_GUI_HELPER_HEADER}\",
     \"-Ibuild/_deps/ads-src/src\",
 ${CLANGD_QT_PATHS}${CLANGD_SYS_INC}
 ${CLANGD_DEFINES}

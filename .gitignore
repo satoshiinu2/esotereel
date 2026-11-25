@@ -14,7 +14,7 @@ target/
 build/
 dist/
 
-# old src
+# old src >>idk why
 /base/
 
 # rich pc

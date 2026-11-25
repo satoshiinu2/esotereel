@@ -4,6 +4,8 @@ use std::process::Command;
 
 include!("ffi_types.rs");
 
+const gen_header_path: &'static str = "build/include";
+
 fn main() {
     let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/generated");
     std::fs::create_dir_all(&out_dir).expect("failed to create generated dir");
@@ -20,7 +22,7 @@ fn main() {
             "--crate",
             "esotereel_gui_helper",
             "--output",
-            "include/esotereel_gui_helper.h",
+            gen_header_path,
         ])
         .status()
         .expect("Failed to run cbindgen");
@@ -35,9 +37,8 @@ fn main() {
 
 /// C++ヘッダーファイルの後処理：前方宣言を追加
 fn fix_header_file() {
-    let path = "include/esotereel_gui_helper.h";
-
-    let mut header = std::fs::read_to_string(path).expect("failed to read generated header");
+    let mut header =
+        std::fs::read_to_string(gen_header_path).expect("failed to read generated header");
 
     // CFieldValueMapEntry の定義を取り出す
     let entry_start = header
@@ -123,7 +124,7 @@ fn fix_header_file() {
 
     header.insert_str(pos, "struct CFieldValue;\nstruct CFieldValueMapEntry;\n\n");
 
-    std::fs::write(path, header).expect("failed to write generated header");
+    std::fs::write(gen_header_path, header).expect("failed to write generated header");
 }
 fn generate_result_types(out_dir: &Path) {
     let mut out = String::new();
