@@ -434,13 +434,14 @@ pub extern "C" fn client_mark_clean_exit(ptr_state: *const ClientStateHandle) ->
     }
 }
 
-/// 同期済みアセット1件です。`availability` は所在の種別で、
-/// 0=External、1=Managed、2=Missing。`path` は種別に応じたパス
+/// 同期済みアセット1件です。`id` は UUID を文字列化せずバイト列の
+/// まま渡します。`availability` は所在の種別で、0=External、
+/// 1=Managed、2=Missing。`path` は種別に応じたパス
 /// （Missing では以前のパス）です。
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CAssetEntry {
-    pub id: FfiOwnedString,
+    pub id: CAssetRef,
     pub name: FfiOwnedString,
     pub availability: u8,
     pub path: FfiOwnedString,
@@ -466,21 +467,35 @@ pub extern "C" fn client_synced_assets(
             .map_err(|_| anyhow::anyhow!("synced assets lock poisoned"))?;
         let entries: Vec<CAssetEntry> = slot
             .iter()
-            .map(|wire| {
+            .filter_map(|wire| {
+                // 配信形の ID は文字列だが、FFI ではバイト列で渡す。
+                // 解釈できない ID はミラー側の変換と同じく警告して除く。
+                let id: AssetRef = match wire.id.parse() {
+                    Ok(id) => id,
+                    Err(error) => {
+                        log::warn!(
+                            "ignoring asset with unparseable id `{}` from server: {error}",
+                            wire.id
+                        );
+                        return None;
+                    }
+                };
                 let (availability, path) = match &wire.availability {
                     AssetAvailabilityWire::External { path } => (0, path),
                     AssetAvailabilityWire::Managed { path } => (1, path),
                     AssetAvailabilityWire::Missing { previous_path } => (2, previous_path),
                 };
-                CAssetEntry {
-                    id: FfiOwnedString::from_string(wire.id.clone()),
+                Some(CAssetEntry {
+                    id: CAssetRef {
+                        bytes: *id.as_bytes(),
+                    },
                     name: FfiOwnedString::from_string(wire.name.clone()),
                     availability,
                     path: FfiOwnedString::from_string(path.clone()),
                     fingerprint_size: FfiOption::from(wire.fingerprint_size),
                     has_fingerprint_hash: wire.has_fingerprint_hash,
                     in_use: wire.in_use,
-                }
+                })
             })
             .collect();
         Ok(FfiArray::from_vec(entries))
