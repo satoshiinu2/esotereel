@@ -262,6 +262,17 @@ impl Chunk {
             .max()
             .unwrap_or(i64::MIN);
     }
+
+    /// 配置が持つ kind 連番を対応表で振り直します（テーブル統合用）。
+    /// 対応表に無い連番はそのまま残します（呼び出し側が完全な対応表を
+    /// 渡す前提です）。
+    pub(crate) fn remap_kinds(&mut self, map: &std::collections::HashMap<KindId, KindId>) {
+        for placement in self.placements.values_mut() {
+            if let Some(&new_kind) = map.get(&placement.kind) {
+                placement.kind = new_kind;
+            }
+        }
+    }
 }
 
 impl Default for Chunk {

@@ -317,3 +317,53 @@ fn unload_idle_chunks_respects_idle_time_and_frequency() {
     assert_eq!(timeline.unload_idle_chunks(&patient).unwrap(), 0);
     assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
 }
+
+/// kind の採番はプロジェクト単位で、全タイムラインが同じ表を共有する
+/// こと（同じ kind はどのタイムラインでも同じ連番になる）。
+#[test]
+fn project_shares_kind_numbering_across_timelines() {
+    use crate::project::project::Project;
+    use std::collections::HashMap;
+
+    let mut project = Project::new();
+    let t1 = project.insert_timeline(30.0);
+    let t2 = project.insert_timeline(30.0);
+    let layer_of = |project: &Project, timeline_id| {
+        *project
+            .timeline_ref(timeline_id)
+            .unwrap()
+            .iter_layers()
+            .next()
+            .unwrap()
+            .0
+    };
+
+    let a = project
+        .new_clip_in_timeline(t1, layer_of(&project, t1), 0, 100, kind("std:media"), HashMap::new())
+        .unwrap();
+    let b = project
+        .new_clip_in_timeline(t2, layer_of(&project, t2), 0, 100, kind("std:media"), HashMap::new())
+        .unwrap();
+    let c = project
+        .new_clip_in_timeline(
+            t2,
+            layer_of(&project, t2),
+            200,
+            100,
+            kind("std:transform"),
+            HashMap::new(),
+        )
+        .unwrap();
+
+    let kind_of = |project: &Project, timeline_id, clip_id| {
+        project
+            .timeline_ref(timeline_id)
+            .unwrap()
+            .get_placement(clip_id)
+            .unwrap()
+            .kind
+    };
+    assert_eq!(kind_of(&project, t1, a), kind_of(&project, t2, b));
+    assert_ne!(kind_of(&project, t1, a), kind_of(&project, t2, c));
+    assert_eq!(project.kind_table().len(), 2);
+}

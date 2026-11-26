@@ -8,6 +8,7 @@ use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{AssetRef, ClipId, IdGenerator, LayerFolderId, LayerId, TimelineId};
+use crate::project::kind_table::{KindTable, SharedKindTable, new_shared_kind_table};
 use crate::project::timeline::{Timeline, TimelineMeta};
 use crate::util::result::EsotereelError;
 
@@ -28,6 +29,9 @@ pub struct Project {
     timelines: BTreeMap<TimelineId, Timeline>,
     ids: IdGenerator,
     assets: AssetRegistry,
+    /// kind 連番の intern テーブル。全タイムラインで共有し、採番の
+    /// 権威はプロジェクト（サーバー側では core）です。保存はしません。
+    kind_table: SharedKindTable,
 }
 
 impl Default for Project {
@@ -44,7 +48,21 @@ impl Project {
             timelines: BTreeMap::new(),
             ids: IdGenerator::default(),
             assets: AssetRegistry::default(),
+            kind_table: new_shared_kind_table(),
         }
+    }
+
+    /// kind intern テーブルのスナップショットを返します。
+    pub fn kind_table(&self) -> KindTable {
+        self.kind_table
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// プロジェクト共有の intern テーブルへのハンドルを返します。
+    pub fn shared_kind_table(&self) -> SharedKindTable {
+        self.kind_table.clone()
     }
 
     /// プロジェクト ID を返します。
@@ -66,11 +84,32 @@ impl Project {
         timelines: BTreeMap<TimelineId, Timeline>,
         assets: AssetRegistry,
     ) -> Self {
+        // 保存形式はタイムライン単位で kind を intern するため、ロード時は
+        // 各タイムラインの表をプロジェクト表へ統合し、配置の連番を
+        // 振り直してから全タイムラインで表を共有します。
+        let shared = new_shared_kind_table();
+        let mut timelines = timelines;
+        for timeline in timelines.values_mut() {
+            let local = timeline.kind_table();
+            let mut remap = HashMap::new();
+            {
+                let mut table = shared
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                for (old_id, kind) in local.entries().iter().enumerate() {
+                    let new_id = table.intern(kind);
+                    remap.insert(old_id as u32, new_id);
+                }
+            }
+            timeline.remap_kind_ids(&remap);
+            timeline.set_shared_kind_table(shared.clone());
+        }
         let mut project = Self {
             id,
             timelines,
             ids: IdGenerator::default(),
             assets,
+            kind_table: shared,
         };
         for (&timeline_id, timeline) in &project.timelines {
             project.ids.observe_timeline(timeline_id);
@@ -90,8 +129,9 @@ impl Project {
     /// 指定 FPS で新しいタイムラインを追加し、その `TimelineId` を返します。
     pub fn insert_timeline(&mut self, fps: f64) -> TimelineId {
         let id = self.ids.next_timeline_id();
-        self.timelines
-            .insert(id, Timeline::new(id, fps, &mut self.ids));
+        let mut timeline = Timeline::new(id, fps, &mut self.ids);
+        timeline.set_shared_kind_table(self.kind_table.clone());
+        self.timelines.insert(id, timeline);
         id
     }
 
@@ -292,14 +332,41 @@ impl Project {
         let mut project = Self::new();
         for meta in timelines {
             let timeline_id = meta.id;
-            project
-                .timelines
-                .insert(timeline_id, Timeline::from_meta(&meta));
+            let mut timeline = Timeline::from_meta(&meta);
+            timeline.set_shared_kind_table(project.kind_table.clone());
+            project.timelines.insert(timeline_id, timeline);
             project.ids.observe_timeline(timeline_id);
             for lm in &meta.layers {
                 project.ids.observe_layer(lm.id);
             }
         }
         project
+    }
+
+    /// 権威側（core）から配信された kind 表でミラーを置き換えます。
+    ///
+    /// プロジェクト開始時に全表を受け取るためのもので、既存の配置が
+    /// 持つ連番は配信側の採番と一致している前提です。
+    pub fn replace_kind_table(&self, entries: Vec<NamespacedID>) {
+        let table = KindTable::from_order(entries);
+        let mut guard = self
+            .kind_table
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *guard = table;
+    }
+
+    /// 権威側から配信された続きの採番をミラーへ追加します。
+    /// 整合しない追記は取り込まず `false` を返します。
+    pub fn append_kind_entries(
+        &self,
+        start: crate::project::kind_table::KindId,
+        entries: &[NamespacedID],
+    ) -> bool {
+        let mut guard = self
+            .kind_table
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.append_entries(start, entries)
     }
 }

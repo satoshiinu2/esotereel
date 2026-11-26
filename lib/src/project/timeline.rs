@@ -12,7 +12,7 @@ use crate::project::chunk::{
 use crate::project::clip::Clip;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
-use crate::project::kind_table::{KindId, KindTable};
+use crate::project::kind_table::{KindId, KindTable, SharedKindTable, new_shared_kind_table};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::TimelineTick;
@@ -68,7 +68,12 @@ pub struct Timeline {
     locator: HashMap<ClipId, ChunkId>,
 
     /// 配置が参照する kind 連番の intern テーブル。
-    kind_table: KindTable,
+    ///
+    /// プロジェクト全体で1つを共有します（採番の単位はプロジェクト）。
+    /// 実行時状態なので保存・転送の対象外です。
+    #[with(rkyv::with::Skip)]
+    #[serde(skip)]
+    kind_table: SharedKindTable,
 
     /// チャンク実体の外部ストレージ。アンロード／再読み込みの行き先です。
     /// アンロードされたチャンクがある間は付け替えてはいけません
@@ -99,7 +104,9 @@ impl Clone for Timeline {
             outline: self.outline.clone(),
             chunks: self.chunks.clone(),
             locator: self.locator.clone(),
-            kind_table: self.kind_table.clone(),
+            // 共有ハンドルは複製先と共有せず、中身を複写した新しい表にする
+            // （複製後の採番が互いに影響しないように）。
+            kind_table: std::sync::Arc::new(Mutex::new(self.kind_table_snapshot())),
             // 実行時状態は持ち越さない。ストアは複製先で付け直す前提。
             chunk_store: None,
             chunk_activity: Mutex::new(HashMap::new()),
@@ -117,7 +124,7 @@ impl Timeline {
             layers: HashMap::new(),
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
-            kind_table: KindTable::default(),
+            kind_table: new_shared_kind_table(),
             chunk_store: None,
             chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
@@ -140,7 +147,7 @@ impl Timeline {
             outline: LayerOutline::default(),
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
-            kind_table: KindTable::default(),
+            kind_table: new_shared_kind_table(),
             chunk_store: None,
             chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
@@ -325,9 +332,38 @@ impl Timeline {
         self.get_placement(clip_id).map(|p| p.layer_id)
     }
 
-    /// kind の intern テーブルを返します。配置が持つ連番の解決に使います。
-    pub fn kind_table(&self) -> &KindTable {
-        &self.kind_table
+    /// kind の intern テーブルのスナップショットを返します。
+    /// 配置が持つ連番の解決に使います。
+    pub fn kind_table(&self) -> KindTable {
+        self.kind_table_snapshot()
+    }
+
+    fn kind_table_snapshot(&self) -> KindTable {
+        self.kind_table
+            .lock_or_err()
+            .expect("kind table lock poisoned")
+            .clone()
+    }
+
+    /// プロジェクト共有の intern テーブルへのハンドルを返します。
+    pub fn shared_kind_table(&self) -> SharedKindTable {
+        self.kind_table.clone()
+    }
+
+    /// intern テーブルを差し替えます（プロジェクト共有化・ミラー同期用）。
+    ///
+    /// 既存の配置が持つ連番は、差し替え先の表でも同じ kind を指す
+    /// 前提で呼びます（ロード時の統合や、権威側からの全表配信）。
+    pub fn set_shared_kind_table(&mut self, table: SharedKindTable) {
+        self.kind_table = table;
+    }
+
+    /// 配置が持つ kind 連番を、対応表に従って振り直します（ロード時の
+    /// タイムライン単位テーブル→プロジェクト単位テーブル統合用）。
+    pub(crate) fn remap_kind_ids(&mut self, map: &HashMap<KindId, KindId>) {
+        for chunk in self.chunks.values_mut() {
+            chunk.remap_kinds(map);
+        }
     }
 
     /// 全クリップの配置を反復します（チャンク順・開始位置順）。
@@ -349,7 +385,11 @@ impl Timeline {
 
     /// 実体と配置をチャンクへ登録します。レイヤーの順序索引は触りません。
     fn insert_body(&mut self, layer_id: LayerId, clip: Clip) {
-        let kind = self.kind_table.intern(&clip.kind_id);
+        let kind = self
+            .kind_table
+            .lock_or_err()
+            .expect("kind table lock poisoned")
+            .intern(&clip.kind_id);
         let placement = ChunkPlacement {
             clip_id: clip.id,
             layer_id,
@@ -965,8 +1005,14 @@ impl Timeline {
                     placement.duration
                 );
             }
-            match self.kind_table.resolve(placement.kind) {
-                Some(kind) if kind.full() == clip.kind_id.full() => {}
+            let resolved = self
+                .kind_table
+                .lock_or_err()
+                .expect("kind table lock poisoned")
+                .resolve(placement.kind)
+                .map(|kind| kind.full().to_string());
+            match resolved {
+                Some(kind) if kind == clip.kind_id.full() => {}
                 _ => {
                     anyhow::bail!(
                         "chunk store returned clip {} with kind {}, placement says otherwise",
@@ -1156,7 +1202,7 @@ impl Timeline {
             outline: meta.outline.clone(),
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
-            kind_table: KindTable::default(),
+            kind_table: new_shared_kind_table(),
             chunk_store: None,
             chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
