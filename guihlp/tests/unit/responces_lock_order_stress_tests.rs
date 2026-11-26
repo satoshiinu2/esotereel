@@ -35,7 +35,16 @@ fn make_state() -> Arc<ClientState> {
         mark_dirty_timeline: cb_mark_dirty,
         on_connected: cb_on_connected,
     };
-    Arc::new(ClientState::new(callbacks, Directories::new(None, None)))
+    // ClientState::new はセッションマーカーを data_dir へ書くため、実データ
+    // ディレクトリではなくプロセス専用の一時ワークディレクトリを使う。
+    let working_dir = std::env::temp_dir().join(format!(
+        "esotereel-guihlp-lock-order-test-{}",
+        std::process::id()
+    ));
+    Arc::new(ClientState::new(
+        callbacks,
+        Directories::new(None, Some(working_dir)),
+    ))
 }
 
 /// 本番のネットワーク受信と同じ経路（rkyv シリアライズ -> archived ->
