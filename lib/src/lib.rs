@@ -38,6 +38,7 @@ pub mod project;
 pub mod render;
 pub mod requests;
 pub mod responces;
+pub mod settings;
 pub mod state;
 pub mod util;
 
