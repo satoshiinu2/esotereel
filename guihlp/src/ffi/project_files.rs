@@ -199,9 +199,17 @@ pub unsafe extern "C" fn req_restore_autosave_generation(
     }
 }
 
-crate::ffi_fn! {
-    fn client_take_project_inspection(
-        ptr_state: *const ClientStateHandle
+pub type CProjectInspectionResult = FfiResult<FfiOption<CProjectInspection>>;
+pub type CProjectOpenedResult = FfiResult<FfiOption<CProjectOpened>>;
+pub type COptionStringResult = FfiResult<FfiOption<FfiOwnedString>>;
+pub type CAutosaveGenerationArrayResult = FfiResult<FfiArray<CAutosaveGeneration>>;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn client_take_project_inspection(
+    ptr_state: *const ClientStateHandle,
+) -> CProjectInspectionResult {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
     ) -> anyhow::Result<Option<CProjectInspection>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
@@ -218,12 +226,18 @@ crate::ffi_fn! {
             status: status_code(inspection.status),
         }))
     }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(FfiOption::from(v)),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
 }
 
-crate::ffi_fn! {
-    fn client_take_project_opened(
-        ptr_state: *const ClientStateHandle
-    ) -> anyhow::Result<Option<CProjectOpened>> {
+#[unsafe(no_mangle)]
+pub extern "C" fn client_take_project_opened(
+    ptr_state: *const ClientStateHandle,
+) -> CProjectOpenedResult {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<Option<CProjectOpened>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
         let mut slot = state
@@ -238,12 +252,18 @@ crate::ffi_fn! {
             status: status_code(opened.status),
         }))
     }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(FfiOption::from(v)),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
 }
 
-crate::ffi_fn! {
-    fn client_take_project_saved(
-        ptr_state: *const ClientStateHandle
-    ) -> anyhow::Result<Option<FfiOwnedString>> {
+#[unsafe(no_mangle)]
+pub extern "C" fn client_take_project_saved(
+    ptr_state: *const ClientStateHandle,
+) -> COptionStringResult {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<Option<FfiOwnedString>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
         let mut slot = state
@@ -252,19 +272,27 @@ crate::ffi_fn! {
             .map_err(|_| anyhow::anyhow!("project saved lock poisoned"))?;
         Ok(slot.take().map(FfiOwnedString::from_string))
     }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(FfiOption::from(v)),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
 }
 
-crate::ffi_fn! {
-    fn client_take_autosave_generations(
-        ptr_state: *const ClientStateHandle
-    ) -> anyhow::Result<Vec<CAutosaveGeneration>> {
+#[unsafe(no_mangle)]
+pub extern "C" fn client_take_autosave_generations(
+    ptr_state: *const ClientStateHandle,
+) -> CAutosaveGenerationArrayResult {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+    ) -> anyhow::Result<FfiArray<CAutosaveGeneration>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
         let mut slot = state
             .autosave_generations
             .lock()
             .map_err(|_| anyhow::anyhow!("autosave generations lock poisoned"))?;
-        Ok(slot
+        let generations: Vec<CAutosaveGeneration> = slot
             .drain(..)
             .map(|generation| CAutosaveGeneration {
                 id: FfiOwnedString::from_string(generation.id),
@@ -273,23 +301,36 @@ crate::ffi_fn! {
                 size_bytes: generation.size_bytes,
                 file_count: generation.file_count,
             })
-            .collect())
+            .collect();
+        Ok(FfiArray::from_vec(generations))
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
     }
 }
 
-crate::ffi_fn! {
-    fn client_previous_session_abnormal(
-        ptr_state: *const ClientStateHandle
-    ) -> anyhow::Result<bool> {
+#[unsafe(no_mangle)]
+pub extern "C" fn client_previous_session_abnormal(
+    ptr_state: *const ClientStateHandle,
+) -> FfiResult<bool> {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<bool> {
         check_ptr(ptr_state)?;
         Ok(state_of(ptr_state).previous_session_abnormal)
     }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
 }
 
-crate::ffi_fn! {
-    fn client_current_project_folder(
-        ptr_state: *const ClientStateHandle
-    ) -> anyhow::Result<Option<FfiOwnedString>> {
+#[unsafe(no_mangle)]
+pub extern "C" fn client_current_project_folder(
+    ptr_state: *const ClientStateHandle,
+) -> COptionStringResult {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<Option<FfiOwnedString>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
         let folder = state
@@ -297,6 +338,11 @@ crate::ffi_fn! {
             .read()
             .map_err(|_| anyhow::anyhow!("current project folder lock poisoned"))?;
         Ok(folder.clone().map(FfiOwnedString::from_string))
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(FfiOption::from(v)),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
     }
 }
 

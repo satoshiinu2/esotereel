@@ -16,10 +16,11 @@ use esotereel_lib::{
     util::result::{EsotereelError, LockExt},
 };
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use crate::ffi::{
     array::FfiArray,
-    option::FfiOption,
-    result::FfiResult,
+    result::{FfiResult, FfiResultVoid},
     state::ClientStateHandle,
     stringview::{FfiOwnedString, FfiStringView},
 };
@@ -103,11 +104,17 @@ fn display(value: Option<SettingValue>) -> FfiOwnedString {
     FfiOwnedString::from_string(value.map(|v| v.to_display_string()).unwrap_or_default())
 }
 
-crate::ffi_fn! {
-    fn app_settings_list(
+pub type CAppSettingArrayResult = FfiResult<FfiArray<CAppSetting>>;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn app_settings_list(
+    ptr_state: *const ClientStateHandle,
+    layer: u8,
+) -> CAppSettingArrayResult {
+    fn inner(
         ptr_state: *const ClientStateHandle,
-        layer: u8
-    ) -> anyhow::Result<Vec<CAppSetting>> {
+        layer: u8,
+    ) -> anyhow::Result<FfiArray<CAppSetting>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
         let layer = layer_of(layer)?;
@@ -121,7 +128,7 @@ crate::ffi_fn! {
             .map(PathBuf::from);
         let effective = AppSettings::load(user_path.as_deref(), project_dir.as_deref(), None)?;
 
-        Ok(declared_keys()
+        let entries: Vec<CAppSetting> = declared_keys()
             .iter()
             .map(|info| {
                 let layer_value = layer_values
@@ -139,16 +146,28 @@ crate::ffi_fn! {
                     default_value: display(info.default_value),
                 }
             })
-            .collect())
+            .collect();
+        Ok(FfiArray::from_vec(entries))
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, layer))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
     }
 }
 
-crate::ffi_fn! {
-    fn app_settings_set(
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn app_settings_set(
+    ptr_state: *const ClientStateHandle,
+    layer: u8,
+    key: FfiStringView,
+    value: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
         ptr_state: *const ClientStateHandle,
         layer: u8,
         key: FfiStringView,
-        value: FfiStringView
+        value: FfiStringView,
     ) -> anyhow::Result<()> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
@@ -167,13 +186,22 @@ crate::ffi_fn! {
         write_layer_value(&file, key, Some(value))?;
         Ok(())
     }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, layer, key, value))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
 }
 
-crate::ffi_fn! {
-    fn app_settings_reset(
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn app_settings_reset(
+    ptr_state: *const ClientStateHandle,
+    layer: u8,
+    key: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
         ptr_state: *const ClientStateHandle,
         layer: u8,
-        key: FfiStringView
+        key: FfiStringView,
     ) -> anyhow::Result<()> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
@@ -189,5 +217,9 @@ crate::ffi_fn! {
         let file = layer_file(&state, layer)?;
         write_layer_value(&file, key, None)?;
         Ok(())
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, layer, key))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
     }
 }
