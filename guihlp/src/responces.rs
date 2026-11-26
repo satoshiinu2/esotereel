@@ -256,10 +256,14 @@ pub(super) fn on_responce_recveve(
                 .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
             // サーバーが通知した正しい状態でローカルのクリップを上書きし、
-            // 次の操作でステールネスエラーが再発しないようにする
-            if let Some(clip) = timeline.get_clip_mut(*clip_id) {
-                clip.set_position(*current_position);
-                clip.duration = *current_duration;
+            // 次の操作でステールネスエラーが再発しないようにする。
+            // 配置（レイヤー索引・チャンク所有）ごと更新するため、
+            // 実体だけを書き換えず set_clip_placement を経由する。
+            if !timeline.set_clip_placement(*clip_id, *current_position, *current_duration) {
+                log::warn!(
+                    "CommandRejected: clip {} not found in local timeline",
+                    *clip_id
+                );
             }
 
             drop(project_guard);
