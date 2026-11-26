@@ -500,22 +500,24 @@ pub fn on_request_receive(
             );
             let range: Range<i64> = deserialize_validated(range);
 
-            // query_range は読み取り専用なので
-            // Project は read ロックでよい。送信は全ガード解放後に行う。
+            // アンロード済みチャンクは範囲を読み込んでから引くため
+            // Project は write ロックを取る。送信は全ガード解放後に行う。
             let (project_arc, network) = (Arc::clone(&state.project), Arc::clone(&state.network));
 
             // クライアントの表示範囲をサーバーに記憶させる
             network.update_client_view(client_id, *timeline_key, range.clone());
 
             let clips = {
-                let project_guard = project_arc.read_or_err()?;
+                let mut project_guard = project_arc.write_or_err()?;
                 let project = project_guard
-                    .as_ref()
+                    .as_mut()
                     .ok_or(EsotereelError::ProjectNotFound)?;
 
                 let timeline = project
-                    .timeline_ref(*timeline_key)
+                    .timeline_mut(*timeline_key)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_key))?;
+
+                timeline.ensure_range_loaded(range.clone())?;
 
                 timeline
                     .query_range(range)
