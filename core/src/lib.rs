@@ -15,8 +15,10 @@ use esotereel_lib::{
 use std::sync::{Arc, RwLock};
 
 pub mod assets;
+pub mod autosave;
 pub mod network;
 pub mod project;
+pub mod project_files;
 pub mod requests;
 pub mod state;
 
@@ -53,6 +55,11 @@ pub async fn server_network_start<F>(
         }
     });
 
+    let autosave_state = Arc::clone(&state_arc);
+    tokio::spawn(async move {
+        crate::autosave::autosave_loop(autosave_state).await;
+    });
+
     let state_clone = Arc::clone(&state_arc);
     if let Err(e) = network_clone.run(state_clone, addr, on_server_ready).await {
         log::error!("Server failed to start: {}", e);
@@ -77,6 +84,14 @@ async fn on_project_event(state: &Arc<ServerState>) -> anyhow::Result<()> {
 
         changes
     };
+
+    // 変更があったのでオートセーブ対象にし、新規採番された kind が
+    // あれば増分を全クライアントへ先に配信する（この後の変更通知で
+    // 追加されたクリップの配置が連番を参照するため）。
+    state
+        .project_dirty
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    crate::project_files::broadcast_kind_appends(state);
 
     // Project ロックを解放してからネットワーク送信を行う（デッドロック回避）
     // 1タイムラインの失敗で残りの変更まで捨てないよう、全部を配送しきってから

@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex, RwLock,
     },
 };
@@ -36,6 +37,19 @@ pub struct ServerState {
     pub dirty_signal: Arc<Notify>,
 
     pub uploads: Arc<Mutex<UploadManager>>,
+
+    /// 現在開いているプロジェクトフォルダです。新規プロジェクトは
+    /// `data_dir/temp/<プロジェクト ID>` の仮フォルダ、名前付き保存後は
+    /// 実フォルダになります。
+    pub project_folder: Arc<RwLock<Option<PathBuf>>>,
+
+    /// オートセーブすべき変更が溜まっているかどうかです。
+    /// 変更イベント（`on_project_event`）で立て、世代を書けたら下ろします。
+    pub project_dirty: Arc<AtomicBool>,
+
+    /// クライアントへ配信済みの kind 表の長さです。新規採番分だけを
+    /// `KindTableAppended` で配るために使います。
+    pub kind_sync_len: Arc<Mutex<usize>>,
 }
 
 impl ServerState {
@@ -53,6 +67,9 @@ impl ServerState {
             next_resource_id: AtomicU32::new(0),
             dirty_signal,
             uploads: Arc::new(Mutex::new(UploadManager::new(&dirs_def))),
+            project_folder: Arc::new(RwLock::new(None)),
+            project_dirty: Arc::new(AtomicBool::new(false)),
+            kind_sync_len: Arc::new(Mutex::new(0)),
         }
     }
 

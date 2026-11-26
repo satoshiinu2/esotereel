@@ -36,7 +36,7 @@ use crate::{
 pub fn on_request_receive(
     request: &ArchivedRequest,
     client_id: u32,
-    state: &ServerState,
+    state: &Arc<ServerState>,
 ) -> EsotereelResult<()> {
     match request {
         ArchivedRequest::Test => {}
@@ -57,27 +57,44 @@ pub fn on_request_receive(
             // Timeline::new()ですでに4つのデフォルトレイヤーを作成しているので、
             // ここで重複して挿入する必要はない
 
-            let timelines = new_project.timelines_meta();
-
-            // project の差し替えと履歴クリアは Project の write ロック
-            // 保持中に一体で行い、ビュー更新と送信は解放後に行う
-            // （lock-order.md）。差し替えは Arc の付け替えではなく既存の
-            // RwLock へのインプレース書き込みで行う。
-            let network = {
-                let mut project_guard = state.project.write_or_err()?;
-                state.histories.lock_or_err()?.clear();
-                *project_guard = Some(new_project);
-
-                Arc::clone(&state.network)
-            };
-
-            // クライアントのビューを初期化：すべてのタイムラインを見ているとみなす
-            for timeline in &timelines {
-                network.update_client_view(client_id, timeline.id, i64::MIN..i64::MAX);
+            // 設定のチャンク幅が実行時幅と違う場合は、黙って無視せず
+            // 警告を残す（実行時幅は CHUNK_TICKS 固定で、設定キーは
+            // 新規プロジェクトの既定値として宣言されている）。
+            let settings = crate::project_files::load_app_settings(state);
+            if settings.chunk_default_width_ticks != esotereel_lib::project::chunk::CHUNK_TICKS {
+                log::warn!(
+                    "settings chunk.default_width_ticks={} differs from the runtime chunk width {}; dynamic chunk width is not supported yet",
+                    settings.chunk_default_width_ticks,
+                    esotereel_lib::project::chunk::CHUNK_TICKS
+                );
             }
 
-            let cmd = Response::ProjectMeta { timelines };
-            network.send(client_id, &cmd);
+            // 新規プロジェクトは仮フォルダ（data_dir/temp/<ID>）で開始し、
+            // 標準形式で書き出してからチャンクストアを付けます。
+            let folder = match crate::project_files::temp_project_folder(state, new_project.id())
+            {
+                Ok(folder) => {
+                    new_project.attach_folder_chunk_stores(&folder);
+                    if let Err(error) =
+                        esotereel_lib::project::save::save_project(&new_project, &folder)
+                    {
+                        log::error!(
+                            "failed to write new project into temp folder {}: {error:#}",
+                            folder.display()
+                        );
+                    }
+                    Some(folder)
+                }
+                Err(error) => {
+                    log::error!("failed to create temp project folder: {error:#}");
+                    None
+                }
+            };
+
+            crate::project_files::install_project(state, client_id, new_project, folder)?;
+            state
+                .project_dirty
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
         ArchivedRequest::ProjectAll => {
             // 読み取り専用なので write ではなく read ロックでよい。
@@ -99,6 +116,29 @@ pub fn on_request_receive(
 
             let cmd = Response::ProjectMeta { timelines };
             network.send(client_id, &cmd);
+            crate::project_files::send_kind_table_sync(state, client_id)?;
+        }
+        ArchivedRequest::InspectProject { path } => {
+            crate::project_files::handle_inspect_project(state, client_id, path);
+        }
+        ArchivedRequest::OpenProject { path, backup } => {
+            crate::project_files::handle_open_project(state, client_id, path, *backup);
+        }
+        ArchivedRequest::SaveProject { overwrite } => {
+            crate::project_files::handle_save_project(state, client_id, *overwrite);
+        }
+        ArchivedRequest::SaveProjectAs { path, overwrite } => {
+            crate::project_files::handle_save_project_as(state, client_id, path, *overwrite);
+        }
+        ArchivedRequest::ListAutosaveGenerations => {
+            crate::project_files::handle_list_autosave_generations(state, client_id);
+        }
+        ArchivedRequest::RestoreAutosaveGeneration { generation_id } => {
+            crate::project_files::handle_restore_autosave_generation(
+                state,
+                client_id,
+                generation_id,
+            );
         }
         ArchivedRequest::RegisterAssetReference {
             asset_id,
@@ -141,6 +181,8 @@ pub fn on_request_receive(
                             asset_id: asset_id_raw.to_string(),
                         },
                     );
+                    // External 登録時は fingerprint の hash を後埋めする。
+                    crate::project_files::spawn_fingerprint_backfill(state);
                     if clip_added {
                         network.notify_dirty();
                     }
