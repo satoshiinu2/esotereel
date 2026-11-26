@@ -92,6 +92,9 @@ async fn on_project_event(state: &Arc<ServerState>) -> anyhow::Result<()> {
         .project_dirty
         .store(true, std::sync::atomic::Ordering::SeqCst);
     crate::project_files::broadcast_kind_appends(state);
+    // クリップ追加に伴うアセット登録など、レジストリ側の変更も
+    // 差分があれば全クライアントへ配る。
+    crate::project_files::broadcast_asset_updates(state);
 
     // Project ロックを解放してからネットワーク送信を行う（デッドロック回避）
     // 1タイムラインの失敗で残りの変更まで捨てないよう、全部を配送しきってから

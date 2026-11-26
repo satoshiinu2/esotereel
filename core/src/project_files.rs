@@ -10,6 +10,7 @@
 //!   行います。バックアップ指定時は開く前にフォルダを複製します。
 
 use std::{
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         atomic::Ordering,
@@ -18,18 +19,24 @@ use std::{
 };
 
 use esotereel_lib::{
+    plugin::{
+        property::{PropertyPath, value::FieldValue},
+        NamespacedID, PluginLoader,
+    },
     project::{
         asset::hash_file_blake3,
         autosave::{list_autosave_generations, restore_autosave_generation},
+        clip::get_property_path_from_map,
         ids::AssetRef,
         save::{backup_project_folder, inspect_project, load_project, save_project},
         Project,
     },
-    responces::{AutosaveGenerationWire, Response},
+    responces::{AssetEntryWire, AutosaveGenerationWire, Response},
     settings::AppSettings,
     util::result::{EsotereelError, LockExt, MutexExt},
 };
 
+use crate::project::MediaPropertyPaths;
 use crate::state::ServerState;
 
 /// 失敗をクライアントへ `Response::Failed` で返します。
@@ -86,6 +93,7 @@ pub fn install_project(
     state
         .network
         .send(client_id, &Response::KindTableSync { entries: kind_entries });
+    send_asset_table_sync(state, client_id)?;
     Ok(())
 }
 
@@ -145,6 +153,230 @@ pub fn broadcast_kind_appends(state: &ServerState) {
     } else if entries.len() < *synced {
         *synced = entries.len();
     }
+}
+
+/// 全タイムラインの全クリップがメディア source として参照している
+/// アセットの集合を返します。
+///
+/// source はクリップ種別の能力宣言（`FrameProvider` の `media-source`
+/// メンバー）から解決し、プロパティ ID をハードコードしません
+/// （AGENTS.md 第9条）。UUID 形式の source だけを参照として数え、
+/// 生パスは対象外です。実体がアンロードされているチャンクのクリップ
+/// は走査に含まれないため、正確な判定が要る呼び出し側は事前に
+/// `ensure_all_chunks_loaded` で読み込んでおくこと。
+pub fn used_asset_refs(project: &Project, loader: &PluginLoader) -> HashSet<AssetRef> {
+    let mut used = HashSet::new();
+    let mut source_paths: HashMap<NamespacedID, Option<PropertyPath>> = HashMap::new();
+    for (_, timeline) in project.iter_timelines() {
+        for (_, clip) in timeline.iter_clips() {
+            let source_path = source_paths
+                .entry(clip.kind_id.clone())
+                .or_insert_with(|| {
+                    loader
+                        .resolve_component_definition(&clip.kind_id)
+                        .ok()
+                        .and_then(|definition| MediaPropertyPaths::resolve(&definition).source)
+                });
+            let Some(source_path) = source_path else {
+                continue;
+            };
+            if let Some(FieldValue::String(source)) =
+                get_property_path_from_map(&clip.properties, source_path)
+            {
+                if let Ok(id) = source.parse::<AssetRef>() {
+                    used.insert(id);
+                }
+            }
+        }
+    }
+    used
+}
+
+/// 現在のアセット表を転送形で組み立てます。
+///
+/// `in_use` は読み込み済みチャンクの走査で判定し、配信済みスナップ
+/// ショットで使用中だったものは維持します（未読み込みチャンクの
+/// クリップを取りこぼして「未使用」に倒れないようにするため。
+/// 正確な判定は全量配信と削除時の再確認で行います）。
+fn current_asset_wires(state: &ServerState) -> Vec<AssetEntryWire> {
+    let entries = {
+        let Ok(project_guard) = state.project.read_or_err() else {
+            return Vec::new();
+        };
+        let Some(project) = project_guard.as_ref() else {
+            return Vec::new();
+        };
+        let Ok(loader) = state.common.plugin_loader.read_or_err() else {
+            return Vec::new();
+        };
+        let used = used_asset_refs(project, &loader);
+        project
+            .assets()
+            .iter()
+            .map(|entry| AssetEntryWire::from_entry(entry, used.contains(&entry.id)))
+            .collect::<Vec<_>>()
+    };
+    let Ok(snapshot) = state.asset_sync_snapshot.lock_or_err() else {
+        return entries;
+    };
+    entries
+        .into_iter()
+        .map(|mut wire| {
+            if !wire.in_use {
+                if let Some(previous) = snapshot.get(&wire.id) {
+                    wire.in_use = previous.in_use;
+                }
+            }
+            wire
+        })
+        .collect()
+}
+
+/// アセット表の全量をクライアントへ送り、配信済みスナップショットを
+/// 作り直します（プロジェクト開始バンドル用）。
+///
+/// `in_use` は全チャンクを読み込んでから判定する正確な値です。
+pub fn send_asset_table_sync(state: &ServerState, client_id: u32) -> anyhow::Result<()> {
+    let entries = {
+        let mut project_guard = state.project.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        project.ensure_all_chunks_loaded()?;
+        let loader = state.common.plugin_loader.read_or_err()?;
+        let used = used_asset_refs(project, &loader);
+        project
+            .assets()
+            .iter()
+            .map(|entry| AssetEntryWire::from_entry(entry, used.contains(&entry.id)))
+            .collect::<Vec<_>>()
+    };
+    *state.asset_sync_snapshot.lock_or_err()? = entries
+        .iter()
+        .map(|wire| (wire.id.clone(), wire.clone()))
+        .collect();
+    state
+        .network
+        .send(client_id, &Response::AssetTableSync { entries });
+    Ok(())
+}
+
+/// アセット表が配信済みスナップショットから変わっていたら、差分だけを
+/// 全クライアントへ配信します。
+///
+/// 変更イベントのたびと、アセットを直接触るリクエストの成功後に
+/// 呼ばれます。差分の検出は転送形の比較なので、登録・名前変更・
+/// fingerprint の後埋めなど、どの経路の変更でも拾えます。
+pub fn broadcast_asset_updates(state: &ServerState) {
+    let entries = current_asset_wires(state);
+    let Ok(mut snapshot) = state.asset_sync_snapshot.lock_or_err() else {
+        return;
+    };
+    let mut upserts: Vec<AssetEntryWire> = Vec::new();
+    let mut current_ids: HashSet<&str> = HashSet::new();
+    for wire in &entries {
+        current_ids.insert(wire.id.as_str());
+        match snapshot.get(&wire.id) {
+            Some(previous) if previous == wire => {}
+            _ => upserts.push(wire.clone()),
+        }
+    }
+    let removed: Vec<String> = snapshot
+        .keys()
+        .filter(|id| !current_ids.contains(id.as_str()))
+        .cloned()
+        .collect();
+    *snapshot = entries
+        .into_iter()
+        .map(|wire| (wire.id.clone(), wire))
+        .collect();
+    drop(snapshot);
+    if !upserts.is_empty() || !removed.is_empty() {
+        state.network.send_all(&Response::AssetTableUpdated { upserts, removed });
+    }
+}
+
+/// アセットの表示名を変更します。
+pub fn handle_rename_asset(state: &ServerState, client_id: u32, asset_id: &str, name: &str) {
+    let result = (|| -> anyhow::Result<()> {
+        let id = parse_asset_id(asset_id)?;
+        let mut project_guard = state.project.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        project.assets_mut().rename(id, name.to_string())?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            state.project_dirty.store(true, Ordering::SeqCst);
+            broadcast_asset_updates(state);
+        }
+        Err(error) => send_failed(state, client_id, "rename asset", &error),
+    }
+}
+
+/// アセットをレジストリから削除します。
+///
+/// クリップが参照しているアセットは黙って消さず、失敗として返します
+/// （参照の判定は全チャンクを読み込んでから正確に行います）。
+pub fn handle_remove_asset(state: &ServerState, client_id: u32, asset_id: &str) {
+    let result = (|| -> anyhow::Result<()> {
+        let id = parse_asset_id(asset_id)?;
+        let mut project_guard = state.project.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        project.ensure_all_chunks_loaded()?;
+        let loader = state.common.plugin_loader.read_or_err()?;
+        if used_asset_refs(project, &loader).contains(&id) {
+            anyhow::bail!("asset {id} is still referenced by one or more clips");
+        }
+        drop(loader);
+        project.assets_mut().remove(id)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            state.project_dirty.store(true, Ordering::SeqCst);
+            broadcast_asset_updates(state);
+        }
+        Err(error) => send_failed(state, client_id, "remove asset", &error),
+    }
+}
+
+/// アセットの参照先を別の外部ファイルへ付け替えます。
+///
+/// fingerprint はサイズを取り直して hash は未計算に戻り、登録時と
+/// 同じ後埋め（`spawn_fingerprint_backfill`）で再計算されます。
+pub fn handle_relink_asset(state: &Arc<ServerState>, client_id: u32, asset_id: &str, path: &str) {
+    let result = (|| -> anyhow::Result<()> {
+        let id = parse_asset_id(asset_id)?;
+        let new_path = Path::new(path);
+        if !new_path.is_file() {
+            anyhow::bail!("asset source `{path}` is not an existing file");
+        }
+        let mut project_guard = state.project.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        project.assets_mut().relink_external(id, new_path)?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => {
+            state.project_dirty.store(true, Ordering::SeqCst);
+            broadcast_asset_updates(state);
+            spawn_fingerprint_backfill(state);
+        }
+        Err(error) => send_failed(state, client_id, "relink asset", &error),
+    }
+}
+
+fn parse_asset_id(asset_id: &str) -> anyhow::Result<AssetRef> {
+    asset_id
+        .parse::<AssetRef>()
+        .map_err(|error| anyhow::anyhow!("invalid asset id `{asset_id}`: {error}"))
 }
 
 /// 新規・復元プロジェクト用の仮フォルダ（`data_dir/temp/<ID>`）を作ります。

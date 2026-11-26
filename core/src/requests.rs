@@ -117,6 +117,7 @@ pub fn on_request_receive(
             let cmd = Response::ProjectMeta { timelines };
             network.send(client_id, &cmd);
             crate::project_files::send_kind_table_sync(state, client_id)?;
+            crate::project_files::send_asset_table_sync(state, client_id)?;
         }
         ArchivedRequest::InspectProject { path } => {
             crate::project_files::handle_inspect_project(state, client_id, path);
@@ -139,6 +140,15 @@ pub fn on_request_receive(
                 client_id,
                 generation_id,
             );
+        }
+        ArchivedRequest::RenameAsset { asset_id, name } => {
+            crate::project_files::handle_rename_asset(state, client_id, asset_id, name);
+        }
+        ArchivedRequest::RemoveAsset { asset_id } => {
+            crate::project_files::handle_remove_asset(state, client_id, asset_id);
+        }
+        ArchivedRequest::RelinkAsset { asset_id, path } => {
+            crate::project_files::handle_relink_asset(state, client_id, asset_id, path);
         }
         ArchivedRequest::RegisterAssetReference {
             asset_id,
@@ -183,6 +193,8 @@ pub fn on_request_receive(
                     );
                     // External 登録時は fingerprint の hash を後埋めする。
                     crate::project_files::spawn_fingerprint_backfill(state);
+                    // 登録を他のクライアントへも増分配信する。
+                    crate::project_files::broadcast_asset_updates(state);
                     if clip_added {
                         network.notify_dirty();
                     }
@@ -267,6 +279,8 @@ pub fn on_request_receive(
                             asset_id: asset_id_raw.to_string(),
                         },
                     );
+                    // 登録を他のクライアントへも増分配信する。
+                    crate::project_files::broadcast_asset_updates(state);
                     if clip_added {
                         network.notify_dirty();
                     }

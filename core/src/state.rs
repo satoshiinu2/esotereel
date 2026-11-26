@@ -14,6 +14,7 @@ use esotereel_lib::{
     plugin::PluginLoader,
     project::ids::ResourceId,
     project::ids::TimelineId,
+    responces::AssetEntryWire,
     state::{CommonState, HostState},
     HostRole,
 };
@@ -50,6 +51,11 @@ pub struct ServerState {
     /// クライアントへ配信済みの kind 表の長さです。新規採番分だけを
     /// `KindTableAppended` で配るために使います。
     pub kind_sync_len: Arc<Mutex<usize>>,
+
+    /// クライアントへ配信済みのアセット表（アセット ID → 転送形）です。
+    /// 現在のレジストリとの差分だけを `AssetTableUpdated` で配るために
+    /// 使います。プロジェクトが差し替わったら全量配信側で作り直します。
+    pub asset_sync_snapshot: Arc<Mutex<HashMap<String, AssetEntryWire>>>,
 }
 
 impl ServerState {
@@ -70,6 +76,7 @@ impl ServerState {
             project_folder: Arc::new(RwLock::new(None)),
             project_dirty: Arc::new(AtomicBool::new(false)),
             kind_sync_len: Arc::new(Mutex::new(0)),
+            asset_sync_snapshot: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
