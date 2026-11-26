@@ -12,6 +12,7 @@
 #include <QDebug>
 #include <QLoggingCategory>
 #include <QMessageBox>
+#include <QMetaObject>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QTimer>
@@ -101,9 +102,12 @@ void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi) {
 
 void onConnectedCallBack() {
     // 前回セッションが異常終了していたら、復旧一覧を先に出す。
+    // このコールバックはネットワークスレッドから呼ばれるため、ダイアログの
+    // 表示はメインスレッドへキューする（GUI の生成はメインスレッドのみ）。
     auto abnormal = ProjectFiles::previousSessionAbnormal(state);
     if (abnormal.isOk() && abnormal.unwrap()) {
-        mainWindow->showRecoveryDialog();
+        QMetaObject::invokeMethod(mainWindow, &window::MainWindow::showRecoveryDialog,
+                                  Qt::QueuedConnection);
         return;
     }
     state->requests().newProject();
