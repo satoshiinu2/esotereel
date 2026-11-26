@@ -92,4 +92,32 @@ pub enum Request {
     Redo {
         timeline_id: TimelineId,
     },
+    /// プロジェクトフォルダを開かずにバージョンだけを確認。
+    InspectProject {
+        path: String,
+    },
+    /// プロジェクトフォルダを開く。`backup` が真なら開く前に
+    /// フォルダのバックアップ複製を作る。
+    OpenProject {
+        path: String,
+        backup: bool,
+    },
+    /// 現在のプロジェクトフォルダへ保存する。フォルダに別の
+    /// プロジェクトが入っている場合は `overwrite` が無いと失敗する。
+    SaveProject {
+        overwrite: bool,
+    },
+    /// 指定フォルダへ名前を付けて保存し、以降はそのフォルダを
+    /// プロジェクトフォルダとする。空でないフォルダへは
+    /// `overwrite` が無いと失敗する。
+    SaveProjectAs {
+        path: String,
+        overwrite: bool,
+    },
+    /// オートセーブ世代の一覧を取得（全プロジェクト分）。
+    ListAutosaveGenerations,
+    /// オートセーブ世代から復元して開く。
+    RestoreAutosaveGeneration {
+        generation_id: String,
+    },
 }
