@@ -6,25 +6,25 @@ use std::{
 use crate::{project::ids::AssetRef, util::result::EsotereelError};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssetFingerprint {
     pub size: u64,
     pub hash: Option<[u8; 32]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssetLocation {
     External { path: PathBuf },
     Managed { path: PathBuf },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssetAvailability {
     Available(AssetLocation),
     Missing { previous_path: PathBuf },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AssetEntry {
     pub id: AssetRef,
     pub name: String,
@@ -32,14 +32,11 @@ pub struct AssetEntry {
     /// 実ファイルの現在の参照先
     pub source: AssetAvailability,
 
-    /// プロジェクト内での論理パス
-    pub project_path: Option<PathBuf>,
-
     /// ファイルの同一性確認用
     pub fingerprint: Option<AssetFingerprint>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AssetRegistry {
     entries: HashMap<AssetRef, AssetEntry>,
 
@@ -52,7 +49,11 @@ impl AssetRegistry {
         self.entries.get(&id)
     }
 
-    fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetRef> {
+    /// 構築済みのエントリをそのまま登録します。
+    ///
+    /// 公開の登録経路（`add_external` / `add_managed`）では作れない
+    /// エントリ（例: `Missing`）の復元・取り込み用です。
+    pub(crate) fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetRef> {
         let id = entry.id;
 
         match self.entries.entry(id) {
@@ -77,7 +78,6 @@ impl AssetRegistry {
             source: AssetAvailability::Available(AssetLocation::External {
                 path: path.to_path_buf(),
             }),
-            project_path: None,
             fingerprint: None,
         })
     }
@@ -93,7 +93,6 @@ impl AssetRegistry {
             id,
             name,
             source: AssetAvailability::Available(AssetLocation::Managed { path }),
-            project_path: None,
             fingerprint: None,
         })
     }
@@ -164,7 +163,6 @@ impl AssetRegistry {
             source: AssetAvailability::Available(AssetLocation::External {
                 path: path.to_path_buf(),
             }),
-            project_path: None,
             fingerprint: None,
         };
         self.add(entry)

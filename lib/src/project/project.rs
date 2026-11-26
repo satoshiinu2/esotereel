@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
+use uuid::Uuid;
+
 use crate::plugin::{NamespacedID, property::PropertyKey};
 use crate::project::asset::AssetRegistry;
 use crate::project::change::ChangeSet;
@@ -14,19 +16,75 @@ use crate::util::result::EsotereelError;
 /// 複数のタイムライン（`Timeline`）を `TimelineId` でキーに保持し、
 /// `IdGenerator` により各種 ID を一意に生成します。
 ///
+/// `id` はプロジェクトを識別する UUID で、作成時に新規採番されます。
+/// 保存ファイルの移動・リネームでも変わらず、オートセーブ世代との
+/// 紐付けにも使われます。`IdGenerator` とは異なり保存されます。
+///
 /// タイムライン・レイヤー・クリップの挿入・取得・削除、タイムラインの
 /// 独立化（ミラーからのコピー）、変更セットの抽出などを提供します。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Project {
+    id: Uuid,
     timelines: BTreeMap<TimelineId, Timeline>,
     ids: IdGenerator,
     assets: AssetRegistry,
 }
 
+impl Default for Project {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Project {
-    /// 新しい空のプロジェクトを作成します。
+    /// 新しい空のプロジェクトを作成します。プロジェクト ID を新規採番します。
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            id: Uuid::new_v4(),
+            timelines: BTreeMap::new(),
+            ids: IdGenerator::default(),
+            assets: AssetRegistry::default(),
+        }
+    }
+
+    /// プロジェクト ID を返します。
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// 保持するタイムラインを ID 順に反復します。
+    pub fn iter_timelines(&self) -> impl Iterator<Item = (&TimelineId, &Timeline)> {
+        self.timelines.iter()
+    }
+
+    /// 読み込んだ内容からプロジェクトを組み立てます。
+    ///
+    /// `IdGenerator` は保存されないためリセットし、読み込んだ全 ID を
+    /// `observe_*` で引き上げて新規発行との衝突を避けます。
+    pub(crate) fn from_loaded(
+        id: Uuid,
+        timelines: BTreeMap<TimelineId, Timeline>,
+        assets: AssetRegistry,
+    ) -> Self {
+        let mut project = Self {
+            id,
+            timelines,
+            ids: IdGenerator::default(),
+            assets,
+        };
+        for (&timeline_id, timeline) in &project.timelines {
+            project.ids.observe_timeline(timeline_id);
+            for (&layer_id, _) in timeline.iter_layers() {
+                project.ids.observe_layer(layer_id);
+            }
+            for folder_id in timeline.outline.folder_ids() {
+                project.ids.observe_folder(folder_id);
+            }
+            for (&clip_id, _) in timeline.iter_clips() {
+                project.ids.observe_clip(clip_id);
+            }
+        }
+        project
     }
 
     /// 指定 FPS で新しいタイムラインを追加し、その `TimelineId` を返します。

@@ -144,6 +144,13 @@ impl LayerOutline {
         self.folders.contains_key(&id)
     }
 
+    /// 保持するフォルダー ID をすべて返します。
+    ///
+    /// ロード時に `IdGenerator` へ既存 ID を記録するために使います。
+    pub fn folder_ids(&self) -> impl Iterator<Item = LayerFolderId> + '_ {
+        self.folders.keys().copied()
+    }
+
     fn insert(&mut self, node: OutlineNode, parent: Option<LayerFolderId>, index: Option<usize>) {
         let siblings = self.children_mut(parent).expect("parent folder not found");
         let idx = index.unwrap_or(siblings.len()).min(siblings.len());
