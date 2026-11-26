@@ -4,6 +4,8 @@
 //! クリップ（`Clip`）など、動画編集のデータモデルを定義します。
 //!
 //! ## モジュール一覧
+//! - `asset` - アセットレジストリ（`AssetRegistry`）。
+//! - `autosave` - オートセーブの世代管理。
 //! - `camera` - カメラ情報（`CameraInfo`）。
 //! - `change` - 変更セット（`ChangeSet`）。
 //! - `chunk_index` - チャンクインデックス。
@@ -19,6 +21,7 @@
 //! - `value` - プロジェクト固有の値型。
 
 pub mod asset;
+pub mod autosave;
 pub mod camera;
 pub mod change;
 pub mod chunk_index;
