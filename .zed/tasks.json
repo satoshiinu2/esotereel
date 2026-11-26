@@ -1,0 +1,12 @@
+[
+  {
+    "label": "build gui debug",
+    "command": "cmake -G 'MinGW Makefiles' -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build build/cmake; exit $LASTEXITCODE",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  },
+  {
+    "label": "build core debug",
+    "command": "cmake -G 'MinGW Makefiles' -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; cmake --build build/cmake --target rust_core; exit $LASTEXITCODE",
+    "cwd": "$ZED_WORKTREE_ROOT"
+  }
+]

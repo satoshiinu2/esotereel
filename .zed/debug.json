@@ -1,0 +1,30 @@
+[
+  {
+    "label": "Build and debug GUI",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "build/cmake/esotereel_gui.exe",
+    "cwd": "build/cmake",
+    "build": "build gui debug",
+    "env": {
+      "RUST_BACKTRACE": "1",
+      "CARGO_TARGET_DIR": "$ZED_WORKTREE_ROOT/build/target",
+      "ESOTEREEL_PLUGIN_DIR": "$ZED_WORKTREE_ROOT/plugins",
+      "ESOTEREEL_WORKING_DIR": "$ZED_WORKTREE_ROOT/build/working"
+    }
+  },
+  {
+    "label": "Build and debug CORE",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "build/target/debug/esotereel_core.exe",
+    "cwd": "build/target/debug",
+    "build": "build core debug",
+    "env": {
+      "RUST_BACKTRACE": "1",
+      "CARGO_TARGET_DIR": "$ZED_WORKTREE_ROOT/build/target",
+      "ESOTEREEL_PLUGIN_DIR": "$ZED_WORKTREE_ROOT/plugins",
+      "ESOTEREEL_WORKING_DIR": "$ZED_WORKTREE_ROOT/build/working"
+    }
+  }
+]
