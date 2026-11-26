@@ -173,6 +173,10 @@ target_link_libraries(esotereel_gui PRIVATE
     ${GUI_HLP_LINK_LIB}
 )
 
+# 生成ヘッダ (esotereel_gui_helper.h) は rust_gui_helper の cargo ビルドで
+# 作られるため、GUI のコンパイル開始をその完了後に順序付ける
+add_dependencies(esotereel_gui rust_gui_helper)
+
 # フラグ設定
 if(ESOTEREEL_ENABLE_GPU_PREVIEW)
     target_compile_definitions(esotereel_gui PRIVATE
