@@ -66,6 +66,7 @@ fn render_frame(ctx, props) {
 | `float` | 小数（f64） |
 | `string` / `enum` | 文字列 |
 | `filepath` | 文字列の配列 |
+| `asset-ref` | 文字列（UUID。参照の解決はホスト側が行います） |
 | `color` | `r`, `g`, `b`, `a` をキーに持つマップ |
 | `array` | 配列 |
 | `map` / `group` | マップ（キーはメンバー名） |

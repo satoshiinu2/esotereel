@@ -2,8 +2,9 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use rkyv::{Archive, CheckBytes, bytecheck, with::Map};
 
+use crate::project::ids::AssetRef;
 use crate::util::color::RgbaColor;
-use crate::util::rkyv_with::PathAsString;
+use crate::util::rkyv_with::{PathAsString, UuidAsBytes};
 
 /// プロパティ値の変換・検証で発生しうるエラーです。
 ///
@@ -44,6 +45,9 @@ pub enum FieldTypeKind {
     FilePath {
         extensions: Option<Vec<String>>,
     },
+    /// アセットレジストリへの参照。値は `AssetRef` 型で保持し、
+    /// 未設定は nil UUID で表します。
+    AssetRef,
     Color,
     Array {
         item_kind: Box<FieldTypeKind>,
@@ -100,6 +104,12 @@ pub enum FieldValue {
         #[archive_attr(omit_bounds)]
         BTreeMap<String, FieldValue>,
     ),
+
+    /// アセットレジストリへの参照です。文字列化して解釈する受け渡しは
+    /// せず、`AssetRef`（UUID）そのものを保持します。未設定は nil UUID
+    /// で表します。serde では UUID の文字列として保存されますが、
+    /// `String` バリアントとはタグで区別されます。
+    AssetRef(#[with(UuidAsBytes)] AssetRef),
 }
 
 impl ToString for FieldValue {
@@ -133,6 +143,7 @@ impl ToString for FieldValue {
                 .map(|(key, value)| format!("{key}: {}", value.to_string()))
                 .collect::<Vec<_>>()
                 .join(", "),
+            Self::AssetRef(asset_ref) => asset_ref.to_string(),
         }
     }
 }
@@ -217,6 +228,21 @@ impl FieldTypeKind {
 
             // String
             (FieldTypeKind::String, toml::Value::String(s)) => Ok(FieldValue::String(s.clone())),
+
+            // AssetRef
+            // TOML では UUID 文字列で書き、空文字列は未設定（nil UUID）として扱う。
+            (FieldTypeKind::AssetRef, toml::Value::String(s)) => {
+                if s.is_empty() {
+                    Ok(FieldValue::AssetRef(AssetRef::nil()))
+                } else {
+                    s.parse::<AssetRef>()
+                        .map(FieldValue::AssetRef)
+                        .map_err(|_| ConvertError::TypeMismatch {
+                            expected: "AssetRef (UUID string)",
+                            got: format!("String({s:?})"),
+                        })
+                }
+            }
 
             // FilePath
             // 単一文字列、または配列形式のどちらの TOML 表現にも対応
@@ -303,6 +329,7 @@ impl FieldTypeKind {
                     FieldTypeKind::Enum { .. } => "String (Enum)",
                     FieldTypeKind::String => "String",
                     FieldTypeKind::FilePath { .. } => "String or Array of Strings",
+                    FieldTypeKind::AssetRef => "String (UUID)",
                     FieldTypeKind::Color => "String (Hex/Color)",
                     FieldTypeKind::Array { .. } => "Array",
                     FieldTypeKind::Map { .. } | FieldTypeKind::Group { .. } => "Table",

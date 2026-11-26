@@ -663,6 +663,20 @@ fn merge_field_value_with_depth(
     if depth > MAX_VALUE_DEPTH {
         anyhow::bail!("handler returned a value nested too deeply at `{property_path}`");
     }
+    // FileDropHandler はアセット参照を文字列（パスまたは UUID）でしか
+    // 返せない。AssetRef スロットへの文字列は、UUID 形式なら参照として
+    // 取り込む。生パスは登録を伴うため、作成経路（core の clip_add_core）が
+    // 登録して AssetRef へ確定させる前提で、文字列のままスロットへ残す。
+    if matches!(default, FieldValue::AssetRef(_)) {
+        if let FieldValue::String(text) = &returned {
+            let parsed = text.parse::<crate::project::ids::AssetRef>().ok();
+            *default = match parsed {
+                Some(id) => FieldValue::AssetRef(id),
+                None => returned,
+            };
+            return Ok(());
+        }
+    }
     match (default, returned) {
         (FieldValue::Map(default_values), FieldValue::Map(returned_values)) => {
             for (key, returned_value) in returned_values {
@@ -707,6 +721,9 @@ fn merge_field_value_with_depth(
         (FieldValue::Path(default_value), FieldValue::Path(returned_value)) => {
             *default_value = returned_value;
         }
+        (FieldValue::AssetRef(default_value), FieldValue::AssetRef(returned_value)) => {
+            *default_value = returned_value;
+        }
         (FieldValue::Color(default_value), FieldValue::Color(returned_value)) => {
             *default_value = returned_value;
         }
@@ -730,6 +747,7 @@ fn field_value_kind(value: &FieldValue) -> &'static str {
         FieldValue::Color(_) => "color",
         FieldValue::Array(_) => "array",
         FieldValue::Map(_) => "map",
+        FieldValue::AssetRef(_) => "asset-ref",
     }
 }
 

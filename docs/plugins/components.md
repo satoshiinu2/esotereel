@@ -172,6 +172,7 @@ required = true
 | `string` | ― | 文字列 | |
 | `enum` | `options`（必須） | 選択肢のうち 1 つ（文字列） | `options` が空だとエラー |
 | `filepath` | `extensions`（任意） | 文字列、または文字列の配列 | ファイルパス。値はパスの集合として保持されます |
+| `asset-ref` | ― | UUID 文字列（空文字列は未設定） | アセットレジストリへの参照。値は文字列ではなく `AssetRef` 型として保持され、未設定は nil UUID で表されます |
 | `color` | ― | `"#RRGGBB"` または `"#RRGGBBAA"` 文字列 | |
 | `array` | `item_kind`（必須） | 要素の配列 | `item_kind` には任意の kind を再帰的に書けます |
 | `map` | `value_kind`（必須）, `known_keys`（任意） | キー → 値のテーブル | `known_keys` を指定すると、それ以外のキーは既定値の変換時に読み飛ばされます |
@@ -187,6 +188,7 @@ required = true
 | `int` / `float` | `0`（範囲に収まらない場合は最も近い境界値） |
 | `enum` | `options` の先頭 |
 | `string` / `filepath` | 空文字列 |
+| `asset-ref` | 未設定（nil UUID） |
 | `color` | `#FFFFFF` |
 | `array` | 空の配列 |
 | `map` | 空のテーブル |
@@ -202,7 +204,7 @@ required = true
 - そのメンバーは各フィールド自身が `capability` を宣言する（`source` に `"media-source"`、`source_offset` に `"media-offset-provider"`）
 - transform コンポーネントのプロパティ `transform`（group。メンバーは `position` / `rotation` / `scale`）には `capability = "transformable"` を宣言する
 
-レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソースパスのメンバーキーは `media-source` 能力を宣言するメンバーから、オフセットのメンバーキーは `media-offset-provider` から解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
+レンダラー側は、`frame-provider` 能力を持つプロパティからメディア情報を読みます。ソース参照のメンバーキーは `media-source` 能力を宣言するメンバーから、オフセットのメンバーキーは `media-offset-provider` から解決されます。`media-source` のメンバーは `asset-ref` 型で宣言し、値はアセットレジストリ経由で実パスへ解決されます。どちらかが宣言されていない場合、そのクリップは描画されません（警告ログが出力されます）。
 
 #### プロパティアドレス
 

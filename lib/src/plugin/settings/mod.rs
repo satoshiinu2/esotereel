@@ -237,6 +237,9 @@ fn field_value_to_toml(
         | (FieldTypeKind::String, FieldValue::String(value))
         | (FieldTypeKind::FilePath { .. }, FieldValue::String(value))
         | (FieldTypeKind::Color, FieldValue::String(value)) => toml::Value::String(value.clone()),
+        (FieldTypeKind::AssetRef, FieldValue::AssetRef(value)) => {
+            toml::Value::String(value.to_string())
+        }
         (FieldTypeKind::FilePath { .. }, FieldValue::Path(paths)) => toml::Value::Array(
             paths
                 .iter()

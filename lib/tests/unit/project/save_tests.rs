@@ -273,13 +273,13 @@ fn load_reports_version_status_for_newer_files() {
         .unwrap();
     };
 
-    write_project(r#"{"major": 1, "minor": 0, "revision": 5}"#);
+    write_project(r#"{"major": 1, "minor": 1, "revision": 5}"#);
     assert_eq!(
         load_project(&dir).unwrap().status,
         VersionStatus::NewerRevision
     );
 
-    write_project(r#"{"major": 1, "minor": 1, "revision": 0}"#);
+    write_project(r#"{"major": 1, "minor": 2, "revision": 0}"#);
     assert_eq!(
         load_project(&dir).unwrap().status,
         VersionStatus::NewerMinor
@@ -315,6 +315,122 @@ fn load_reports_version_status_for_newer_files() {
         matches!(err, SaveError::Io(ref e) if e.kind() == std::io::ErrorKind::NotFound),
         "存在しないフォルダは Io エラーになるべき"
     );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// メディア source が `AssetRef` 型の値でも save/load で保持されること。
+///
+/// チャンク JSON では `{"AssetRef": "<UUID>"}` と、文字列値とはタグで
+/// 区別される表現になることも併せて確認します（形式 1.1.0 の契約）。
+#[test]
+fn save_load_round_trip_preserves_asset_ref_values() {
+    let dir = test_dir();
+    let mut project = Project::new();
+    let timeline_id = project.insert_timeline(30.0);
+    let layer_id = *project
+        .timeline_ref(timeline_id)
+        .unwrap()
+        .iter_layers()
+        .next()
+        .unwrap()
+        .0;
+    let asset_id = project.register_asset(Path::new("/media/clip1.mp4")).unwrap();
+
+    let mut properties = HashMap::new();
+    properties.insert(
+        PropertyKey::parse("std:media#media").unwrap(),
+        ClipBindingValue::Static(FieldValue::Map(
+            [
+                (
+                    "source".to_string(),
+                    FieldValue::AssetRef(asset_id),
+                ),
+                (
+                    "source_offset".to_string(),
+                    FieldValue::String("0".to_string()),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        )),
+    );
+    let clip_id = project
+        .new_clip_in_timeline(
+            timeline_id,
+            layer_id,
+            0,
+            90,
+            NamespacedID::new("std", "video").unwrap(),
+            properties,
+        )
+        .unwrap();
+
+    save_project(&project, &dir).unwrap();
+
+    // チャンク JSON 上の表現: 文字列ではなく AssetRef タグ付きで保存される。
+    let chunk_text = fs::read_to_string(
+        dir.join("timelines")
+            .join(timeline_id.to_string())
+            .join("chunks")
+            .join("0.json"),
+    )
+    .unwrap();
+    let expected = format!(r#""AssetRef": "{asset_id}""#);
+    assert!(
+        chunk_text.contains(&expected),
+        "chunk JSON should contain {expected}, got: {chunk_text}"
+    );
+    let project_text = fs::read_to_string(dir.join("project.json")).unwrap();
+    let project_json: serde_json::Value = serde_json::from_str(&project_text).unwrap();
+    assert_eq!(project_json["version"]["major"], 1);
+    assert_eq!(project_json["version"]["minor"], 1);
+
+    let loaded = load_project(&dir).unwrap();
+    let timeline = loaded.project.timeline_ref(timeline_id).unwrap();
+    let clip = timeline.get_clip(clip_id).unwrap();
+    let source_path =
+        crate::plugin::property::PropertyPath::parse("std:media#media/source").unwrap();
+    assert_eq!(
+        clip.get_property_path(&source_path),
+        Some(&FieldValue::AssetRef(asset_id))
+    );
+
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// 旧形式（1.0.0、メディア source が文字列）のプロジェクトフォルダが
+/// そのまま開けること。文字列から `AssetRef` 値への変換は、プラグイン
+/// 定義を必要とするため lib の `load_project` ではなく core の開く処理が
+/// 行います。ここでは「旧ファイルが壊れずに読み込める」ことまでを契約と
+/// します。
+#[test]
+fn load_accepts_legacy_1_0_0_project_with_string_sources() {
+    let dir = test_dir();
+    let (project, timeline_id) = sample_project();
+    save_project(&project, &dir).unwrap();
+
+    // 保存された project.json のバージョンを旧形式の 1.0.0 へ書き戻し、
+    // 旧バージョンが書いたフォルダを再現する（チャンク内の文字列 source は
+    // 現行の保存でも同じ表現になるため、この再現で十分です）。
+    let project_path = dir.join("project.json");
+    let text = fs::read_to_string(&project_path).unwrap();
+    let mut json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    json["version"] = serde_json::json!({"major": 1, "minor": 0, "revision": 0});
+    fs::write(&project_path, json.to_string()).unwrap();
+
+    let loaded = load_project(&dir).unwrap();
+    assert_eq!(
+        loaded.version,
+        ProjectVersion {
+            major: 1,
+            minor: 0,
+            revision: 0
+        }
+    );
+    assert_eq!(loaded.status, VersionStatus::Compatible);
+    let timeline = loaded.project.timeline_ref(timeline_id).unwrap();
+    assert_eq!(timeline.iter_clips().count(), 3);
 
     fs::remove_dir_all(&dir).unwrap();
 }

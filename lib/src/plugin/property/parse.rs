@@ -36,6 +36,7 @@ impl FieldTypeKind {
         let kind = match ty {
             "bool" => FieldTypeKind::Bool,
             "string" => FieldTypeKind::String,
+            "asset-ref" => FieldTypeKind::AssetRef,
             "color" => FieldTypeKind::Color,
             "filepath" => {
                 let extensions = match table.get("extensions") {
@@ -142,6 +143,10 @@ impl FieldTypeKind {
             }
 
             FieldTypeKind::String => FieldValue::String(String::new()),
+
+            FieldTypeKind::AssetRef => {
+                FieldValue::AssetRef(crate::project::ids::AssetRef::nil())
+            }
 
             FieldTypeKind::FilePath { .. } => FieldValue::String(String::new()),
 

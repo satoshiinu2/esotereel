@@ -16,6 +16,9 @@ pub fn field_value_to_dynamic(v: &FieldValue) -> Dynamic {
         FieldValue::Int(i) => Dynamic::from(*i),
         FieldValue::Float(f) => Dynamic::from(*f),
         FieldValue::Enum(s) | FieldValue::String(s) => Dynamic::from(s.clone()),
+        // Rhai に UUID 型は無いため、スクリプトへは UUID の文字列として渡す。
+        // 参照の解決自体はホスト側が行う（スクリプトは解決方法を意識しない）。
+        FieldValue::AssetRef(asset_ref) => Dynamic::from(asset_ref.to_string()),
         FieldValue::Path(paths) => Dynamic::from_array(
             paths
                 .iter()

@@ -38,9 +38,13 @@ use crate::project::project::Project;
 use crate::project::timeline::Timeline;
 
 /// プロジェクトファイル形式の現行バージョンです。
+///
+/// 1.1.0: メディア source の値が文字列から `AssetRef` 型の値になった。
+/// 旧リーダー（1.0.x）は新しい値表現を読めないため minor を上げています。
+/// 旧形式の文字列 source は、開く側（core）が読み込み時に変換します。
 pub const CURRENT_PROJECT_VERSION: ProjectVersion = ProjectVersion {
     major: 1,
-    minor: 0,
+    minor: 1,
     revision: 0,
 };
 
