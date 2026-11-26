@@ -36,7 +36,7 @@ pub enum BlendMode {
 /// レイヤーの実体です。
 ///
 /// `position -> ClipId` のマップを保持しますが、クリップ実体は
-/// `Timeline.clips` が持つため、ここでは参照のみを管理します。
+/// `Timeline` のチャンクが持つため、ここでは参照のみを管理します。
 #[derive(
     rkyv::Archive,
     rkyv::Deserialize,
@@ -51,7 +51,7 @@ pub struct Layer {
     pub id: LayerId,
     pub name: String,
     pub enabled: bool,
-    /// 位置 → `ClipId` のマップ。クリップ実体は `Timeline.clips` が保持。
+    /// 位置 → `ClipId` のマップ。クリップ実体は `Timeline` のチャンクが保持。
     pub clips: BTreeMap<i64, ClipId>,
 }
 
@@ -73,7 +73,7 @@ impl Layer {
 
     /// `clip_id` の参照をこのレイヤーから除去し、あった位置を返します。
     ///
-    /// クリップ実体は `Timeline.clips` が持つため、そちらの削除は呼び出し側の責務です。
+    /// クリップ実体は `Timeline` のチャンクが持つため、そちらの削除は呼び出し側の責務です。
     pub fn remove_clip(&mut self, clip_id: ClipId) -> Option<i64> {
         let pos = self
             .clips

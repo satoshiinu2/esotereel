@@ -28,7 +28,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::project::asset::AssetRegistry;
-use crate::project::chunk_index::CHUNK_TICKS;
+use crate::project::chunk::{chunk_of, ChunkId, CHUNK_TICKS};
 use crate::project::clip::Clip;
 use crate::project::ids::{ClipId, LayerId, TimelineId};
 use crate::project::layer::LayerMeta;
@@ -231,32 +231,45 @@ fn build_timeline_files(
     timeline: &Timeline,
 ) -> Result<(TimelineFile, OverviewFile, Vec<ChunkFile>), SaveError> {
     let mut placements: Vec<Placement> = Vec::new();
-    let mut chunks: BTreeMap<i64, Vec<Clip>> = BTreeMap::new();
-    for (&layer_id, layer) in timeline.iter_layers() {
-        for (&position, &clip_id) in &layer.clips {
-            let Some(clip) = timeline.get_clip(clip_id) else {
+    let mut chunks: BTreeMap<ChunkId, Vec<Clip>> = BTreeMap::new();
+    for (clip_id, placement) in timeline.iter_placements() {
+        // 削除済みレイヤーに残った配置は、従来（レイヤー駆動の走査）と同じく
+        // 保存対象から外れる。
+        if timeline.get_layer(placement.layer_id).is_none() {
+            continue;
+        }
+        let Some(clip) = timeline.get_clip(clip_id) else {
+            // 配置はあるが実体が引けない = アンロード中。実体が正の保存形式では
+            // 書けないため、見える失敗にする。
+            return Err(SaveError::Invalid(format!(
+                "clip {clip_id} is in an unloaded chunk; load it before saving"
+            )));
+        };
+        if clip.position != placement.position || clip.duration != placement.duration {
+            return Err(SaveError::Invalid(format!(
+                "clip {clip_id} placement mismatch: placement says ({}, {}), clip says ({}, {})",
+                placement.position, placement.duration, clip.position, clip.duration
+            )));
+        }
+        match timeline.kind_table().resolve(placement.kind) {
+            Some(kind) if kind.full() == clip.kind_id.full() => {}
+            _ => {
                 return Err(SaveError::Invalid(format!(
-                    "layer {layer_id} references missing clip {clip_id}"
-                )));
-            };
-            if clip.position != position {
-                return Err(SaveError::Invalid(format!(
-                    "clip {clip_id} position mismatch: layer says {position}, clip says {}",
-                    clip.position
+                    "clip {clip_id} kind mismatch between placement and body"
                 )));
             }
-            placements.push(Placement {
-                clip: clip_id,
-                layer: layer_id,
-                position: clip.position,
-                duration: clip.duration,
-                kind_id: clip.kind_id.full().to_string(),
-            });
-            chunks
-                .entry(chunk_index_of(clip.position))
-                .or_default()
-                .push(clip.clone());
         }
+        placements.push(Placement {
+            clip: clip_id,
+            layer: placement.layer_id,
+            position: placement.position,
+            duration: placement.duration,
+            kind_id: clip.kind_id.full().to_string(),
+        });
+        chunks
+            .entry(chunk_of(clip.position))
+            .or_default()
+            .push(clip.clone());
     }
     // 決定性を保つため、配置はレイヤー・位置順、チャンク内は位置・ID 順に並べる。
     placements.sort_by_key(|p| (p.layer, p.position, p.clip));
@@ -456,11 +469,6 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
     // 読み込み時の place_clip が付けた変更マークを捨てる。
     timeline.drain_changes();
     Ok(timeline)
-}
-
-/// 開始位置が属するチャンクの連番です。実行時の `ChunkIndex` と同じ規則です。
-fn chunk_index_of(position: i64) -> i64 {
-    position.div_euclid(CHUNK_TICKS)
 }
 
 /// `path` へ一時ファイル＋リネームで原子書き込みします。

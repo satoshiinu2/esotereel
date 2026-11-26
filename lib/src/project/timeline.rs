@@ -1,29 +1,45 @@
 use rkyv::{bytecheck, CheckBytes};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::Mutex;
 
 use crate::plugin::{property::PropertyKey, NamespacedID};
 use crate::project::change::{ChangeSet, RemovedClipInfo};
-use crate::project::chunk_index::ChunkIndex;
+use crate::project::chunk::{chunk_of, Chunk, ChunkId, ChunkPlacement};
 use crate::project::clip::Clip;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
+use crate::project::kind_table::{KindId, KindTable};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::TimelineTick;
-use crate::util::result::{EsotereelError, EsotereelResult, MutexExt};
+use crate::util::result::{EsotereelError, EsotereelResult};
 
 /// Composite / Script / Mirror の入れ子実行を無限ループさせないための上限。
 pub const MAX_NESTED_DEPTH: u32 = 32;
 
+/// 配置層から見たクリップ1件分の配置情報です。
+///
+/// 実体（`Clip`）がアンロードされていてもこの情報は引けます。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClipPlacement {
+    pub layer_id: LayerId,
+    pub position: i64,
+    pub duration: i64,
+    /// `KindTable` で intern した連番です。
+    pub kind: KindId,
+}
+
 /// タイムラインの実体です。
 ///
-/// レイヤー（`Layer`）、クリップ（`Clip`）、アウトライン（`LayerOutline`）を保持し、
+/// レイヤー（`Layer`）、クリップ、アウトライン（`LayerOutline`）を保持し、
 /// 編集操作と変更セット（`ChangeSet`）の管理を行います。
 ///
-/// - `clips` は Clip 実体の唯一の保持場所で、`Layer.clips` は位置 → `ClipId` の参照のみを保持します。
-/// - `chunk_index` は位置検索用の遅延構築キャッシュで、保存対象外です。
+/// - クリップ実体は時間チャンク（`Chunk`）が所有します。チャンク内には
+///   全クリップ分の配置（所属レイヤー・duration・kind 参照）が常駐し、
+///   実体がアンロードされても配置だけは残ります。
+/// - `locator` は `ClipId` → `ChunkId` の引きで、所属レイヤーも配置側から
+///   引くため、レイヤー横断の線形スキャンは行いません。
+/// - `Layer.clips` はレイヤー内の位置 → `ClipId` の順序索引です。
 /// - `changes` は未同期の差分で、ネットワーク同期時に `drain_changes` で取り出されます。
 #[derive(
     rkyv::Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde:: Deserialize, Debug,
@@ -34,15 +50,16 @@ pub struct Timeline {
     pub tps: f64,
     layers: HashMap<LayerId, Layer>,
 
-    /// Clip 実体はここだけに存在する。`Layer.clips` は id を参照するのみ。
-    clips: HashMap<ClipId, Clip>,
+    /// クリップ実体と配置の所有者。開始位置が属するチャンクに分かれます。
+    chunks: BTreeMap<ChunkId, Chunk>,
+
+    /// `ClipId` → 所属チャンクのロケータ。
+    locator: HashMap<ClipId, ChunkId>,
+
+    /// 配置が参照する kind 連番の intern テーブル。
+    kind_table: KindTable,
 
     pub outline: LayerOutline,
-
-    /// 位置検索用の遅延構築キャッシュ。保存対象外、壊れても再構築可能。
-    #[with(rkyv::with::Skip)]
-    #[serde(skip)]
-    chunk_index: Mutex<Option<ChunkIndex>>,
 
     /// 未同期の差分。
     #[with(rkyv::with::Skip)]
@@ -57,9 +74,9 @@ impl Clone for Timeline {
             tps: self.tps,
             layers: self.layers.clone(),
             outline: self.outline.clone(),
-            clips: self.clips.clone(),
-            // キャッシュは持ち越さない。次回query_range時に再構築される。
-            chunk_index: Mutex::new(None),
+            chunks: self.chunks.clone(),
+            locator: self.locator.clone(),
+            kind_table: self.kind_table.clone(),
             changes: ChangeSet::default(),
         }
     }
@@ -72,8 +89,9 @@ impl Timeline {
             id,
             tps: fps,
             layers: HashMap::new(),
-            clips: HashMap::new(),
-            chunk_index: Mutex::new(None),
+            chunks: BTreeMap::new(),
+            locator: HashMap::new(),
+            kind_table: KindTable::default(),
             changes: ChangeSet::default(),
             outline: LayerOutline::default(),
         };
@@ -92,19 +110,11 @@ impl Timeline {
             tps,
             layers: HashMap::new(),
             outline: LayerOutline::default(),
-            clips: HashMap::new(),
-            chunk_index: Mutex::new(None),
+            chunks: BTreeMap::new(),
+            locator: HashMap::new(),
+            kind_table: KindTable::default(),
             changes: ChangeSet::default(),
         }
-    }
-
-    fn invalidate_index(&self) {
-        // Use write lock consistently for index invalidation
-        let Ok(mut guard) = self.chunk_index.lock_or_err() else {
-            log::warn!("timeline: chunk_index lock poisoned");
-            return;
-        };
-        *guard = None;
     }
 
     // Layer
@@ -266,7 +276,84 @@ impl Timeline {
             .filter_map(move |id| self.layers.get(&id))
     }
 
-    // Clip
+    // Clip: 配置とロケータ
+
+    /// クリップの配置を返します。実体がアンロードされていても引けます。
+    pub fn get_placement(&self, clip_id: ClipId) -> Option<ClipPlacement> {
+        let chunk = self.chunks.get(self.locator.get(&clip_id)?)?;
+        let (position, placement) = chunk.placement_of(clip_id)?;
+        Some(ClipPlacement {
+            layer_id: placement.layer_id,
+            position,
+            duration: placement.duration,
+            kind: placement.kind,
+        })
+    }
+
+    /// クリップの所属レイヤーを返します。実体がアンロードされていても引けます。
+    pub fn layer_of_clip(&self, clip_id: ClipId) -> Option<LayerId> {
+        self.get_placement(clip_id).map(|p| p.layer_id)
+    }
+
+    /// kind の intern テーブルを返します。配置が持つ連番の解決に使います。
+    pub fn kind_table(&self) -> &KindTable {
+        &self.kind_table
+    }
+
+    /// 全クリップの配置を反復します（チャンク順・開始位置順）。
+    pub fn iter_placements(&self) -> impl Iterator<Item = (ClipId, ClipPlacement)> + '_ {
+        self.chunks.values().flat_map(|chunk| {
+            chunk.placements().map(|(position, placement)| {
+                (
+                    placement.clip_id,
+                    ClipPlacement {
+                        layer_id: placement.layer_id,
+                        position,
+                        duration: placement.duration,
+                        kind: placement.kind,
+                    },
+                )
+            })
+        })
+    }
+
+    /// 実体と配置をチャンクへ登録します。レイヤーの順序索引は触りません。
+    fn insert_body(&mut self, layer_id: LayerId, clip: Clip) {
+        let kind = self.kind_table.intern(&clip.kind_id);
+        let placement = ChunkPlacement {
+            clip_id: clip.id,
+            layer_id,
+            duration: clip.duration,
+            kind,
+        };
+        let chunk_id = chunk_of(clip.position);
+        self.chunks
+            .entry(chunk_id)
+            .or_default()
+            .insert(placement, clip);
+        self.locator.insert(placement.clip_id, chunk_id);
+    }
+
+    /// 配置と実体を取り除きます。レイヤーの順序索引は触りません。
+    ///
+    /// 戻り値は（実体、開始位置、配置）。アンロード中で実体が無い場合は
+    /// 実体が `None` です。
+    fn take_body(&mut self, clip_id: ClipId) -> Option<(Option<Clip>, i64, ChunkPlacement)> {
+        let chunk_id = self.locator.remove(&clip_id)?;
+        let (removed, empty) = {
+            let chunk = self.chunks.get_mut(&chunk_id)?;
+            let removed = chunk.remove(clip_id)?;
+            let empty = chunk.clip_count() == 0;
+            (removed, empty)
+        };
+        if empty {
+            self.chunks.remove(&chunk_id);
+        }
+        let (position, placement, clip) = removed;
+        Some((clip, position, placement))
+    }
+
+    // Clip: 作成・削除・配置
 
     pub fn new_clip_in(
         &mut self,
@@ -285,7 +372,7 @@ impl Timeline {
                 .ok_or(EsotereelError::LayerNotFound(layer_id))?;
             let new_end = position + duration;
             for (&pos, &cid) in &layer.clips {
-                let Some(existing) = self.clips.get(&cid) else {
+                let Some(existing) = self.get_placement(cid) else {
                     continue;
                 };
                 let existing_end = pos + existing.duration;
@@ -302,9 +389,8 @@ impl Timeline {
             .layers
             .get_mut(&layer_id)
             .ok_or(EsotereelError::LayerNotFound(layer_id))?;
-
         layer.clips.insert(position, clip_id);
-        self.clips.insert(clip_id, clip);
+        self.insert_body(layer_id, clip);
 
         self.touch_upsert(clip_id);
 
@@ -312,22 +398,21 @@ impl Timeline {
     }
 
     pub fn remove_clip_by_id(&mut self, clip_id: ClipId) -> Option<(Clip, LayerId)> {
-        let layer_id = self
-            .layers
-            .values()
-            .find(|l| l.clips.values().any(|&id| id == clip_id))
-            .map(|l| l.id)?;
-
+        let layer_id = self.layer_of_clip(clip_id)?;
         let clip = self.remove_clip_by_id_in(layer_id, clip_id)?;
         Some((clip, layer_id))
     }
 
     pub fn remove_clip_by_id_in(&mut self, layer_id: LayerId, clip_id: ClipId) -> Option<Clip> {
+        // 配置が示す所属レイヤーと異なる場合は、そのレイヤーには存在しない。
+        if self.layer_of_clip(clip_id) != Some(layer_id) {
+            return None;
+        }
         let layer = self.layers.get_mut(&layer_id)?;
-
         layer.remove_clip(clip_id)?;
-        let clip = self.clips.remove(&clip_id)?; // 削除できなかったらここで処理が終わる差分更新とかはされない
 
+        let (clip, _, _) = self.take_body(clip_id)?;
+        let clip = clip?; // アンロード中の実体は呼び出し側へ返せない
         self.touch_removed(&clip, layer_id);
 
         Some(clip)
@@ -338,17 +423,20 @@ impl Timeline {
     /// Undo/Redo での復元や、位置変更・レイヤー移動を伴う再配置に使用します。
     /// 既に別の場所に存在する同 ID の場合は、まず参照を除去してから配置し直します。
     pub fn place_clip(&mut self, layer_id: LayerId, clip: Clip) -> EsotereelResult<()> {
+        if !self.layers.contains_key(&layer_id) {
+            return Err(EsotereelError::LayerNotFound(layer_id).into());
+        }
         let clip_id = clip.id;
-        if self.clips.contains_key(&clip_id) {
+        let position = clip.position;
+        if self.locator.contains_key(&clip_id) {
             self.remove_clip_by_id(clip_id);
         }
         let layer = self
             .layers
             .get_mut(&layer_id)
             .ok_or(EsotereelError::LayerNotFound(layer_id))?;
-
-        layer.clips.insert(clip.position, clip_id);
-        self.clips.insert(clip_id, clip);
+        layer.clips.insert(position, clip_id);
+        self.insert_body(layer_id, clip);
 
         self.touch_upsert(clip_id);
 
@@ -356,24 +444,21 @@ impl Timeline {
     }
 
     pub fn get_clip(&self, id: ClipId) -> Option<&Clip> {
-        self.clips.get(&id)
+        let chunk = self.chunks.get(self.locator.get(&id)?)?;
+        chunk.clip(id)
     }
 
     /// Clipとその所属LayerIdを検索
     pub fn get_clip_and_layer(&self, clip_id: ClipId) -> Option<(&Clip, LayerId)> {
-        let clip = self.clips.get(&clip_id)?;
-
-        let layer_id = self
-            .layers
-            .values()
-            .find(|layer| layer.clips.get(&clip.position) == Some(&clip_id))
-            .map(|layer| layer.id)?;
-
-        Some((clip, layer_id))
+        let placement = self.get_placement(clip_id)?;
+        let clip = self.get_clip(clip_id)?;
+        Some((clip, placement.layer_id))
     }
 
     pub fn iter_clips(&self) -> impl Iterator<Item = (&ClipId, &Clip)> {
-        self.clips.iter()
+        self.chunks
+            .values()
+            .flat_map(|chunk| chunk.clips().map(|clip| (&clip.id, clip)))
     }
 
     /// 指定レイヤーの指定範囲にclipを置けるか(exclude_idsは自分自身などの除外用)。
@@ -396,7 +481,7 @@ impl Timeline {
             if exclude_ids.contains(&cid) {
                 continue;
             }
-            let Some(existing) = self.clips.get(&cid) else {
+            let Some(existing) = self.get_placement(cid) else {
                 continue;
             };
             let existing_end = pos + existing.duration;
@@ -410,11 +495,16 @@ impl Timeline {
     /// 指定レイヤーの、その時刻に実際に存在する（`duration` を含めて判定）クリップを取得します。
     ///
     /// `Layer::get_clip_id_at` は開始位置しか見ていないため、範囲判定はここで行います。
+    /// 判定は配置で行うため、実体がアンロードされていても範囲は判定できますが、
+    /// 返せるのは読み込まれている実体だけです。
     pub fn get_clip_at(&self, layer_id: LayerId, pos: i64) -> Option<&Clip> {
         let layer = self.layers.get(&layer_id)?;
         let clip_id = layer.get_clip_id_at(pos)?;
-        let clip = self.clips.get(&clip_id)?;
-        (pos < clip.position + clip.duration).then_some(clip)
+        let placement = self.get_placement(clip_id)?;
+        if pos >= placement.position + placement.duration {
+            return None;
+        }
+        self.get_clip(clip_id)
     }
 
     pub fn iter_layers(&self) -> impl Iterator<Item = (&LayerId, &Layer)> {
@@ -426,74 +516,210 @@ impl Timeline {
     }
 
     pub fn get_clip_mut(&mut self, id: ClipId) -> Option<&mut Clip> {
-        // clip内容の書き換えはchunk_indexに影響しない(position/durationを
-        // 変える場合は move_clip 経由にすること)
-        self.clips.get_mut(&id)
+        // clip内容の書き換えは配置に影響しない(position/durationを
+        // 変える場合は move_clip / set_clip_placement 経由にすること)
+        let chunk = self.chunks.get_mut(self.locator.get(&id)?)?;
+        chunk.clip_mut(id)
     }
 
     /// クリップの `position` を変更します。
     ///
-    /// `layer.clips` と `chunk_index` の整合性を保つ唯一の経路です。
+    /// レイヤーの順序索引・配置・チャンク所有の整合性を保つ唯一の経路です。
+    /// 所属レイヤーは配置（ロケータ）から引くため線形スキャンは行いません。
     pub fn move_clip(&mut self, clip_id: ClipId, new_position: i64) -> EsotereelResult<()> {
-        let layer_id = self
-            .layers
-            .values()
-            .find(|l| l.clips.values().any(|&id| id == clip_id))
-            .map(|l| l.id)
+        let placement = self
+            .get_placement(clip_id)
             .ok_or_else(|| anyhow::anyhow!("Clip not found in any layer"))?;
+        let layer_id = placement.layer_id;
 
-        let layer = self.layers.get_mut(&layer_id).unwrap();
+        let layer = self
+            .layers
+            .get_mut(&layer_id)
+            .ok_or(EsotereelError::LayerNotFound(layer_id))?;
         layer
             .remove_clip(clip_id)
             .ok_or(EsotereelError::LayerNotFound(layer_id))?;
         layer.clips.insert(new_position, clip_id);
 
-        if let Some(clip) = self.clips.get_mut(&clip_id) {
-            clip.set_position(new_position);
-        }
+        self.move_body(clip_id, layer_id, new_position, placement.duration);
 
         self.touch_upsert(clip_id);
 
         Ok(())
     }
 
-    /// 指定範囲に重なるクリップを検索します。
+    /// 外部の正解値でクリップの配置（`position` / `duration`）を上書きします。
     ///
-    /// `chunk_index` が無ければ遅延構築します。
-    pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
-        // Single lock strategy: one Mutex handles both check and build,
-        // since every access here mutates (invalidate or lazy build)
-        let Ok(mut idx_guard) = self.chunk_index.lock_or_err() else {
-            log::warn!("timeline: chunk_index lock poisoned");
-            return Vec::new();
+    /// サーバーからの拒否通知など、ローカルの実体を正しい配置へ寄せるための
+    /// 経路です。順序索引・配置・チャンク所有をまとめて更新します。
+    /// 対象が無ければ `false` を返します。
+    pub fn set_clip_placement(
+        &mut self,
+        clip_id: ClipId,
+        position: i64,
+        duration: i64,
+    ) -> bool {
+        let Some(current) = self.get_placement(clip_id) else {
+            return false;
         };
+        if current.position != position {
+            if let Some(layer) = self.layers.get_mut(&current.layer_id) {
+                layer.remove_clip(clip_id);
+                layer.clips.insert(position, clip_id);
+            }
+        }
+        self.move_body(clip_id, current.layer_id, position, duration);
+        true
+    }
 
-        if idx_guard.is_none() {
-            let entries = self.layers.values().flat_map(|l| {
-                l.clips.iter().filter_map(move |(&pos, &cid)| {
-                    let clip = self.clips.get(&cid)?;
-                    Some((l.id, pos, clip.duration, cid))
-                })
-            });
-            *idx_guard = Some(ChunkIndex::build(entries));
+    /// 実体と配置を新しい位置・durationへ移します。
+    ///
+    /// チャンクをまたぐ場合は実体ごと所属チャンクを移し替えます。
+    /// アンロード中のクリップは配置だけを移します。
+    fn move_body(
+        &mut self,
+        clip_id: ClipId,
+        layer_id: LayerId,
+        new_position: i64,
+        new_duration: i64,
+    ) {
+        let Some(current) = self.get_placement(clip_id) else {
+            return;
+        };
+        let new_placement = ChunkPlacement {
+            clip_id,
+            layer_id,
+            duration: new_duration,
+            kind: current.kind,
+        };
+        let old_chunk_id = chunk_of(current.position);
+        let new_chunk_id = chunk_of(new_position);
+
+        if old_chunk_id == new_chunk_id {
+            if let Some(chunk) = self.chunks.get_mut(&old_chunk_id) {
+                chunk.replace_placement(clip_id, new_position, new_placement);
+                if let Some(clip) = chunk.clip_mut(clip_id) {
+                    clip.set_position(new_position);
+                    clip.duration = new_duration;
+                }
+            }
+            return;
         }
 
-        let idx = idx_guard.as_ref().unwrap();
+        // チャンクをまたぐ場合は実体ごと移し替える。アンロード中は配置だけが移る
+        // （実体は外部にあり、次回読み込み時に配置と突き合わせて検証される）。
+        let taken = self
+            .chunks
+            .get_mut(&old_chunk_id)
+            .and_then(|chunk| chunk.remove(clip_id));
+        if self
+            .chunks
+            .get(&old_chunk_id)
+            .is_some_and(|chunk| chunk.clip_count() == 0)
+        {
+            self.chunks.remove(&old_chunk_id);
+        }
+        let Some((_, _, clip)) = taken else {
+            return;
+        };
+        match clip {
+            Some(mut clip) => {
+                clip.set_position(new_position);
+                clip.duration = new_duration;
+                self.chunks
+                    .entry(new_chunk_id)
+                    .or_default()
+                    .insert(new_placement, clip);
+            }
+            None => {
+                self.chunks
+                    .entry(new_chunk_id)
+                    .or_default()
+                    .insert_placement(new_placement, new_position);
+            }
+        }
+        self.locator.insert(clip_id, new_chunk_id);
+    }
 
-        idx.candidates(range.clone())
-            .filter_map(|(layer_id, clip_id)| {
-                let layer = self.layers.get(&layer_id)?;
-                let clip = self.clips.get(&clip_id)?;
-                let overlaps =
-                    clip.position < range.end && clip.position + clip.duration > range.start;
-                overlaps.then_some((layer, clip))
-            })
+    /// 指定範囲に重なるクリップを検索します。
+    ///
+    /// 候補はチャンク単位で列挙し、開始が範囲より前のチャンクにある長い
+    /// クリップも拾うため、各チャンクの `max_end` を見て遡ります。
+    /// 実体がアンロードされているクリップは返りません（配置だけなら
+    /// `query_placements` を使います）。
+    pub fn query_range(&self, range: Range<i64>) -> Vec<(&Layer, &Clip)> {
+        let mut out = Vec::new();
+        for chunk_id in self.candidate_chunk_ids(&range) {
+            let Some(chunk) = self.chunks.get(&chunk_id) else {
+                continue;
+            };
+            if !chunk.is_loaded() {
+                continue;
+            }
+            for (position, placement) in chunk.placements() {
+                if position >= range.end || placement.end(position) <= range.start {
+                    continue;
+                }
+                let (Some(layer), Some(clip)) = (
+                    self.layers.get(&placement.layer_id),
+                    chunk.clip(placement.clip_id),
+                ) else {
+                    continue;
+                };
+                out.push((layer, clip));
+            }
+        }
+        out
+    }
+
+    /// 指定範囲に重なるクリップの配置を検索します。
+    ///
+    /// 実体がアンロードされているクリップも含まれます。
+    pub fn query_placements(&self, range: Range<i64>) -> Vec<(ClipId, ClipPlacement)> {
+        let mut out = Vec::new();
+        for chunk_id in self.candidate_chunk_ids(&range) {
+            let Some(chunk) = self.chunks.get(&chunk_id) else {
+                continue;
+            };
+            for (position, placement) in chunk.placements() {
+                if position >= range.end || placement.end(position) <= range.start {
+                    continue;
+                }
+                out.push((
+                    placement.clip_id,
+                    ClipPlacement {
+                        layer_id: placement.layer_id,
+                        position,
+                        duration: placement.duration,
+                        kind: placement.kind,
+                    },
+                ));
+            }
+        }
+        out
+    }
+
+    /// 範囲に触れる可能性のあるチャンクの列を返します。
+    ///
+    /// 開始が範囲より前のチャンクにある長いクリップを取りこぼさないよう、
+    /// `max_end` が範囲開始を超えるチャンクまで遡ります。
+    fn candidate_chunk_ids(&self, range: &Range<i64>) -> Vec<ChunkId> {
+        let end_c = chunk_of(range.end.saturating_sub(1).max(range.start));
+        let mut start_c = chunk_of(range.start);
+        while let Some((&prev, chunk)) = self.chunks.range(..start_c).next_back() {
+            if chunk.max_end() > range.start {
+                start_c = prev;
+            } else {
+                break;
+            }
+        }
+        self.chunks
+            .range(start_c..=end_c)
+            .map(|(&id, _)| id)
             .collect()
     }
 
     pub(crate) fn touch_upsert(&mut self, id: ClipId) {
-        self.invalidate_index();
-        self.changes.clips_upserted.retain(|_| true); // no-op placeholder, see below
         self.changes.mark_clip_upserted(id);
     }
 
@@ -503,12 +729,10 @@ impl Timeline {
         key: PropertyKey,
         value: ClipBindingValue,
     ) {
-        self.invalidate_index();
         self.changes.mark_clip_property_changed(clip_id, key, value);
     }
 
     pub(crate) fn touch_removed(&mut self, clip: &Clip, layer_id: LayerId) {
-        self.invalidate_index();
         self.changes.mark_clip_removed(
             clip.id,
             RemovedClipInfo {
@@ -532,7 +756,7 @@ impl Timeline {
         for &lid in cloned.layers.keys() {
             ids.observe_layer(lid);
         }
-        for &cid in cloned.clips.keys() {
+        for &cid in cloned.locator.keys() {
             ids.observe_clip(cid);
         }
         cloned
@@ -567,8 +791,9 @@ impl Timeline {
             tps: meta.fps,
             layers,
             outline: meta.outline.clone(),
-            clips: HashMap::new(),
-            chunk_index: Mutex::new(None),
+            chunks: BTreeMap::new(),
+            locator: HashMap::new(),
+            kind_table: KindTable::default(),
             changes: ChangeSet::default(),
         }
     }
@@ -577,19 +802,29 @@ impl Timeline {
     /// IdGeneratorは触らない(new_clip_inとは別経路)。
     pub fn merge_fetched_clips(&mut self, entries: Vec<(LayerId, Clip)>) {
         for (layer_id, clip) in entries {
+            // 既に保持しているクリップなら、旧所属側の参照と実体を先に外す
+            // （チャンクをまたぐ移動で実体が二重にならないように）。
+            if let Some(old) = self.get_placement(clip.id) {
+                if let Some(old_layer) = self.layers.get_mut(&old.layer_id) {
+                    old_layer.remove_clip(clip.id);
+                }
+                self.take_body(clip.id);
+            }
             if let Some(layer) = self.layers.get_mut(&layer_id) {
                 layer.clips.insert(clip.position, clip.id);
             }
-            self.clips.insert(clip.id, clip);
+            self.insert_body(layer_id, clip);
         }
-        self.invalidate_index();
     }
 
     /// ClipUpdates(差分同期)用: サーバー確定済みClipをupsertする。
     pub fn upsert_clip_from_network(&mut self, layer_id: LayerId, clip: Clip) {
-        // レイヤー跨ぎ移動に対応するため、全レイヤーからこのClipIdの古い参照を消去する
-        for layer in self.layers.values_mut() {
-            layer.clips.retain(|_, &mut cid| cid != clip.id);
+        // レイヤー跨ぎ移動に対応するため、旧所属レイヤーからこのClipIdの参照を消去する
+        if let Some(old) = self.get_placement(clip.id) {
+            if let Some(old_layer) = self.layers.get_mut(&old.layer_id) {
+                old_layer.clips.retain(|_, &mut cid| cid != clip.id);
+            }
+            self.take_body(clip.id);
         }
 
         //  移動先のレイヤーへ配置する
@@ -598,8 +833,7 @@ impl Timeline {
         }
 
         // Clip実体を更新・保持する
-        self.clips.insert(clip.id, clip);
-        self.invalidate_index();
+        self.insert_body(layer_id, clip);
     }
 
     pub fn apply_outline_folder_meta(&mut self, id: LayerFolderId, meta: Meta) {
@@ -648,3 +882,7 @@ impl From<&Timeline> for TimelineMeta {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/project/timeline_tests.rs"]
+mod tests;

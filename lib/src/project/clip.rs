@@ -46,7 +46,7 @@ pub struct ShaderStackEntry {
 /// `shader_stack` はクリップへ適用する compute シェーダ（エフェクト）の
 /// 順序付きリストで、描画時に先頭から順に頂点へ適用されます。
 ///
-/// Clip 実体は `Timeline.clips` にのみ存在し、`Layer.clips` は位置 → `ClipId`
+/// Clip 実体は `Timeline` のチャンクが所有し、`Layer.clips` は位置 → `ClipId`
 /// の参照のみを保持します。
 #[derive(
     Archive, rkyv::Deserialize, rkyv::Serialize, serde::Serialize, serde::Deserialize, Debug, Clone,
@@ -103,7 +103,7 @@ impl Clip {
     /// 配置開始位置を変更します。
     ///
     /// `position`/`duration` を変更する場合は `Timeline::move_clip` を経由することで、
-    /// `layer.clips` と `chunk_index` の整合性を保ちます。
+    /// `layer.clips` と配置の整合性を保ちます。
     pub fn set_position(&mut self, new_pos: i64) {
         self.position = new_pos;
     }

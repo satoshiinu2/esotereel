@@ -8,10 +8,11 @@
 //! - `autosave` - オートセーブの世代管理。
 //! - `camera` - カメラ情報（`CameraInfo`）。
 //! - `change` - 変更セット（`ChangeSet`）。
-//! - `chunk_index` - チャンクインデックス。
+//! - `chunk` - 時間チャンク（クリップ実体と配置の所有単位）。
 //! - `clip` - クリップおよびクリップバインディング値（`ClipBindingValue`）。
 //! - `command` - コマンドリクエスト（`CommandRequest`）。
 //! - `ids` - 各種 ID 生成器・識別子（`TimelineId`, `LayerId`, `ClipId`, `ResourceId` など）。
+//! - `kind_table` - クリップ種別の intern テーブル。
 //! - `layer` - レイヤー。
 //! - `layer_outline` - レイヤーフォルダーとアウトラインノード。
 //! - `project` - プロジェクト（`Project`）。
@@ -24,10 +25,11 @@ pub mod asset;
 pub mod autosave;
 pub mod camera;
 pub mod change;
-pub mod chunk_index;
+pub mod chunk;
 pub mod clip;
 pub mod command;
 pub mod ids;
+pub mod kind_table;
 pub mod layer;
 pub mod layer_outline;
 pub mod project;

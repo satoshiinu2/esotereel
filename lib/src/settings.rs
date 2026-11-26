@@ -20,7 +20,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::project::chunk_index::CHUNK_TICKS;
+use crate::project::chunk::CHUNK_TICKS;
 
 /// キーがどのスコープで設定できるかの宣言です。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
