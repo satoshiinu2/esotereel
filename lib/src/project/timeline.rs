@@ -469,10 +469,12 @@ impl Timeline {
         };
 
         if idx_guard.is_none() {
-            let entries = self
-                .layers
-                .values()
-                .flat_map(|l| l.clips.iter().map(move |(&pos, &cid)| (l.id, pos, cid)));
+            let entries = self.layers.values().flat_map(|l| {
+                l.clips.iter().filter_map(move |(&pos, &cid)| {
+                    let clip = self.clips.get(&cid)?;
+                    Some((l.id, pos, clip.duration, cid))
+                })
+            });
             *idx_guard = Some(ChunkIndex::build(entries));
         }
 
