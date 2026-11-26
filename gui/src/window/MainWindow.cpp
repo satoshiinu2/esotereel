@@ -8,6 +8,7 @@
 #include "ffi/ProjectFiles.h"
 #include "ffi/Requests.h"
 #include "ffi/project/CommandQueue.h"
+#include "widget/assets/AssetsPanel.h"
 #include "widget/clip_property/ClipPropertiesPanel.h"
 #ifdef ESOTEREEL_ENABLE_GPU_PREVIEW
 #include "widget/preview/GpuPreviewWidget.h"
@@ -87,6 +88,11 @@ void MainWindow::setupWidgets(WidgetManager &widgetManager) {
     widgetManager.createDock(clipPropertiesPanel, "Clip Properties", ads::RightDockWidgetArea,
                              widgetManager.getDock("Preview"));
 
+    // Assets panel (synced asset table from the server)
+    this->assetsPanel = new AssetsPanel(windowState.state);
+    widgetManager.createDock(assetsPanel, "Assets", ads::RightDockWidgetArea,
+                             widgetManager.getDock("Clip Properties"));
+
     // default timeline
     this->windowState.focusedTimeline = timelineWidget;
 }
@@ -116,6 +122,7 @@ void MainWindow::setupMenus(WidgetManager &widgetManager) {
     widgetManager.addToMenu(viewMenu, widgetManager.getDock("Timeline"));
     widgetManager.addToMenu(viewMenu, widgetManager.getDock("DebugStreams"));
     widgetManager.addToMenu(viewMenu, widgetManager.getDock("Clip Properties"));
+    widgetManager.addToMenu(viewMenu, widgetManager.getDock("Assets"));
 
     QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
     QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
@@ -152,6 +159,14 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
         timelineWidget->canvas->markRowsDirty();
         timelineWidget->canvas->update();
         clipPropertiesPanel->refreshChangedFields();
+    });
+}
+
+void MainWindow::refreshAssets() {
+    QTimer::singleShot(0, this, [this]() {
+        if (assetsPanel) {
+            assetsPanel->reload();
+        }
     });
 }
 

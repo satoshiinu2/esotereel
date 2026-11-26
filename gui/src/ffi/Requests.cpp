@@ -3,6 +3,7 @@
 #include "StringView.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/project/RenderRows.h"
+#include <algorithm>
 
 namespace esotereel {
 
@@ -38,6 +39,30 @@ void Requests::listAutosaveGenerations() {
 void Requests::restoreAutosaveGeneration(const QString &generationId) {
     QByteArray idUtf8 = generationId.toUtf8();
     esotereel_gui_helper::req_restore_autosave_generation(ptr_network, StringView::fromQUtf8String(idUtf8));
+}
+
+namespace {
+esotereel_gui_helper::CAssetRef toCAssetRef(const std::array<uint8_t, 16> &assetId) {
+    esotereel_gui_helper::CAssetRef ref{};
+    std::copy(assetId.begin(), assetId.end(), std::begin(ref.bytes));
+    return ref;
+}
+} // namespace
+
+void Requests::renameAsset(const std::array<uint8_t, 16> &assetId, const QString &name) {
+    QByteArray nameUtf8 = name.toUtf8();
+    esotereel_gui_helper::req_rename_asset(ptr_network, toCAssetRef(assetId),
+                                           StringView::fromQUtf8String(nameUtf8));
+}
+
+void Requests::removeAsset(const std::array<uint8_t, 16> &assetId) {
+    esotereel_gui_helper::req_remove_asset(ptr_network, toCAssetRef(assetId));
+}
+
+void Requests::relinkAsset(const std::array<uint8_t, 16> &assetId, const QString &path) {
+    QByteArray pathUtf8 = path.toUtf8();
+    esotereel_gui_helper::req_relink_asset(ptr_network, toCAssetRef(assetId),
+                                           StringView::fromQUtf8String(pathUtf8));
 }
 
 void Requests::loadStream(QString path) noexcept {

@@ -24,6 +24,7 @@ pub struct GuiCallbacks {
     pub on_test: extern "C" fn(),
     pub mark_dirty_timeline: extern "C" fn(timeline_type: TimelineId),
     pub on_connected: extern "C" fn(),
+    pub on_assets_changed: extern "C" fn(),
 }
 
 /// # Safety

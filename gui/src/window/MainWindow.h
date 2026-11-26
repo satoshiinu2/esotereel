@@ -27,6 +27,8 @@ class DebugStreamsWidget;
 
 class ClipPropertiesPanel;
 
+class AssetsPanel;
+
 class WidgetManager;
 
 namespace dialog {
@@ -46,6 +48,10 @@ class MainWindow : public QMainWindow {
     ~MainWindow();
 
     void markDirtyTimeline(TimelineId timelineId);
+
+    // アセット表の同期が届いたら Assets パネルを読み直す
+    // （ネットワークスレッドから呼ばれるため、実処理はメインスレッドへキューする）。
+    void refreshAssets();
 
     // 異常終了検知時に復旧一覧ダイアログを出す（main.cpp の接続時処理から）。
     void showRecoveryDialog();
@@ -77,6 +83,7 @@ class MainWindow : public QMainWindow {
     TimelineWidget *timelineWidget;
     DebugStreamsWidget *debugStreamsWidget;
     ClipPropertiesPanel *clipPropertiesPanel;
+    AssetsPanel *assetsPanel;
     esotereel::CommandQueue *commandQueue;
 };
 

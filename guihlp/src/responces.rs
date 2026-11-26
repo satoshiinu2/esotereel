@@ -593,6 +593,7 @@ pub(super) fn on_responce_recveve(
                     entries.iter().filter_map(asset_entry_from_wire).collect();
                 project.assets_mut().replace_all(mirrored);
             }
+            (state.gui_callbacks.on_assets_changed)();
         }
         ArchivedResponse::AssetTableUpdated { upserts, removed } => {
             let upserts: Vec<AssetEntryWire> = deserialize_validated(upserts);
@@ -622,6 +623,7 @@ pub(super) fn on_responce_recveve(
                     }
                 }
             }
+            (state.gui_callbacks.on_assets_changed)();
         }
     }
     Ok(())

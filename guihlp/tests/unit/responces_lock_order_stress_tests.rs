@@ -28,12 +28,14 @@ extern "C" fn cb_mark_dirty(_id: TimelineId) {
     DIRTY_CALLS.fetch_add(1, Ordering::Relaxed);
 }
 extern "C" fn cb_on_connected() {}
+extern "C" fn cb_on_assets_changed() {}
 
 fn make_state() -> Arc<ClientState> {
     let callbacks = crate::GuiCallbacks {
         on_test: cb_on_test,
         mark_dirty_timeline: cb_mark_dirty,
         on_connected: cb_on_connected,
+        on_assets_changed: cb_on_assets_changed,
     };
     // ClientState::new はセッションマーカーを data_dir へ書くため、実データ
     // ディレクトリではなくプロセス専用の一時ワークディレクトリを使う。

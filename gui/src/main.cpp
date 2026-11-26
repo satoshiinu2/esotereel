@@ -50,6 +50,7 @@ int main(int argc, char **argv) {
     callbacks.on_test = +[]() {};
     callbacks.mark_dirty_timeline = +[](TimelineId id) { mainWindow->markDirtyTimeline(id); };
     callbacks.on_connected = +[]() { onConnectedCallBack(); };
+    callbacks.on_assets_changed = +[]() { mainWindow->refreshAssets(); };
 
     // 初期化（ClientState 構築・bootstrap・MainWindow 構築）も含めて例外を拾う。
     // ここで投げられると terminate して理由が残らないため、exec だけを囲わない。
