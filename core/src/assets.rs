@@ -6,7 +6,11 @@ use std::{
     sync::Arc,
 };
 
-use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetRef};
+use esotereel_lib::{
+    decode::growing::UploadProgress,
+    dirs::Directories,
+    project::{asset::hash_file_blake3, ids::AssetRef},
+};
 
 /// 進行中のアップロード1件分の転送状態。
 struct UploadSession {
@@ -212,7 +216,7 @@ impl UploadManager {
             Some(hasher) if session.hashed_len == session.total_size => {
                 *hasher.finalize().as_bytes()
             }
-            _ => hash_file(&session.path)?,
+            _ => hash_file_blake3(&session.path)?,
         };
 
         let session = self
@@ -221,25 +225,6 @@ impl UploadManager {
             .ok_or_else(|| anyhow::anyhow!("asset `{asset_id}` has no active upload"))?;
         Ok((session.file_name.clone(), session.path.clone(), hash))
     }
-}
-
-/// ファイル全体の BLAKE3 ハッシュを計算します。
-///
-/// 順不同の受信で受信時の incremental 計算が使えなかった場合の
-/// フォールバックです。
-fn hash_file(path: &Path) -> anyhow::Result<[u8; 32]> {
-    use std::io::Read;
-    let mut file = fs::File::open(path)?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = [0u8; 65536];
-    loop {
-        let read = file.read(&mut buf)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buf[..read]);
-    }
-    Ok(*hasher.finalize().as_bytes())
 }
 
 /// ファイル名として受け付けられるのは、パス区切りや親ディレクトリ参照を

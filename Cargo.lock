@@ -735,6 +735,7 @@ name = "esotereel_lib"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "blake3",
  "bytemuck",
  "colored",
  "dashmap",

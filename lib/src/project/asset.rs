@@ -118,6 +118,36 @@ impl AssetRegistry {
         Ok(())
     }
 
+    /// fingerprint の hash がまだ無いエントリについて、ファイルを
+    /// 読んで BLAKE3 ハッシュを計算し、埋めます。
+    ///
+    /// External アセットのバックグラウンドでの後埋め用です。呼び出し側
+    /// が同時実行数・優先度・再生中の後回しを制御します（この関数は
+    /// 同期的に1ファイル分だけ計算します）。
+    /// hash が既に入っている場合は何もせず `false` を返します。
+    /// Missing のエントリはファイルが無いためエラーになります。
+    pub fn fill_fingerprint_hash(&mut self, id: AssetRef) -> anyhow::Result<bool> {
+        let entry = self
+            .entries
+            .get(&id)
+            .ok_or_else(|| EsotereelError::AssetNotFound(id))?;
+        if entry.fingerprint.as_ref().and_then(|f| f.hash).is_some() {
+            return Ok(false);
+        }
+        let path = match &entry.source {
+            AssetAvailability::Available(AssetLocation::External { path })
+            | AssetAvailability::Available(AssetLocation::Managed { path }) => {
+                path.clone()
+            }
+            AssetAvailability::Missing { previous_path } => {
+                anyhow::bail!("asset `{id}` is missing (previous path: {previous_path:?})")
+            }
+        };
+        let hash = hash_file_blake3(&path)?;
+        self.set_fingerprint_hash(id, hash)?;
+        Ok(true)
+    }
+
     /// fingerprint の hash を埋めます（アップロード完了時の BLAKE3 等）。
     ///
     /// size は登録時に記録済みの値を残します。fingerprint 自体が無い
@@ -215,6 +245,26 @@ impl AssetRegistry {
     pub fn iter(&self) -> impl Iterator<Item = &AssetEntry> {
         self.order.iter().filter_map(move |id| self.entries.get(id))
     }
+}
+
+/// ファイル全体の BLAKE3 ハッシュを計算します。
+///
+/// External アセットのバックグラウンドでの後埋めや、アップロード完了時の
+/// フォールバック（順不同の受信で受信時の incremental 計算が使えなかった
+/// 場合）で使います。
+pub fn hash_file_blake3(path: &Path) -> std::io::Result<[u8; 32]> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(*hasher.finalize().as_bytes())
 }
 
 /// 登録時にファイルのサイズを記録します。

@@ -73,3 +73,37 @@ fn registration_records_file_size_in_fingerprint() {
 
     std::fs::remove_file(&path).unwrap();
 }
+
+/// hash が無いエントリはファイルをハッシュして埋められ、2回目は
+/// 何もしないこと。External のバックグラウンド後埋めの土台。
+#[test]
+fn fill_fingerprint_hash_computes_blake3_once() {
+    let path = std::env::temp_dir().join(format!(
+        "esotereel-fill-hash-test-{}.mp4",
+        uuid::Uuid::new_v4()
+    ));
+    let bytes = b"hello esotereel";
+    std::fs::write(&path, bytes).unwrap();
+
+    let mut registry = AssetRegistry::default();
+    let id = registry.get_or_add_external(&path).unwrap();
+    assert_eq!(
+        registry.get(id).unwrap().fingerprint.as_ref().and_then(|f| f.hash),
+        None
+    );
+
+    assert!(registry.fill_fingerprint_hash(id).unwrap());
+    let entry = registry.get(id).unwrap();
+    assert_eq!(
+        entry.fingerprint.as_ref().and_then(|f| f.hash),
+        Some(*blake3::hash(bytes).as_bytes()),
+        "BLAKE3 ハッシュが埋まるべき"
+    );
+
+    assert!(
+        !registry.fill_fingerprint_hash(id).unwrap(),
+        "2回目は再計算しない"
+    );
+
+    std::fs::remove_file(&path).unwrap();
+}
