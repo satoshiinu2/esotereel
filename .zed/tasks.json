@@ -1,0 +1,26 @@
+[
+  {
+    "label": "build gui debug",
+    "command": "cmake -G \"MinGW Makefiles\" -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+  },
+  {
+    "label": "build gui release",
+    "command": "cmake -G \"MinGW Makefiles\" -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+  },
+  {
+    "label": "build core debug",
+    "command": "cmake -G \"MinGW Makefiles\" -S . -B build/cmake -DCMAKE_BUILD_TYPE=Debug && cmake --build build/cmake --target rust_core",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+  },
+  {
+    "label": "build core release",
+    "command": "cmake -G \"MinGW Makefiles\" -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release && cmake --build build/cmake --target rust_core",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+  },
+]
