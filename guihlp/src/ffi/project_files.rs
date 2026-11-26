@@ -9,6 +9,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use esotereel_lib::{
+    project::ids::AssetRef,
     requests::Request,
     responces::{AssetAvailabilityWire, WireVersionStatus},
     util::result::EsotereelError,
@@ -194,6 +195,80 @@ pub unsafe extern "C" fn req_restore_autosave_generation(
         Ok(())
     }
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, generation_id))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
+}
+
+/// アセット参照（UUID）の FFI 表現です。文字列化してパースし直す
+/// 受け渡しを避けるため、16 バイトのバイト列のまま境界を越えます。
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CAssetRef {
+    pub bytes: [u8; 16],
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_rename_asset(
+    ptr_state: *const ClientStateHandle,
+    asset_id: CAssetRef,
+    name: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        asset_id: CAssetRef,
+        name: FfiStringView,
+    ) -> anyhow::Result<()> {
+        check_ptr(ptr_state)?;
+        let asset_id = AssetRef::from_bytes(asset_id.bytes).to_string();
+        let name = name.as_str()?.to_string();
+        network_of(ptr_state).send(&Request::RenameAsset { asset_id, name });
+        Ok(())
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, asset_id, name))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_remove_asset(
+    ptr_state: *const ClientStateHandle,
+    asset_id: CAssetRef,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        asset_id: CAssetRef,
+    ) -> anyhow::Result<()> {
+        check_ptr(ptr_state)?;
+        let asset_id = AssetRef::from_bytes(asset_id.bytes).to_string();
+        network_of(ptr_state).send(&Request::RemoveAsset { asset_id });
+        Ok(())
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, asset_id))) {
+        Ok(r) => FfiResultVoid::from_result(r),
+        Err(panic) => FfiResultVoid::err_panic(panic),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_relink_asset(
+    ptr_state: *const ClientStateHandle,
+    asset_id: CAssetRef,
+    path: FfiStringView,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_state: *const ClientStateHandle,
+        asset_id: CAssetRef,
+        path: FfiStringView,
+    ) -> anyhow::Result<()> {
+        check_ptr(ptr_state)?;
+        let asset_id = AssetRef::from_bytes(asset_id.bytes).to_string();
+        let path = path.as_str()?.to_string();
+        network_of(ptr_state).send(&Request::RelinkAsset { asset_id, path });
+        Ok(())
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, asset_id, path))) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
     }

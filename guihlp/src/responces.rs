@@ -463,6 +463,11 @@ pub(super) fn on_responce_recveve(
         }
         ArchivedResponse::Failed { error } => {
             let error: EsotereelError = deserialize_validated(error);
+            // ログだけでなく GUI が回収する非同期エラー置き場にも残し、
+            // ステータスバーで失敗が見えるようにする。
+            if let Ok(mut slot) = state.async_error.lock() {
+                *slot = Some(error.to_string());
+            }
             return Err(error.into());
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
