@@ -1095,18 +1095,27 @@ impl Timeline {
     ) -> EsotereelResult<usize> {
         let now = Instant::now();
         let candidates: Vec<ChunkId> = {
-            let Ok(activity) = self.chunk_activity.lock_or_err() else {
+            let Ok(mut activity) = self.chunk_activity.lock_or_err() else {
                 log::warn!("timeline: chunk_activity lock poisoned");
                 return Ok(0);
             };
+            // アクセス記録が無いチャンクは未使用ではなく未観測（複製された
+            // タイムライン等）。この時点からアイドル計測を始める。
+            for (&chunk_id, chunk) in self.chunks.iter() {
+                if chunk.is_loaded() {
+                    activity.entry(chunk_id).or_insert(ChunkActivity {
+                        last_access: now,
+                        access_count: 0,
+                    });
+                }
+            }
             self.chunks
                 .iter()
                 .filter(|(_, chunk)| chunk.is_loaded())
                 .filter(|entry| {
                     let chunk_id = *entry.0;
                     let Some(record) = activity.get(&chunk_id) else {
-                        // アクセス記録が無い = 作られてから未使用とみなす。
-                        return true;
+                        return false;
                     };
                     if now.duration_since(record.last_access) < config.idle_timeout {
                         return false;

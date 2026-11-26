@@ -318,6 +318,41 @@ fn unload_idle_chunks_respects_idle_time_and_frequency() {
     assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
 }
 
+/// アンロードされた範囲は、ensure_range_loaded で読み戻せば
+/// query_range に再び現れること（表示系の取得経路の前提）。
+#[test]
+fn ensure_range_loaded_restores_clips_for_query_range() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    timeline.set_chunk_store(Some(Box::new(MemoryStore::default())));
+    timeline.unload_chunk(0).unwrap();
+    assert!(query_clip_ids(&timeline, 0..100).is_empty());
+
+    timeline.ensure_range_loaded(0..100).unwrap();
+    assert_eq!(query_clip_ids(&timeline, 0..100), vec![clip]);
+}
+
+/// アクセス記録を持たないチャンク（複製されたタイムライン等）は、
+/// 未使用ではなく未観測として扱い、閾値時間内は落とさないこと。
+#[test]
+fn unload_idle_chunks_starts_idle_clock_for_unobserved_chunks() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    timeline.set_chunk_store(Some(Box::new(MemoryStore::default())));
+
+    // クローンはチャンク実体を引き継ぐが、アクセス記録は持ち越さない。
+    let mut cloned = timeline.clone();
+    cloned.set_chunk_store(Some(Box::new(MemoryStore::default())));
+
+    let patient = ChunkResidencyConfig {
+        idle_timeout: Duration::from_secs(3600),
+        frequent_access_threshold: 0,
+    };
+    assert_eq!(cloned.unload_idle_chunks(&patient).unwrap(), 0);
+    assert_eq!(cloned.chunk_state(0), Some(ChunkState::Loaded));
+    assert!(cloned.get_clip(clip).is_some());
+}
+
 /// kind の採番はプロジェクト単位で、全タイムラインが同じ表を共有する
 /// こと（同じ kind はどのタイムラインでも同じ連番になる）。
 #[test]
