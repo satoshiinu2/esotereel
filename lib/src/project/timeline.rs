@@ -862,6 +862,24 @@ impl Timeline {
         Ok(())
     }
 
+    /// すべてのチャンクが読み込み済みであることを保証します。
+    ///
+    /// 保存や複製など、実体が全部必要な処理の前に呼びます。
+    pub fn ensure_all_chunks_loaded(&mut self) -> EsotereelResult<()> {
+        let chunk_ids: Vec<ChunkId> = self.chunks.keys().copied().collect();
+        for chunk_id in chunk_ids {
+            self.ensure_chunk_loaded(chunk_id)?;
+        }
+        Ok(())
+    }
+
+    /// アンロード済みのチャンクがあるかどうかを返します。
+    pub fn has_unloaded_chunks(&self) -> bool {
+        self.chunks
+            .values()
+            .any(|chunk| chunk.state() == ChunkState::Unloaded)
+    }
+
     /// 実体の登録先チャンクが読み込み済みであることを保証します。
     fn ensure_chunk_ready_for_insert(&mut self, chunk_id: ChunkId) -> EsotereelResult<()> {
         match self.chunk_state(chunk_id) {
@@ -889,7 +907,7 @@ impl Timeline {
                     return Err(e);
                 }
                 if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
-                    chunk.set_clips(clips);
+                    chunk.set_clips(clips.into_iter().map(|(_, clip)| clip).collect());
                     chunk.set_state(ChunkState::Loaded);
                     chunk.mark_clean();
                 }
@@ -907,9 +925,13 @@ impl Timeline {
 
     /// ストレージから返った実体が配置と一致するか検証します。
     ///
-    /// 配置に無い実体、欠けている実体、位置・duration・kind が配置と
-    /// 食い違う実体は、黙って取り込まずエラーにします。
-    fn validate_loaded_bodies(&self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()> {
+    /// 配置に無い実体、欠けている実体、レイヤー・位置・duration・kind が
+    /// 配置と食い違う実体は、黙って取り込まずエラーにします。
+    fn validate_loaded_bodies(
+        &self,
+        chunk_id: ChunkId,
+        clips: &[(LayerId, Clip)],
+    ) -> EsotereelResult<()> {
         let Some(chunk) = self.chunks.get(&chunk_id) else {
             return Ok(());
         };
@@ -920,13 +942,20 @@ impl Timeline {
                 chunk.clip_count()
             );
         }
-        for clip in clips {
+        for (layer_id, clip) in clips {
             let Some((position, placement)) = chunk.placement_of(clip.id) else {
                 anyhow::bail!(
                     "chunk store returned clip {} which has no placement in chunk {chunk_id}",
                     clip.id
                 );
             };
+            if *layer_id != placement.layer_id {
+                anyhow::bail!(
+                    "chunk store returned clip {} in layer {layer_id}, placement says {}",
+                    clip.id,
+                    placement.layer_id
+                );
+            }
             if clip.position != position || clip.duration != placement.duration {
                 anyhow::bail!(
                     "chunk store returned clip {} at ({}, {}), placement says ({position}, {})",
@@ -966,6 +995,24 @@ impl Timeline {
             }
             ChunkState::Loaded => {}
         }
+        // 書き出しには所属レイヤーが必要なので、実体を取り出す前に
+        // 全実体へ配置が対応することを確認します。
+        let layered: Vec<(LayerId, Clip)> = match self.chunks.get(&chunk_id) {
+            Some(chunk) => {
+                let mut layered = Vec::with_capacity(chunk.clip_count());
+                for clip in chunk.clips() {
+                    let Some((_, placement)) = chunk.placement_of(clip.id) else {
+                        anyhow::bail!(
+                            "clip {} in chunk {chunk_id} has no placement to store with",
+                            clip.id
+                        );
+                    };
+                    layered.push((placement.layer_id, clip.clone()));
+                }
+                layered
+            }
+            None => Vec::new(),
+        };
         let Some(store) = self.chunk_store.as_mut() else {
             anyhow::bail!("no chunk store attached to unload chunk {chunk_id}");
         };
@@ -974,7 +1021,7 @@ impl Timeline {
             .get_mut(&chunk_id)
             .map(|chunk| chunk.take_clips())
             .unwrap_or_default();
-        match store.store_chunk(chunk_id, &clips) {
+        match store.store_chunk(chunk_id, &layered) {
             Ok(()) => {
                 if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
                     chunk.set_state(ChunkState::Unloaded);
@@ -1062,7 +1109,10 @@ impl Timeline {
 
     // Independent化(deep clone)
 
-    pub fn deep_clone(&self, ids: &mut IdGenerator, new_id: u64) -> Self {
+    pub fn deep_clone(&mut self, ids: &mut IdGenerator, new_id: u64) -> EsotereelResult<Self> {
+        // アンロード済みチャンクの実体を取りこぼさないよう、先に全部
+        // 読み込んでから複製します。
+        self.ensure_all_chunks_loaded()?;
         let mut cloned = self.clone();
         cloned.id = new_id;
         ids.observe_timeline(new_id);
@@ -1072,7 +1122,7 @@ impl Timeline {
         for &cid in cloned.locator.keys() {
             ids.observe_clip(cid);
         }
-        cloned
+        Ok(cloned)
     }
 
     pub fn layers_meta(&self) -> Vec<LayerMeta> {

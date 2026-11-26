@@ -231,11 +231,35 @@ impl Project {
         let new_id = self.ids.next_timeline_id();
         let cloned = self
             .timelines
-            .get(&source)
+            .get_mut(&source)
             .ok_or(EsotereelError::TimelineNotFound(source))?
-            .deep_clone(&mut self.ids, new_id);
+            .deep_clone(&mut self.ids, new_id)?;
         self.timelines.insert(new_id, cloned);
         Ok(new_id)
+    }
+
+    /// 全タイムラインの全チャンクが読み込み済みであることを保証します。
+    ///
+    /// 保存など、実体が全部必要な処理の前に呼びます。
+    pub fn ensure_all_chunks_loaded(&mut self) -> crate::util::result::EsotereelResult<()> {
+        for timeline in self.timelines.values_mut() {
+            timeline.ensure_all_chunks_loaded()?;
+        }
+        Ok(())
+    }
+
+    /// プロジェクトフォルダのチャンクファイルを読み書きするストアを、
+    /// 全タイムラインへ付けます。
+    ///
+    /// プロジェクトフォルダを開いた・作ったタイミングで呼びます。
+    /// フォルダを移動したら、新しい場所で付け直す必要があります。
+    pub fn attach_folder_chunk_stores(&mut self, project_dir: &Path) {
+        for (timeline_id, timeline) in self.timelines.iter_mut() {
+            let timeline_dir = project_dir.join("timelines").join(timeline_id.to_string());
+            timeline.set_chunk_store(Some(Box::new(
+                crate::project::chunk_store::FolderChunkStore::new(timeline_dir),
+            )));
+        }
     }
 
     /// 対応する `Clip` が存在しなくなった Independent Timeline を掃除します。

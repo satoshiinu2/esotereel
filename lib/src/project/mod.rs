@@ -26,6 +26,7 @@ pub mod autosave;
 pub mod camera;
 pub mod change;
 pub mod chunk;
+pub mod chunk_store;
 pub mod clip;
 pub mod command;
 pub mod ids;

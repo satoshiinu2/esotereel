@@ -14,8 +14,9 @@
 //!   最後に project.json を差し替えるのがコミットポイントです。
 //!   各ファイルは一時ファイル＋リネームの原子書き込みです。
 //! - ロードは全チャンクを組み立てて `Project` を復元します。
-//!   overview は配置のキャッシュですが、所属レイヤーは overview にしか
-//!   ないため、overview とチャンク実体の不整合は見える失敗にします。
+//!   overview は配置のキャッシュで、正はチャンク実体です。overview が
+//!   欠落・破損・不整合の場合は、チャンク実体（所属レイヤーはチャンク
+//!   ファイル側にも持つ）から配置を再生成して復旧します。
 //! - `IdGenerator` は保存せず、ロード時にリセットして読み込んだ全 ID を
 //!   `observe_*` で引き上げます。
 
@@ -171,10 +172,19 @@ struct Placement {
 
 /// `timelines/<id>/chunks/<n>.json` の内容です。
 #[derive(Serialize, Deserialize)]
-struct ChunkFile {
-    index: i64,
-    start: i64,
-    clips: Vec<Clip>,
+pub(crate) struct ChunkFile {
+    pub index: i64,
+    pub start: i64,
+    pub clips: Vec<ChunkClip>,
+}
+
+/// チャンクファイル内のクリップ1件です。所属レイヤーは overview にも
+/// 持ちますが、overview が再生成可能なキャッシュであるためには正である
+/// チャンク側にも必要です（overview 欠落時に配置を再生成するため）。
+#[derive(Serialize, Deserialize)]
+pub(crate) struct ChunkClip {
+    pub layer: LayerId,
+    pub clip: Clip,
 }
 
 /// プロジェクトを `dir` へフォルダ形式で保存します。
@@ -231,7 +241,7 @@ fn build_timeline_files(
     timeline: &Timeline,
 ) -> Result<(TimelineFile, OverviewFile, Vec<ChunkFile>), SaveError> {
     let mut placements: Vec<Placement> = Vec::new();
-    let mut chunks: BTreeMap<ChunkId, Vec<Clip>> = BTreeMap::new();
+    let mut chunks: BTreeMap<ChunkId, Vec<ChunkClip>> = BTreeMap::new();
     for (clip_id, placement) in timeline.iter_placements() {
         // 削除済みレイヤーに残った配置は、従来（レイヤー駆動の走査）と同じく
         // 保存対象から外れる。
@@ -269,7 +279,10 @@ fn build_timeline_files(
         chunks
             .entry(chunk_of(clip.position))
             .or_default()
-            .push(clip.clone());
+            .push(ChunkClip {
+                layer: placement.layer_id,
+                clip: clip.clone(),
+            });
     }
     // 決定性を保つため、配置はレイヤー・位置順、チャンク内は位置・ID 順に並べる。
     placements.sort_by_key(|p| (p.layer, p.position, p.clip));
@@ -277,10 +290,10 @@ fn build_timeline_files(
     let mut chunk_files = Vec::new();
     let mut manifest = Vec::new();
     for (index, mut clips) in chunks {
-        clips.sort_by_key(|c| (c.position, c.id));
+        clips.sort_by_key(|c| (c.clip.position, c.clip.id));
         let max_end = clips
             .iter()
-            .map(|c| c.position + c.duration)
+            .map(|c| c.clip.position + c.clip.duration)
             .max()
             .unwrap_or(index * CHUNK_TICKS);
         manifest.push(ChunkManifestEntry {
@@ -360,9 +373,7 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
             timeline_file.id
         )));
     }
-    let overview: OverviewFile = serde_json::from_str(&read("overview.json")?)?;
-
-    let mut bodies: HashMap<ClipId, Clip> = HashMap::new();
+    let mut bodies: HashMap<ClipId, (LayerId, Clip)> = HashMap::new();
     for entry in &timeline_file.chunks {
         let chunk_path = timeline_dir
             .join("chunks")
@@ -382,7 +393,8 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
                 entry.index, chunk.start, timeline_file.chunk_ticks
             )));
         }
-        for clip in chunk.clips {
+        for chunk_clip in chunk.clips {
+            let clip = chunk_clip.clip;
             if clip.position < chunk.start
                 || clip.position >= chunk.start + timeline_file.chunk_ticks
             {
@@ -392,7 +404,7 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
                 )));
             }
             let clip_id = clip.id;
-            if bodies.insert(clip_id, clip).is_some() {
+            if bodies.insert(clip_id, (chunk_clip.layer, clip)).is_some() {
                 return Err(SaveError::Invalid(format!(
                     "duplicate clip {clip_id} across chunks"
                 )));
@@ -420,39 +432,19 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
         }
     }
 
-    let mut seen_placements = std::collections::HashSet::new();
-    let mut occupied_positions = std::collections::HashSet::new();
-    for placement in &overview.placements {
-        if !seen_placements.insert(placement.clip) {
+    // 配置は overview（キャッシュ）から取るのが基本ですが、正はチャンク
+    // 実体なので、overview が欠落・破損・不整合なら実体から再生成します。
+    let placements = resolve_placements(&timeline_dir, &bodies, &timeline);
+    for placement in &placements {
+        let Some((_, clip)) = bodies.remove(&placement.clip) else {
             return Err(SaveError::Invalid(format!(
-                "duplicate placement for clip {}",
-                placement.clip
-            )));
-        }
-        if !occupied_positions.insert((placement.layer, placement.position)) {
-            return Err(SaveError::Invalid(format!(
-                "two clips at position {} in layer {}",
-                placement.position, placement.layer
-            )));
-        }
-        let Some(clip) = bodies.remove(&placement.clip) else {
-            return Err(SaveError::Invalid(format!(
-                "overview references clip {} with no body in chunks",
+                "placement references clip {} with no body in chunks",
                 placement.clip
             )));
         };
-        if clip.position != placement.position
-            || clip.duration != placement.duration
-            || clip.kind_id.full() != placement.kind_id
-        {
-            return Err(SaveError::Invalid(format!(
-                "overview placement for clip {} does not match chunk body",
-                placement.clip
-            )));
-        }
         if timeline.get_layer(placement.layer).is_none() {
             return Err(SaveError::Invalid(format!(
-                "overview references missing layer {}",
+                "placement references missing layer {}",
                 placement.layer
             )));
         }
@@ -462,7 +454,7 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
     }
     if let Some((orphan_id, _)) = bodies.iter().next() {
         return Err(SaveError::Invalid(format!(
-            "chunk body for clip {orphan_id} has no overview placement"
+            "chunk body for clip {orphan_id} has no placement"
         )));
     }
 
@@ -471,8 +463,138 @@ fn load_timeline(dir: &Path, timeline_id: TimelineId) -> Result<Timeline, SaveEr
     Ok(timeline)
 }
 
+/// 配置を決めます。`overview.json` がチャンク実体と完全に一致すれば
+/// それを使い、欠落・破損・不整合なら警告ログを残してチャンク実体から
+/// 再生成します（overview は再生成可能なキャッシュという設計のため）。
+fn resolve_placements(
+    timeline_dir: &Path,
+    bodies: &HashMap<ClipId, (LayerId, Clip)>,
+    timeline: &Timeline,
+) -> Vec<Placement> {
+    let overview_path = timeline_dir.join("overview.json");
+    let overview = fs::read_to_string(&overview_path)
+        .map_err(SaveError::from)
+        .and_then(|text| serde_json::from_str::<OverviewFile>(&text).map_err(SaveError::from));
+    match overview {
+        Ok(overview) if overview_matches(&overview, bodies, timeline) => overview.placements,
+        Ok(_) => {
+            log::warn!(
+                "save: {} does not match chunk bodies; regenerating placements from chunks",
+                overview_path.display()
+            );
+            regenerate_placements(bodies)
+        }
+        Err(error) => {
+            log::warn!(
+                "save: {} is unreadable ({error}); regenerating placements from chunks",
+                overview_path.display()
+            );
+            regenerate_placements(bodies)
+        }
+    }
+}
+
+/// overview の配置がチャンク実体と完全に一致するか検証します。
+fn overview_matches(
+    overview: &OverviewFile,
+    bodies: &HashMap<ClipId, (LayerId, Clip)>,
+    timeline: &Timeline,
+) -> bool {
+    if overview.placements.len() != bodies.len() {
+        return false;
+    }
+    let mut seen = std::collections::HashSet::new();
+    let mut occupied = std::collections::HashSet::new();
+    for placement in &overview.placements {
+        if !seen.insert(placement.clip) || !occupied.insert((placement.layer, placement.position))
+        {
+            return false;
+        }
+        let Some((layer, clip)) = bodies.get(&placement.clip) else {
+            return false;
+        };
+        if *layer != placement.layer
+            || clip.position != placement.position
+            || clip.duration != placement.duration
+            || clip.kind_id.full() != placement.kind_id
+        {
+            return false;
+        }
+        if timeline.get_layer(placement.layer).is_none() {
+            return false;
+        }
+    }
+    true
+}
+
+/// チャンク実体から配置を再生成します（レイヤー・位置・ID 順で決定的に）。
+fn regenerate_placements(bodies: &HashMap<ClipId, (LayerId, Clip)>) -> Vec<Placement> {
+    let mut placements: Vec<Placement> = bodies
+        .values()
+        .map(|(layer, clip)| Placement {
+            clip: clip.id,
+            layer: *layer,
+            position: clip.position,
+            duration: clip.duration,
+            kind_id: clip.kind_id.full().to_string(),
+        })
+        .collect();
+    placements.sort_by_key(|p| (p.layer, p.position, p.clip));
+    placements
+}
+
+/// `project.json` だけを読んで、バージョンとプロジェクト ID を返します。
+///
+/// プロジェクトを開く前の事前確認（バージョン警告の段階判定）用です。
+/// 本体は読み込みません。
+pub fn inspect_project(dir: &Path) -> Result<(ProjectVersion, VersionStatus, Uuid), SaveError> {
+    let text = fs::read_to_string(dir.join("project.json"))?;
+    let file: ProjectFile = serde_json::from_str(&text)?;
+    let status = file.version.status_against(CURRENT_PROJECT_VERSION);
+    Ok((file.version, status, file.id))
+}
+
+/// プロジェクトフォルダのバックアップを、同じ親フォルダ内に
+/// `<フォルダ名>.backup-<UNIX ミリ秒>` として複製し、そのパスを返します。
+///
+/// 新しいバージョンのプロジェクトを古い読み取り側で開く前の保険です。
+pub fn backup_project_folder(dir: &Path) -> Result<PathBuf, SaveError> {
+    let name = dir
+        .file_name()
+        .ok_or_else(|| SaveError::Invalid(format!("invalid project folder {}", dir.display())))?
+        .to_string_lossy();
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let parent = dir.parent().unwrap_or_else(|| Path::new("."));
+    let mut candidate = parent.join(format!("{name}.backup-{millis}"));
+    let mut sequence = 0u32;
+    while candidate.exists() {
+        sequence += 1;
+        candidate = parent.join(format!("{name}.backup-{millis}-{sequence}"));
+    }
+    copy_dir_recursive(dir, &candidate)?;
+    Ok(candidate)
+}
+
+/// ディレクトリを再帰的に複製します。
+pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), SaveError> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 /// `path` へ一時ファイル＋リネームで原子書き込みします。
-fn write_atomic(path: &Path, text: &str) -> Result<(), SaveError> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SaveError> {
     let tmp_path = tmp_path_for(path);
     fs::write(&tmp_path, text)?;
     fs::rename(&tmp_path, path)?;

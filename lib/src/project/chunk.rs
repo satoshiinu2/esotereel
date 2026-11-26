@@ -300,12 +300,16 @@ impl Chunk {
 pub trait ChunkStore: std::fmt::Debug + Send + Sync {
     /// チャンクの実体をすべて読み込みます。
     ///
-    /// 返した実体は、そのチャンクの配置（位置・duration・kind）と
+    /// 返した実体は、そのチャンクの配置（レイヤー・位置・duration・kind）と
     /// 一致していなければならず、`Timeline` 側で検証されます。
-    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<Clip>>;
+    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<(LayerId, Clip)>>;
 
     /// チャンクの実体をすべて書き出します。
-    fn store_chunk(&mut self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()>;
+    fn store_chunk(
+        &mut self,
+        chunk_id: ChunkId,
+        clips: &[(LayerId, Clip)],
+    ) -> EsotereelResult<()>;
 }
 
 /// チャンクのアンロード方針です。設定システムへの接続は別途行い、

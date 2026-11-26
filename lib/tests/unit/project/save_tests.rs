@@ -318,3 +318,88 @@ fn load_reports_version_status_for_newer_files() {
 
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// overview.json は再生成可能なキャッシュなので、欠落・破損・実体との
+/// 不整合があっても、チャンク実体から配置を再生成して開けること。
+/// 再生成の正しさは「再保存したフォルダが元の保存と等価」で検証します。
+#[test]
+fn load_regenerates_overview_from_chunks() {
+    let pristine = test_dir();
+    let (project, timeline_id) = sample_project();
+    save_project(&project, &pristine).unwrap();
+    let overview_path = |dir: &Path| {
+        dir.join("timelines")
+            .join(timeline_id.to_string())
+            .join("overview.json")
+    };
+
+    // 欠落・破損・不整合の3パターンをそれぞれ壊してから読み直す。
+    for damage in ["missing", "corrupt", "stale"] {
+        let dir = test_dir();
+        save_project(&project, &dir).unwrap();
+        match damage {
+            "missing" => fs::remove_file(overview_path(&dir)).unwrap(),
+            "corrupt" => fs::write(overview_path(&dir), "not json").unwrap(),
+            _ => {
+                let text = fs::read_to_string(overview_path(&dir)).unwrap();
+                let mut json: serde_json::Value = serde_json::from_str(&text).unwrap();
+                json["placements"][0]["position"] = serde_json::json!(123_456);
+                fs::write(overview_path(&dir), json.to_string()).unwrap();
+            }
+        }
+
+        let loaded = load_project(&dir)
+            .unwrap_or_else(|e| panic!("overview が {damage} でも開けるべき: {e}"));
+        let resaved = test_dir();
+        save_project(&loaded.project, &resaved).unwrap();
+        assert_eq!(
+            read_tree(&pristine),
+            read_tree(&resaved),
+            "overview が {damage} の場合の再生成結果が元の保存と異なる"
+        );
+        fs::remove_dir_all(&dir).unwrap();
+        fs::remove_dir_all(&resaved).unwrap();
+    }
+
+    fs::remove_dir_all(&pristine).unwrap();
+}
+
+/// フォルダ形式の ChunkStore を付けたタイムラインは、チャンクを
+/// アンロードしても配置が残り、読み戻しで実体が復元すること。
+/// アンロード済みを含む独立化（deep_clone）も実体を取りこぼさないこと。
+#[test]
+fn folder_chunk_store_supports_unload_reload_and_independent_copy() {
+    use crate::project::chunk::ChunkState;
+
+    let dir = test_dir();
+    let (project, timeline_id) = sample_project();
+    save_project(&project, &dir).unwrap();
+
+    let mut loaded = load_project(&dir).unwrap().project;
+    loaded.attach_folder_chunk_stores(&dir);
+    let timeline = loaded.timeline_mut(timeline_id).unwrap();
+    let chunk0_clip = timeline
+        .iter_placements()
+        .find(|(_, placement)| placement.position < 30_000)
+        .map(|(clip_id, _)| clip_id)
+        .unwrap();
+
+    timeline.unload_chunk(0).unwrap();
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Unloaded));
+    assert!(timeline.get_clip(chunk0_clip).is_none());
+    assert!(timeline.get_placement(chunk0_clip).is_some());
+
+    // アンロード済みを含む独立化は、先に読み込んでから複製される。
+    let copy_id = loaded.make_independent(timeline_id).unwrap();
+    assert_eq!(
+        loaded.timeline_ref(copy_id).unwrap().iter_clips().count(),
+        3
+    );
+
+    let timeline = loaded.timeline_mut(timeline_id).unwrap();
+    timeline.ensure_all_chunks_loaded().unwrap();
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
+    assert_eq!(timeline.iter_clips().count(), 3);
+
+    fs::remove_dir_all(&dir).unwrap();
+}

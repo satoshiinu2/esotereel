@@ -176,11 +176,11 @@ use crate::util::result::EsotereelResult;
 /// Arc で共有します（配置と食い違う実体を返す検証のため）。
 #[derive(Debug, Default)]
 struct MemoryStore {
-    chunks: Arc<Mutex<HashMap<ChunkId, Vec<Clip>>>>,
+    chunks: Arc<Mutex<HashMap<ChunkId, Vec<(LayerId, Clip)>>>>,
 }
 
 impl ChunkStore for MemoryStore {
-    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<Clip>> {
+    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<(LayerId, Clip)>> {
         Ok(self
             .chunks
             .lock()
@@ -190,7 +190,11 @@ impl ChunkStore for MemoryStore {
             .unwrap_or_default())
     }
 
-    fn store_chunk(&mut self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()> {
+    fn store_chunk(
+        &mut self,
+        chunk_id: ChunkId,
+        clips: &[(LayerId, Clip)],
+    ) -> EsotereelResult<()> {
         self.chunks
             .lock()
             .unwrap()
@@ -271,7 +275,7 @@ fn load_rejects_bodies_that_disagree_with_placements() {
     {
         let mut chunks = shared.lock().unwrap();
         let bodies = chunks.get_mut(&0).unwrap();
-        bodies[0].position = 5;
+        bodies[0].1.position = 5;
     }
 
     assert!(timeline.ensure_clip_loaded(clip).is_err());
