@@ -1,6 +1,6 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use esotereel_lib::util::result::{EsotereelError, MutexExt};
+use esotereel_lib::util::result::{EsotereelError, LockExt};
 
 use crate::{
     ffi::{
@@ -26,10 +26,10 @@ pub unsafe extern "C" fn settings_get_all_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
+        let settings = state.settings_arc();
+        let settings = settings.read_or_err()?;
 
-        let fields = crate::settings::get_all_fields(&state.settings);
+        let fields = crate::settings::get_all_fields(&settings);
 
         Ok(FfiArray::from_vec(fields))
     }
@@ -57,9 +57,9 @@ pub unsafe extern "C" fn settings_get_value(
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
-        let state = state
-            .lock_or_err()?;
-        let value = crate::settings::get_value(&state.settings, key_str)?;
+        let settings = state.settings_arc();
+        let settings = settings.read_or_err()?;
+        let value = crate::settings::get_value(&settings, key_str)?;
         Ok(value)
     }
 
@@ -86,16 +86,19 @@ pub unsafe extern "C" fn settings_set_value(
         let state = ClientStateHandle::from_ptr(ptr_state);
         let key_str = key.as_str()?;
         let is_core_setting = key_str.starts_with("core:");
-        let mut state = state
-            .lock_or_err()?;
-        crate::settings::set_value(&mut state.settings, key_str, value)?;
+        let settings = state.settings_arc();
+        {
+            let mut settings = settings.write_or_err()?;
+            crate::settings::set_value(&mut settings, key_str, value)?;
+        } // write ガードはここで解放（apply_logging_settings が read を取るため）
         state.apply_logging_settings();
 
         if is_core_setting {
             state.save_prebootstrap_settings()
         } else {
             let settings_path = state.dir.client_settings_path()?;
-            state.settings.save_to_path(&settings_path)
+            let settings = settings.read_or_err()?;
+            settings.save_to_path(&settings_path)
         }
     }
 
@@ -117,10 +120,10 @@ pub unsafe extern "C" fn settings_get_categories(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
+        let settings = state.settings_arc();
+        let settings = settings.read_or_err()?;
 
-        let cats = crate::settings::get_categories(&state.settings);
+        let cats = crate::settings::get_categories(&settings);
 
         let owned: Vec<FfiOwnedString> =
             cats.into_iter().map(FfiOwnedString::from_string).collect();

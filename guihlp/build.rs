@@ -4,6 +4,13 @@ use std::process::Command;
 
 include!("ffi_types.rs");
 
+fn gen_header_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("guihlp must have a parent directory")
+        .join("build/include/esotereel_gui_helper.h")
+}
+
 fn main() {
     let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/generated");
     std::fs::create_dir_all(&out_dir).expect("failed to create generated dir");
@@ -13,15 +20,18 @@ fn main() {
     generate_option_types(&out_dir);
     generate_array_types(&out_dir);
 
+    let header_path = gen_header_path();
+    std::fs::create_dir_all(
+        header_path
+            .parent()
+            .expect("header path must have a parent directory"),
+    )
+    .expect("failed to create header directory");
+
     let status = Command::new("cbindgen")
-        .args(&[
-            "--config",
-            "cbindgen.toml",
-            "--crate",
-            "esotereel_gui_helper",
-            "--output",
-            "include/esotereel_gui_helper.h",
-        ])
+        .args(["--config", "cbindgen.toml", "--crate", "esotereel_gui_helper"])
+        .arg("--output")
+        .arg(&header_path)
         .status()
         .expect("Failed to run cbindgen");
 
@@ -30,14 +40,13 @@ fn main() {
     }
 
     // 🫩
-    fix_header_file();
+    fix_header_file(&header_path);
 }
 
 /// C++ヘッダーファイルの後処理：前方宣言を追加
-fn fix_header_file() {
-    let path = "include/esotereel_gui_helper.h";
-
-    let mut header = std::fs::read_to_string(path).expect("failed to read generated header");
+fn fix_header_file(header_path: &Path) {
+    let mut header =
+        std::fs::read_to_string(header_path).expect("failed to read generated header");
 
     // CFieldValueMapEntry の定義を取り出す
     let entry_start = header
@@ -123,7 +132,7 @@ fn fix_header_file() {
 
     header.insert_str(pos, "struct CFieldValue;\nstruct CFieldValueMapEntry;\n\n");
 
-    std::fs::write(path, header).expect("failed to write generated header");
+    std::fs::write(header_path, header).expect("failed to write generated header");
 }
 fn generate_result_types(out_dir: &Path) {
     let mut out = String::new();

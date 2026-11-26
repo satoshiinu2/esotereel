@@ -29,21 +29,18 @@ extern "C" fn cb_mark_dirty(_id: TimelineId) {
 }
 extern "C" fn cb_on_connected() {}
 
-fn make_state() -> Arc<Mutex<ClientState>> {
+fn make_state() -> Arc<ClientState> {
     let callbacks = crate::GuiCallbacks {
         on_test: cb_on_test,
         mark_dirty_timeline: cb_mark_dirty,
         on_connected: cb_on_connected,
     };
-    Arc::new(Mutex::new(ClientState::new(
-        callbacks,
-        Directories::new(None, None),
-    )))
+    Arc::new(ClientState::new(callbacks, Directories::new(None, None)))
 }
 
 /// 本番のネットワーク受信と同じ経路（rkyv シリアライズ -> archived ->
 /// on_responce_recveve）でレスポンスを1件処理する。
-fn handle_response(state: &Arc<Mutex<ClientState>>, resp: &Response) {
+fn handle_response(state: &Arc<ClientState>, resp: &Response) {
     let mut serializer = AllocSerializer::<8192>::default();
     serializer
         .serialize_value(resp)
@@ -53,7 +50,7 @@ fn handle_response(state: &Arc<Mutex<ClientState>>, resp: &Response) {
     on_responce_recveve(archived, state).expect("response handling must succeed");
 }
 
-fn seed_project(state: &Arc<Mutex<ClientState>>) -> (TimelineId, LayerId) {
+fn seed_project(state: &Arc<ClientState>) -> (TimelineId, LayerId) {
     let mut project = Project::new();
     let timeline_id = project.insert_timeline(60.0);
     let metas = project.timelines_meta();
@@ -67,7 +64,7 @@ fn concurrent_response_handling_and_gui_pattern_do_not_deadlock() {
     let state = make_state();
     let (timeline_id, layer_id) = seed_project(&state);
 
-    // C++ 側と同じ形の生ハンドル（Arc<Mutex<ClientState>> の into_raw）
+    // C++ 側と同じ形の生ハンドル（Arc<ClientState> の into_raw）
     let raw_state = Arc::into_raw(Arc::clone(&state)) as *const ClientStateHandle;
     let raw_addr = raw_state as usize;
 
@@ -75,7 +72,7 @@ fn concurrent_response_handling_and_gui_pattern_do_not_deadlock() {
 
     // ワーカーA: ネットワークスレッド役。
     // プロジェクトを変更するレスポンスを繰り返し適用する。
-    // ProjectMeta は state.project の差し替えも発生させる。
+    // ProjectMeta は state.project のインプレース更新も発生させる。
     let a_state = Arc::clone(&state);
     let a_tx = done_tx.clone();
     std::thread::spawn(move || {
@@ -150,6 +147,6 @@ fn concurrent_response_handling_and_gui_pattern_do_not_deadlock() {
 
     // 生ハンドルの Arc を回収する
     unsafe {
-        let _ = Arc::from_raw(raw_state as *const Mutex<ClientState>);
+        let _ = Arc::from_raw(raw_state as *const ClientState);
     }
 }

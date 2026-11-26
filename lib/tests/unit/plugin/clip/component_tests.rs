@@ -188,22 +188,37 @@ fn capability_as_str_is_lowercase() {
 }
 
 #[test]
-fn capability_standard_fn_mappings() {
+fn capability_call_mappings() {
     assert_eq!(
-        ComponentCapability::FrameProvider.standard_fn(),
-        Some("render_frame")
+        ComponentCapability::FrameProvider.call(),
+        CapabilityCall::Scheduler {
+            fn_name: "render_frame",
+            hook: ComponentHook::Evaluate
+        }
     );
     assert_eq!(
-        ComponentCapability::Prefetchable.standard_fn(),
-        Some("prefetch")
+        ComponentCapability::Prefetchable.call(),
+        CapabilityCall::Scheduler {
+            fn_name: "prefetch",
+            hook: ComponentHook::Prefetch
+        }
     );
     assert_eq!(
-        ComponentCapability::Transformable.standard_fn(),
-        Some("get_transform")
+        ComponentCapability::Transformable.call(),
+        CapabilityCall::Scheduler {
+            fn_name: "get_transform",
+            hook: ComponentHook::Process
+        }
     );
     assert_eq!(
-        ComponentCapability::FileDropHandler.standard_fn(),
-        Some("handle_file_drop")
+        ComponentCapability::FileDropHandler.call(),
+        CapabilityCall::FileDrop {
+            fn_name: "handle_file_drop"
+        }
+    );
+    assert_eq!(
+        ComponentCapability::MediaSource.call(),
+        CapabilityCall::Marker
     );
 }
 
@@ -251,7 +266,7 @@ fn file_drop_values_merge_into_defaults_and_reject_unknown_fields() {
 
 #[test]
 fn file_drop_handler_returns_property_map() {
-    let engine = Engine::new();
+    let engine = rhai::Engine::new();
     let ast = engine
         .compile(
             r#"
@@ -541,7 +556,6 @@ script = "video.rhai"
             .is_some()
     );
 
-    let engine = Engine::new();
     let instance = ClipInstance {
         kind_id: NamespacedID::new("sched-test", "video").unwrap(),
         properties: HashMap::new(),
@@ -573,7 +587,7 @@ script = "video.rhai"
         Arc::new(MediaFetchCache::default()),
     );
     let scheduler = Scheduler::new();
-    let result = scheduler.run_clip(&engine, &loader, &instance, &def, &mut ctx);
+    let result = scheduler.run_clip(&loader, &instance, &def, &mut ctx);
     assert!(
         result.is_ok(),
         "scheduler should run the Rhai capability function: {result:?}"

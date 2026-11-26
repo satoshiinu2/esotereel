@@ -1,11 +1,10 @@
-use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use crate::{
     plugin::{
-        clip::component::{ClipInstance, Scheduler},
+        clip::component::Scheduler,
         property::{ComponentCapability, value::FieldValue},
         script::api::PluginRenderContext,
     },
@@ -30,9 +29,9 @@ pub struct VertexBatch {
 /// `batches` が描画対象の頂点バッチ列、`deformations` がそのうち
 /// シェーダスタックを持つクリップのバッチ範囲と変形入力です。
 /// スタックが空のクリップは `deformations` に現れず、従来どおり描画されます。
-pub struct VertexBuildOutput {
+pub struct VertexBuildOutput<'a> {
     pub batches: Vec<VertexBatch>,
-    pub deformations: Vec<ClipDeformation>,
+    pub deformations: Vec<ClipDeformation<'a>>,
 }
 
 /// クリップ 1 件分の頂点変形入力です。
@@ -40,12 +39,13 @@ pub struct VertexBuildOutput {
 /// `batch_range` は `VertexBuildOutput::batches` のうちこのクリップが
 /// 生成した範囲を指します。変形は常にこのフレームで構築された元の
 /// 頂点列を入力とするため、フレームをまたいだ累積は起きません。
-pub struct ClipDeformation {
+pub struct ClipDeformation<'a> {
     pub batch_range: Range<usize>,
     /// クリップのメディア時刻（秒）。`core:time` の供給値です。
     pub media_time: f64,
-    /// クリップのシェーダスタック（適用順）。
-    pub shader_stack: Vec<ShaderStackEntry>,
+    /// クリップのシェーダスタック（適用順）。クリップ本体からの借用で、
+    /// フレーム構築中だけ使われる。
+    pub shader_stack: &'a [ShaderStackEntry],
 }
 
 /// レンダリングコンテキストから頂点バッチを構築します。
@@ -68,7 +68,7 @@ pub struct ClipDeformation {
 /// 宣言する能力（`frame-provider`, `prefetchable`, `transformable` 等）に基づき、
 /// 各標準関数（`render_frame`, `prefetch`, `get_transform` …）をフックタイミング順に
 /// 呼び出します。
-pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
+pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
     let mut batches = vec![];
     let mut deformations = vec![];
 
@@ -101,7 +101,7 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         // メディアプロパティはクリップ種別を構成するいずれかのコンポーネントが
         // 提供するため、構成全体から `FrameProvider` 能力を持つプロパティを逆引きする。
         let media_property = runtime_def.property_by_capability(&ComponentCapability::FrameProvider);
-        let media_property_key = media_property.map(|p| p.key.clone());
+        let media_property_key = media_property.map(|p| &p.key);
 
         // メンバキーもハードコードせず、メンバー自身が宣言する能力から
         // 解決する。メディアプロパティがあるのにメンバー能力が宣言されて
@@ -130,8 +130,8 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
         {
             if let Some(FieldValue::Map(media_map)) = clip
                 .properties
-                .get(&media_key)
-                .and_then(|v| v.in_frame_of().cloned())
+                .get(media_key)
+                .and_then(|v| v.in_frame_of())
             {
                 let source_offset = media_map
                     .get(offset_member_key)
@@ -177,16 +177,10 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
             }
         }
 
-        let instance = ClipInstance {
-            kind_id: clip.kind_id.clone(),
-            properties: clip.properties.clone(),
-            state: HashMap::new(),
-        };
         let scheduler = Scheduler::new();
-        if let Err(e) = scheduler.run_clip(
-            ctx.script_engine,
+        if let Err(e) = scheduler.run_clip_with_properties(
             &*loader,
-            &instance,
+            &clip.properties,
             &runtime_def,
             &mut render_ctx,
         ) {
@@ -205,7 +199,7 @@ pub fn build_vertices(ctx: &RenderContext) -> VertexBuildOutput {
             deformations.push(ClipDeformation {
                 batch_range: batch_start..batches.len(),
                 media_time,
-                shader_stack: clip.shader_stack.clone(),
+                shader_stack: &clip.shader_stack,
             });
         }
     }
@@ -225,7 +219,7 @@ fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f6
 
 /// 動画ソース文字列をレンダリング用のファイルパスに解決する。
 ///
-/// 文字列が UUID（アセットID）の形式であれば `Project.assets`（アセットレジストリ）
+/// 文字列が UUID（アセット参照）の形式であれば `Project.assets`（アセットレジストリ）
 /// 経由で実パスを解決する。それ以外は従来通り生パスをそのまま返す。
 /// UUID 形式だがレジストリに未登録の場合は `None` を返し、存在しないパスを
 /// ストリーム初期化に回さない。

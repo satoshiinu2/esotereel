@@ -1,17 +1,17 @@
 use std::{
     collections::HashSet,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
 };
 
 use esotereel_lib::{
     plugin::property::{PropertyPath, PropertySchema},
     project::{
-        Clip,
         clip::ClipBindingValue,
         command::CommandRequest,
         ids::{ClipId, TimelineId},
+        Clip,
     },
-    util::result::{EsotereelError, LockExt, MutexExt},
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::{
@@ -120,8 +120,6 @@ pub unsafe extern "C" fn clip_get_all_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
         let clip = unsafe { &*ptr_clip };
 
         let plugin_loader = state.plugin_loader.read_or_err()?;
@@ -157,8 +155,6 @@ pub unsafe extern "C" fn clip_get_common_fields(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
 
         let clips = unsafe { std::slice::from_raw_parts(ptr_clips, num_clips) };
 
@@ -223,8 +219,6 @@ pub unsafe extern "C" fn clip_get_categories(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
         let clip = unsafe { &*ptr };
 
         let plugin_loader = state.plugin_loader.read_or_err()?;

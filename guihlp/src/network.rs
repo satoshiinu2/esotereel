@@ -1,13 +1,13 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
-use esotereel_lib::network::NetworkHandler;
+use esotereel_lib::network::{NetworkHandler, MAX_FRAME_SIZE};
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
-use esotereel_lib::util::result::{LockExt, MutexExt};
-use rkyv::ser::Serializer;
+use esotereel_lib::util::result::LockExt;
 use rkyv::ser::serializers::AllocSerializer;
-use rkyv::{AlignedVec, check_archived_root};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
+use rkyv::ser::Serializer;
+use rkyv::{check_archived_root, AlignedVec};
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 
@@ -34,7 +34,7 @@ impl ClientNetworkHandler {
     }
     pub async fn run(
         self: Arc<Self>,
-        state: Arc<Mutex<ClientState>>,
+        state: Arc<ClientState>,
         addr: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let stream = TcpStream::connect(addr).await?;
@@ -71,6 +71,12 @@ impl ClientNetworkHandler {
         let mut size_buf = [0u8; 4];
         while reader.read_exact(&mut size_buf).await.is_ok() {
             let size = u32::from_le_bytes(size_buf) as usize;
+            if size > MAX_FRAME_SIZE {
+                log::error!(
+                    "Client: frame size {size} exceeds limit {MAX_FRAME_SIZE}, disconnecting"
+                );
+                break;
+            }
             let mut buf = vec![0u8; size];
             if reader.read_exact(&mut buf).await.is_err() {
                 break;
@@ -89,11 +95,17 @@ impl ClientNetworkHandler {
         Ok(())
     }
 
-    fn parse_and_handle_responce(&self, state: &Arc<Mutex<ClientState>>, bytes: &Vec<u8>) {
+    fn parse_and_handle_responce(&self, state: &Arc<ClientState>, bytes: &Vec<u8>) {
         match check_archived_root::<Response>(bytes) {
             Ok(archived_req) => {
-                if let Err(e) = on_responce_recveve(archived_req, state) {
-                    log::error!("Handler Error: {:?}", e);
+                // ハンドラ内の panic で受信タスクごと死なないよう、ここで回収する
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    on_responce_recveve(archived_req, state)
+                }));
+                match result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => log::error!("Handler Error: {:?}", e),
+                    Err(e) => log::error!("Response handler panicked: {:?}", e),
                 }
             }
             Err(e) => log::error!("Invalid data format: {:?}", e),
@@ -130,17 +142,10 @@ impl ClientNetworkHandler {
         }
     }
 
-    fn on_connected(&self, state: &Arc<Mutex<ClientState>>) {
-        // ClientState ロックを保持したまま C++ コールバックを呼ぶと、
-        // コールバック内（例：req_new_project）で同じ Mutex を再取得しようとして
-        // 再入デッドロックになる。コールバック呼び出し前にロックを解放する。
-        let fn_ptr = {
-            let guard = match state.lock_or_err() {
-                Ok(g) => g,
-                Err(_) => return,
-            };
-            guard.gui_callbacks.on_connected
-        }; // ロック解放（ガードドロップ）
+    fn on_connected(&self, state: &Arc<ClientState>) {
+        // gui_callbacks は生成後に変更されない関数ポインタなので、
+        // ロックなしで取り出してそのまま呼べる。
+        let fn_ptr = state.gui_callbacks.on_connected;
 
         (fn_ptr)()
     }

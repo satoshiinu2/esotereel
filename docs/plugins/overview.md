@@ -54,6 +54,7 @@ Esotereel の機能拡張はプラグインで行います。このドキュメ�
 id = "std"
 name = "The Standard Plugin"
 version = "0.0.1"
+permissions = ["media", "history"]
 ```
 
 | フィールド | 型 | 必須 | 説明 |
@@ -61,6 +62,21 @@ version = "0.0.1"
 | `id` | 文字列 | ○ | プラグイン識別子。すべての名前空間付き ID の接頭辞になります |
 | `name` | 文字列 | ○ | プラグインの表示名 |
 | `version` | 文字列 | ○ | プラグインのバージョン |
+| `permissions` | 文字列の配列 | ― | スクリプトに許可する権限（下記）。省略時は空＝何も許可されません |
+
+### 権限（permissions）
+
+スクリプトエンジンはプラグインごとに分かれており、`permissions` で宣言した権限に属する API だけがそのプラグインのエンジンに登録されます。未宣言の API を呼ぶと実行時エラーになります。組み込みの `std` プラグインも例外なく宣言が必要です。
+
+| 権限 | 許可される API |
+|------|----------------|
+| `media` | `ctx.get_texture` / `ctx.get_video_texture`（メディアファイルの読み取り） |
+| `property_write` | `ctx.set_property`（対象は自プラグインのコンポーネントが所有するプロパティのみ） |
+| `history` | `ctx.network.undo` / `ctx.network.redo` |
+| `cross_plugin` | `property_write` の対象を他プラグインのプロパティまで広げます |
+| `*` | 全ての権限（将来追加される権限も含みます） |
+
+未知の権限名を書くとマニフェストの読み込みが失敗し、そのプラグインは読み込まれません。
 
 ## 4. 名前空間付き ID（NamespacedID）
 

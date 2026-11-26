@@ -10,15 +10,15 @@ use esotereel_lib::{
     },
     responces::Response,
     state::HostState,
-    util::result::{EsotereelError, LockExt, MutexExt},
+    util::result::{EsotereelError, LockExt},
 };
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
+pub mod assets;
 pub mod network;
 pub mod project;
 pub mod requests;
 pub mod state;
-pub mod assets;
 
 pub async fn server_network_start<F>(
     addr: &str,
@@ -30,7 +30,7 @@ pub async fn server_network_start<F>(
     F: FnOnce(bool, &str),
 {
     let was_plugin_producted = plugin_loader.is_some();
-    let mut state = ServerState::new(dirs_def, plugin_loader);
+    let state = ServerState::new(dirs_def, plugin_loader);
 
     // プラグインが提供されたものではなかったらプラグインを並列で読み込む(すでに読み込まれているので)
     if !was_plugin_producted {
@@ -41,7 +41,7 @@ pub async fn server_network_start<F>(
     let dirty_signal = Arc::clone(&state.dirty_signal);
     let network_clone = Arc::clone(&state.network);
 
-    let state_arc = Arc::new(Mutex::new(state));
+    let state_arc = Arc::new(state);
     let state_clone = Arc::clone(&state_arc);
 
     tokio::spawn(async move {
@@ -58,14 +58,11 @@ pub async fn server_network_start<F>(
         log::error!("Server failed to start: {}", e);
     }
 }
-async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()> {
+async fn on_project_event(state: &Arc<ServerState>) -> anyhow::Result<()> {
     // Dirtyシグナルの中身は見ない。原因(自分のCommand/他ユーザー/スクリプト)を
     // 問わず、実際にProjectに溜まった差分だけを見て動く。
-    let state_guard = state
-        .lock_or_err()?;
-
     let changes = {
-        let mut project_guard = state_guard.project.write_or_err()?;
+        let mut project_guard = state.project.write_or_err()?;
         let project = project_guard
             .as_mut()
             .ok_or(EsotereelError::ProjectNotFound)?;
@@ -81,26 +78,33 @@ async fn on_project_event(state: &Arc<Mutex<ServerState>>) -> anyhow::Result<()>
         changes
     };
 
-    // ロックを解放してからネットワーク送信を行う（デッドロック回避）
-    drop(state_guard);
-
+    // Project ロックを解放してからネットワーク送信を行う（デッドロック回避）
+    // 1タイムラインの失敗で残りの変更まで捨てないよう、全部を配送しきってから
+    // 最初のエラーを返す。
+    let mut first_error: Option<anyhow::Error> = None;
     for (timeline_id, changeset) in changes {
-        dispatch_changeset(state, timeline_id, changeset)?;
+        if let Err(error) = dispatch_changeset(state, timeline_id, changeset) {
+            log::error!("failed to dispatch changeset for timeline {timeline_id}: {error:#}");
+            if first_error.is_none() {
+                first_error = Some(error);
+            }
+        }
     }
 
-    Ok(())
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn dispatch_changeset(
-    state: &Arc<Mutex<ServerState>>,
+    state: &Arc<ServerState>,
     timeline_id: TimelineId,
     changeset: ChangeSet,
 ) -> anyhow::Result<()> {
-    // ロックを再度取得してタイムラインデータを取得
-    let state_guard = state
-        .lock_or_err()?;
-    let network = Arc::clone(&state_guard.network);
-    let mut project_guard = state_guard.project.write_or_err()?;
+    // タイムラインデータを取得
+    let network = Arc::clone(&state.network);
+    let mut project_guard = state.project.write_or_err()?;
     let project = project_guard
         .as_mut()
         .ok_or(EsotereelError::ProjectNotFound)?;
@@ -187,7 +191,6 @@ fn dispatch_changeset(
 
     // ロックを解放してからネットワーク送信を行う（デッドロック回避）
     drop(project_guard);
-    drop(state_guard);
 
     // ネットワーク送信
     for prop_change in &changeset.clip_properties_changed {

@@ -236,6 +236,37 @@ pub fn get_property_path_from_map<'a>(
     Some(value)
 }
 
+/// プロパティマップへ `PropertyPath` を辿って値を設定します。
+///
+/// `Clip::set_property_path` と同じ辿り方を、まだ `Clip` になっていない
+/// プロパティマップに対して行います。パスが不正な場合はエラーを返します。
+pub fn set_property_path_in_map(
+    properties: &mut HashMap<PropertyKey, ClipBindingValue>,
+    path: &PropertyPath,
+    value: ClipBindingValue,
+) -> anyhow::Result<()> {
+    if path.members().is_empty() {
+        properties.insert(path.root().clone(), value);
+        return Ok(());
+    }
+    let target = properties
+        .get_mut(path.root())
+        .ok_or_else(|| anyhow::anyhow!("property group `{}` not found", path.root()))?;
+    let ClipBindingValue::Static(target_value) = target;
+    let mut current = target_value;
+    for member in path.members() {
+        let FieldValue::Map(values) = current else {
+            anyhow::bail!("property path `{path}` traverses a non-group");
+        };
+        current = values
+            .get_mut(member)
+            .ok_or_else(|| anyhow::anyhow!("property path `{path}` not found"))?;
+    }
+    let ClipBindingValue::Static(value) = value;
+    *current = value;
+    Ok(())
+}
+
 /// タイムラインへの参照種別です。
 ///
 /// `Mirror` は複数クリップが同じ `TimelineId` を共有し、

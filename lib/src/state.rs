@@ -1,11 +1,15 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 
 use dashmap::DashMap;
 
 use crate::dirs::Directories;
 use crate::network::NetworkHandler;
 use crate::plugin::script::api::register_fn_for;
-use crate::plugin::{PluginLoadedResult, PluginLoader};
+use crate::plugin::script::new_script_engine;
+use crate::plugin::{PluginLoadedResult, PluginLoader, PluginPermission};
 use crate::project::Project;
 use crate::util::result::LockExt;
 use crate::{HostRole, StreamState};
@@ -14,8 +18,9 @@ use crate::{HostRole, StreamState};
 ///
 /// クライアント／サーバーの両ホストで共有されます。`project` と
 /// `plugin_loader` は `Arc<RwLock<>>` で保護され、`stream_state_map` は
-/// スレッドセーフな `DashMap` です。`script_engine` は内部サーバー間で
-/// 共有されず、各ホストが個別に保持します。
+/// スレッドセーフな `DashMap` です。スクリプトエンジンはプラグインごとに
+/// 分けられ、描画系はプラグイン側（`PluginLoader::plugin_engine`）、
+/// アクション系は `script_engine_for` がホストごとにキャッシュします。
 pub struct CommonState {
     /// プロジェクトモデル。`Arc<RwLock<>>` で保護され、読み取り／書き込みは
     /// `LockExt` によりエラー処理付きで取得します。
@@ -30,16 +35,18 @@ pub struct CommonState {
     /// プラグインローダー。内部サーバーで共有される `Arc<RwLock<>>`。
     pub plugin_loader: Arc<RwLock<PluginLoader>>,
 
-    /// Rhai スクリプトエンジン。内部サーバー間では共有されず、各ホストが個別に保持。
-    pub script_engine: Arc<rhai::Engine>,
+    /// プラグインごとのアクション用エンジンのキャッシュ。
+    /// 値は (構築時の権限スナップショット, エンジン) で、権限が変わって
+    /// いたら再構築します。登録内容がホストの `NetworkHandler` に依存する
+    /// ため、プラグイン側ではなくホストごとに持ちます。
+    action_engines: RwLock<HashMap<String, (Vec<PluginPermission>, Arc<rhai::Engine>)>>,
 }
 
 impl CommonState {
     /// 新しい `CommonState` を作成します。
     ///
     /// `shared_plugin_loader` が指定された場合はそれを再利用し、そうでなければ
-    /// 新規の `PluginLoader` を作成します。`HostState` に応じた Rhai 関数を
-    /// `register_fn_for` で登録します。
+    /// 新規の `PluginLoader` を作成します。
     pub fn new<T: HostState>(
         dirs_def: Directories,
         shared_plugin_loader: Option<Arc<RwLock<PluginLoader>>>,
@@ -47,29 +54,67 @@ impl CommonState {
         let plugin_loader =
             shared_plugin_loader.unwrap_or(Arc::new(RwLock::new(PluginLoader::new())));
 
-        let mut script_engine = rhai::Engine::new();
-        register_fn_for::<T>(&mut script_engine);
-
         Self {
             project: Arc::new(RwLock::new(None)),
             dir: dirs_def,
             stream_state_map: Arc::new(DashMap::new()),
             plugin_loader,
-            script_engine: Arc::new(script_engine),
+            action_engines: RwLock::new(HashMap::new()),
         }
+    }
+
+    /// プラグイン専用のアクション用エンジンを返します。
+    ///
+    /// エンジンにはそのプラグインが宣言した権限の API だけを
+    /// `register_fn_for` で登録します。プラグインが存在しなければエラー。
+    pub fn script_engine_for<T: HostState>(
+        &self,
+        plugin_id: &str,
+    ) -> anyhow::Result<Arc<rhai::Engine>> {
+        let permissions = {
+            let loader = self.plugin_loader.read_or_err()?;
+            loader
+                .plugin_permissions(plugin_id)
+                .map(<[PluginPermission]>::to_vec)
+                .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?
+        };
+        if let Some(engine) = self
+            .action_engines
+            .read_or_err()?
+            .get(plugin_id)
+            .filter(|(cached, _)| *cached == permissions)
+            .map(|(_, engine)| Arc::clone(engine))
+        {
+            return Ok(engine);
+        }
+        let mut engine = new_script_engine();
+        register_fn_for::<T>(&mut engine, &permissions);
+        let engine = Arc::new(engine);
+        self.action_engines
+            .write_or_err()?
+            .insert(plugin_id.to_string(), (permissions, Arc::clone(&engine)));
+        Ok(engine)
     }
 
     /// プラグイン共通スクリプトの関数を呼び出します。
     ///
-    /// `plugin_loader` の読み取りロックを取得し、`PluginLoader::call_script` に委譲します。
-    pub fn call_script<R: Clone + Send + Sync + 'static>(
+    /// スクリプトは読み取りロック保持中に複製だけを取り出し、実行はガードを
+    /// 解放してから行います。実行中にプラグインの再読み込み（書き込みロック）が
+    /// 走ってもデッドロックしません。
+    pub fn call_script<T: HostState, R: Clone + Send + Sync + 'static>(
         &self,
         plugin_id: &str,
         fn_name: &str,
         args: impl rhai::FuncArgs,
     ) -> anyhow::Result<R> {
-        let loader = self.plugin_loader.read_or_err()?;
-        loader.call_script::<R>(&self.script_engine, plugin_id, fn_name, args)
+        let script = {
+            let loader = self.plugin_loader.read_or_err()?;
+            loader
+                .get_plugin_script(plugin_id)
+                .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?
+        };
+        let engine = self.script_engine_for::<T>(plugin_id)?;
+        script.call::<R>(&engine, fn_name, args)
     }
 
     /// ディスクから全プラグインを非同期に読み込みます。
@@ -83,10 +128,11 @@ impl CommonState {
 
 /// ホスト固有のステートを表すトレイトです。
 ///
-/// `CommonState` を `Deref` して共有ステートにアクセスし、`DerefMut` で
-/// ホスト固有のフィールドを変更できます。`Client` と `Server` で
-/// `ROLE` 定数と `NetworkHandler` 型を分岐させます。
-pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut {
+/// `CommonState` を `Deref` して共有ステートにアクセスします。ホスト固有の
+/// 可変状態は各フィールド側の内部同期（`Arc` / `RwLock` / `DashMap` 等）で
+/// 保護し、ステート自体への `&mut` アクセスは要求しません。`Client` と
+/// `Server` で `ROLE` 定数と `NetworkHandler` 型を分岐させます。
+pub trait HostState: std::ops::Deref<Target = CommonState> {
     /// 使用するネットワークハンドラの型。
     type NetworkHandler: NetworkHandler;
 
@@ -94,7 +140,7 @@ pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut 
     const ROLE: HostRole;
 
     /// 起動時にプラグイン読み込みと設定適用を行います。
-    async fn boot_strap(&mut self) {
+    async fn boot_strap(&self) {
         if let Err(e) = self.load_plugins().await {
             log::error!("Failed to load plugins: {:?}", e);
         } else {
@@ -111,12 +157,12 @@ pub trait HostState: std::ops::Deref<Target = CommonState> + std::ops::DerefMut 
     /// クライアント／サーバー固有の追加フィールドを適用します。
     ///
     /// 何もしない場合はデフォルトのままとなります。サブトレイトでオーバーライド可能。
-    fn apply_extra_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_extra_plugin_fields(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
     /// プラグインフィールドを適用します（デフォルトは `apply_extra_plugin_fields` のみ）。
-    fn apply_plugin_fields(&mut self) -> anyhow::Result<()> {
+    fn apply_plugin_fields(&self) -> anyhow::Result<()> {
         self.apply_extra_plugin_fields()
     }
 }

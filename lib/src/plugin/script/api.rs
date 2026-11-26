@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     plugin::{
+        PluginPermission,
         property::path::PropertyPath,
         property::value::FieldValue,
     },
@@ -30,21 +31,33 @@ use crate::{
     util::result::{LockExt, MutexExt},
 };
 
+/// 権限リストが指定した権限を含むか（`*` は全てを含む）。
+fn allows(permissions: &[PluginPermission], permission: PluginPermission) -> bool {
+    permissions.contains(&PluginPermission::All) || permissions.contains(&permission)
+}
+
 /// プラグインスクリプトからアクションを呼び出すためのコンテキスト
 pub struct PluginActionContext<N: NetworkHandler> {
     project: Arc<RwLock<Option<Project>>>,
     pub timeline_id: TimelineId,
     packets: Arc<Mutex<Vec<Request>>>,
     network: Arc<N>,
+    /// スクリプトを実行しているプラグインの ID（権限チェック用）。
+    plugin_id: String,
+    /// `cross_plugin` 権限の有無。他プラグイン所有のプロパティへの
+    /// 書き込みを許可するか。
+    allow_cross_plugin: bool,
 }
 
 impl<N: NetworkHandler> Clone for PluginActionContext<N> {
     fn clone(&self) -> Self {
         Self {
-            project: self.project.clone(),
+            project: Arc::clone(&self.project),
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
-            network: self.network.clone(),
+            packets: Arc::clone(&self.packets),
+            network: Arc::clone(&self.network),
+            plugin_id: self.plugin_id.clone(),
+            allow_cross_plugin: self.allow_cross_plugin,
         }
     }
 }
@@ -54,19 +67,23 @@ impl<N: NetworkHandler> PluginActionContext<N> {
         network: Arc<N>,
         project: Arc<RwLock<Option<Project>>>,
         timeline_id: TimelineId,
+        plugin_id: String,
+        allow_cross_plugin: bool,
     ) -> Self {
         Self {
             project,
             timeline_id,
             network,
             packets: Arc::new(Mutex::new(Vec::new())),
+            plugin_id,
+            allow_cross_plugin,
         }
     }
 
     pub fn network(&self) -> PluginNetworkContext<Request> {
         PluginNetworkContext {
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
+            packets: Arc::clone(&self.packets),
         }
     }
 
@@ -94,6 +111,15 @@ impl<N: NetworkHandler> PluginActionContext<N> {
         let prop_path = PropertyPath::parse(path).map_err(|e| {
             Box::<rhai::EvalAltResult>::from(format!("invalid property path `{path}`: {e}"))
         })?;
+
+        // 他プラグインが所有するプロパティへの書き込みは `cross_plugin`
+        // 権限がなければ拒否する（自プラグインのプロパティは対象外）。
+        let owner_plugin = prop_path.root().owner().plugin_id();
+        if owner_plugin != self.plugin_id && !self.allow_cross_plugin {
+            return Err(Box::<rhai::EvalAltResult>::from(format!(
+                "permission denied: writing properties of plugin `{owner_plugin}` requires the `cross_plugin` permission"
+            )));
+        }
 
         let normalized = dynamic_to_field_value(value).map_err(|e| {
             Box::<rhai::EvalAltResult>::from(format!("value normalization failed: {e}"))
@@ -123,9 +149,24 @@ impl<N: NetworkHandler> PluginActionContext<N> {
 ///
 /// 型に応じて `Int`/`Float`/`Bool`/`String`/`Array`/`Map` に変換し、
 /// 文字列からの数値パースや int⇄float 相互変換などを行います。
+/// スクリプト値の入れ子の深さの上限（スタック溢れの防止）。
+const MAX_VALUE_DEPTH: usize = 64;
+
 fn dynamic_to_field_value(
     value: rhai::Dynamic,
 ) -> Result<FieldValue, Box<rhai::EvalAltResult>> {
+    dynamic_to_field_value_with_depth(value, 0)
+}
+
+fn dynamic_to_field_value_with_depth(
+    value: rhai::Dynamic,
+    depth: usize,
+) -> Result<FieldValue, Box<rhai::EvalAltResult>> {
+    if depth > MAX_VALUE_DEPTH {
+        return Err(Box::<rhai::EvalAltResult>::from(
+            "value nested too deeply for property setting",
+        ));
+    }
     // まず現在の型をチェックし、そのまま変換できる場合はそのまま使う
     if let Some(b) = value.clone().try_cast::<bool>() {
         return Ok(FieldValue::Bool(b));
@@ -152,14 +193,14 @@ fn dynamic_to_field_value(
     if let Some(arr) = value.clone().try_cast::<rhai::Array>() {
         let mut result = Vec::with_capacity(arr.len());
         for item in arr {
-            result.push(dynamic_to_field_value(item)?);
+            result.push(dynamic_to_field_value_with_depth(item, depth + 1)?);
         }
         return Ok(FieldValue::Array(result));
     }
-    if let Some(map) = value.clone().try_cast::<rhai::Map>() {
+    if let Some(map) = value.try_cast::<rhai::Map>() {
         let mut result = BTreeMap::new();
         for (k, v) in map {
-            result.insert(k.to_string(), dynamic_to_field_value(v)?);
+            result.insert(k.to_string(), dynamic_to_field_value_with_depth(v, depth + 1)?);
         }
         return Ok(FieldValue::Map(result));
     }
@@ -179,7 +220,7 @@ impl<T> Clone for PluginNetworkContext<T> {
     fn clone(&self) -> Self {
         Self {
             timeline_id: self.timeline_id,
-            packets: self.packets.clone(),
+            packets: Arc::clone(&self.packets),
         }
     }
 }
@@ -317,16 +358,20 @@ impl PluginRenderContext {
 
     pub fn into_parts(self) -> (Vec<VertexBatch>, Vec<String>) {
         // Rhai may retain a cloned context; drain shared output without requiring unique ownership.
-        let batches = self
-            .batches
-            .lock_or_err()
-            .map(|mut g| std::mem::take(&mut *g))
-            .unwrap_or_default();
-        let paths = self
-            .requested_paths
-            .lock_or_err()
-            .map(|mut g| std::mem::take(&mut *g))
-            .unwrap_or_default();
+        let batches = match self.batches.lock_or_err() {
+            Ok(mut g) => std::mem::take(&mut *g),
+            Err(error) => {
+                log::error!("render batches lock poisoned, dropping output: {error}");
+                Vec::new()
+            }
+        };
+        let paths = match self.requested_paths.lock_or_err() {
+            Ok(mut g) => std::mem::take(&mut *g),
+            Err(error) => {
+                log::error!("requested paths lock poisoned, dropping output: {error}");
+                Vec::new()
+            }
+        };
         (batches, paths)
     }
 }
@@ -420,7 +465,11 @@ fn read_rhai_vector(
 
 pub const DEFAULT_LOOKAHEAD_SECONDS: f64 = 1.0;
 
-pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
+/// 描画系 API をエンジンへ登録する。
+///
+/// `get_texture` 等のメディア読み取りは `media` 権限がある場合だけ登録する。
+/// それ以外（変換・描画・時刻）は描画の本体として常時登録する。
+pub(crate) fn register_render_api(engine: &mut rhai::Engine, permissions: &[PluginPermission]) {
     super::props::register_props_api(engine);
     engine.register_type_with_name::<PluginRenderContext>("RenderContext");
     engine.register_type_with_name::<Mat4>("Mat4");
@@ -445,27 +494,29 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
         |ctx: &mut PluginRenderContext, matrix: Mat4| ctx.apply_transform(matrix),
     );
 
-    engine.register_fn(
-        "get_texture",
-        |ctx: &mut PluginRenderContext, path: &str, start: f64, lookahead: f64| {
-            ctx.get_texture(path, start, lookahead)
-        },
-    );
-    engine.register_fn(
-        "get_texture",
-        |ctx: &mut PluginRenderContext, path: &str, start: f64| {
-            ctx.get_texture(path, start, DEFAULT_LOOKAHEAD_SECONDS)
-        },
-    );
-    engine.register_fn(
-        "get_video_texture",
-        |ctx: &mut PluginRenderContext| -> Result<i64, Box<rhai::EvalAltResult>> {
-            let Some(source) = ctx.video_source.clone() else {
-                return Ok(-1);
-            };
-            Ok(ctx.get_texture(&source, ctx.media_time(), DEFAULT_LOOKAHEAD_SECONDS))
-        },
-    );
+    if allows(permissions, PluginPermission::Media) {
+        engine.register_fn(
+            "get_texture",
+            |ctx: &mut PluginRenderContext, path: &str, start: f64, lookahead: f64| {
+                ctx.get_texture(path, start, lookahead)
+            },
+        );
+        engine.register_fn(
+            "get_texture",
+            |ctx: &mut PluginRenderContext, path: &str, start: f64| {
+                ctx.get_texture(path, start, DEFAULT_LOOKAHEAD_SECONDS)
+            },
+        );
+        engine.register_fn(
+            "get_video_texture",
+            |ctx: &mut PluginRenderContext| -> Result<i64, Box<rhai::EvalAltResult>> {
+                let Some(source) = ctx.video_source.clone() else {
+                    return Ok(-1);
+                };
+                Ok(ctx.get_texture(&source, ctx.media_time(), DEFAULT_LOOKAHEAD_SECONDS))
+            },
+        );
+    }
 
     engine.register_fn(
         "render_video",
@@ -486,9 +537,19 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine) {
 }
 
 /// クライアント/サーバー用の関数を登録
-pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
+///
+/// アクション系は権限でゲートする: `set_property` は `property_write`、
+/// `undo` / `redo` は `history` がある場合だけ登録する。どちらの権限も
+/// 無いプラグインには ActionContext 自体を登録しない。
+pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine, permissions: &[PluginPermission]) {
     type NetworkHandlerT<T: HostState> = <T as HostState>::NetworkHandler;
-    register_render_api(engine);
+    register_render_api(engine, permissions);
+
+    let property_write = allows(permissions, PluginPermission::PropertyWrite);
+    let history = allows(permissions, PluginPermission::History);
+    if !property_write && !history {
+        return;
+    }
 
     engine.register_type_with_name::<PluginActionContext<NetworkHandlerT<T>>>("ActionContext");
     engine.register_type_with_name::<PluginNetworkContext<Request>>("NetworkContext");
@@ -499,7 +560,26 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
         |ctx: &mut PluginActionContext<NetworkHandlerT<T>>| ctx.network(),
     );
 
-    // NetworkContextのメソッド（オーバーロード）
+    if history {
+        register_history_api(engine);
+    }
+    if property_write {
+        // `ctx.set_property(clip_id, path, value)` — クリッププロパティを正規化付きで設定
+        engine.register_fn(
+            "set_property",
+            |ctx: &mut PluginActionContext<NetworkHandlerT<T>>,
+             clip_id: u64,
+             path: &str,
+             value: rhai::Dynamic|
+             -> Result<(), Box<rhai::EvalAltResult>> {
+                ctx.set_clip_property(clip_id, path, value)
+            },
+        );
+    }
+}
+
+/// `history` 権限の API（NetworkContext の undo / redo）を登録する。
+fn register_history_api(engine: &mut rhai::Engine) {
     engine.register_fn("undo", |net: &mut PluginNetworkContext<Request>| {
         if let Ok(mut guard) = net.packets.lock_or_err() {
             guard.push(Request::Undo {
@@ -544,17 +624,6 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine) {
         },
     );
 
-    // `ctx.set_property(clip_id, path, value)` — クリッププロパティを正規化付きで設定
-    engine.register_fn(
-        "set_property",
-        |ctx: &mut PluginActionContext<NetworkHandlerT<T>>,
-         clip_id: u64,
-         path: &str,
-         value: rhai::Dynamic|
-         -> Result<(), Box<rhai::EvalAltResult>> {
-            ctx.set_clip_property(clip_id, path, value)
-        },
-    );
 }
 
 #[cfg(test)]

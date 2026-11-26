@@ -1,16 +1,18 @@
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use esotereel_lib::{
     plugin::{
-        NamespacedID,
         script::api::PluginActionContext,
         toolbar::{RunOn, ToolbarButtonSpec},
+        NamespacedID, PluginPermission,
     },
     project::ids::TimelineId,
     requests::Request,
-    util::result::{EsotereelError, LockExt, MutexExt},
+    util::result::{EsotereelError, LockExt},
 };
+
+use crate::state::ClientState;
 
 use crate::ffi::{
     array::FfiArray,
@@ -69,13 +71,13 @@ pub unsafe extern "C" fn toolbar_get_buttons(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let target_str = target.as_str()?;
-        let state = state
-            .lock_or_err()?;
+        let toolbar = state.toolbar_arc();
+        let toolbar = toolbar.read_or_err()?;
 
-        let ids = state.toolbar.get_layout(target_str);
+        let ids = toolbar.get_layout(target_str);
         let buttons: Vec<FfiToolbarButton> = ids
             .iter()
-            .filter_map(|id| state.toolbar.registry.buttons().find(|b| &b.id == id))
+            .filter_map(|id| toolbar.registry.buttons().find(|b| &b.id == id))
             .map(FfiToolbarButton::from_spec)
             .collect();
 
@@ -120,10 +122,10 @@ pub unsafe extern "C" fn toolbar_set_layout(
             .collect::<Result<Vec<NamespacedID>, _>>()
             .map_err(|e| anyhow::anyhow!("Failed to parse NamespacedID: {}", e))?;
 
-        let mut state = state
-            .lock_or_err()?;
+        let toolbar = state.toolbar_arc();
+        let mut toolbar = toolbar.write_or_err()?;
 
-        state.toolbar.set_layout(target_str.to_string(), ids);
+        toolbar.set_layout(target_str.to_string(), ids);
 
         Ok(())
     }
@@ -155,36 +157,52 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let button_id = NamespacedID::parse(button_id.as_str()?)?;
-        let state = state
-            .lock_or_err()?;
 
-        let button = state
-            .toolbar
-            .registry
-            .get_button_by(&button_id)
-            .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
+        // ボタンの実行先と関数名だけを toolbar の read ロックで取り出し、
+        // ガードは実行前に解放する
+        let (run_on, func_name) = {
+            let toolbar = state.toolbar_arc();
+            let toolbar = toolbar.read_or_err()?;
+            let button = toolbar
+                .registry
+                .get_button_by(&button_id)
+                .ok_or_else(|| anyhow::anyhow!("ToolbarButton not found"))?;
+            (
+                button.action.run_on.clone(),
+                button.action.func_name.clone(),
+            )
+        };
 
-        let network = Arc::clone(&state.network);
+        let network = state.network_arc();
 
         // run_onをチェック
-        if matches!(button.action.run_on, RunOn::Server) {
-            // サーバーで実行するリクエストを送信。
-            // 送信は State ロックを解放してから行う（lock-order.md）。
+        if matches!(run_on, RunOn::Server) {
+            // サーバーで実行するリクエストを送信する
             let request = Request::ToolbarAction {
                 button_id: button_id.to_string(),
-                func_name: button.action.func_name.clone(),
+                func_name,
                 run_on: Some(timeline_id),
                 timeline_id,
             };
-            drop(state);
             network.send(&request);
             return Ok(());
         }
 
         // clientまたは指定なしの場合はローカルで実行
         // PluginActionContextを作成
-        let project = state.project.clone();
-        let context = PluginActionContext::new(Arc::clone(&network), project, timeline_id);
+        let project = state.project_arc();
+        let plugin_id = button_id.plugin_id();
+        let allow_cross_plugin = {
+            let loader = state.common.plugin_loader.read_or_err()?;
+            loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+        };
+        let context = PluginActionContext::new(
+            Arc::clone(&network),
+            project,
+            timeline_id,
+            plugin_id.to_owned(),
+            allow_cross_plugin,
+        );
 
         // スクリプトはクローンして所有し、PluginLoader の read ガードは
         // 実行前に必ず drop する。スクリプトは
@@ -200,17 +218,15 @@ pub unsafe extern "C" fn toolbar_handle_action(
                     anyhow::anyhow!("script for toolbar button `{}` not found", button_id.full())
                 })?
         }; // loader ガードはここで drop される
-        let func_name = button.action.func_name.clone();
 
-        // 注意: script_engine は CommonState が直接所有する値（Arc 化されて
-        // いない）ため、エンジンへの参照が要る間は State ロックを解放できない。
-        // ロック保持を増やさないため、実行以外の処理（送信）は解放後に回す。
+        // script_engine は Arc なので、クローンを取り出しておけば
+        // 他のロックを保持せずにスクリプトを実行できる。
+        let script_engine = state.common.script_engine_for::<ClientState>(plugin_id)?;
         script
-            .call::<()>(&state.common.script_engine, &func_name, (context.clone(),))
+            .call::<()>(&script_engine, &func_name, (context.clone(),))
             .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
         let packets = context.take_packets();
-        drop(state);
         for req in &packets {
             network.send(req);
         }

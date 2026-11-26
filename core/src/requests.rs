@@ -1,34 +1,34 @@
 use std::{
     ops::Range,
     path::Path,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use esotereel_lib::{
-    StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        NamespacedID, PluginLoader, clip::component::Scheduler, script::api::PluginActionContext,
+        clip::component::Scheduler, script::api::PluginActionContext, NamespacedID, PluginLoader,
+        PluginPermission,
     },
     project::{
-        Project,
         command::{CommandHistory, CommandRequest},
         ids::TimelineId,
+        Project,
     },
     requests::{AddClipFromAsset, ArchivedAddClipFromAsset, ArchivedRequest, Request},
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
+    StreamState,
 };
-use rkyv::Deserialize;
-
 use uuid::Uuid;
 
 use crate::{
     network::ServerNetworkHandler,
     project::{
-        MediaPropertyPaths, clip_add_core,
+        clip_add_core,
         commands::command_to_history,
-        history::{HistoryStack, execute_command_with_history, redo_command, undo_command},
+        history::{execute_command_with_history, redo_command, undo_command, HistoryStack},
+        MediaPropertyPaths,
     },
     state::ServerState,
 };
@@ -36,7 +36,7 @@ use crate::{
 pub fn on_request_receive(
     request: &ArchivedRequest,
     client_id: u32,
-    state: &Mutex<ServerState>,
+    state: &ServerState,
 ) -> EsotereelResult<()> {
     match request {
         ArchivedRequest::Test => {}
@@ -50,24 +50,23 @@ pub fn on_request_receive(
             let placeholder_fps = 60.0;
             let timeline_key = new_project.insert_timeline(placeholder_fps);
 
-            assert!(timeline_key == 0, "main timeline should be first");
+            if timeline_key != 0 {
+                anyhow::bail!("main timeline should be first, got key {timeline_key}");
+            }
 
             // Timeline::new()ですでに4つのデフォルトレイヤーを作成しているので、
             // ここで重複して挿入する必要はない
 
             let timelines = new_project.timelines_meta();
 
-            // State ロック中は project の差し替えと履歴クリアだけを行い、
-            // ビュー更新と送信はロック解放後に行う（lock-order.md）
+            // project の差し替えと履歴クリアは Project の write ロック
+            // 保持中に一体で行い、ビュー更新と送信は解放後に行う
+            // （lock-order.md）。差し替えは Arc の付け替えではなく既存の
+            // RwLock へのインプレース書き込みで行う。
             let network = {
-                let mut state = state
-                    .lock_or_err()?;
-
-                state.project = Arc::new(RwLock::new(Some(new_project)));
-                state
-                    .histories
-                    .lock_or_err()?
-                    .clear();
+                let mut project_guard = state.project.write_or_err()?;
+                state.histories.lock_or_err()?.clear();
+                *project_guard = Some(new_project);
 
                 Arc::clone(&state.network)
             };
@@ -82,15 +81,8 @@ pub fn on_request_receive(
         }
         ArchivedRequest::ProjectAll => {
             // 読み取り専用なので write ではなく read ロックでよい。
-            // State は Arc の取り出しだけ、送信は全ガード解放後に行う。
-            let (project_arc, network) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                )
-            };
+            // 送信は Project ロック解放後に行う。
+            let (project_arc, network) = (Arc::clone(&state.project), Arc::clone(&state.network));
 
             let timelines = {
                 let project_guard = project_arc.read_or_err()?;
@@ -113,21 +105,16 @@ pub fn on_request_receive(
             path,
             add_clip,
         } => {
-            // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
-            let (project_arc, network, loader_arc, script_engine) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.common.plugin_loader),
-                    state_guard.common.script_engine.clone(),
-                )
-            };
+            // 必要な Arc はフィールドから直接取り出す（lock-order.md）
+            let (project_arc, network, loader_arc) = (
+                Arc::clone(&state.project),
+                Arc::clone(&state.network),
+                Arc::clone(&state.common.plugin_loader),
+            );
             let asset_id_raw: &str = asset_id;
             let path_str: &str = path;
             let result = (|| -> anyhow::Result<bool> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let source_path = std::path::Path::new(path_str);
                 if !source_path.is_file() {
                     anyhow::bail!("asset source `{path_str}` is not an existing file");
@@ -140,13 +127,7 @@ pub fn on_request_receive(
                 project.register_external_asset(asset_uuid, source_path)?;
                 let mut clip_added = false;
                 if let Some(add_clip) = add_clip {
-                    add_clip_from_asset(
-                        project,
-                        &loader_arc,
-                        &script_engine,
-                        &add_clip,
-                        path_str,
-                    )?;
+                    add_clip_from_asset(project, &loader_arc, &add_clip, path_str)?;
                     clip_added = true;
                 }
                 Ok(clip_added)
@@ -172,21 +153,13 @@ pub fn on_request_receive(
             file_name,
             total_size,
         } => {
-            let (network, uploads) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.uploads),
-                )
-            };
+            let (network, uploads) = (Arc::clone(&state.network), Arc::clone(&state.uploads));
             let asset_id_raw: &str = asset_id;
             let file_name_str: &str = file_name;
             let result = (|| -> anyhow::Result<()> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
-                let mut uploads = uploads
-                    .lock_or_err()?;
-                uploads.begin(asset_uuid, file_name_str, *total_size)
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
+                let mut uploads = uploads.lock_or_err()?;
+                uploads.begin(asset_uuid, file_name_str, *total_size, client_id)
             })();
             if let Err(error) = result {
                 send_asset_import_failed(&network, client_id, asset_id_raw, &error);
@@ -197,19 +170,11 @@ pub fn on_request_receive(
             offset,
             data,
         } => {
-            let (network, uploads) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.uploads),
-                )
-            };
+            let (network, uploads) = (Arc::clone(&state.network), Arc::clone(&state.uploads));
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<()> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
-                let mut uploads = uploads
-                    .lock_or_err()?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
+                let mut uploads = uploads.lock_or_err()?;
                 uploads.write_chunk(asset_uuid, *offset, data)
             })();
             if let Err(error) = result {
@@ -217,27 +182,21 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::FinishAssetUpload { asset_id, add_clip } => {
-            // 必要な Arc を取り出したら State ロックは即座に解放する（lock-order.md）
-            let (project_arc, network, uploads, loader_arc, script_engine) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.uploads),
-                    Arc::clone(&state_guard.common.plugin_loader),
-                    state_guard.common.script_engine.clone(),
-                )
-            };
+            // 必要な Arc はフィールドから直接取り出す（lock-order.md）
+            let (project_arc, network, uploads, loader_arc) = (
+                Arc::clone(&state.project),
+                Arc::clone(&state.network),
+                Arc::clone(&state.uploads),
+                Arc::clone(&state.common.plugin_loader),
+            );
             let asset_id_raw: &str = asset_id;
             let result = (|| -> anyhow::Result<bool> {
-                let asset_uuid = parse_asset_id(asset_id_raw)?;
+                let asset_uuid = parse_asset_ref(asset_id_raw)?;
                 let add_clip = deserialize_add_clip(add_clip)?;
                 // 先にアップロード側で完了を検証してセッションを閉じ、
                 // その後でプロジェクトの台帳へ登録する（ロックの保持範囲を分ける）。
                 let (name, path) = {
-                    let mut uploads = uploads
-                        .lock_or_err()?;
+                    let mut uploads = uploads.lock_or_err()?;
                     uploads.complete(asset_uuid)?
                 };
                 let mut project_guard = project_arc.write_or_err()?;
@@ -250,7 +209,7 @@ pub fn on_request_receive(
                     let source = path
                         .to_str()
                         .ok_or_else(|| anyhow::anyhow!("asset path is not valid UTF-8"))?;
-                    add_clip_from_asset(project, &loader_arc, &script_engine, &add_clip, source)?;
+                    add_clip_from_asset(project, &loader_arc, &add_clip, source)?;
                     clip_added = true;
                 }
                 Ok(clip_added)
@@ -271,19 +230,13 @@ pub fn on_request_receive(
             }
         }
         ArchivedRequest::Command { commands } => {
-            // 必要な Arc を取り出したら State ロックは即座に解放し、
-            // コマンド実行中は State を保持しない（lock-order.md）
-            let (project_arc, network, histories_arc, loader_arc, script_engine) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.histories),
-                    Arc::clone(&state_guard.common.plugin_loader),
-                    state_guard.common.script_engine.clone(),
-                )
-            };
+            // コマンド実行は取り出した Arc だけで行う（lock-order.md）
+            let (project_arc, network, histories_arc, loader_arc) = (
+                Arc::clone(&state.project),
+                Arc::clone(&state.network),
+                Arc::clone(&state.histories),
+                Arc::clone(&state.common.plugin_loader),
+            );
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -296,7 +249,7 @@ pub fn on_request_receive(
             let mut pending_file_drop_failures: Vec<Response> = Vec::new();
 
             for (timeline_id, command) in commands.iter() {
-                let command: CommandRequest = command.deserialize(&mut rkyv::Infallible).unwrap();
+                let command: CommandRequest = deserialize_validated(command);
                 let command = match command {
                     CommandRequest::AddClipFromFile {
                         layer_id,
@@ -306,7 +259,6 @@ pub fn on_request_receive(
                         source_path,
                     } => {
                         let properties = match Scheduler::new().file_drop_properties(
-                            &script_engine,
                             &loader,
                             &kind_id,
                             &source_path,
@@ -340,13 +292,28 @@ pub fn on_request_receive(
                 // 逆引きし、ハードコードされたプロパティキーに依存しない（AGENTS.md 第9条）。
                 let media_paths = match &command {
                     CommandRequest::ClipsResize { clips } if !clips.is_empty() => {
-                        let clip = project
-                            .timeline_ref(*timeline_id)
-                            .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
-                            .get_clip(clips[0].clip_id)
-                            .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
-                        let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
-                        Some(MediaPropertyPaths::resolve(&runtime_def))
+                        // 解決に失敗してもバッチ全体は止めない。このコマンドだけを
+                        // 拒否として通知し、残りは続行する。
+                        let resolved = (|| -> anyhow::Result<MediaPropertyPaths> {
+                            let clip = project
+                                .timeline_ref(*timeline_id)
+                                .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
+                                .get_clip(clips[0].clip_id)
+                                .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
+                            let runtime_def =
+                                loader.resolve_component_definition(&clip.kind_id)?;
+                            Ok(MediaPropertyPaths::resolve(&runtime_def))
+                        })();
+                        match resolved {
+                            Ok(paths) => Some(paths),
+                            Err(error) => {
+                                log::error!("Command rejected: {error:?}");
+                                pending_rejections.push(Response::Failed {
+                                    error: EsotereelError::CommandFailed(format!("{error:#}")),
+                                });
+                                continue;
+                            }
+                        }
                     }
                     CommandRequest::AddClip { kind_id, .. } => loader
                         .resolve_component_definition(kind_id)
@@ -364,13 +331,16 @@ pub fn on_request_receive(
                         if let Err(e) = execute_command_with_history(
                             project,
                             *timeline_id,
-                            command_history.clone(),
+                            command_history,
                             history,
                             media_paths.as_ref(),
                         ) {
                             log::error!("Command execution error: {:?}", e);
+                            pending_rejections.push(Response::Failed {
+                                error: EsotereelError::CommandFailed(format!("{e:#}")),
+                            });
                         } else {
-                            log::debug!(target:"core_packet_history","history: {:?}", command_history);
+                            log::debug!(target:"core_packet_history","history: {:?}", history.last_undo());
                         }
                     }
                     Err(e) => {
@@ -382,6 +352,12 @@ pub fn on_request_receive(
                             client_id,
                             &command,
                         );
+                        if rejections.is_empty() {
+                            // Move/Resize の陳腐化以外の拒否は、汎用の失敗として必ず通知する
+                            pending_rejections.push(Response::Failed {
+                                error: EsotereelError::CommandFailed(format!("{e:#}")),
+                            });
+                        }
                         pending_rejections.extend(rejections);
                     }
                 }
@@ -403,10 +379,7 @@ pub fn on_request_receive(
 
             // 対象パスがアップロード中なら、未到着バイトで待つ入力で開き、
             // アップロード完了前にデコードを開始できるようにする。
-            let uploads = {
-                let state_guard = state.lock_or_err()?;
-                Arc::clone(&state_guard.uploads)
-            };
+            let uploads = Arc::clone(&state.uploads);
             let progress = {
                 let uploads = uploads.lock_or_err()?;
                 uploads.progress_for_path(Path::new(path))
@@ -420,11 +393,9 @@ pub fn on_request_receive(
                 EsotereelError::IoError(format!("Failed to open video stream: {:?}", e))
             })?;
 
-            // 登録までは State ロックが必要だが、送信は解放後に行う
+            // 登録は各フィールドの内部同期（DashMap / Atomic）で行い、
+            // 送信はその後に行う
             let (network, res, resource_id) = {
-                let mut state = state
-                    .lock_or_err()?;
-
                 let resource_id = state.get_or_create_resource_id(path);
 
                 let res = streamer.get_init_packet(path, resource_id);
@@ -455,13 +426,10 @@ pub fn on_request_receive(
                 ranges
             );
 
-            let ranges: Vec<Range<f64>> = ranges.deserialize(&mut rkyv::Infallible).unwrap();
+            let ranges: Vec<Range<f64>> = deserialize_validated(ranges);
 
             let (network, to_send) = {
-                let state_guard = state
-                    .lock_or_err()?;
-
-                let mut streamer = state_guard
+                let mut streamer = state
                     .streams
                     .get_mut(resource_id)
                     .ok_or_else(|| EsotereelError::StreamNotFound(*resource_id))?;
@@ -469,7 +437,7 @@ pub fn on_request_receive(
                 let generation = streamer.next_generation();
 
                 let to_send = streamer.fetch_stream_data_batch(*resource_id, ranges, generation)?;
-                (Arc::clone(&state_guard.network), to_send)
+                (Arc::clone(&state.network), to_send)
             };
 
             for res in &to_send {
@@ -485,18 +453,11 @@ pub fn on_request_receive(
                 timeline_key,
                 range
             );
-            let range: Range<i64> = range.deserialize(&mut rkyv::Infallible).unwrap();
+            let range: Range<i64> = deserialize_validated(range);
 
-            // State は Arc の取り出しだけ。query_range は読み取り専用なので
+            // query_range は読み取り専用なので
             // Project は read ロックでよい。送信は全ガード解放後に行う。
-            let (project_arc, network) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                )
-            };
+            let (project_arc, network) = (Arc::clone(&state.project), Arc::clone(&state.network));
 
             // クライアントの表示範囲をサーバーに記憶させる
             network.update_client_view(client_id, *timeline_key, range.clone());
@@ -528,14 +489,7 @@ pub fn on_request_receive(
         }
         ArchivedRequest::DebugFetchProjectStruct => {
             // 読み取り専用なので read ロックでよい。送信は解放後に行う。
-            let (project_arc, network) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                )
-            };
+            let (project_arc, network) = (Arc::clone(&state.project), Arc::clone(&state.network));
 
             let str = {
                 let project_guard = project_arc.read_or_err()?;
@@ -559,20 +513,26 @@ pub fn on_request_receive(
 
             let plugin_id = button_id.plugin_id();
 
-            // Phase 1: State ロック中は必要な Arc の取り出しと、実行する
-            // スクリプトのクローンだけを行う（lock-order.md）
-            let state_guard = state
-                .lock_or_err()?;
+            // Phase 1: 必要な Arc の取り出しと、実行するスクリプトの
+            // クローンだけを先に行う（lock-order.md）
+            let network = Arc::clone(&state.network);
+            let project_arc = Arc::clone(&state.project);
+            let histories_arc = Arc::clone(&state.histories);
+            let loader_arc = Arc::clone(&state.common.plugin_loader);
 
-            let network = Arc::clone(&state_guard.network);
-            let project_arc = Arc::clone(&state_guard.project);
-            let histories_arc = Arc::clone(&state_guard.histories);
-            let loader_arc = Arc::clone(&state_guard.common.plugin_loader);
+            // エンジンと権限は実行するプラグインの宣言から解決する
+            let script_engine = state.common.script_engine_for::<ServerState>(plugin_id)?;
+            let allow_cross_plugin = {
+                let loader = loader_arc.read_or_err()?;
+                loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+            };
 
             let context = PluginActionContext::new(
                 Arc::clone(&network),
                 Arc::clone(&project_arc),
                 *timeline_id,
+                plugin_id.to_owned(),
+                allow_cross_plugin,
             );
 
             // スクリプトはクローンして所有し、PluginLoader の read ガードは
@@ -587,21 +547,15 @@ pub fn on_request_receive(
                     .ok_or_else(|| anyhow::anyhow!("Plugin '{}' not found", plugin_id))?
             }; // loader ガードはここで drop される
 
-            // 注意: script_engine は CommonState が直接所有する値（Arc 化
-            // されていない）ため、エンジン参照が要る間は State ロックを
-            // 解放できない。パケット処理は解放後に回す。
+            // script_engine は Arc なので、クローンを取り出しておけば
+            // 他のロックを保持せずにスクリプトを実行できる。
             script
-                .call::<()>(
-                    &state_guard.common.script_engine,
-                    func_name,
-                    (context.clone(),),
-                )
+                .call::<()>(&script_engine, func_name, (context.clone(),))
                 .map_err(|e| anyhow::anyhow!("Failed to execute toolbar script: {}", e))?;
 
             // スクリプト内で積まれた Request を回収して処理する。
-            // ここからは State ロックなしで、クローンした Arc だけで処理する。
+            // ここからはクローンした Arc だけで処理する。
             let packets = context.take_packets();
-            drop(state_guard);
 
             for packet in packets {
                 match packet {
@@ -618,9 +572,9 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let media_paths = history
-                            .last_undo()
-                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        let media_paths = history.last_undo().and_then(|cmd| {
+                            resolve_media_paths(project, timeline_id, cmd, &loader)
+                        });
                         undo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     Request::Redo { timeline_id } => {
@@ -636,9 +590,9 @@ pub fn on_request_receive(
                             .entry(timeline_id)
                             .or_insert_with(|| HistoryStack::default());
 
-                        let media_paths = history
-                            .last_redo()
-                            .and_then(|cmd| resolve_media_paths(project, timeline_id, cmd, &loader));
+                        let media_paths = history.last_redo().and_then(|cmd| {
+                            resolve_media_paths(project, timeline_id, cmd, &loader)
+                        });
                         redo_command(project, timeline_id, history, media_paths.as_ref())?;
                     }
                     _ => {
@@ -654,17 +608,13 @@ pub fn on_request_receive(
             );
         }
         ArchivedRequest::Undo { timeline_id } => {
-            // State は Arc の取り出しだけ。実行は解放後に行う。
-            let (project_arc, network, histories_arc, loader_arc) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.histories),
-                    Arc::clone(&state_guard.common.plugin_loader),
-                )
-            };
+            // 実行は取り出した Arc だけで行う。
+            let (project_arc, network, histories_arc, loader_arc) = (
+                Arc::clone(&state.project),
+                Arc::clone(&state.network),
+                Arc::clone(&state.histories),
+                Arc::clone(&state.common.plugin_loader),
+            );
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -672,8 +622,7 @@ pub fn on_request_receive(
 
             let loader = loader_arc.read_or_err()?;
 
-            let mut histories = histories_arc
-                .lock_or_err()?;
+            let mut histories = histories_arc.lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
@@ -689,17 +638,13 @@ pub fn on_request_receive(
             network.notify_dirty();
         }
         ArchivedRequest::Redo { timeline_id } => {
-            // State は Arc の取り出しだけ。実行は解放後に行う。
-            let (project_arc, network, histories_arc, loader_arc) = {
-                let state_guard = state
-                    .lock_or_err()?;
-                (
-                    Arc::clone(&state_guard.project),
-                    Arc::clone(&state_guard.network),
-                    Arc::clone(&state_guard.histories),
-                    Arc::clone(&state_guard.common.plugin_loader),
-                )
-            };
+            // 実行は取り出した Arc だけで行う。
+            let (project_arc, network, histories_arc, loader_arc) = (
+                Arc::clone(&state.project),
+                Arc::clone(&state.network),
+                Arc::clone(&state.histories),
+                Arc::clone(&state.common.plugin_loader),
+            );
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -707,8 +652,7 @@ pub fn on_request_receive(
 
             let loader = loader_arc.read_or_err()?;
 
-            let mut histories = histories_arc
-                .lock_or_err()?;
+            let mut histories = histories_arc.lock_or_err()?;
             let history = histories
                 .entry(*timeline_id)
                 .or_insert_with(|| HistoryStack::default());
@@ -817,9 +761,23 @@ log::warn!(
     }
 }
 
-/// ワイヤ形式のアセット ID を `AssetId`（UUID）として解釈する。
-fn parse_asset_id(asset_id: &str) -> anyhow::Result<Uuid> {
+/// ワイヤ形式のアセット ID を `AssetRef`（UUID）として解釈する。
+fn parse_asset_ref(asset_id: &str) -> anyhow::Result<Uuid> {
     Uuid::parse_str(asset_id).map_err(|_| anyhow::anyhow!("invalid asset id `{asset_id}`"))
+}
+
+/// `check_archived_root` で検証済みのペイロードをデシリアライズする。
+///
+/// エラー型が `Infallible` なので失敗し得ないが、検証の前提が崩れた場合に
+/// panic ではなくコンパイルエラーで気付けるよう、網羅的に受ける。
+fn deserialize_validated<T, A>(archived: &A) -> T
+where
+    A: rkyv::Deserialize<T, rkyv::Infallible>,
+{
+    match archived.deserialize(&mut rkyv::Infallible) {
+        Ok(value) => value,
+        Err(error) => match error {},
+    }
 }
 
 fn deserialize_add_clip(
@@ -827,10 +785,7 @@ fn deserialize_add_clip(
 ) -> anyhow::Result<Option<AddClipFromAsset>> {
     match add_clip.as_ref() {
         None => Ok(None),
-        Some(archived) => match archived.deserialize(&mut rkyv::Infallible) {
-            Ok(value) => Ok(Some(value)),
-            Err(error) => match error {},
-        },
+        Some(archived) => Ok(Some(deserialize_validated(archived))),
     }
 }
 
@@ -838,13 +793,11 @@ fn deserialize_add_clip(
 fn add_clip_from_asset(
     project: &mut Project,
     loader_arc: &Arc<RwLock<PluginLoader>>,
-    script_engine: &rhai::Engine,
     add_clip: &AddClipFromAsset,
     source_path: &str,
 ) -> anyhow::Result<()> {
     let loader_guard = loader_arc.read_or_err()?;
     let properties = Scheduler::new().file_drop_properties(
-        script_engine,
         &loader_guard,
         &add_clip.kind_id,
         source_path,
@@ -877,9 +830,7 @@ fn send_asset_import_failed(
     network.send(
         client_id,
         &Response::Failed {
-            error: EsotereelError::UploadFailed(format!(
-                "asset import `{asset_id}`: {error:#}"
-            )),
+            error: EsotereelError::UploadFailed(format!("asset import `{asset_id}`: {error:#}")),
         },
     );
 }

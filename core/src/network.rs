@@ -1,17 +1,17 @@
-use esotereel_lib::network::NetworkHandler;
+use esotereel_lib::network::{NetworkHandler, MAX_FRAME_SIZE};
 use esotereel_lib::project::ids::TimelineId;
 use esotereel_lib::requests::Request;
 use esotereel_lib::responces::Response;
-use esotereel_lib::util::result::LockExt;
-use rkyv::ser::Serializer;
+use esotereel_lib::util::result::{LockExt, MutexExt};
 use rkyv::ser::serializers::AllocSerializer;
-use rkyv::{AlignedVec, check_archived_root};
+use rkyv::ser::Serializer;
+use rkyv::{check_archived_root, AlignedVec};
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::{Arc, Mutex, RwLock};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, split};
+use std::sync::{Arc, RwLock};
+use tokio::io::{split, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{mpsc, Notify};
 
 use crate::requests::on_request_receive;
 use crate::state::ServerState;
@@ -41,7 +41,7 @@ impl ServerNetworkHandler {
 
     pub async fn run<F>(
         self: Arc<Self>,
-        state: Arc<Mutex<ServerState>>,
+        state: Arc<ServerState>,
         addr: &str,
         on_server_ready: Option<F>,
     ) -> Result<(), std::io::Error>
@@ -110,6 +110,12 @@ impl ServerNetworkHandler {
                     let mut size_buf = [0u8; 4];
                     while reader.read_exact(&mut size_buf).await.is_ok() {
                         let size = u32::from_le_bytes(size_buf) as usize;
+                        if size > MAX_FRAME_SIZE {
+                            log::error!(
+                                "Client {client_id}: frame size {size} exceeds limit {MAX_FRAME_SIZE}, disconnecting"
+                            );
+                            break;
+                        }
                         let mut buf = vec![0u8; size];
                         if reader.read_exact(&mut buf).await.is_err() {
                             break;
@@ -125,17 +131,17 @@ impl ServerNetworkHandler {
                     if let Ok(mut guard) = instance.clients.write_or_err() {
                         guard.remove(&client_id);
                     }
+                    instance.remove_client_view(client_id);
+                    // 未完了のアップロードも残さない（読み側は中断で目覚める）
+                    if let Ok(mut uploads) = state.uploads.lock_or_err() {
+                        uploads.abort_client_sessions(client_id);
+                    }
                 });
             });
         }
     }
 
-    fn parse_and_handle_request(
-        &self,
-        state: &Arc<Mutex<ServerState>>,
-        bytes: &Vec<u8>,
-        client_id: u32,
-    ) {
+    fn parse_and_handle_request(&self, state: &Arc<ServerState>, bytes: &Vec<u8>, client_id: u32) {
         match check_archived_root::<Request>(bytes) {
             Ok(archived_req) => {
                 if let Err(e) = on_request_receive(archived_req, client_id, state) {
@@ -234,11 +240,20 @@ impl ServerNetworkHandler {
         };
 
         if let Ok(clients) = self.clients.read_or_err() {
-            for id in client_ids {
-                if let Some(tx) = clients.get(id) {
-                    if let Err(_) = tx.send(bytes.clone()) {
-                        log::error!("Failed to send to client {}: channel closed", id);
-                    }
+            let mut targets: Vec<(&u32, &ClientSender)> = client_ids
+                .iter()
+                .filter_map(|id| clients.get_key_value(id))
+                .collect();
+            // 最後の送信先へは clone せず move する
+            let last = targets.pop();
+            for (id, tx) in &targets {
+                if tx.send(bytes.clone()).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", id);
+                }
+            }
+            if let Some((id, tx)) = last {
+                if tx.send(bytes).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", id);
                 }
             }
         }
@@ -246,8 +261,16 @@ impl ServerNetworkHandler {
 
     fn send_bytes_all(&self, bytes: AlignedVec) {
         if let Ok(clients) = self.clients.read_or_err() {
-            for (client_id, tx) in clients.iter() {
-                if let Err(_) = tx.send(bytes.clone()) {
+            let mut targets: Vec<(&u32, &ClientSender)> = clients.iter().collect();
+            // 最後の送信先へは clone せず move する
+            let last = targets.pop();
+            for (client_id, tx) in &targets {
+                if tx.send(bytes.clone()).is_err() {
+                    log::error!("Failed to send to client {}: channel closed", client_id);
+                }
+            }
+            if let Some((client_id, tx)) = last {
+                if tx.send(bytes).is_err() {
                     log::error!("Failed to send to client {}: channel closed", client_id);
                 }
             }

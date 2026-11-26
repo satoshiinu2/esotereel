@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDebug>
 #include <QString>
 #include <cstdint>
 #include <vector>
@@ -25,7 +26,14 @@ class CommandQueue {
     explicit CommandQueue(const ClientState *network);
 
     ~CommandQueue() {
-        Result<void>(esotereel_gui_helper::command_queue_drop(ptr_queue)).unwrap();
+        // デストラクタから例外を投げると std::terminate になるため、
+        // 失敗はログに留める
+        auto result = Result<void>(esotereel_gui_helper::command_queue_drop(ptr_queue));
+        if (result.isError()) {
+            auto err = result.getError();
+            qWarning() << "CommandQueue: command_queue_drop failed:"
+                       << QString::fromStdString(err.value_or("unknown error"));
+        }
     }
 
     operator RawCommandQueue *() const noexcept {

@@ -9,12 +9,13 @@ use esotereel_lib::{
     },
     project::{
         Clip, Project, TimelineTick,
-        clip::{ClipBindingValue, get_property_path_from_map},
+        clip::{ClipBindingValue, get_property_path_from_map, set_property_path_in_map},
         command::{ClipMoveHistoryCtx, ClipResizeHistoryCtx},
         ids::{ClipId, LayerId, TimelineId},
     },
     util::result::EsotereelError,
 };
+use uuid::Uuid;
 
 pub(crate) mod commands;
 pub(crate) mod history;
@@ -51,6 +52,19 @@ pub(crate) fn clip_move_mul_core(
     timeline_id: TimelineId,
     moved_clips: &[ClipMoveHistoryCtx],
 ) -> anyhow::Result<()> {
+    // 移動先レイヤーの存在を、クリップを取り出す前に確認する。
+    // 取り出し後に配置が失敗すると、クリップが行き場を失って消えてしまう。
+    {
+        let timeline = project
+            .timeline_ref(timeline_id)
+            .ok_or(EsotereelError::TimelineNotFound(timeline_id))?;
+        for ctx in moved_clips {
+            if timeline.get_layer(ctx.new_layer_id).is_none() {
+                return Err(EsotereelError::LayerNotFound(ctx.new_layer_id).into());
+            }
+        }
+    }
+
     let extracted = {
         let timeline = project
             .timeline_mut(timeline_id)
@@ -107,7 +121,7 @@ pub(crate) fn clip_move_mul_core(
         {
             clip.set_position(orig_pos);
             clip.duration = orig_dur;
-            let _ = timeline.place_clip(src_layer_id, clip);
+            timeline.place_clip(src_layer_id, clip)?;
         }
         return Ok(());
     }
@@ -117,7 +131,7 @@ pub(crate) fn clip_move_mul_core(
     {
         clip.set_position(new_pos);
         clip.duration = new_dur;
-        let _ = timeline.place_clip(dest_layer_id, clip);
+        timeline.place_clip(dest_layer_id, clip)?;
     }
 
     Ok(())
@@ -194,6 +208,42 @@ pub(crate) fn clip_resize_core(
     Ok(())
 }
 
+/// メディアソースの文字列をアセット参照へ書き換える。
+///
+/// 既に UUID 形式なら、レジストリ登録済みの場合のみ正しい参照とみなして何もしない。
+/// 未登録の UUID は存在しないパスとして登録し直したりせず、警告を出してそのままに
+/// する（描画側でも未登録として警告・スキップされる）。
+/// パスなら `Project.assets` へ登録し、返ってきた参照でプロパティを書き換える。
+/// 登録に失敗してもクリップ追加自体は続行するが、無言にはしない。
+fn rewrite_source_to_asset_ref(
+    project: &mut Project,
+    properties: &mut HashMap<PropertyKey, ClipBindingValue>,
+    source_path: &PropertyPath,
+    source: &str,
+) {
+    if let Ok(id) = Uuid::parse_str(source) {
+        if project.assets().get(id).is_none() {
+            log::warn!(
+                "video source `{source}` is not registered in the project asset registry"
+            );
+        }
+        return;
+    }
+    match project.register_asset(Path::new(source)) {
+        Ok(id) => {
+            let value = ClipBindingValue::Static(FieldValue::String(id.to_string()));
+            if let Err(error) = set_property_path_in_map(properties, source_path, value) {
+                log::warn!(
+                    "failed to rewrite video source `{source}` to an asset reference: {error:#}"
+                );
+            }
+        }
+        Err(error) => {
+            log::warn!("failed to register asset `{source}`: {error:#}");
+        }
+    }
+}
+
 pub(crate) fn clip_add_core(
     project: &mut Project,
     timeline_id: TimelineId,
@@ -201,22 +251,22 @@ pub(crate) fn clip_add_core(
     position: TimelineTick,
     duration: TimelineTick,
     kind_id: NamespacedID,
-    properties: HashMap<PropertyKey, ClipBindingValue>,
+    mut properties: HashMap<PropertyKey, ClipBindingValue>,
     // 能力ベースで解決したメディアプロパティのパス。
     // `None` の場合はアセット登録をスキップする。
     media_paths: Option<&MediaPropertyPaths>,
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
-    // クリップが参照する動画リソースをプロジェクトのアセットレジストリに登録し、
-    // `Project.assets` を動画コンテンツのカタログとする。クリップの `source`
-    // プロパティ自体は従来通り生パスを保持し、クライアントとの互換性を保つ。
-    // ソースへのパスは呼び出し側が能力ベースで解決したものを使う（AGENTS.md 第9条）。
+    // クリップのメディアソースをアセットレジストリへ登録し、`source` プロパティを
+    // 生パスからアセット参照（`AssetRef` の文字列表現）へ書き換える。以後の解決は
+    // 描画側がレジストリ経由で行う。ソースへのパスは呼び出し側が能力ベースで
+    // 解決したものを使う（AGENTS.md 第9条）。
     if let Some(source_path) = media_paths.and_then(|paths| paths.source.as_ref()) {
         if let Some(FieldValue::String(source)) =
-            get_property_path_from_map(&properties, source_path)
+            get_property_path_from_map(&properties, source_path).cloned()
         {
             if !source.is_empty() {
-                let _ = project.register_asset(Path::new(source));
+                rewrite_source_to_asset_ref(project, &mut properties, source_path, &source);
             }
         }
     }

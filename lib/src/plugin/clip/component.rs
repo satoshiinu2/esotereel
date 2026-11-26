@@ -1,11 +1,12 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, bail};
-use rhai::{Dynamic, Engine};
+use rhai::Dynamic;
 use serde::{Deserialize, Serialize};
 
 pub use crate::plugin::property::{
-    ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw, value::FieldValue,
+    CapabilityCall, ComponentCapability, PropertyKey, PropertySchema, parse::PropertySchemaRaw,
+    value::FieldValue,
 };
 use crate::plugin::property::path::PropertyPath;
 use crate::plugin::script::api::PluginRenderContext;
@@ -447,24 +448,53 @@ impl Scheduler {
     }
 
     /// `definition` の各コンポーネントについて、能力に基づく標準関数をフックタイミング順に実行する。
+    ///
+    /// スクリプトはコンポーネントの所属プラグイン専用のエンジンで実行する。
     pub fn run_clip(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         instance: &ClipInstance,
         definition: &RuntimeDefinition,
         ctx: &mut PluginRenderContext,
     ) -> anyhow::Result<()> {
+        self.run_clip_with_properties(loader, &instance.properties, definition, ctx)
+    }
+
+    /// `run_clip` のプロパティマップ直接渡し版。呼び出し側が既に
+    /// プロパティマップへの参照を持っている場合に、`ClipInstance` を
+    /// 構築（＝マップ全体の clone）せずに実行できる。
+    pub fn run_clip_with_properties(
+        &self,
+        loader: &PluginLoader,
+        properties: &HashMap<PropertyKey, ClipBindingValue>,
+        definition: &RuntimeDefinition,
+        ctx: &mut PluginRenderContext,
+    ) -> anyhow::Result<()> {
+        // 1コンポーネントの失敗で後続を巻き込まない。全コンポーネントを実行し、
+        // 失敗はログに残したうえで最初のエラーを返す（呼び出し側の警告は維持する）。
+        let mut first_error: Option<anyhow::Error> = None;
         for component in &definition.components {
-            self.run_component(engine, loader, instance, definition, component, ctx)?;
+            if let Err(error) =
+                self.run_component(loader, properties, definition, component, ctx)
+            {
+                log::error!(
+                    "component `{}` failed, continuing with the rest: {error:#}",
+                    component.id
+                );
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
         }
-        Ok(())
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// FileDropHandler の戻り値を初期プロパティとして適用します。
     pub fn file_drop_properties(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
         kind_id: &NamespacedID,
         source_path: &str,
@@ -486,15 +516,19 @@ impl Scheduler {
             );
         };
 
-        let fn_name = ComponentCapability::FileDropHandler
-            .standard_fn()
-            .context("file-drop-handler capability has no function mapping")?;
+        let CapabilityCall::FileDrop { fn_name } = ComponentCapability::FileDropHandler.call()
+        else {
+            anyhow::bail!("file-drop-handler capability has no function mapping");
+        };
         let script = loader.get_component_script(&handler.id).with_context(|| {
             format!(
                 "file-drop-handler component `{}` has no script",
                 handler.id.full()
             )
         })?;
+        let engine = loader
+            .plugin_engine(handler.id.plugin_id())
+            .ok_or_else(|| anyhow::anyhow!("plugin `{}` not found", handler.id.plugin_id()))?;
         let result = script
             .call::<Dynamic>(engine, fn_name, (source_path.to_owned(),))
             .with_context(|| format!("file-drop-handler `{}` failed", handler.id.full()))?;
@@ -551,9 +585,8 @@ impl Scheduler {
 
     fn run_component(
         &self,
-        engine: &Engine,
         loader: &PluginLoader,
-        instance: &ClipInstance,
+        properties: &HashMap<PropertyKey, ClipBindingValue>,
         definition: &RuntimeDefinition,
         component: &ComponentDefinition,
         ctx: &mut PluginRenderContext,
@@ -562,27 +595,42 @@ impl Scheduler {
         let Some(script) = loader.get_component_script(&component.id) else {
             return Ok(());
         };
+        let engine = loader
+            .plugin_engine(component.id.plugin_id())
+            .ok_or_else(|| {
+                anyhow::anyhow!("plugin `{}` not found", component.id.plugin_id())
+            })?;
 
         // props はサンドボックス化する: 自プロパティと [[requires]] 宣言分の
         // 依存だけが解決できる（例: video の描画スクリプトは requires 経由で
         // transform の変換プロパティを読む）。
-        let props = ComponentProps::build(definition, instance, component)?;
+        let props = ComponentProps::build_from_properties(definition, properties, component)?;
 
-        // 能力をフックタイミング順にソートし、各標準関数を呼び出す。
+        // Scheduler 呼び出しの性質を持つ能力だけを、フックタイミング順に呼び出す。
+        // FileDrop や Marker の能力は呼び出し規約が異なるため、ここでは対象外。
         let mut calls: Vec<(ComponentHook, &str)> = Vec::new();
         for cap in &component.capabilities {
-            if *cap == ComponentCapability::FileDropHandler {
-                continue;
-            }
-            if let Some(fn_name) = cap.standard_fn() {
-                calls.push((cap.hook_timing(), fn_name));
+            if let CapabilityCall::Scheduler { fn_name, hook } = cap.call() {
+                calls.push((hook, fn_name));
             }
         }
-        calls.sort_by_key(|(hook, _)| hook.clone());
+        calls.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (_, fn_name) in calls {
-            script
+        // 最後の呼び出しへは props を move し、それ以外は clone を渡す。
+        let last_call = calls.pop();
+        for (_, fn_name) in &calls {
+            let _ = script
                 .call::<Dynamic>(engine, fn_name, (ctx.clone(), props.clone()))
+                .with_context(|| {
+                    format!(
+                        "capability function `{fn_name}` of component `{}` failed",
+                        component.id.full()
+                    )
+                })?;
+        }
+        if let Some((_, fn_name)) = last_call {
+            let _ = script
+                .call::<Dynamic>(engine, fn_name, (ctx.clone(), props))
                 .with_context(|| {
                     format!(
                         "capability function `{fn_name}` of component `{}` failed",
@@ -594,21 +642,38 @@ impl Scheduler {
     }
 }
 
+/// スクリプトが組み立てた値の入れ子の深さの上限。
+/// これ以上深い値はスタックを溢れさせる前にエラーにする。
+const MAX_VALUE_DEPTH: usize = 64;
+
 fn merge_field_value(
     default: &mut FieldValue,
     returned: FieldValue,
     property_path: &str,
 ) -> anyhow::Result<()> {
+    merge_field_value_with_depth(default, returned, property_path, 0)
+}
+
+fn merge_field_value_with_depth(
+    default: &mut FieldValue,
+    returned: FieldValue,
+    property_path: &str,
+    depth: usize,
+) -> anyhow::Result<()> {
+    if depth > MAX_VALUE_DEPTH {
+        anyhow::bail!("handler returned a value nested too deeply at `{property_path}`");
+    }
     match (default, returned) {
         (FieldValue::Map(default_values), FieldValue::Map(returned_values)) => {
             for (key, returned_value) in returned_values {
                 let default_value = default_values.get_mut(&key).with_context(|| {
                     format!("handler returned undeclared field `{property_path}/{key}`")
                 })?;
-                merge_field_value(
+                merge_field_value_with_depth(
                     default_value,
                     returned_value,
                     &format!("{property_path}/{key}"),
+                    depth + 1,
                 )?;
             }
         }
@@ -616,10 +681,11 @@ fn merge_field_value(
             if let Some(default_item) = default_values.first() {
                 for (index, returned_item) in returned_values.iter().cloned().enumerate() {
                     let mut expected_item = default_item.clone();
-                    merge_field_value(
+                    merge_field_value_with_depth(
                         &mut expected_item,
                         returned_item,
                         &format!("{property_path}/{index}"),
+                        depth + 1,
                     )?;
                 }
             }
@@ -668,6 +734,13 @@ fn field_value_kind(value: &FieldValue) -> &'static str {
 }
 
 fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
+    dynamic_to_field_value_with_depth(value, 0)
+}
+
+fn dynamic_to_field_value_with_depth(value: Dynamic, depth: usize) -> anyhow::Result<FieldValue> {
+    if depth > MAX_VALUE_DEPTH {
+        anyhow::bail!("file-drop-handler returned a value nested too deeply");
+    }
     if let Some(value) = value.clone().try_cast::<bool>() {
         return Ok(FieldValue::Bool(value));
     }
@@ -683,14 +756,19 @@ fn dynamic_to_field_value(value: Dynamic) -> anyhow::Result<FieldValue> {
     if let Some(values) = value.clone().try_cast::<rhai::Array>() {
         return values
             .into_iter()
-            .map(dynamic_to_field_value)
+            .map(|value| dynamic_to_field_value_with_depth(value, depth + 1))
             .collect::<anyhow::Result<Vec<_>>>()
             .map(FieldValue::Array);
     }
     if let Some(values) = value.try_cast::<rhai::Map>() {
         return values
             .into_iter()
-            .map(|(key, value)| Ok((key.to_string(), dynamic_to_field_value(value)?)))
+            .map(|(key, value)| {
+                Ok((
+                    key.to_string(),
+                    dynamic_to_field_value_with_depth(value, depth + 1)?,
+                ))
+            })
             .collect::<anyhow::Result<std::collections::BTreeMap<_, _>>>()
             .map(FieldValue::Map);
     }

@@ -6,27 +6,27 @@ use esotereel_lib::{
 };
 
 use crate::{
-    GuiCallbacks,
     ffi::{
         log_if_panicked,
         result::{FfiResult, FfiResultVoid},
         stringview::FfiStringView,
     },
     state::ClientState,
+    GuiCallbacks,
 };
 use std::{
     ffi::c_void,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{catch_unwind, AssertUnwindSafe},
     path::PathBuf,
-    sync::{Arc, Mutex, RwLock, RwLockReadGuard},
+    sync::{Arc, RwLock, RwLockReadGuard},
 };
 
-pub struct ClientStateHandle(pub Arc<Mutex<ClientState>>);
+pub struct ClientStateHandle(pub Arc<ClientState>);
 pub type OptionProject = Option<Project>;
 
 impl ClientStateHandle {
-    pub fn from_ptr(ptr_state: *const ClientStateHandle) -> Arc<Mutex<ClientState>> {
-        let raw = ptr_state as *const Mutex<ClientState>;
+    pub fn from_ptr(ptr_state: *const ClientStateHandle) -> Arc<ClientState> {
+        let raw = ptr_state as *const ClientState;
         unsafe {
             Arc::increment_strong_count(raw);
             Arc::from_raw(raw)
@@ -35,7 +35,7 @@ impl ClientStateHandle {
 }
 
 impl std::ops::Deref for ClientStateHandle {
-    type Target = Arc<Mutex<ClientState>>;
+    type Target = Arc<ClientState>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -68,7 +68,7 @@ pub extern "C" fn client_state_new(
             .map(PathBuf::from);
 
         let dirs_def = Directories::new(std_plugin_dir, working_dir);
-        let state = Arc::new(Mutex::new(ClientState::new(callbacks, dirs_def)));
+        let state = Arc::new(ClientState::new(callbacks, dirs_def));
 
         Ok(Arc::into_raw(state) as *const ClientStateHandle)
     }
@@ -92,70 +92,56 @@ pub extern "C" fn client_state_bootstrap(ptr_state: *const ClientStateHandle) ->
         // Arc::into_raw 由来のポインタから、参照カウントを増やして
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let async_error = state
-            .lock_or_err()?
-            .async_error
-            .clone();
+        let async_error = state.async_error_arc();
 
         std::thread::spawn(move || {
-            let async_error_inner = async_error.clone();
+            let async_error_inner = Arc::clone(&async_error);
             let result = catch_unwind(AssertUnwindSafe(move || {
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        let _ = async_error_inner
+                            .lock_or_err()
+                            .map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
                         return;
                     }
                 };
-                let state_arc = state.clone();
+                let state_arc = Arc::clone(&state);
 
-                // Phase 1: プラグインローダーとディレクトリを取得し、ClientState ロックを即座に解放
-                // （ブロックの終了と同時にガードがドロップされ、ロック解放される）
-                let (plugin_loader, dir) = {
-                    let guard = match state_arc.lock_or_err() {
-                        Ok(g) => g,
-                        Err(e) => {
-                            let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to lock state: {e}")));
-                            return;
-                        }
-                    };
-                    (
-                        Arc::clone(&guard.common.plugin_loader),
-                        Directories::new(
-                            guard.common.dir.std_plugin_dir.clone(),
-                            guard.common.dir.working_dir.clone(),
-                        ),
-                    )
-                };
+                // Phase 1: プラグインローダーとディレクトリを取得する
+                // （ClientState 自体にロックは無く、メンバーは Arc で取り出す）
+                let (plugin_loader, dir) = (
+                    state_arc.plugin_loader_arc(),
+                    Directories::new(
+                        state_arc.common.dir.std_plugin_dir.clone(),
+                        state_arc.common.dir.working_dir.clone(),
+                    ),
+                );
 
                 runtime.block_on(async {
-                    // Phase 2: プラグイン読み込みを非同期で実行（ClientState ロックを保持しない）
+                    // Phase 2: プラグイン読み込みを非同期で実行
                     match plugin_loader.write_or_err() {
-                        Ok(mut loader) => {
-                            match loader.load_from_disk(&dir).await {
-                                Ok(_) => log::info!("Plugins loaded successfully"),
-                                Err(e) => log::error!("Failed to load plugins: {:?}", e),
-                            }
-                        }
+                        Ok(mut loader) => match loader.load_from_disk(&dir).await {
+                            Ok(_) => log::info!("Plugins loaded successfully"),
+                            Err(e) => log::error!("Failed to load plugins: {:?}", e),
+                        },
                         Err(e) => log::error!("Failed to load plugins: {:?}", e),
                     }
 
-                    // Phase 3: プラグインフィールド適用（ClientState ロックを短時間保持）
-                    match state_arc.lock_or_err() {
-                        Ok(mut guard) => {
-                            if let Err(e) = guard.apply_extra_plugin_fields() {
-                                log::error!("Failed to apply settings: {:?}", e);
-                            } else {
-                                log::info!("Settings applied successfully");
-                            }
-                        }
-                        Err(e) => log::error!("Failed to acquire state lock: {:?}", e),
+                    // Phase 3: プラグインフィールド適用（settings / toolbar の
+                    // ストア単位ロックだけで行う）
+                    if let Err(e) = state_arc.apply_extra_plugin_fields() {
+                        log::error!("Failed to apply settings: {:?}", e);
+                    } else {
+                        log::info!("Settings applied successfully");
                     }
                 });
             }));
 
             if let Err(ref panic) = result {
-                let _ = async_error.lock_or_err().map(|mut g| *g = Some(format!("bootstrap thread panicked: {:?}", panic)));
+                let _ = async_error
+                    .lock_or_err()
+                    .map(|mut g| *g = Some(format!("bootstrap thread panicked: {:?}", panic)));
             }
             log_if_panicked(result, "Client bootstrap thread");
             // ここで state (Arc) がドロップされ、参照カウントが1つ減る
@@ -184,35 +170,39 @@ pub extern "C" fn client_state_network_run(
         // 独立した Arc クローンを作る（元のポインタは消費しない）
         let state = ClientStateHandle::from_ptr(ptr_state);
         let state_clone = Arc::clone(&state);
-        let state = state
-            .lock_or_err()?;
-        let network = Arc::clone(&state.network);
-        let async_error = state.async_error.clone();
+        let network = state.network_arc();
+        let async_error = state.async_error_arc();
 
         let addr_str = addr.as_str()?;
         let addr = addr_str.to_string();
 
         // Rust側でバックグラウンドスレッドを生成してワーカーを開始する
         std::thread::spawn(move || {
-            let async_error_inner = async_error.clone();
+            let async_error_inner = Arc::clone(&async_error);
             let result = catch_unwind(AssertUnwindSafe(move || {
                 let runtime = match tokio::runtime::Runtime::new() {
                     Ok(rt) => rt,
                     Err(e) => {
-                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
+                        let _ = async_error_inner
+                            .lock_or_err()
+                            .map(|mut g| *g = Some(format!("Failed to create tokio runtime: {e}")));
                         return;
                     }
                 };
                 runtime.block_on(async {
                     log::info!("Client worker thread started for: {}", addr);
                     if let Err(e) = network.run(state_clone, &addr).await {
-                        let _ = async_error_inner.lock_or_err().map(|mut g| *g = Some(format!("network run error: {e}")));
+                        let _ = async_error_inner
+                            .lock_or_err()
+                            .map(|mut g| *g = Some(format!("network run error: {e}")));
                     }
                 });
             }));
 
             if let Err(ref panic) = result {
-                let _ = async_error.lock_or_err().map(|mut g| *g = Some(format!("network thread panicked: {:?}", panic)));
+                let _ = async_error
+                    .lock_or_err()
+                    .map(|mut g| *g = Some(format!("network thread panicked: {:?}", panic)));
             }
             log_if_panicked(result, "Client worker thread");
 
@@ -234,7 +224,7 @@ pub unsafe extern "C" fn client_state_drop(ptr_state: *const ClientStateHandle) 
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
-        let raw = ptr_state as *const Mutex<ClientState>;
+        let raw = ptr_state as *const ClientState;
         let _ = unsafe { Arc::from_raw(raw) };
         Ok(())
     }
@@ -250,17 +240,15 @@ pub unsafe extern "C" fn client_state_drop(ptr_state: *const ClientStateHandle) 
 pub type ClientStateTakeErrorResult = FfiResultVoid;
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn client_state_take_error(ptr_state: *const ClientStateHandle) -> ClientStateTakeErrorResult {
+pub unsafe extern "C" fn client_state_take_error(
+    ptr_state: *const ClientStateHandle,
+) -> ClientStateTakeErrorResult {
     fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
         if ptr_state.is_null() {
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state
-            .lock_or_err()?;
-        let mut error = state_guard
-            .async_error
-            .lock_or_err()?;
+        let mut error = state.async_error.lock_or_err()?;
         if let Some(msg) = error.take() {
             return Err(anyhow::Error::msg(msg));
         }
@@ -285,9 +273,8 @@ struct ProjectReadGuardInner {
     // RwLock 本体への最後の参照を手放すため、この順序にすること。
     _guard: RwLockReadGuard<'static, OptionProject>,
     // ガードが指す RwLock 自体を生かし続けるための所有権。
-    // これが無いと、ProjectMeta 受信で state.project が差し替えられた際に
-    // 旧 RwLock が解放され、C++ 側が保持中のガード経由で use-after-free
-    // になる（ISSUES.md 1.1）。
+    // これが無いと、ClientState が先に破棄された場合に RwLock が解放され、
+    // C++ 側が保持中のガード経由で use-after-free になる（ISSUES.md 1.1）。
     _project_arc: Arc<RwLock<OptionProject>>,
     project_ptr: *const OptionProject,
 }
@@ -304,16 +291,10 @@ pub unsafe extern "C" fn client_state_project_lock_read(
             return Err(EsotereelError::NullPointer("ptr_state".to_string()).into());
         }
 
-        // project の Arc だけを短時間の State ロックで取り出し、State を
-        // 解放してから Project の read ロックを取得する。State を保持した
-        // まま Project を待つと、Project read を保持して State を取りに来る
-        // 他スレッドとデッドロックする（docs/architecture/lock-order.md）。
-        let project_arc = {
-            let state = ClientStateHandle::from_ptr(ptr_state);
-            let state_guard = state
-                .lock_or_err()?;
-            Arc::clone(&state_guard.project)
-        };
+        // project の Arc を取り出してから Project の read ロックを取得する。
+        // 他のメンバー（settings 等）のロックを保持したまま Project を
+        // 待たないこと（docs/architecture/lock-order.md）。
+        let project_arc = ClientStateHandle::from_ptr(ptr_state).project_arc();
         let project_guard = project_arc.read_or_err()?;
 
         let project_ptr: *const Option<Project> = &*project_guard;
@@ -321,8 +302,8 @@ pub unsafe extern "C" fn client_state_project_lock_read(
         // Extend lifetime to 'static - this is sound here because:
         // 1. The guard is owned by the Box and will only be freed when unlock is called
         // 2. The Box also owns an Arc clone of the RwLock the guard borrows from
-        //    (`_project_arc`), so the RwLock outlives the guard even if
-        //    `state.project` is replaced (e.g. by a ProjectMeta response)
+        //    (`_project_arc`), so the RwLock outlives the guard even if the
+        //    owning ClientState is dropped first
         // 3. C++ side is responsible for calling unlock to free the guard
         let extended_guard = unsafe {
             std::mem::transmute::<
@@ -405,8 +386,6 @@ pub unsafe extern "C" fn client_state_log_directories_info(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state = state
-            .lock_or_err()?;
 
         state.dir.log_info();
 

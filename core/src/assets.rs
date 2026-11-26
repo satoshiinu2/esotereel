@@ -6,14 +6,15 @@ use std::{
     sync::Arc,
 };
 
-use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetId};
+use esotereel_lib::{decode::growing::UploadProgress, dirs::Directories, project::ids::AssetRef};
 
 /// 進行中のアップロード1件分の転送状態。
 struct UploadSession {
     file_name: String,
     path: PathBuf,
     total_size: u64,
-    received_size: u64,
+    /// アップロードを開始したクライアント。切断時の後片付けに使う。
+    client_id: u32,
     /// 到着済み接頭辞と完了/中断を読み側と共有する進捗。
     progress: Arc<UploadProgress>,
 }
@@ -34,7 +35,7 @@ impl Drop for UploadSession {
 /// 実体は `Project::register_external_asset` が台帳に載せる。
 pub struct UploadManager {
     root_dir: PathBuf,
-    sessions: HashMap<AssetId, UploadSession>,
+    sessions: HashMap<AssetRef, UploadSession>,
 }
 
 impl UploadManager {
@@ -56,9 +57,10 @@ impl UploadManager {
     /// そのまま使うため、パス区切りを含む名前は受け付けない。
     pub fn begin(
         &mut self,
-        asset_id: AssetId,
+        asset_id: AssetRef,
         file_name: &str,
         total_size: u64,
+        client_id: u32,
     ) -> anyhow::Result<()> {
         let file_name = validate_file_name(file_name)?;
         let dir = self.root_dir.join(asset_id.to_string());
@@ -75,11 +77,31 @@ impl UploadManager {
                 file_name,
                 path,
                 total_size,
-                received_size: 0,
+                client_id,
                 progress: Arc::new(UploadProgress::new(total_size)),
             },
         );
         Ok(())
+    }
+
+    /// 指定クライアントの未完了セッションをすべて破棄します。
+    ///
+    /// セッションの破棄で読み側は中断として目覚め、部分ファイルも消します。
+    /// クライアント切断時に呼び、セッションとファイルが残留しないようにします。
+    pub fn abort_client_sessions(&mut self, client_id: u32) {
+        let aborted: Vec<UploadSession> = self
+            .sessions
+            .extract_if(|_, session| session.client_id == client_id)
+            .map(|(_, session)| session)
+            .collect();
+        for session in &aborted {
+            if let Err(error) = fs::remove_file(&session.path) {
+                log::warn!(
+                    "Failed to remove partial upload {}: {error}",
+                    session.path.display()
+                );
+            }
+        }
     }
 
     /// 指定パスへアップロード中のセッションの進捗を返します。
@@ -96,7 +118,7 @@ impl UploadManager {
     /// アップロードの一部を、指定オフセットへ書き込む。
     pub fn write_chunk(
         &mut self,
-        asset_id: AssetId,
+        asset_id: AssetRef,
         offset: u64,
         data: &[u8],
     ) -> anyhow::Result<()> {
@@ -121,7 +143,6 @@ impl UploadManager {
             file.seek(SeekFrom::Start(offset))?;
         }
         file.write_all(data)?;
-        session.received_size = session.received_size.max(end);
         session.progress.record_range(offset, data.len() as u64);
         Ok(())
     }
@@ -130,16 +151,20 @@ impl UploadManager {
     ///
     /// 宣言された総サイズと受信量・実ファイルサイズが一致しない場合はエラーにし、
     /// セッションは残す（不足分のチャンクを送って再試行できる）。
-    pub fn complete(&mut self, asset_id: AssetId) -> anyhow::Result<(String, PathBuf)> {
+    pub fn complete(&mut self, asset_id: AssetRef) -> anyhow::Result<(String, PathBuf)> {
         let session = self
             .sessions
             .get(&asset_id)
             .ok_or_else(|| anyhow::anyhow!("asset `{asset_id}` has no active upload"))?;
 
-        if session.received_size != session.total_size {
+        // 受信済み範囲の末尾ではなく、先頭から連続して届いた長さで判定する。
+        // 末尾だけ届いた場合、ファイル長は total_size と一致しても
+        // 途中がゼロ埋めのまま完了扱いになってしまう。
+        let received = session.progress.prefix_len();
+        if received != session.total_size {
             anyhow::bail!(
                 "upload for asset `{asset_id}` is incomplete: {} of {} bytes received",
-                session.received_size,
+                received,
                 session.total_size
             );
         }

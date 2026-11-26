@@ -111,10 +111,12 @@ pub fn undo_command(
     history: &mut HistoryStack,
     media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
-    if let Some(command) = history.undo_stack.last().cloned() {
-        // undo用の逆コマンドを実行
-        execute_command_undo(project, timeline_id, command.clone(), media_paths)?;
-        history.undo_stack.pop();
+    if let Some(command) = history.undo_stack.pop() {
+        // undo用の逆コマンドを実行（失敗時はスタックを元に戻す）
+        if let Err(e) = execute_command_undo(project, timeline_id, command.clone(), media_paths) {
+            history.undo_stack.push(command);
+            return Err(e);
+        }
         history.redo_stack.push(command);
     }
     Ok(())
@@ -126,10 +128,12 @@ pub fn redo_command(
     history: &mut HistoryStack,
     media_paths: Option<&MediaPropertyPaths>,
 ) -> anyhow::Result<()> {
-    if let Some(mut command) = history.redo_stack.last().cloned() {
-        // redo用のコマンドを実行
-        execute_command(project, timeline_id, &mut command, media_paths)?;
-        history.redo_stack.pop();
+    if let Some(mut command) = history.redo_stack.pop() {
+        // redo用のコマンドを実行（失敗時はスタックを元に戻す）
+        if let Err(e) = execute_command(project, timeline_id, &mut command, media_paths) {
+            history.redo_stack.push(command);
+            return Err(e);
+        }
         history.undo_stack.push(command);
     }
     Ok(())

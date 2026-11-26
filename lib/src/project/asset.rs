@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{project::ids::AssetId, util::result::EsotereelError};
+use crate::{project::ids::AssetRef, util::result::EsotereelError};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub enum AssetAvailability {
 
 #[derive(Debug, Clone)]
 pub struct AssetEntry {
-    pub id: AssetId,
+    pub id: AssetRef,
     pub name: String,
 
     /// 実ファイルの現在の参照先
@@ -41,18 +41,18 @@ pub struct AssetEntry {
 
 #[derive(Debug, Default)]
 pub struct AssetRegistry {
-    entries: HashMap<AssetId, AssetEntry>,
+    entries: HashMap<AssetRef, AssetEntry>,
 
     /// UI 表示順
-    order: Vec<AssetId>,
+    order: Vec<AssetRef>,
 }
 
 impl AssetRegistry {
-    pub fn get(&self, id: AssetId) -> Option<&AssetEntry> {
+    pub fn get(&self, id: AssetRef) -> Option<&AssetEntry> {
         self.entries.get(&id)
     }
 
-    fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetId> {
+    fn add(&mut self, entry: AssetEntry) -> anyhow::Result<AssetRef> {
         let id = entry.id;
 
         match self.entries.entry(id) {
@@ -66,7 +66,7 @@ impl AssetRegistry {
     }
 
     /// 指定 ID で外部ファイル参照を登録します。
-    pub fn add_external(&mut self, id: AssetId, path: &Path) -> anyhow::Result<AssetId> {
+    pub fn add_external(&mut self, id: AssetRef, path: &Path) -> anyhow::Result<AssetRef> {
         self.add(AssetEntry {
             id,
             name: path
@@ -85,10 +85,10 @@ impl AssetRegistry {
     /// 指定 ID でプロジェクト管理下のファイルを登録します。
     pub fn add_managed(
         &mut self,
-        id: AssetId,
+        id: AssetRef,
         name: String,
         path: PathBuf,
-    ) -> anyhow::Result<AssetId> {
+    ) -> anyhow::Result<AssetRef> {
         self.add(AssetEntry {
             id,
             name,
@@ -98,7 +98,7 @@ impl AssetRegistry {
         })
     }
 
-    pub fn remove(&mut self, id: AssetId) -> anyhow::Result<AssetEntry> {
+    pub fn remove(&mut self, id: AssetRef) -> anyhow::Result<AssetEntry> {
         let entry = self
             .entries
             .remove(&id)
@@ -109,7 +109,7 @@ impl AssetRegistry {
         Ok(entry)
     }
 
-    pub fn relink(&mut self, id: AssetId, new_location: AssetLocation) -> anyhow::Result<()> {
+    pub fn relink(&mut self, id: AssetRef, new_location: AssetLocation) -> anyhow::Result<()> {
         let entry = self
             .entries
             .get_mut(&id)
@@ -118,7 +118,7 @@ impl AssetRegistry {
         Ok(())
     }
 
-    pub fn resolve(&self, id: AssetId) -> anyhow::Result<&Path> {
+    pub fn resolve(&self, id: AssetRef) -> anyhow::Result<&Path> {
         let entry = self
             .entries
             .get(&id)
@@ -133,11 +133,11 @@ impl AssetRegistry {
         }
     }
 
-    /// 外部ファイル（プロジェクト外の実パス）をアセットとして登録し、その `AssetId` を返す。
+    /// 外部ファイル（プロジェクト外の実パス）をアセットとして登録し、その `AssetRef` を返す。
     ///
     /// 同一パスが既に登録済みなら既存の ID を返す（重複登録を避ける）。
     /// 登録は `External` として行い、ファイルの移動は `relink` で付け替える。
-    pub fn get_or_add_external(&mut self, path: &Path) -> anyhow::Result<AssetId> {
+    pub fn get_or_add_external(&mut self, path: &Path) -> anyhow::Result<AssetRef> {
         if let Some(id) = self
             .iter()
             .find(|entry| {
@@ -171,7 +171,7 @@ impl AssetRegistry {
     }
 
     /// パスからアセットIDを逆引きする。見つからなければ `None` を返す。
-    pub fn resolve_by_path(&self, path: &Path) -> Option<AssetId> {
+    pub fn resolve_by_path(&self, path: &Path) -> Option<AssetRef> {
         self.iter()
             .find(|entry| {
                 matches!(

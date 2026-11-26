@@ -1,71 +1,71 @@
 use std::{
     ops::Range,
     path::Path,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, RwLock},
 };
 
 use colored::Colorize;
 use esotereel_lib::{
-    StreamState,
     decode::streamplayer::{FetchState, StreamPlayer},
     plugin::{
-        NamespacedID, PluginLoader,
         clip::component::{ComponentCapability, RuntimeDefinition},
-        property::{PropertyKey, value::FieldValue},
+        property::{value::FieldValue, PropertyKey},
+        NamespacedID, PluginLoader,
     },
     project::{
-        Project,
         clip::{Clip, ClipBindingValue},
         ids::{ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
         layer_outline::{Meta, OutlineNode},
         timeline::TimelineMeta,
+        Project,
     },
     responces::ArchivedResponse,
-    util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
+    util::result::{EsotereelError, EsotereelResult, LockExt},
+    StreamState,
 };
 use log::info;
-use rkyv::Deserialize;
 
 use crate::state::ClientState;
 
-/// State Mutex は project の `Arc` とコールバック関数ポインタを取り出す間だけ
-/// 保持し、Project ロックを取得する前に解放する。
-/// ネットワークスレッドが State を保持したまま Project を待つと、Project の
-/// read ガードを保持して State を取りに来る GUI スレッドと AB-BA デッドロック
-/// になるため（docs/architecture/lock-order.md）。
-fn project_and_callback(
-    state: &Mutex<ClientState>,
-) -> EsotereelResult<(Arc<RwLock<Option<Project>>>, extern "C" fn(TimelineId))> {
-    let state_guard = state
-        .lock_or_err()?;
-    Ok((
-        Arc::clone(&state_guard.project),
-        state_guard.gui_callbacks.mark_dirty_timeline,
-    ))
-} // state_guard はここで drop される
-
-/// State ロックを保持し続けないよう、`plugin_loader` の `Arc` だけを
-/// 短時間の State ロックで取り出す。
-fn plugin_loader_of(state: &Mutex<ClientState>) -> EsotereelResult<Arc<RwLock<PluginLoader>>> {
-    let state_guard = state
-        .lock_or_err()?;
-    Ok(Arc::clone(&state_guard.common.plugin_loader))
+/// `check_archived_root` で検証済みのペイロードをデシリアライズする。
+///
+/// エラー型が `Infallible` なので失敗し得ないが、検証の前提が崩れた場合に
+/// panic ではなくコンパイルエラーで気付けるよう、網羅的に受ける。
+fn deserialize_validated<T, A>(archived: &A) -> T
+where
+    A: rkyv::Deserialize<T, rkyv::Infallible>,
+{
+    match archived.deserialize(&mut rkyv::Infallible) {
+        Ok(value) => value,
+        Err(error) => match error {},
+    }
 }
 
-/// デコード等の重い処理を State ロックなしで行うため、stream_players の
-/// `Arc` だけを短時間の State ロックで取り出す。
+/// project の `Arc` とコールバック関数ポインタを取り出す。
+/// ClientState 自体にロックは無く、メンバーはフィールド側の同期で保護される。
+fn project_and_callback(
+    state: &ClientState,
+) -> (Arc<RwLock<Option<Project>>>, extern "C" fn(TimelineId)) {
+    (state.project_arc(), state.gui_callbacks.mark_dirty_timeline)
+}
+
+/// `plugin_loader` の `Arc` だけを取り出す。
+fn plugin_loader_of(state: &ClientState) -> Arc<RwLock<PluginLoader>> {
+    state.plugin_loader_arc()
+}
+
+/// デコード等の重い処理を他のロックなしで行うため、stream_players の
+/// `Arc` だけを取り出す。
 fn stream_players_of(
-    state: &Mutex<ClientState>,
-) -> EsotereelResult<Arc<dashmap::DashMap<esotereel_lib::project::ids::ResourceId, StreamPlayer>>> {
-    let state_guard = state
-        .lock_or_err()?;
-    Ok(Arc::clone(&state_guard.stream_players))
+    state: &ClientState,
+) -> Arc<dashmap::DashMap<esotereel_lib::project::ids::ResourceId, StreamPlayer>> {
+    state.stream_players_arc()
 }
 
 pub(super) fn on_responce_recveve(
     responce: &ArchivedResponse,
-    state: &Mutex<ClientState>,
+    state: &ClientState,
 ) -> EsotereelResult<()> {
     match responce {
         ArchivedResponse::Test => {}
@@ -83,7 +83,7 @@ pub(super) fn on_responce_recveve(
                         })
                         .collect();
 
-                    let outline = archived.outline.deserialize(&mut rkyv::Infallible).unwrap();
+                    let outline = deserialize_validated(&archived.outline);
 
                     TimelineMeta {
                         id: archived.id,
@@ -97,26 +97,25 @@ pub(super) fn on_responce_recveve(
 
             let real_project = Project::from_meta(timeline_metas);
             let timeline_len = real_project.timeline_count();
-            let project_arc = Arc::new(RwLock::new(Some(real_project)));
 
-            let mut state_guard = state
-                .lock_or_err()?;
-            state_guard.project = project_arc;
+            // 差し替えは Arc の付け替えではなく、既存の RwLock への
+            // インプレース書き込みで行う。C++ が read ガードを保持中なら
+            // その解放まで待つ（ガードはフレーム単位で短命）。
+            *state.project.write_or_err()? = Some(real_project);
             // プロジェクトが再初期化されたため、タイムラインごとの最後の
             // FetchClipsInRange 送信記録をクリアする（新しいプロジェクトでの
             // 重複送信抑制が誤って働かないようにする）
-            state_guard.last_clips_fetch.clear();
+            state.last_clips_fetch.clear();
 
-            let fn_ptr = state_guard.gui_callbacks.mark_dirty_timeline;
-            drop(state_guard);
+            let fn_ptr = state.gui_callbacks.mark_dirty_timeline;
 
             for i in 0..timeline_len {
                 fn_ptr(i as TimelineId);
             }
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
-            let loader = plugin_loader_of(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
+            let loader = plugin_loader_of(state);
 
             // Project ロックを取る前にデシリアライズと動画ソースの解決を済ませる。
             // ソースパスはクリップ種別の能力宣言から解決し、プロパティ ID を
@@ -125,10 +124,9 @@ pub(super) fn on_responce_recveve(
             let mut sources = Vec::new();
             let loader_guard = loader.read_or_err().ok();
             for (layer_id, archived_clip) in clips.iter() {
-                let clip: Clip = archived_clip.deserialize(&mut rkyv::Infallible).unwrap();
+                let clip: Clip = deserialize_validated(archived_clip);
                 if let Some(loader_guard) = loader_guard.as_ref() {
-                    if let Ok(definition) =
-                        loader_guard.resolve_component_definition(&clip.kind_id)
+                    if let Ok(definition) = loader_guard.resolve_component_definition(&clip.kind_id)
                     {
                         if let Some(source) = video_source_path(&definition, &clip) {
                             sources.push(source);
@@ -153,8 +151,12 @@ pub(super) fn on_responce_recveve(
                 }
                 // クライアント側のアセットレジストリにも動画ソースを登録し、
                 // Project.assets をサーバーと整合したカタログとして保つ。
+                // ソースがアセット参照（UUID）の場合は登録時のエントリが既に
+                // あるはずで、参照文字列をパスとして登録し直してはいけない。
                 for source in sources {
-                    let _ = project.register_asset(Path::new(&source));
+                    if !is_asset_ref(&source) {
+                        let _ = project.register_asset(Path::new(&source));
+                    }
                 }
             }
 
@@ -167,8 +169,8 @@ pub(super) fn on_responce_recveve(
             key,
             value,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
-            let loader = plugin_loader_of(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
+            let loader = plugin_loader_of(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -180,9 +182,9 @@ pub(super) fn on_responce_recveve(
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
-                let clip_id: ClipId = clip_id.deserialize(&mut rkyv::Infallible).unwrap();
-                let key: PropertyKey = key.deserialize(&mut rkyv::Infallible).unwrap();
-                let value: ClipBindingValue = value.deserialize(&mut rkyv::Infallible).unwrap();
+                let clip_id: ClipId = deserialize_validated(clip_id);
+                let key: PropertyKey = deserialize_validated(key);
+                let value: ClipBindingValue = deserialize_validated(value);
 
                 // プロパティ変更が動画ソースなら、タイムライン貸し出しを解放した後に
                 // クライアントのアセットレジストリにも反映する。対象かどうかは
@@ -204,7 +206,9 @@ pub(super) fn on_responce_recveve(
             }
 
             if let Some(source) = new_source {
-                let _ = project.register_asset(Path::new(&source));
+                if !is_asset_ref(&source) {
+                    let _ = project.register_asset(Path::new(&source));
+                }
             }
 
             drop(project_guard);
@@ -214,7 +218,7 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             clip_ids,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -241,7 +245,7 @@ pub(super) fn on_responce_recveve(
             current_layer_id: _,
             ..
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -266,7 +270,7 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layers,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -294,7 +298,7 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             layer_ids,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -306,10 +310,10 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                 for archived_id in layer_ids.iter() {
-                    let id: LayerId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    let id: LayerId = deserialize_validated(archived_id);
                     timeline.remove_layer_local(id); // サーバー側のremove_layerと違い、
-                    // parentのchildren書き換えは不要
-                    // (親も別途upsertで送られてくるので)
+                                                     // parentのchildren書き換えは不要
+                                                     // (親も別途upsertで送られてくるので)
                 }
             }
 
@@ -322,7 +326,7 @@ pub(super) fn on_responce_recveve(
             folders,
             children,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -334,13 +338,13 @@ pub(super) fn on_responce_recveve(
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
 
                 for (id, meta) in folders.iter() {
-                    let meta: Meta = meta.deserialize(&mut rkyv::Infallible).unwrap();
+                    let meta: Meta = deserialize_validated(meta);
                     timeline.apply_outline_folder_meta(*id, meta);
                 }
                 for (parent, kids) in children.iter() {
                     let parent: Option<LayerFolderId> =
-                        parent.deserialize(&mut rkyv::Infallible).unwrap();
-                    let kids: Vec<OutlineNode> = kids.deserialize(&mut rkyv::Infallible).unwrap();
+                        deserialize_validated(parent);
+                    let kids: Vec<OutlineNode> = deserialize_validated(kids);
                     timeline.apply_outline_children(parent, kids);
                 }
             }
@@ -353,7 +357,7 @@ pub(super) fn on_responce_recveve(
             timeline_id,
             folder_ids,
         } => {
-            let (project_arc, fn_ptr) = project_and_callback(state)?;
+            let (project_arc, fn_ptr) = project_and_callback(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
@@ -364,7 +368,7 @@ pub(super) fn on_responce_recveve(
                     .timeline_mut(*timeline_id)
                     .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?;
                 for archived_id in folder_ids.iter() {
-                    let id: LayerFolderId = archived_id.deserialize(&mut rkyv::Infallible).unwrap();
+                    let id: LayerFolderId = deserialize_validated(archived_id);
                     timeline.remove_outline_folder_local(id);
                 }
             }
@@ -395,10 +399,7 @@ pub(super) fn on_responce_recveve(
             .map_err(|e| esotereel_lib::util::result::EsotereelError::IoError(e.to_string()))?;
 
             {
-                // この State ロックは DashMap への挿入のみで、他のロックを
-                // 取得しないため短時間保持のままにできる
-                let state = state
-                    .lock_or_err()?;
+                // DashMap への挿入のみ（各フィールドの内部同期で保護される）
                 state.stream_players.insert(*resource_id, player);
                 state
                     .stream_state_map
@@ -424,12 +425,12 @@ pub(super) fn on_responce_recveve(
             discontinuous,
             generation,
         } => {
-            let pts: Option<i64> = pts.deserialize(&mut rkyv::Infallible).unwrap();
-            let dts: Option<i64> = dts.deserialize(&mut rkyv::Infallible).unwrap();
+            let pts: Option<i64> = deserialize_validated(pts);
+            let dts: Option<i64> = deserialize_validated(dts);
 
             {
                 // デコードは重い処理のため、State ロックを保持したまま行わない
-                let stream_players = stream_players_of(state)?;
+                let stream_players = stream_players_of(state);
                 if let Some(mut player) = stream_players.get_mut(resource_id) {
                     // パケットをデコードしてフレームを取得
                     player
@@ -444,9 +445,9 @@ pub(super) fn on_responce_recveve(
             generation: _,
         } => {
             let fetched_ranges: Vec<Range<f64>> =
-                fetched_ranges.deserialize(&mut rkyv::Infallible).unwrap();
+                deserialize_validated(fetched_ranges);
 
-            let stream_players = stream_players_of(state)?;
+            let stream_players = stream_players_of(state);
             if let Some(mut player) = stream_players.get_mut(resource_id) {
                 player.fetch_state = FetchState::Idle;
                 player.free_no_needed_frames(&fetched_ranges); // Vec対応版
@@ -456,11 +457,11 @@ pub(super) fn on_responce_recveve(
             info!("asset import succeeded: {asset_id}");
         }
         ArchivedResponse::Failed { error } => {
-            let error: EsotereelError = error.deserialize(&mut rkyv::Infallible).unwrap();
+            let error: EsotereelError = deserialize_validated(error);
             return Err(error.into());
         }
         ArchivedResponse::DebugProjectStruct(server_str) => {
-            let (project_arc, _) = project_and_callback(state)?;
+            let (project_arc, _) = project_and_callback(state);
             let project_guard = project_arc.read_or_err()?;
 
             if let Some(project) = project_guard.as_ref() {
@@ -479,6 +480,11 @@ pub(super) fn on_responce_recveve(
         }
     }
     Ok(())
+}
+
+/// ソース文字列がアセット参照（UUID 形式）かどうか。
+fn is_asset_ref(source: &str) -> bool {
+    uuid::Uuid::parse_str(source).is_ok()
 }
 
 /// クリッププロパティから動画ソースのパス文字列を取り出す。

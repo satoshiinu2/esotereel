@@ -2,9 +2,7 @@ use super::*;
 use crate::{
     StreamState,
     decode::streamplayer::StreamPlayer,
-    plugin::{
-        NamespacedID, PluginLoader, property::value::FieldValue, script::api::register_render_api,
-    },
+    plugin::{NamespacedID, PluginLoader, property::value::FieldValue},
     project::{
         Timeline,
         clip::{ClipBindingValue, ShaderStackEntry},
@@ -68,7 +66,9 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
     );
     let mut ids = IdGenerator::default();
     let mut timeline = Timeline::new_empty(1, 60.0);
-    let layer = timeline.insert_layer(&mut ids, "Video".into(), None, None);
+    let layer = timeline
+        .insert_layer(&mut ids, "Video".into(), None, None)
+        .unwrap();
     timeline
         .new_clip_in(layer, &mut ids, 0, 60, kind, properties)
         .unwrap();
@@ -98,8 +98,6 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
     paths.insert("fixture.mp4".into(), StreamState::Loaded(1));
     let cache = Arc::new(MediaFetchCache::default());
     let loader = Arc::new(RwLock::new(loader));
-    let mut engine = rhai::Engine::new();
-    register_render_api(&mut engine);
     let camera = CameraInfo {
         position: Vec3::ZERO,
         rotation: Vec3::ZERO,
@@ -114,7 +112,6 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
         streams: &streams,
         media_fetch_cache: &cache,
         plugin_loader: &loader,
-        script_engine: &engine,
         timeline: &timeline,
         camera_info: &camera,
         current_frame: 0,

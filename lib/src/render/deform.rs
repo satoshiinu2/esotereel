@@ -36,7 +36,7 @@ pub fn apply_shader_stacks(
     util: &mut WGpuUtil,
     ctx: &RenderContext,
     batches: &mut [RenderBatch],
-    deformations: &[ClipDeformation],
+    deformations: &[ClipDeformation<'_>],
     screen_size: [f32; 2],
     view_projection: Mat4,
 ) {
@@ -61,7 +61,7 @@ pub fn apply_shader_stacks(
         // スタックに載せられるのは compute シェーダだけです。
         // 見つからない定義と render 用シェーダは警告して読み飛ばします。
         let mut entries: Vec<(&ShaderStackEntry, Arc<ShaderDefinition>)> = Vec::new();
-        for entry in &deformation.shader_stack {
+        for entry in deformation.shader_stack {
             let Some(definition) = definitions.get(&entry.shader_id) else {
                 log::warn!(
                     "shader `{}` not found, skipping stack entry",
@@ -76,7 +76,7 @@ pub fn apply_shader_stacks(
                 );
                 continue;
             }
-            entries.push((entry, definition.clone()));
+            entries.push((entry, Arc::clone(&definition)));
         }
         if entries.is_empty() {
             continue;

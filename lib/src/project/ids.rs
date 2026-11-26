@@ -23,7 +23,7 @@ pub type ScriptId = u64;
 /// リソース識別子（`u32`）。
 pub type ResourceId = u32;
 /// アセット識別子（`Uuid`）。
-pub type AssetId = Uuid;
+pub type AssetRef = Uuid;
 
 /// 各種 ID の採番生成器です。
 ///

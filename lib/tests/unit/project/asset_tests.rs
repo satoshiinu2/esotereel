@@ -7,7 +7,7 @@ fn get_or_add_external_deduplicates_by_path() {
 
     let id1 = registry.get_or_add_external(path).unwrap();
     let id2 = registry.get_or_add_external(path).unwrap();
-    assert_eq!(id1, id2, "同一パスは同じ AssetId を返すべき");
+    assert_eq!(id1, id2, "同一パスは同じ AssetRef を返すべき");
     assert_eq!(registry.iter().count(), 1, "重複登録されない");
 }
 

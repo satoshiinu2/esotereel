@@ -140,6 +140,10 @@ impl LayerOutline {
         }
     }
 
+    pub fn has_folder(&self, id: LayerFolderId) -> bool {
+        self.folders.contains_key(&id)
+    }
+
     fn insert(&mut self, node: OutlineNode, parent: Option<LayerFolderId>, index: Option<usize>) {
         let siblings = self.children_mut(parent).expect("parent folder not found");
         let idx = index.unwrap_or(siblings.len()).min(siblings.len());

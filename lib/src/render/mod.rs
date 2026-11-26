@@ -37,8 +37,6 @@ pub struct RenderContext<'a> {
 
     /// プラグインローダー。`Arc<RwLock<>>` で共有される。
     pub plugin_loader: &'a Arc<RwLock<PluginLoader>>,
-    /// Rhai スクリプトエンジン。
-    pub script_engine: &'a rhai::Engine,
 
     /// プロジェクト。アセットレジストリ（`Project.assets`）へのアクセスに使用し、
     /// 動画ソースがアセットID（UUID）形式の場合に実パスを解決する。

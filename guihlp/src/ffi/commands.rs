@@ -1,8 +1,8 @@
-use std::{panic::{AssertUnwindSafe, catch_unwind}, sync::Arc};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use esotereel_lib::{
     project::ids::{LayerFolderId, LayerId, TimelineId},
-    util::result::{EsotereelError, MutexExt},
+    util::result::EsotereelError,
 };
 
 use crate::{
@@ -50,11 +50,7 @@ pub unsafe extern "C" fn command_queue_send_all(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let network = {
-            let guard = state
-                .lock_or_err()?;
-            Arc::clone(&guard.network)
-        };
+        let network = state.network_arc();
 
         catch_unwind(AssertUnwindSafe(|| {
             let queue = unsafe { &mut *ptr_queue };
@@ -203,11 +199,9 @@ pub unsafe extern "C" fn req_cmd_add_clip_dummy(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state
-            .lock_or_err()?;
 
         let queue = unsafe { &mut *ptr_queue };
-        queue.req_cmd_add_clip_dummy(&state_guard, timeline_id, position, layer_id)?;
+        queue.req_cmd_add_clip_dummy(&state, timeline_id, position, layer_id)?;
 
         Ok(())
     }
@@ -242,11 +236,10 @@ pub unsafe extern "C" fn req_cmd_add_clip_with_source(
         }
 
         let state = ClientStateHandle::from_ptr(ptr_state);
-        let state_guard = state.lock_or_err()?;
 
         let queue = unsafe { &mut *ptr_queue };
         queue.req_cmd_add_clip_with_source(
-            &state_guard,
+            &state,
             timeline_id,
             position,
             layer_id,

@@ -328,3 +328,63 @@ fn nested_property_edits_preserve_siblings_and_undo_redo() {
     );
     assert!(PropertyPath::parse("test:text//content").is_err());
 }
+
+#[test]
+fn clip_add_rewrites_media_source_to_asset_ref() {
+    use std::collections::BTreeMap;
+
+    use esotereel_lib::plugin::property::value::FieldValue;
+
+    let mut project = Project::new();
+    let timeline_id = project.insert_timeline(60.0);
+    let layer_id = *project
+        .timeline_ref(timeline_id)
+        .unwrap()
+        .iter_layers()
+        .next()
+        .unwrap()
+        .0;
+    let kind_id = NamespacedID::new("std", "video").unwrap();
+
+    let source_path = PropertyPath::parse("std:media#media/source").unwrap();
+    let media_map = BTreeMap::from([(
+        "source".to_string(),
+        FieldValue::String("/tmp/movie.mp4".to_string()),
+    )]);
+    let properties = HashMap::from([(
+        source_path.root().clone(),
+        ClipBindingValue::Static(FieldValue::Map(media_map)),
+    )]);
+    let media_paths = MediaPropertyPaths {
+        source: Some(source_path.clone()),
+        offset: None,
+    };
+
+    let clip_id = clip_add_core(
+        &mut project,
+        timeline_id,
+        layer_id,
+        0,
+        50,
+        kind_id,
+        properties,
+        Some(&media_paths),
+        None,
+    )
+    .unwrap();
+
+    let clip = project
+        .timeline_ref(timeline_id)
+        .unwrap()
+        .get_clip(clip_id)
+        .unwrap();
+    let FieldValue::String(source) = clip.get_property_path(&source_path).unwrap() else {
+        panic!("media source must remain a string");
+    };
+    // 生パスではなく、レジストリで実パスへ解決できる参照になっていること。
+    let asset_ref = uuid::Uuid::parse_str(source).expect("source must be an asset reference");
+    assert_eq!(
+        project.assets().resolve(asset_ref).unwrap(),
+        std::path::Path::new("/tmp/movie.mp4")
+    );
+}

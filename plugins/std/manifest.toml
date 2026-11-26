@@ -1,3 +1,4 @@
 id = "std"
 name = "The Standard Plugin"
 version = "0.0.1"
+permissions = ["media", "history"]

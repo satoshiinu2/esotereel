@@ -6,7 +6,7 @@ use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 use crate::plugin::clip::component::{
     ClipInstance, ComponentDefinition, RequirementResolution, RuntimeDefinition,
 };
-use crate::plugin::property::value::FieldValue;
+use crate::plugin::property::{PropertyKey, value::FieldValue};
 use crate::plugin::NamespacedID;
 use crate::project::clip::ClipBindingValue;
 
@@ -66,10 +66,19 @@ impl ComponentProps {
         instance: &ClipInstance,
         component: &ComponentDefinition,
     ) -> anyhow::Result<Self> {
+        Self::build_from_properties(definition, &instance.properties, component)
+    }
+
+    /// プロパティマップから直接構築する版。呼び出し側が `ClipInstance` を
+    /// 介さずマップへの参照を持っている場合に使う。
+    pub fn build_from_properties(
+        definition: &RuntimeDefinition,
+        properties: &HashMap<PropertyKey, ClipBindingValue>,
+        component: &ComponentDefinition,
+    ) -> anyhow::Result<Self> {
         let mut own = HashMap::new();
         for schema in &component.properties {
-            let value = instance
-                .properties
+            let value = properties
                 .get(&schema.key)
                 .cloned()
                 .map(PropsValue::Binding);
@@ -79,13 +88,13 @@ impl ComponentProps {
         for require in &component.requires {
             let dependency = match definition.resolve_requirement(component, require) {
                 Some(RequirementResolution::Property { schema, .. }) => {
-                    match instance.properties.get(&schema.key) {
+                    match properties.get(&schema.key) {
                         Some(value) => Dependency::Value(PropsValue::Binding(value.clone())),
                         None => Dependency::Unsatisfied,
                     }
                 }
                 Some(RequirementResolution::Member { schema, member, .. }) => {
-                    let member_value = match instance.properties.get(&schema.key) {
+                    let member_value = match properties.get(&schema.key) {
                         Some(ClipBindingValue::Static(FieldValue::Map(values))) => {
                             values.get(member).cloned()
                         }

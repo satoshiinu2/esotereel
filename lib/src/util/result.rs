@@ -11,7 +11,7 @@ use crate::{
     plugin::NamespacedID,
     project::{
         TimelineTick,
-        ids::{AssetId, ClipId, LayerId, ResourceId, TimelineId},
+        ids::{AssetRef, ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     },
     util::rkyv_with::UuidAsBytes,
 };
@@ -46,10 +46,12 @@ pub enum EsotereelError {
     InvalidCommand,
     ClipOverlap,
     InvalidLayerMove,
-    AssetNotFound(#[with(UuidAsBytes)] AssetId),
-    AssetAlreadyExists(#[with(UuidAsBytes)] AssetId),
+    AssetNotFound(#[with(UuidAsBytes)] AssetRef),
+    AssetAlreadyExists(#[with(UuidAsBytes)] AssetRef),
     UploadFailed(String),
     FileDropFailed(String),
+    LayerFolderNotFound(LayerFolderId),
+    CommandFailed(String),
 }
 
 impl fmt::Display for EsotereelError {
@@ -78,6 +80,10 @@ impl fmt::Display for EsotereelError {
             EsotereelError::AssetAlreadyExists(id) => write!(f, "Asset '{}' already exists", id),
             EsotereelError::UploadFailed(message) => write!(f, "Upload failed: {message}"),
             EsotereelError::FileDropFailed(message) => write!(f, "File drop failed: {message}"),
+            EsotereelError::LayerFolderNotFound(id) => {
+                write!(f, "Layer folder '{}' not found", id)
+            }
+            EsotereelError::CommandFailed(message) => write!(f, "Command failed: {message}"),
         }
     }
 }

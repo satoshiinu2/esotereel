@@ -44,7 +44,6 @@ pub fn render_frame_offscreen_ffi(
         streams: &state.stream_players,
         media_fetch_cache: &state.media_fetch_cache,
         plugin_loader: &state.plugin_loader,
-        script_engine: &state.script_engine,
         project: &state.project,
         timeline: &timeline,
         camera_info,
