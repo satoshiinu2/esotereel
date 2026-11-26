@@ -95,8 +95,15 @@ void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi) {
         state->run(StringView::toQString(addr_ffi));
     } else {
         qCWarning(logRust) << "Internal server failed to start";
-        QMessageBox::critical(nullptr, "Server error",
-                              "Failed to start the internal server.");
+        // このコールバックはサーバースレッドから呼ばれるため、ダイアログの
+        // 表示はメインスレッドへキューする。
+        QMetaObject::invokeMethod(
+            qApp,
+            []() {
+                QMessageBox::critical(nullptr, "Server error",
+                                      "Failed to start the internal server.");
+            },
+            Qt::QueuedConnection);
     }
 }
 
