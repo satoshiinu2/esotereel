@@ -23,6 +23,7 @@ use esotereel_lib::{
         MediaSec, Project, TimelineTick,
     },
     render::video::MediaFetchCache,
+    responces::{AutosaveGenerationWire, WireVersionStatus},
     state::{CommonState, HostState},
     util::result::LockExt,
     HostRole,
@@ -58,6 +59,50 @@ pub struct ClientState {
     /// バックグラウンドスレッド（bootstrap / network_run）で発生した非同期エラーを格納。
     /// C++ 側は `client_state_take_error` で取得・クリアできる。
     pub async_error: Arc<Mutex<Option<String>>>,
+
+    /// プロジェクトフォルダの事前確認（バージョン判定）結果。
+    /// C++ 側は FFI で取り出して段階表示に使う。
+    pub project_inspection: Arc<Mutex<Option<ProjectInspection>>>,
+
+    /// プロジェクトを開いた結果。
+    pub project_opened: Arc<Mutex<Option<ProjectOpenedInfo>>>,
+
+    /// 最後に保存が完了したプロジェクトフォルダ。
+    pub project_saved: Arc<Mutex<Option<String>>>,
+
+    /// サーバーから届いたオートセーブ世代の一覧。
+    pub autosave_generations: Arc<Mutex<Vec<AutosaveGenerationWire>>>,
+
+    /// サーバーが現在開いているプロジェクトフォルダ（開く／保存の
+    /// 応答で更新される）。プロジェクト設定タブの編集先に使う。
+    pub current_project_folder: Arc<RwLock<Option<String>>>,
+
+    /// 前回セッションが異常終了したかどうか（正常終了マーカー不在）。
+    pub previous_session_abnormal: bool,
+
+    /// 正常終了マーカーのパス。正常終了時に消す。
+    session_marker: Option<std::path::PathBuf>,
+}
+
+/// プロジェクトフォルダの事前確認結果です。
+#[derive(Debug, Clone)]
+pub struct ProjectInspection {
+    pub path: String,
+    pub version_major: u32,
+    pub version_minor: u32,
+    pub version_revision: u32,
+    pub status: WireVersionStatus,
+    pub project_id: String,
+}
+
+/// プロジェクトを開いた結果です。
+#[derive(Debug, Clone)]
+pub struct ProjectOpenedInfo {
+    pub path: String,
+    pub version_major: u32,
+    pub version_minor: u32,
+    pub version_revision: u32,
+    pub status: WireVersionStatus,
 }
 
 fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
@@ -125,6 +170,24 @@ impl ClientState {
             .set_value(log_filters_key, FieldValue::Map(log_filters))
             .expect("built-in log filters setting must exist");
 
+        // 異常終了の検知: 正常終了マーカーが残っていれば前回は異常終了。
+        // 検知したら今回分のマーカーを置き直す（正常終了時に消す）。
+        let session_marker = dirs_def.data_dir().ok().map(|dir| dir.join("session.marker"));
+        let previous_session_abnormal = session_marker
+            .as_ref()
+            .is_some_and(|marker| marker.exists());
+        if previous_session_abnormal {
+            log::warn!("previous session did not exit cleanly (session marker remained)");
+        }
+        if let Some(marker) = &session_marker {
+            if let Some(parent) = marker.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(error) = std::fs::write(marker, b"running") {
+                log::warn!("failed to write session marker {}: {error}", marker.display());
+            }
+        }
+
         let state = Self {
             common: CommonState::new::<ClientState>(dirs_def, None),
             network: Arc::new(ClientNetworkHandler::new()),
@@ -136,9 +199,31 @@ impl ClientState {
             media_fetch_cache: Arc::new(MediaFetchCache::default()),
             gui_callbacks,
             async_error: Arc::new(Mutex::new(None)),
+            project_inspection: Arc::new(Mutex::new(None)),
+            project_opened: Arc::new(Mutex::new(None)),
+            project_saved: Arc::new(Mutex::new(None)),
+            autosave_generations: Arc::new(Mutex::new(Vec::new())),
+            current_project_folder: Arc::new(RwLock::new(None)),
+            previous_session_abnormal,
+            session_marker,
         };
         state.apply_logging_settings();
         state
+    }
+
+    /// 正常終了を記録します（マーカーを消す）。次回起動時にマーカーが
+    /// 残っていなければ異常終了とは判定されません。
+    pub fn mark_clean_exit(&self) {
+        if let Some(marker) = &self.session_marker {
+            if let Err(error) = std::fs::remove_file(marker) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!(
+                        "failed to remove session marker {}: {error}",
+                        marker.display()
+                    );
+                }
+            }
+        }
     }
 
     pub fn apply_logging_settings(&self) {

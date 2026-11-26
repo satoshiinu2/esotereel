@@ -2,6 +2,7 @@ use std::any::Any;
 
 use esotereel_lib::{project::Project, util::result::format_any_error};
 
+pub mod app_settings;
 pub mod array;
 pub mod arrayview;
 pub mod commands;
@@ -11,6 +12,7 @@ pub mod internalserver;
 pub mod logger;
 pub mod option;
 pub mod project;
+pub mod project_files;
 pub mod render;
 pub mod requests;
 pub mod result;

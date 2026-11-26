@@ -482,8 +482,109 @@ pub(super) fn on_responce_recveve(
                 info!("Server project is None");
             }
         }
+        ArchivedResponse::ProjectInspected {
+            path,
+            version,
+            status,
+            project_id,
+        } => {
+            let inspection = crate::state::ProjectInspection {
+                path: path.to_string(),
+                version_major: version.major,
+                version_minor: version.minor,
+                version_revision: version.revision,
+                status: deserialize_validated(status),
+                project_id: project_id.to_string(),
+            };
+            info!(
+                "project inspected: {} (version {}.{}.{}, status {:?})",
+                inspection.path,
+                inspection.version_major,
+                inspection.version_minor,
+                inspection.version_revision,
+                inspection.status
+            );
+            if let Ok(mut slot) = state.project_inspection.lock() {
+                *slot = Some(inspection);
+            }
+        }
+        ArchivedResponse::ProjectOpened {
+            path,
+            version,
+            status,
+        } => {
+            let opened = crate::state::ProjectOpenedInfo {
+                path: path.to_string(),
+                version_major: version.major,
+                version_minor: version.minor,
+                version_revision: version.revision,
+                status: deserialize_validated(status),
+            };
+            info!("project opened: {}", opened.path);
+            if let Ok(mut folder) = state.current_project_folder.write_or_err() {
+                *folder = Some(opened.path.clone());
+            }
+            if let Ok(mut slot) = state.project_opened.lock() {
+                *slot = Some(opened);
+            }
+        }
+        ArchivedResponse::ProjectSaved { path } => {
+            info!("project saved: {path}");
+            if let Ok(mut folder) = state.current_project_folder.write_or_err() {
+                *folder = Some(path.to_string());
+            }
+            if let Ok(mut slot) = state.project_saved.lock() {
+                *slot = Some(path.to_string());
+            }
+        }
+        ArchivedResponse::KindTableSync { entries } => {
+            // 権威（core）からの全量配信でミラーの表を置き換える。
+            let (project_arc, _) = project_and_callback(state);
+            let project_guard = project_arc.read_or_err()?;
+            if let Some(project) = project_guard.as_ref() {
+                let parsed = parse_kind_entries(entries.iter().map(|name| name.as_str()));
+                project.replace_kind_table(parsed);
+            }
+        }
+        ArchivedResponse::KindTableAppended { start, entries } => {
+            let (project_arc, _) = project_and_callback(state);
+            let project_guard = project_arc.read_or_err()?;
+            if let Some(project) = project_guard.as_ref() {
+                let parsed = parse_kind_entries(entries.iter().map(|name| name.as_str()));
+                if !project.append_kind_entries(*start, &parsed) {
+                    log::error!(
+                        "kind table append from server disagrees with the local mirror (start {start}); keeping local table"
+                    );
+                }
+            }
+        }
+        ArchivedResponse::AutosaveGenerations { generations } => {
+            let generations: Vec<esotereel_lib::responces::AutosaveGenerationWire> =
+                deserialize_validated(generations);
+            info!("autosave generations received: {}", generations.len());
+            if let Ok(mut slot) = state.autosave_generations.lock() {
+                *slot = generations;
+            }
+        }
+        ArchivedResponse::AutosaveRestored { generation_id } => {
+            info!("autosave generation restored: {generation_id}");
+        }
     }
     Ok(())
+}
+
+/// 配信された kind 名一覧を解釈します。解釈できない名前は警告を残して
+/// 除きます（連番がずれるため、以降の追加配信は整合チェックで弾かれます）。
+fn parse_kind_entries<'a>(entries: impl Iterator<Item = &'a str>) -> Vec<NamespacedID> {
+    entries
+        .filter_map(|name| match NamespacedID::parse(name) {
+            Ok(kind) => Some(kind),
+            Err(error) => {
+                log::warn!("ignoring unparseable kind name `{name}` from server: {error}");
+                None
+            }
+        })
+        .collect()
 }
 
 /// ソース文字列がアセット参照（UUID 形式）かどうか。

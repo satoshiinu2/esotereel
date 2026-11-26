@@ -71,7 +71,7 @@ impl Default for AppSettings {
 
 /// 層（どのファイルから読んだ値か）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Layer {
+pub enum Layer {
     User,
     Project,
     Server,
@@ -79,7 +79,7 @@ enum Layer {
 
 impl SettingScope {
     /// この層がこのスコープのキーを設定できるかどうか。
-    fn allows(self, layer: Layer) -> bool {
+    pub fn allows(self, layer: Layer) -> bool {
         match (self, layer) {
             (SettingScope::UserOnly, Layer::User) => true,
             (SettingScope::ProjectOrServerOnly, Layer::Project)
@@ -236,6 +236,219 @@ impl AppSettings {
         }
         apply(self, value);
     }
+}
+
+/// 設定値の型です。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingValueKind {
+    Int,
+    UInt,
+    Bool,
+}
+
+/// 設定値です（層ファイルの読み書きと、エディタ表示用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingValue {
+    Int(i64),
+    UInt(u64),
+    Bool(bool),
+}
+
+impl SettingValue {
+    /// この値の型を返します。
+    pub fn kind(&self) -> SettingValueKind {
+        match self {
+            SettingValue::Int(_) => SettingValueKind::Int,
+            SettingValue::UInt(_) => SettingValueKind::UInt,
+            SettingValue::Bool(_) => SettingValueKind::Bool,
+        }
+    }
+
+    /// エディタ表示・入力用の文字列表現を返します。
+    pub fn to_display_string(&self) -> String {
+        match self {
+            SettingValue::Int(value) => value.to_string(),
+            SettingValue::UInt(value) => value.to_string(),
+            SettingValue::Bool(value) => value.to_string(),
+        }
+    }
+
+    /// 文字列表現から、型に合わせて値を解釈します。
+    pub fn parse_as(kind: SettingValueKind, text: &str) -> Option<SettingValue> {
+        match kind {
+            SettingValueKind::Int => text.parse().ok().map(SettingValue::Int),
+            SettingValueKind::UInt => text.parse().ok().map(SettingValue::UInt),
+            SettingValueKind::Bool => text.parse().ok().map(SettingValue::Bool),
+        }
+    }
+}
+
+/// 宣言済みキーの情報です（エディタが一覧表示に使います）。
+#[derive(Debug, Clone, Copy)]
+pub struct SettingKeyInfo {
+    /// ドット区切りのキー名（例: `chunk.unload_after_secs`）。
+    pub key: &'static str,
+    /// このキーが設定できるスコープ。
+    pub scope: SettingScope,
+    /// 値の型。
+    pub kind: SettingValueKind,
+    /// 既定値。`chunk.width_ticks` のように「未設定」が既定のキーは `None`。
+    pub default_value: Option<SettingValue>,
+}
+
+/// 宣言済みの全キーを返します。
+pub fn declared_keys() -> Vec<SettingKeyInfo> {
+    let defaults = AppSettings::default();
+    vec![
+        SettingKeyInfo {
+            key: "chunk.default_width_ticks",
+            scope: SettingScope::UserOnly,
+            kind: SettingValueKind::Int,
+            default_value: Some(SettingValue::Int(defaults.chunk_default_width_ticks)),
+        },
+        SettingKeyInfo {
+            key: "chunk.width_ticks",
+            scope: SettingScope::ProjectOrServerOnly,
+            kind: SettingValueKind::Int,
+            default_value: None,
+        },
+        SettingKeyInfo {
+            key: "chunk.unload_after_secs",
+            scope: SettingScope::Overridable,
+            kind: SettingValueKind::UInt,
+            default_value: Some(SettingValue::UInt(defaults.chunk_unload_after_secs)),
+        },
+        SettingKeyInfo {
+            key: "chunk.keep_frequently_used",
+            scope: SettingScope::Overridable,
+            kind: SettingValueKind::Bool,
+            default_value: Some(SettingValue::Bool(defaults.chunk_keep_frequently_used)),
+        },
+        SettingKeyInfo {
+            key: "autosave.interval_secs",
+            scope: SettingScope::UserOnly,
+            kind: SettingValueKind::UInt,
+            default_value: Some(SettingValue::UInt(defaults.autosave_interval_secs)),
+        },
+        SettingKeyInfo {
+            key: "autosave.generations",
+            scope: SettingScope::Overridable,
+            kind: SettingValueKind::UInt,
+            default_value: Some(SettingValue::UInt(u64::from(defaults.autosave_generations))),
+        },
+        SettingKeyInfo {
+            key: "autosave.max_total_bytes",
+            scope: SettingScope::UserOnly,
+            kind: SettingValueKind::UInt,
+            default_value: Some(SettingValue::UInt(defaults.autosave_max_total_bytes)),
+        },
+    ]
+}
+
+impl AppSettings {
+    /// 解決済みの実効値をキー名で引きます。未知のキーは `None` です。
+    pub fn value_of(&self, key: &str) -> Option<SettingValue> {
+        match key {
+            "chunk.default_width_ticks" => Some(SettingValue::Int(self.chunk_default_width_ticks)),
+            "chunk.width_ticks" => self.chunk_width_ticks.map(SettingValue::Int),
+            "chunk.unload_after_secs" => Some(SettingValue::UInt(self.chunk_unload_after_secs)),
+            "chunk.keep_frequently_used" => {
+                Some(SettingValue::Bool(self.chunk_keep_frequently_used))
+            }
+            "autosave.interval_secs" => Some(SettingValue::UInt(self.autosave_interval_secs)),
+            "autosave.generations" => Some(SettingValue::UInt(u64::from(self.autosave_generations))),
+            "autosave.max_total_bytes" => Some(SettingValue::UInt(self.autosave_max_total_bytes)),
+            _ => None,
+        }
+    }
+}
+
+/// 層ファイル（`settings.toml`）から、宣言済みキーの生値を読みます。
+///
+/// ファイルが無ければ空です。型が宣言と違う値は警告を残して除きます。
+pub fn read_layer_values(path: &Path) -> anyhow::Result<Vec<(String, SettingValue)>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(path)?;
+    let value: toml::Value = toml::from_str(&text)?;
+    let mut values = Vec::new();
+    for info in declared_keys() {
+        let Some((section, leaf)) = info.key.split_once('.') else {
+            continue;
+        };
+        let Some(raw) = value.get(section).and_then(|s| s.get(leaf)) else {
+            continue;
+        };
+        let parsed = match info.kind {
+            SettingValueKind::Int => raw.as_integer().map(SettingValue::Int),
+            SettingValueKind::UInt => raw
+                .as_integer()
+                .and_then(|v| u64::try_from(v).ok())
+                .map(SettingValue::UInt),
+            SettingValueKind::Bool => raw.as_bool().map(SettingValue::Bool),
+        };
+        match parsed {
+            Some(parsed) => values.push((info.key.to_string(), parsed)),
+            None => {
+                log::warn!(
+                    "ignoring setting `{}` in {}: type does not match the declaration",
+                    info.key,
+                    path.display()
+                );
+            }
+        }
+    }
+    Ok(values)
+}
+
+/// 層ファイルへキーを書き込みます（`None` でそのキーを削除＝既定値へ
+/// リセット）。他のキー（未知のキーを含む）は保持します。
+pub fn write_layer_value(
+    path: &Path,
+    key: &str,
+    value: Option<SettingValue>,
+) -> anyhow::Result<()> {
+    let (section, leaf) = key
+        .split_once('.')
+        .ok_or_else(|| anyhow::anyhow!("invalid setting key `{key}`"))?;
+    if !declared_keys().iter().any(|info| info.key == key) {
+        anyhow::bail!("unknown setting key `{key}`");
+    }
+    let mut doc = if path.exists() {
+        fs::read_to_string(path)?.parse::<toml_edit::DocumentMut>()?
+    } else {
+        toml_edit::DocumentMut::new()
+    };
+    match value {
+        Some(value) => {
+            let toml_value = match value {
+                SettingValue::Int(v) => toml_edit::Value::from(v),
+                SettingValue::UInt(v) => {
+                    let v = i64::try_from(v)
+                        .map_err(|_| anyhow::anyhow!("value {v} does not fit in TOML integers"))?;
+                    toml_edit::Value::from(v)
+                }
+                SettingValue::Bool(v) => toml_edit::Value::from(v),
+            };
+            let table = doc
+                .entry(section)
+                .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+                .as_table_mut()
+                .ok_or_else(|| anyhow::anyhow!("settings section `{section}` is not a table"))?;
+            table[leaf] = toml_edit::Item::Value(toml_value);
+        }
+        None => {
+            if let Some(table) = doc.get_mut(section).and_then(|item| item.as_table_mut()) {
+                table.remove(leaf);
+            }
+        }
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, doc.to_string())?;
+    Ok(())
 }
 
 /// TOML ファイルを部分設定として読み込みます。
