@@ -1,5 +1,4 @@
 use std::ops::Range;
-use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 use crate::{
@@ -8,12 +7,11 @@ use crate::{
         property::{ComponentCapability, value::FieldValue},
         script::api::PluginRenderContext,
     },
-    project::{Clip, Project, clip::ShaderStackEntry},
+    project::{Clip, Project, clip::ShaderStackEntry, ids::AssetRef},
     render::{RenderContext, vertex::Vertex},
     util::result::LockExt,
 };
 use glam::Mat4;
-use uuid::Uuid;
 
 /// 1 つのテクスチャと変換行列をまとめた頂点バッチです。
 ///
@@ -123,7 +121,7 @@ pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
         }
 
         let mut media_time = compute_media_seconds(clip, ctx.timeline.tps, ctx.current_frame);
-        let mut video_source: Option<String> = None;
+        let mut video_source: Option<AssetRef> = None;
 
         if let (Some(media_key), Some(source_member_key), Some(offset_member_key)) =
             (media_property_key, source_member_key, offset_member_key)
@@ -147,9 +145,9 @@ pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
                     media_time = seconds;
                 }
 
-                if let Some(FieldValue::String(source)) = media_map.get(source_member_key) {
-                    if !source.is_empty() {
-                        video_source = Some(source.clone());
+                if let Some(FieldValue::AssetRef(asset_ref)) = media_map.get(source_member_key) {
+                    if !asset_ref.is_nil() {
+                        video_source = Some(*asset_ref);
                     }
                 }
             }
@@ -164,14 +162,14 @@ pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
             Arc::clone(ctx.media_fetch_cache),
         );
 
-        if let Some(source) = video_source {
-            match resolve_video_source(&source, ctx.project) {
+        if let Some(asset_ref) = video_source {
+            match resolve_video_source(asset_ref, ctx.project) {
                 Some(resolved) => render_ctx.set_video_source(resolved),
                 None => {
-                    // source が UUID（アセットID）形式だがレジストリに未登録。
+                    // 参照先がレジストリで解決できない（未登録または Missing）。
                     // 存在しないパスをストリーム初期化に回さないよう、映像を供給しない。
                     log::warn!(
-                        "video source `{source}` is not registered in the project asset registry, skipping"
+                        "video source asset `{asset_ref}` could not be resolved in the project asset registry, skipping"
                     );
                 }
             }
@@ -217,20 +215,19 @@ fn compute_media_seconds(clip: &Clip, global_tps: f64, current_frame: i64) -> f6
     relative_frame as f64 / global_tps
 }
 
-/// 動画ソース文字列をレンダリング用のファイルパスに解決する。
+/// アセット参照をレンダリング用のファイルパスに解決する。
 ///
-/// 文字列が UUID（アセット参照）の形式であれば `Project.assets`（アセットレジストリ）
-/// 経由で実パスを解決する。それ以外は従来通り生パスをそのまま返す。
-/// UUID 形式だがレジストリに未登録の場合は `None` を返し、存在しないパスを
+/// `Project.assets`（アセットレジストリ）経由で実パスを解決する。
+/// 未登録・Missing の場合は `None` を返し、存在しないパスを
 /// ストリーム初期化に回さない。
-fn resolve_video_source(source: &str, project: &Arc<RwLock<Option<Project>>>) -> Option<String> {
-    if let Ok(id) = Uuid::parse_str(source) {
-        let guard = project.read_or_err().ok()?;
-        let project = guard.as_ref()?;
-        let path = project.assets().resolve(id).ok()?;
-        return Some(path.to_string_lossy().to_string());
-    }
-    Some(source.to_string())
+fn resolve_video_source(
+    asset_ref: AssetRef,
+    project: &Arc<RwLock<Option<Project>>>,
+) -> Option<String> {
+    let guard = project.read_or_err().ok()?;
+    let project = guard.as_ref()?;
+    let path = project.assets().resolve(asset_ref).ok()?;
+    Some(path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

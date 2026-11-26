@@ -12,7 +12,7 @@ use esotereel_lib::{
     project::ids::AssetRef,
     requests::Request,
     responces::{AssetAvailabilityWire, WireVersionStatus},
-    util::result::EsotereelError,
+    util::result::{EsotereelError, LockExt},
 };
 
 use crate::ffi::{
@@ -274,6 +274,43 @@ pub unsafe extern "C" fn req_relink_asset(
     }
 }
 
+/// ファイルパスをアセットとして登録し、採番された参照を返します。
+///
+/// ドロップ経路（`req_cmd_add_clip_with_source`）と同じく、参照は
+/// クライアントが採番してミラーへ登録し、サーバーへは参照登録だけを
+/// 送ります（クリップは作りません）。参照はバイト列のまま返します。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_register_asset_reference(
+    ptr_state: *const ClientStateHandle,
+    path: FfiStringView,
+) -> CAssetRefResult {
+    fn inner(ptr_state: *const ClientStateHandle, path: FfiStringView) -> anyhow::Result<CAssetRef> {
+        check_ptr(ptr_state)?;
+        let path = path.as_str()?.to_string();
+        let state = state_of(ptr_state);
+        let project_arc = state.project_arc();
+        let mut project_guard = project_arc.write_or_err()?;
+        let project = project_guard
+            .as_mut()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        let asset_ref = project.register_asset(std::path::Path::new(&path))?;
+        drop(project_guard);
+        network_of(ptr_state).send(&Request::RegisterAssetReference {
+            asset_id: asset_ref.to_string(),
+            path,
+            add_clip: None,
+        });
+        Ok(CAssetRef {
+            bytes: *asset_ref.as_bytes(),
+        })
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state, path))) {
+        Ok(r) => FfiResult::from_result(r),
+        Err(panic) => FfiResult::err_panic(panic),
+    }
+}
+
+pub type CAssetRefResult = FfiResult<CAssetRef>;
 pub type CProjectInspectionResult = FfiResult<FfiOption<CProjectInspection>>;
 pub type CProjectOpenedResult = FfiResult<FfiOption<CProjectOpened>>;
 pub type COptionStringResult = FfiResult<FfiOption<FfiOwnedString>>;

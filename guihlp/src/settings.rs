@@ -19,6 +19,7 @@ pub enum SettingsFieldType {
     Color,
     Array,
     Map,
+    AssetRef,
 }
 
 #[repr(C)]
@@ -59,6 +60,7 @@ impl FfiPropertySchema {
             FieldTypeKind::Float { .. } => SettingsFieldType::Float,
             FieldTypeKind::Enum { .. } => SettingsFieldType::Enum,
             FieldTypeKind::String => SettingsFieldType::String,
+            FieldTypeKind::AssetRef => SettingsFieldType::AssetRef,
             FieldTypeKind::FilePath { .. } => SettingsFieldType::FilePath,
             FieldTypeKind::Color => SettingsFieldType::Color,
             FieldTypeKind::Array { .. } => SettingsFieldType::Array,

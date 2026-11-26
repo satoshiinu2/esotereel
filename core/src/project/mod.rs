@@ -9,13 +9,13 @@ use esotereel_lib::{
     },
     project::{
         Clip, Project, TimelineTick,
+        asset::AssetRegistry,
         clip::{ClipBindingValue, get_property_path_from_map, set_property_path_in_map},
         command::{ClipMoveHistoryCtx, ClipResizeHistoryCtx},
-        ids::{ClipId, LayerId, TimelineId},
+        ids::{AssetRef, ClipId, LayerId, TimelineId},
     },
     util::result::EsotereelError,
 };
-use uuid::Uuid;
 
 pub(crate) mod commands;
 pub(crate) mod history;
@@ -208,38 +208,67 @@ pub(crate) fn clip_resize_core(
     Ok(())
 }
 
-/// メディアソースの文字列をアセット参照へ書き換える。
+/// 文字列で書かれたメディアソースを、レジストリを参照して `AssetRef` 値へ
+/// 変換します。
 ///
-/// 既に UUID 形式なら、レジストリ登録済みの場合のみ正しい参照とみなして何もしない。
-/// 未登録の UUID は存在しないパスとして登録し直したりせず、警告を出してそのままに
-/// する（描画側でも未登録として警告・スキップされる）。
-/// パスなら `Project.assets` へ登録し、返ってきた参照でプロパティを書き換える。
-/// 登録に失敗してもクリップ追加自体は続行するが、無言にはしない。
-fn rewrite_source_to_asset_ref(
-    project: &mut Project,
-    properties: &mut HashMap<PropertyKey, ClipBindingValue>,
-    source_path: &PropertyPath,
+/// - 空文字列は未設定（nil UUID）になります。
+/// - UUID 形式ならその参照になります。未登録の UUID は存在しないパスとして
+///   登録し直したりせず、警告を出して参照のままにします（描画側でも未登録
+///   として警告・スキップされます）。
+/// - 生パスならレジストリへ登録し、返ってきた参照になります。登録に失敗した
+///   場合は警告を出して `None` を返します（呼び出し側は文字列を残します）。
+fn legacy_source_string_to_asset_ref(
+    assets: &mut AssetRegistry,
     source: &str,
-) {
-    if let Ok(id) = Uuid::parse_str(source) {
-        if project.assets().get(id).is_none() {
+) -> Option<FieldValue> {
+    if source.is_empty() {
+        return Some(FieldValue::AssetRef(AssetRef::nil()));
+    }
+    if let Ok(id) = source.parse::<AssetRef>() {
+        if assets.get(id).is_none() {
             log::warn!(
-                "video source `{source}` is not registered in the project asset registry"
+                "media source `{source}` is not registered in the project asset registry"
             );
         }
-        return;
+        return Some(FieldValue::AssetRef(id));
     }
-    match project.register_asset(Path::new(source)) {
-        Ok(id) => {
-            let value = ClipBindingValue::Static(FieldValue::String(id.to_string()));
-            if let Err(error) = set_property_path_in_map(properties, source_path, value) {
-                log::warn!(
-                    "failed to rewrite video source `{source}` to an asset reference: {error:#}"
-                );
-            }
-        }
+    match assets.get_or_add_external(Path::new(source)) {
+        Ok(id) => Some(FieldValue::AssetRef(id)),
         Err(error) => {
             log::warn!("failed to register asset `{source}`: {error:#}");
+            None
+        }
+    }
+}
+
+/// プロパティマップ内のメディアソースを `AssetRef` 値へ確定させます。
+///
+/// 既に `AssetRef` 値なら何もしません。文字列なら変換を試み、変換できたら
+/// 書き換えて `true` を返します。登録に失敗した場合は文字列のままにして
+/// `false` を返します（次にプロジェクトを開いたときの変換で再試行されます）。
+/// クリップ作成経路（`clip_add_core`）と、旧形式プロジェクトを開くときの
+/// 変換（`crate::project_files::convert_legacy_media_sources`）の共通処理です。
+pub(crate) fn resolve_source_to_asset_ref(
+    assets: &mut AssetRegistry,
+    properties: &mut HashMap<PropertyKey, ClipBindingValue>,
+    source_path: &PropertyPath,
+) -> bool {
+    let Some(FieldValue::String(source)) =
+        get_property_path_from_map(properties, source_path).cloned()
+    else {
+        return false;
+    };
+    let Some(value) = legacy_source_string_to_asset_ref(assets, &source) else {
+        return false;
+    };
+    let value = ClipBindingValue::Static(value);
+    match set_property_path_in_map(properties, source_path, value) {
+        Ok(()) => true,
+        Err(error) => {
+            log::warn!(
+                "failed to store asset reference for media source `{source}`: {error:#}"
+            );
+            false
         }
     }
 }
@@ -258,17 +287,11 @@ pub(crate) fn clip_add_core(
     preferred_clip_id: Option<ClipId>,
 ) -> anyhow::Result<ClipId> {
     // クリップのメディアソースをアセットレジストリへ登録し、`source` プロパティを
-    // 生パスからアセット参照（`AssetRef` の文字列表現）へ書き換える。以後の解決は
+    // 生パスや UUID 文字列から `AssetRef` 型の値へ確定させる。以後の解決は
     // 描画側がレジストリ経由で行う。ソースへのパスは呼び出し側が能力ベースで
     // 解決したものを使う（AGENTS.md 第9条）。
     if let Some(source_path) = media_paths.and_then(|paths| paths.source.as_ref()) {
-        if let Some(FieldValue::String(source)) =
-            get_property_path_from_map(&properties, source_path).cloned()
-        {
-            if !source.is_empty() {
-                rewrite_source_to_asset_ref(project, &mut properties, source_path, &source);
-            }
-        }
+        resolve_source_to_asset_ref(project.assets_mut(), &mut properties, source_path);
     }
 
     if let Some(existing) = preferred_clip_id {

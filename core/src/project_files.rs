@@ -27,7 +27,7 @@ use esotereel_lib::{
         asset::hash_file_blake3,
         autosave::{list_autosave_generations, restore_autosave_generation},
         clip::get_property_path_from_map,
-        ids::AssetRef,
+        ids::{AssetRef, ClipId, TimelineId},
         save::{backup_project_folder, inspect_project, load_project, save_project},
         Project,
     },
@@ -160,10 +160,12 @@ pub fn broadcast_kind_appends(state: &ServerState) {
 ///
 /// source はクリップ種別の能力宣言（`FrameProvider` の `media-source`
 /// メンバー）から解決し、プロパティ ID をハードコードしません
-/// （AGENTS.md 第9条）。UUID 形式の source だけを参照として数え、
-/// 生パスは対象外です。実体がアンロードされているチャンクのクリップ
-/// は走査に含まれないため、正確な判定が要る呼び出し側は事前に
-/// `ensure_all_chunks_loaded` で読み込んでおくこと。
+/// （AGENTS.md 第9条）。`AssetRef` 型の値だけを参照として数え、未設定
+/// （nil UUID）は対象外です。旧形式の文字列 source は、プロジェクトを
+/// 開くときの変換で型付き値になるため、ここでは扱いません。実体が
+/// アンロードされているチャンクのクリップは走査に含まれないため、
+/// 正確な判定が要る呼び出し側は事前に `ensure_all_chunks_loaded` で
+/// 読み込んでおくこと。
 pub fn used_asset_refs(project: &Project, loader: &PluginLoader) -> HashSet<AssetRef> {
     let mut used = HashSet::new();
     let mut source_paths: HashMap<NamespacedID, Option<PropertyPath>> = HashMap::new();
@@ -180,16 +182,80 @@ pub fn used_asset_refs(project: &Project, loader: &PluginLoader) -> HashSet<Asse
             let Some(source_path) = source_path else {
                 continue;
             };
-            if let Some(FieldValue::String(source)) =
+            if let Some(FieldValue::AssetRef(asset_ref)) =
                 get_property_path_from_map(&clip.properties, source_path)
             {
-                if let Ok(id) = source.parse::<AssetRef>() {
-                    used.insert(id);
+                if !asset_ref.is_nil() {
+                    used.insert(*asset_ref);
                 }
             }
         }
     }
     used
+}
+
+/// 旧形式（文字列）のメディア source を `AssetRef` 値へ変換します。
+///
+/// 形式 1.0.0 では source が文字列（UUID 文字列または生パス）で保存されて
+/// いました。変換にはプラグイン定義からのパス解決が要るため、lib の
+/// 読み込みではなく、プロジェクトを開くここで行います。変換は冪等で、
+/// 変換した件数を返します。個々の変換はログに残します。
+pub fn convert_legacy_media_sources(project: &mut Project, loader: &PluginLoader) -> usize {
+    let mut source_paths: HashMap<NamespacedID, Option<PropertyPath>> = HashMap::new();
+    let mut targets: Vec<(TimelineId, ClipId, PropertyPath)> = Vec::new();
+    for (timeline_id, timeline) in project.iter_timelines() {
+        for (clip_id, clip) in timeline.iter_clips() {
+            let source_path = source_paths
+                .entry(clip.kind_id.clone())
+                .or_insert_with(|| {
+                    loader
+                        .resolve_component_definition(&clip.kind_id)
+                        .ok()
+                        .and_then(|definition| MediaPropertyPaths::resolve(&definition).source)
+                });
+            let Some(source_path) = source_path else {
+                continue;
+            };
+            if matches!(
+                get_property_path_from_map(&clip.properties, source_path),
+                Some(FieldValue::String(_))
+            ) {
+                targets.push((*timeline_id, *clip_id, source_path.clone()));
+            }
+        }
+    }
+
+    let mut converted = 0;
+    for (timeline_id, clip_id, source_path) in targets {
+        // 変換ではレジストリへの登録で project を借用するため、タイムラインの
+        // 借用と重ねないようプロパティを取り出してから書き戻す。
+        let mut properties = {
+            let Some(timeline) = project.timeline_mut(timeline_id) else {
+                continue;
+            };
+            let Some(clip) = timeline.get_clip_mut(clip_id) else {
+                continue;
+            };
+            std::mem::take(&mut clip.properties)
+        };
+        if crate::project::resolve_source_to_asset_ref(
+            project.assets_mut(),
+            &mut properties,
+            &source_path,
+        ) {
+            converted += 1;
+            log::info!(
+                "converted legacy string media source of clip {clip_id} to an asset reference"
+            );
+        }
+        let Some(timeline) = project.timeline_mut(timeline_id) else {
+            continue;
+        };
+        if let Some(clip) = timeline.get_clip_mut(clip_id) {
+            clip.properties = properties;
+        }
+    }
+    converted
 }
 
 /// 現在のアセット表を転送形で組み立てます。
@@ -450,14 +516,26 @@ pub fn handle_open_project(state: &Arc<ServerState>, client_id: u32, path: &str,
         let version = loaded.version.into();
         let status = loaded.status.into();
         let mut project = loaded.project;
+        // 旧形式の文字列 source は、開くときに AssetRef 値へ変換する。
+        let converted = {
+            let loader = state.common.plugin_loader.read_or_err()?;
+            convert_legacy_media_sources(&mut project, &loader)
+        };
+        if converted > 0 {
+            log::info!("converted {converted} legacy media source(s) to asset references");
+        }
         project.attach_folder_chunk_stores(&dir);
-        anyhow::Ok((project, dir.clone(), version, status))
+        anyhow::Ok((project, dir.clone(), version, status, converted))
     })();
     match result {
-        Ok((project, dir, version, status)) => {
+        Ok((project, dir, version, status, converted)) => {
             if let Err(error) = install_project(state, client_id, project, Some(dir.clone())) {
                 send_failed(state, client_id, "open project", &error);
                 return;
+            }
+            if converted > 0 {
+                // 変換結果をオートセーブで永続化できるよう、変更ありにする。
+                state.project_dirty.store(true, Ordering::SeqCst);
             }
             state.network.send(
                 client_id,
@@ -623,6 +701,12 @@ pub fn handle_restore_autosave_generation(
         let data_dir = state.dir.data_dir()?;
         let loaded = restore_autosave_generation(&data_dir, generation_id)?;
         let mut project = loaded.project;
+        // 旧形式の世代には文字列 source が残っていることがあるため、
+        // 書き出し直す前に AssetRef 値へ変換する。
+        {
+            let loader = state.common.plugin_loader.read_or_err()?;
+            convert_legacy_media_sources(&mut project, &loader);
+        }
         let folder = temp_project_folder(state, project.id())?;
         project.ensure_all_chunks_loaded()?;
         save_project(&project, &folder)?;
@@ -723,3 +807,7 @@ pub fn spawn_fingerprint_backfill(state: &Arc<ServerState>) {
         }
     });
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/project_files_tests.rs"]
+mod tests;

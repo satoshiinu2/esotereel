@@ -4,7 +4,7 @@ use crate::{
     decode::streamplayer::StreamPlayer,
     plugin::{NamespacedID, PluginLoader, property::value::FieldValue},
     project::{
-        Timeline,
+        Project, Timeline,
         clip::{ClipBindingValue, ShaderStackEntry},
         ids::IdGenerator,
     },
@@ -43,7 +43,10 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
     let ClipBindingValue::Static(FieldValue::Map(media)) = media_value else {
         panic!("media property must be a map")
     };
-    media.insert("source".into(), FieldValue::String("fixture.mp4".into()));
+    // source は AssetRef 型の値で持ち、描画側はプロジェクトのレジストリ経由で
+    // 実パス（ここではストリームキャッシュのキー "fixture.mp4"）へ解決する。
+    let fixture_ref = uuid::Uuid::from_u128(1);
+    media.insert("source".into(), FieldValue::AssetRef(fixture_ref));
     let transform_value = properties
         .get_mut(
             &crate::plugin::property::PropertyKey::new(
@@ -106,7 +109,11 @@ fn with_preview(test: impl FnOnce(&RenderContext)) {
         scale_factor: 1.0,
         fov: 60.0,
     };
-    let project = Arc::new(RwLock::new(None));
+    let mut project_inner = Project::new();
+    project_inner
+        .register_external_asset(fixture_ref, std::path::Path::new("fixture.mp4"))
+        .unwrap();
+    let project = Arc::new(RwLock::new(Some(project_inner)));
     test(&RenderContext {
         path_to_stream: &paths,
         streams: &streams,

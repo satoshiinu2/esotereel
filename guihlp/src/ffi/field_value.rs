@@ -1,6 +1,11 @@
-use esotereel_lib::{plugin::property::value::FieldValue, util::color::RgbaColor};
+use esotereel_lib::{
+    plugin::property::value::FieldValue, project::ids::AssetRef, util::color::RgbaColor,
+};
 
-use crate::ffi::stringview::{FfiOwnedString, FfiOwnedStringArray};
+use crate::ffi::{
+    project_files::CAssetRef,
+    stringview::{FfiOwnedString, FfiOwnedStringArray},
+};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,6 +19,7 @@ pub enum CFieldValueTag {
     Color,
     Array,
     Map,
+    AssetRef,
 }
 
 #[repr(C)]
@@ -39,6 +45,8 @@ pub union CFieldValueData {
 
     pub array_value: CFieldValueArray,
     pub map_value: CFieldValueMap,
+
+    pub asset_ref_value: CAssetRef,
 }
 
 #[repr(C)]
@@ -205,6 +213,15 @@ impl CFieldValue {
                     },
                 }
             }
+
+            FieldValue::AssetRef(v) => CFieldValue {
+                tag: CFieldValueTag::AssetRef,
+                data: CFieldValueData {
+                    asset_ref_value: CAssetRef {
+                        bytes: *v.as_bytes(),
+                    },
+                },
+            },
         }
     }
 
@@ -299,6 +316,10 @@ impl CFieldValue {
 
                     Ok(FieldValue::Map(result))
                 }
+
+                CFieldValueTag::AssetRef => Ok(FieldValue::AssetRef(AssetRef::from_bytes(
+                    self.data.asset_ref_value.bytes,
+                ))),
             }
         }
     }
@@ -309,7 +330,8 @@ impl CFieldValue {
                 CFieldValueTag::Bool
                 | CFieldValueTag::Int
                 | CFieldValueTag::Float
-                | CFieldValueTag::Color => {}
+                | CFieldValueTag::Color
+                | CFieldValueTag::AssetRef => {}
 
                 CFieldValueTag::Enum => {
                     self.data.enum_value.free();

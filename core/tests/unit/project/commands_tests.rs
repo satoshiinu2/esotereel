@@ -378,13 +378,106 @@ fn clip_add_rewrites_media_source_to_asset_ref() {
         .unwrap()
         .get_clip(clip_id)
         .unwrap();
-    let FieldValue::String(source) = clip.get_property_path(&source_path).unwrap() else {
-        panic!("media source must remain a string");
+    let FieldValue::AssetRef(asset_ref) = clip.get_property_path(&source_path).unwrap() else {
+        panic!("media source must be an asset reference value");
     };
     // 生パスではなく、レジストリで実パスへ解決できる参照になっていること。
-    let asset_ref = uuid::Uuid::parse_str(source).expect("source must be an asset reference");
     assert_eq!(
-        project.assets().resolve(asset_ref).unwrap(),
+        project.assets().resolve(*asset_ref).unwrap(),
         std::path::Path::new("/tmp/movie.mp4")
+    );
+}
+
+#[test]
+fn legacy_source_strings_convert_to_asset_ref_values() {
+    use std::collections::BTreeMap;
+
+    use esotereel_lib::plugin::property::value::FieldValue;
+
+    // 旧形式（文字列）のメディア source を開くときの変換契約を、
+    // 1クリップ分の変換処理（resolve_source_to_asset_ref）で検証する。
+    let mut project = Project::new();
+    let registered_id = uuid::Uuid::new_v4();
+    project
+        .register_external_asset(registered_id, std::path::Path::new("/tmp/registered.mp4"))
+        .unwrap();
+
+    let source_path = PropertyPath::parse("std:media#media/source").unwrap();
+    let properties_with = |source: FieldValue| {
+        HashMap::from([(
+            source_path.root().clone(),
+            ClipBindingValue::Static(FieldValue::Map(BTreeMap::from([(
+                "source".to_string(),
+                source,
+            )]))),
+        )])
+    };
+    let source_of = |properties: &HashMap<PropertyKey, ClipBindingValue>| {
+        let map = properties.get(source_path.root()).unwrap();
+        let ClipBindingValue::Static(FieldValue::Map(map)) = map else {
+            panic!("media property must be a map");
+        };
+        map.get("source").unwrap().clone()
+    };
+
+    // UUID 文字列（登録済み）→ その参照値になる。
+    let mut properties = properties_with(FieldValue::String(registered_id.to_string()));
+    assert!(crate::project::resolve_source_to_asset_ref(
+        project.assets_mut(),
+        &mut properties,
+        &source_path
+    ));
+    assert_eq!(
+        source_of(&properties),
+        FieldValue::AssetRef(registered_id)
+    );
+
+    // 生パス → 登録してから参照値になり、レジストリで実パスへ解決できる。
+    let mut properties = properties_with(FieldValue::String("/tmp/legacy.mp4".to_string()));
+    assert!(crate::project::resolve_source_to_asset_ref(
+        project.assets_mut(),
+        &mut properties,
+        &source_path
+    ));
+    let FieldValue::AssetRef(new_ref) = source_of(&properties) else {
+        panic!("raw path source must become an asset reference value");
+    };
+    assert_eq!(
+        project.assets().resolve(new_ref).unwrap(),
+        std::path::Path::new("/tmp/legacy.mp4")
+    );
+
+    // 空文字列 → 未設定（nil UUID）になる。
+    let mut properties = properties_with(FieldValue::String(String::new()));
+    assert!(crate::project::resolve_source_to_asset_ref(
+        project.assets_mut(),
+        &mut properties,
+        &source_path
+    ));
+    assert_eq!(
+        source_of(&properties),
+        FieldValue::AssetRef(uuid::Uuid::nil())
+    );
+
+    // UUID 文字列（未登録）→ 参照値になる（解決できない参照として残る）。
+    let unknown_id = uuid::Uuid::new_v4();
+    let mut properties = properties_with(FieldValue::String(unknown_id.to_string()));
+    assert!(crate::project::resolve_source_to_asset_ref(
+        project.assets_mut(),
+        &mut properties,
+        &source_path
+    ));
+    assert_eq!(source_of(&properties), FieldValue::AssetRef(unknown_id));
+
+    // 既に AssetRef 値なら触らない。
+    let mut properties = properties_with(FieldValue::AssetRef(registered_id));
+    assert!(!crate::project::resolve_source_to_asset_ref(
+        project.assets_mut(),
+        &mut properties,
+        &source_path
+    ));
+    assert_eq!(
+        source_of(&properties),
+        FieldValue::AssetRef(registered_id)
     );
 }

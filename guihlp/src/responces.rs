@@ -1,17 +1,13 @@
 use std::{
     ops::Range,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{Arc, RwLock},
 };
 
 use colored::Colorize;
 use esotereel_lib::{
     decode::streamplayer::{FetchState, StreamPlayer},
-    plugin::{
-        clip::component::{ComponentCapability, RuntimeDefinition},
-        property::{value::FieldValue, PropertyKey},
-        NamespacedID, PluginLoader,
-    },
+    plugin::{property::PropertyKey, NamespacedID},
     project::{
         asset::AssetEntry,
         clip::{Clip, ClipBindingValue},
@@ -49,11 +45,6 @@ fn project_and_callback(
     state: &ClientState,
 ) -> (Arc<RwLock<Option<Project>>>, extern "C" fn(TimelineId)) {
     (state.project_arc(), state.gui_callbacks.mark_dirty_timeline)
-}
-
-/// `plugin_loader` の `Arc` だけを取り出す。
-fn plugin_loader_of(state: &ClientState) -> Arc<RwLock<PluginLoader>> {
-    state.plugin_loader_arc()
 }
 
 /// デコード等の重い処理を他のロックなしで行うため、stream_players の
@@ -116,26 +107,18 @@ pub(super) fn on_responce_recveve(
         }
         ArchivedResponse::UpdateClip { timeline_id, clips } => {
             let (project_arc, fn_ptr) = project_and_callback(state);
-            let loader = plugin_loader_of(state);
 
-            // Project ロックを取る前にデシリアライズと動画ソースの解決を済ませる。
-            // ソースパスはクリップ種別の能力宣言から解決し、プロパティ ID を
-            // ハードコードしない（AGENTS.md 第9条）。
-            let mut deserialized: Vec<(LayerId, Clip)> = Vec::new();
-            let mut sources = Vec::new();
-            let loader_guard = loader.read_or_err().ok();
-            for (layer_id, archived_clip) in clips.iter() {
-                let clip: Clip = deserialize_validated(archived_clip);
-                if let Some(loader_guard) = loader_guard.as_ref() {
-                    if let Ok(definition) = loader_guard.resolve_component_definition(&clip.kind_id)
-                    {
-                        if let Some(source) = video_source_path(&definition, &clip) {
-                            sources.push(source);
-                        }
-                    }
-                }
-                deserialized.push((*layer_id, clip));
-            }
+            // Project ロックを取る前にデシリアライズを済ませる。
+            // ミラーのアセットレジストリはアセットテーブル同期
+            // （AssetTableSync / AssetTableUpdated）で収束させるため、
+            // クリップの source から個別に登録することはしない。source は
+            // AssetRef 型の値で届くので、文字列の解釈も要らない。
+            let deserialized: Vec<(LayerId, Clip)> = clips
+                .iter()
+                .map(|(layer_id, archived_clip)| {
+                    (*layer_id, deserialize_validated(archived_clip))
+                })
+                .collect();
 
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
@@ -150,15 +133,6 @@ pub(super) fn on_responce_recveve(
                 for (layer_id, clip) in deserialized {
                     timeline.upsert_clip_from_network(layer_id, clip);
                 }
-                // クライアント側のアセットレジストリにも動画ソースを登録し、
-                // Project.assets をサーバーと整合したカタログとして保つ。
-                // ソースがアセット参照（UUID）の場合は登録時のエントリが既に
-                // あるはずで、参照文字列をパスとして登録し直してはいけない。
-                for source in sources {
-                    if !is_asset_ref(&source) {
-                        let _ = project.register_asset(Path::new(&source));
-                    }
-                }
             }
 
             drop(project_guard);
@@ -171,13 +145,11 @@ pub(super) fn on_responce_recveve(
             value,
         } => {
             let (project_arc, fn_ptr) = project_and_callback(state);
-            let loader = plugin_loader_of(state);
             let mut project_guard = project_arc.write_or_err()?;
             let project = project_guard
                 .as_mut()
                 .ok_or(EsotereelError::ProjectNotFound)?;
 
-            let mut new_source = None;
             {
                 let timeline = project
                     .timeline_mut(*timeline_id)
@@ -187,28 +159,8 @@ pub(super) fn on_responce_recveve(
                 let key: PropertyKey = deserialize_validated(key);
                 let value: ClipBindingValue = deserialize_validated(value);
 
-                // プロパティ変更が動画ソースなら、タイムライン貸し出しを解放した後に
-                // クライアントのアセットレジストリにも反映する。対象かどうかは
-                // クリップ種別の能力宣言から解決する（AGENTS.md 第9条）。
-                // ロック順序は Project → PluginLoader（docs/architecture/lock-order.md）。
-                if let Some(clip) = timeline.get_clip(clip_id) {
-                    if let Ok(loader_guard) = loader.read_or_err() {
-                        if let Ok(definition) =
-                            loader_guard.resolve_component_definition(&clip.kind_id)
-                        {
-                            new_source = video_source_from_property(&definition, &key, &value);
-                        }
-                    }
-                }
-
                 if let Some(clip) = timeline.get_clip_mut(clip_id) {
                     clip.set_property_value(key, value)?;
-                }
-            }
-
-            if let Some(source) = new_source {
-                if !is_asset_ref(&source) {
-                    let _ = project.register_asset(Path::new(&source));
                 }
             }
 
@@ -685,55 +637,6 @@ fn parse_kind_entries<'a>(entries: impl Iterator<Item = &'a str>) -> Vec<Namespa
             }
         })
         .collect()
-}
-
-/// ソース文字列がアセット参照（UUID 形式）かどうか。
-fn is_asset_ref(source: &str) -> bool {
-    uuid::Uuid::parse_str(source).is_ok()
-}
-
-/// クリッププロパティから動画ソースのパス文字列を取り出す。
-///
-/// パスはクリップ種別の能力宣言（`FrameProvider` プロパティの `media-source`
-/// メンバー）から解決し、プロパティ ID をハードコードしない（AGENTS.md 第9条）。
-fn video_source_path(definition: &RuntimeDefinition, clip: &Clip) -> Option<String> {
-    let path = definition.member_path(
-        &ComponentCapability::FrameProvider,
-        &ComponentCapability::MediaSource,
-    )?;
-    let FieldValue::String(source) = clip.get_property_path(&path)? else {
-        return None;
-    };
-    if source.is_empty() {
-        return None;
-    }
-    Some(source.clone())
-}
-
-/// プロパティ変更（ルートキー + 値）から動画ソースパスを取り出す。
-/// `key` が `FrameProvider` プロパティのルートで、`value` がそのマップ値である
-/// 場合にのみ `media-source` メンバーを返す。ルートとメンバーはクリップ種別の
-/// 能力宣言から解決する（AGENTS.md 第9条）。
-fn video_source_from_property(
-    definition: &RuntimeDefinition,
-    key: &PropertyKey,
-    value: &ClipBindingValue,
-) -> Option<String> {
-    let property = definition.property_by_capability(&ComponentCapability::FrameProvider)?;
-    if key != &property.key {
-        return None;
-    }
-    let member = definition.member_key_by_capability(&ComponentCapability::MediaSource)?;
-    let FieldValue::Map(media_map) = value.in_frame_of()? else {
-        return None;
-    };
-    let FieldValue::String(source) = media_map.get(member)? else {
-        return None;
-    };
-    if source.is_empty() {
-        return None;
-    }
-    Some(source.clone())
 }
 
 #[cfg(test)]

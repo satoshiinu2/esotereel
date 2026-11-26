@@ -8,7 +8,7 @@ properties = [
   { key = "media", label = "Media",
     kind = { type = "group" },
     fields = [
-      { key = "source", label = "Source", kind = { type = "string" }, default = "", capability = "media-source" },
+      { key = "source", label = "Source", kind = { type = "asset-ref" }, default = "", capability = "media-source" },
       { key = "source_offset", label = "Source Offset", kind = { type = "string" }, default = "0", capability = "media-offset-provider" },
     ],
     capability = "frame-provider",
