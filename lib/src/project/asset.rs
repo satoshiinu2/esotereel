@@ -78,7 +78,7 @@ impl AssetRegistry {
             source: AssetAvailability::Available(AssetLocation::External {
                 path: path.to_path_buf(),
             }),
-            fingerprint: None,
+            fingerprint: fingerprint_for(path),
         })
     }
 
@@ -89,11 +89,12 @@ impl AssetRegistry {
         name: String,
         path: PathBuf,
     ) -> anyhow::Result<AssetRef> {
+        let fingerprint = fingerprint_for(&path);
         self.add(AssetEntry {
             id,
             name,
             source: AssetAvailability::Available(AssetLocation::Managed { path }),
-            fingerprint: None,
+            fingerprint,
         })
     }
 
@@ -163,7 +164,7 @@ impl AssetRegistry {
             source: AssetAvailability::Available(AssetLocation::External {
                 path: path.to_path_buf(),
             }),
-            fingerprint: None,
+            fingerprint: fingerprint_for(path),
         };
         self.add(entry)
     }
@@ -185,6 +186,17 @@ impl AssetRegistry {
     pub fn iter(&self) -> impl Iterator<Item = &AssetEntry> {
         self.order.iter().filter_map(move |id| self.entries.get(id))
     }
+}
+
+/// 登録時にファイルのサイズを記録します。
+///
+/// stat に失敗した場合は `None` を返し、登録自体は成功させます
+/// （ファイルがまだ無い・移動済みの場合、fingerprint は後から埋める）。
+/// hash はここでは計算せず、アップロード経路の incremental 計算や
+/// バックグラウンドでの後埋めに任せます。
+fn fingerprint_for(path: &Path) -> Option<AssetFingerprint> {
+    let size = std::fs::metadata(path).ok()?.len();
+    Some(AssetFingerprint { size, hash: None })
 }
 
 #[cfg(test)]
