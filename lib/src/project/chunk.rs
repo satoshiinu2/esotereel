@@ -9,12 +9,14 @@
 //! 候補列挙に使えます。配置の正はここ（チャンク側）です。
 
 use std::collections::{BTreeMap, HashMap};
+use std::time::Duration;
 
 use rkyv::{Archive, CheckBytes, bytecheck};
 
 use crate::project::clip::Clip;
 use crate::project::ids::{ClipId, LayerId};
 use crate::project::kind_table::KindId;
+use crate::util::result::EsotereelResult;
 
 /// チャンクの連番です。開始 tick を `CHUNK_TICKS` で割った値です。
 pub type ChunkId = i64;
@@ -265,5 +267,64 @@ impl Chunk {
 impl Default for Chunk {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Chunk {
+    /// 読み込み状態を切り替えます（`Timeline` の読み込み制御用）。
+    pub(crate) fn set_state(&mut self, state: ChunkState) {
+        self.state = state;
+    }
+
+    /// 実体をすべて取り出します（アンロード時の書き出し用）。
+    pub(crate) fn take_clips(&mut self) -> Vec<Clip> {
+        std::mem::take(&mut self.clips).into_values().collect()
+    }
+
+    /// 実体を丸ごと差し替えます（読み込み完了時の反映用）。
+    pub(crate) fn set_clips(&mut self, clips: Vec<Clip>) {
+        self.clips = clips.into_iter().map(|clip| (clip.id, clip)).collect();
+    }
+
+    /// dirty を下ろします（読み込み・書き出しが完了した時点で呼びます）。
+    pub(crate) fn mark_clean(&mut self) {
+        self.dirty = false;
+    }
+}
+
+/// チャンク実体の外部ストレージです。
+///
+/// アンロードした実体の行き先と、再読み込みの取得元を抽象化します。
+/// 実装はプロジェクトフォルダのチャンクファイルなど、実体を
+/// チャンク単位で出し入れできるものを想定します。
+pub trait ChunkStore: std::fmt::Debug + Send + Sync {
+    /// チャンクの実体をすべて読み込みます。
+    ///
+    /// 返した実体は、そのチャンクの配置（位置・duration・kind）と
+    /// 一致していなければならず、`Timeline` 側で検証されます。
+    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<Clip>>;
+
+    /// チャンクの実体をすべて書き出します。
+    fn store_chunk(&mut self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()>;
+}
+
+/// チャンクのアンロード方針です。設定システムへの接続は別途行い、
+/// ここでは差し替え可能な値として持ちます。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkResidencyConfig {
+    /// 最後に使われてからこの時間を超えたチャンクをアンロード対象にします。
+    pub idle_timeout: Duration,
+    /// 累積アクセス数がこれ以上のチャンクは、時間が経っても保持します
+    /// （頻繁に使われるチャンクを読み込み続けるため）。0 なら無効です。
+    pub frequent_access_threshold: u64,
+}
+
+impl Default for ChunkResidencyConfig {
+    fn default() -> Self {
+        Self {
+            // クリップ実体は動画フレームより軽いため、閾値は大目に取る。
+            idle_timeout: Duration::from_secs(300),
+            frequent_access_threshold: 16,
+        }
     }
 }

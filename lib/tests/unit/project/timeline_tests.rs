@@ -165,3 +165,151 @@ fn remove_clip_by_id_returns_owning_layer() {
     assert!(timeline.get_clip(target).is_none());
     assert!(timeline.get_placement(target).is_none());
 }
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use crate::project::chunk::{ChunkResidencyConfig, ChunkState, ChunkStore};
+use crate::util::result::EsotereelResult;
+
+/// テスト用のインメモリ ChunkStore です。本体はテスト側からも触れるよう
+/// Arc で共有します（配置と食い違う実体を返す検証のため）。
+#[derive(Debug, Default)]
+struct MemoryStore {
+    chunks: Arc<Mutex<HashMap<ChunkId, Vec<Clip>>>>,
+}
+
+impl ChunkStore for MemoryStore {
+    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<Vec<Clip>> {
+        Ok(self
+            .chunks
+            .lock()
+            .unwrap()
+            .get(&chunk_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn store_chunk(&mut self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()> {
+        self.chunks
+            .lock()
+            .unwrap()
+            .insert(chunk_id, clips.to_vec());
+        Ok(())
+    }
+}
+
+/// アンロードすると実体は引けなくなるが配置は残り、読み込み直せば
+/// 実体が戻ること。
+#[test]
+fn unload_drops_body_but_keeps_placement_and_reload_restores_it() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    timeline.set_chunk_store(Some(Box::new(MemoryStore::default())));
+
+    timeline.unload_chunk(0).unwrap();
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Unloaded));
+    assert!(timeline.get_clip(clip).is_none(), "実体は落ちている");
+    assert!(
+        timeline.get_placement(clip).is_some(),
+        "配置は常駐したまま引ける"
+    );
+    assert_eq!(
+        timeline.query_placements(0..100).len(),
+        1,
+        "配置検索にはアンロード中も現れる"
+    );
+    assert!(
+        query_clip_ids(&timeline, 0..100).is_empty(),
+        "実体検索にはアンロード中は現れない"
+    );
+
+    timeline.ensure_clip_loaded(clip).unwrap();
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
+    let restored = timeline.get_clip(clip).unwrap();
+    assert_eq!(restored.position, 0);
+    assert_eq!(restored.duration, 100);
+}
+
+/// アンロード中のクリップへの変更操作は、先に読み込んでから受け付けること。
+#[test]
+fn get_clip_mut_loads_unloaded_chunk_first() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    timeline.set_chunk_store(Some(Box::new(MemoryStore::default())));
+    timeline.unload_chunk(0).unwrap();
+    assert!(!timeline.is_clip_loaded(clip));
+
+    let body = timeline.get_clip_mut(clip).expect("読み込んでから返る");
+    assert_eq!(body.id, clip);
+    assert!(timeline.is_clip_loaded(clip));
+}
+
+/// ストアが無い状態でのアンロードは、黙って実体を捨てずエラーになること。
+#[test]
+fn unload_without_store_fails_and_keeps_body() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+
+    assert!(timeline.unload_chunk(0).is_err());
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
+    assert!(timeline.get_clip(clip).is_some());
+}
+
+/// ストアが配置と食い違う実体を返したら、取り込まずエラーにし、
+/// チャンクはアンロード状態に戻ること。
+#[test]
+fn load_rejects_bodies_that_disagree_with_placements() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    let clip = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    let store = MemoryStore::default();
+    let shared = store.chunks.clone();
+    timeline.set_chunk_store(Some(Box::new(store)));
+    timeline.unload_chunk(0).unwrap();
+
+    // 配置（position 0）と食い違う実体に差し替える。
+    {
+        let mut chunks = shared.lock().unwrap();
+        let bodies = chunks.get_mut(&0).unwrap();
+        bodies[0].position = 5;
+    }
+
+    assert!(timeline.ensure_clip_loaded(clip).is_err());
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Unloaded));
+    assert!(timeline.get_clip(clip).is_none());
+}
+
+/// unload_idle_chunks は、未使用時間が閾値を超えたチャンクだけを落とし、
+/// 頻繁に使われたチャンクは保持すること。
+#[test]
+fn unload_idle_chunks_respects_idle_time_and_frequency() {
+    let (mut timeline, mut ids, layer) = single_layer_timeline();
+    // チャンク 0 と チャンク 1 に1つずつ置く。
+    let hot = add_clip(&mut timeline, &mut ids, layer, 0, 100, "std:media");
+    let cold = add_clip(&mut timeline, &mut ids, layer, 35_000, 100, "std:media");
+    timeline.set_chunk_store(Some(Box::new(MemoryStore::default())));
+
+    // hot 側は繰り返し触る（登録時の1回＋ここで3回 = 4アクセス）。
+    for _ in 0..3 {
+        timeline.get_clip(hot).unwrap();
+    }
+
+    let config = ChunkResidencyConfig {
+        idle_timeout: Duration::ZERO,
+        frequent_access_threshold: 4,
+    };
+    let unloaded = timeline.unload_idle_chunks(&config).unwrap();
+    assert_eq!(unloaded, 1);
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
+    assert_eq!(timeline.chunk_state(1), Some(ChunkState::Unloaded));
+    assert!(timeline.get_clip(hot).is_some());
+    assert!(timeline.get_clip(cold).is_none());
+
+    // 閾値が大きい間は、時間が経っていなければ何も落ちない。
+    let patient = ChunkResidencyConfig {
+        idle_timeout: Duration::from_secs(3600),
+        frequent_access_threshold: 0,
+    };
+    assert_eq!(timeline.unload_idle_chunks(&patient).unwrap(), 0);
+    assert_eq!(timeline.chunk_state(0), Some(ChunkState::Loaded));
+}

@@ -1,10 +1,14 @@
 use rkyv::{bytecheck, CheckBytes};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use crate::plugin::{property::PropertyKey, NamespacedID};
 use crate::project::change::{ChangeSet, RemovedClipInfo};
-use crate::project::chunk::{chunk_of, Chunk, ChunkId, ChunkPlacement};
+use crate::project::chunk::{
+    chunk_of, Chunk, ChunkId, ChunkPlacement, ChunkResidencyConfig, ChunkState, ChunkStore,
+};
 use crate::project::clip::Clip;
 use crate::project::clip::ClipBindingValue;
 use crate::project::ids::{ClipId, IdGenerator, LayerFolderId, LayerId};
@@ -12,10 +16,17 @@ use crate::project::kind_table::{KindId, KindTable};
 use crate::project::layer::{Layer, LayerMeta, LayerRemoveStrategy};
 use crate::project::layer_outline::{LayerFolder, LayerOutline, Meta, OutlineNode};
 use crate::project::TimelineTick;
-use crate::util::result::{EsotereelError, EsotereelResult};
+use crate::util::result::{EsotereelError, EsotereelResult, MutexExt};
 
 /// Composite / Script / Mirror の入れ子実行を無限ループさせないための上限。
 pub const MAX_NESTED_DEPTH: u32 = 32;
+
+/// チャンクごとのアクセス記録です。アンロード判定に使います。
+#[derive(Debug, Clone, Copy)]
+struct ChunkActivity {
+    last_access: Instant,
+    access_count: u64,
+}
 
 /// 配置層から見たクリップ1件分の配置情報です。
 ///
@@ -59,6 +70,18 @@ pub struct Timeline {
     /// 配置が参照する kind 連番の intern テーブル。
     kind_table: KindTable,
 
+    /// チャンク実体の外部ストレージ。アンロード／再読み込みの行き先です。
+    /// アンロードされたチャンクがある間は付け替えてはいけません
+    /// （付け替えるとそのチャンクは読み込み直せなくなります）。
+    #[with(rkyv::with::Skip)]
+    #[serde(skip)]
+    chunk_store: Option<Box<dyn ChunkStore>>,
+
+    /// チャンクごとのアクセス記録。アンロード判定用で、保存対象外です。
+    #[with(rkyv::with::Skip)]
+    #[serde(skip)]
+    chunk_activity: Mutex<HashMap<ChunkId, ChunkActivity>>,
+
     pub outline: LayerOutline,
 
     /// 未同期の差分。
@@ -77,6 +100,9 @@ impl Clone for Timeline {
             chunks: self.chunks.clone(),
             locator: self.locator.clone(),
             kind_table: self.kind_table.clone(),
+            // 実行時状態は持ち越さない。ストアは複製先で付け直す前提。
+            chunk_store: None,
+            chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
         }
     }
@@ -92,6 +118,8 @@ impl Timeline {
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
             kind_table: KindTable::default(),
+            chunk_store: None,
+            chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
             outline: LayerOutline::default(),
         };
@@ -113,6 +141,8 @@ impl Timeline {
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
             kind_table: KindTable::default(),
+            chunk_store: None,
+            chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
         }
     }
@@ -332,6 +362,7 @@ impl Timeline {
             .or_default()
             .insert(placement, clip);
         self.locator.insert(placement.clip_id, chunk_id);
+        self.touch_chunk(chunk_id);
     }
 
     /// 配置と実体を取り除きます。レイヤーの順序索引は触りません。
@@ -382,6 +413,10 @@ impl Timeline {
             }
         }
 
+        // 登録先チャンクがアンロード中なら、先に読み込んでから登録する
+        // （実体の一部だけが載った状態で Loaded にしないため）。
+        self.ensure_chunk_ready_for_insert(chunk_of(position))?;
+
         let clip_id = ids.next_clip_id();
         let clip = Clip::new(clip_id, position, duration, kind_id, properties);
 
@@ -408,6 +443,15 @@ impl Timeline {
         if self.layer_of_clip(clip_id) != Some(layer_id) {
             return None;
         }
+        // 実体を返す経路なので、アンロード中なら先に読み込む。
+        if !self.is_clip_loaded(clip_id) {
+            if let Err(e) = self.ensure_clip_loaded(clip_id) {
+                log::error!(
+                    "failed to load chunk for clip {clip_id} before removal: {e:#}"
+                );
+                return None;
+            }
+        }
         let layer = self.layers.get_mut(&layer_id)?;
         layer.remove_clip(clip_id)?;
 
@@ -426,6 +470,7 @@ impl Timeline {
         if !self.layers.contains_key(&layer_id) {
             return Err(EsotereelError::LayerNotFound(layer_id).into());
         }
+        self.ensure_chunk_ready_for_insert(chunk_of(clip.position))?;
         let clip_id = clip.id;
         let position = clip.position;
         if self.locator.contains_key(&clip_id) {
@@ -444,8 +489,10 @@ impl Timeline {
     }
 
     pub fn get_clip(&self, id: ClipId) -> Option<&Clip> {
-        let chunk = self.chunks.get(self.locator.get(&id)?)?;
-        chunk.clip(id)
+        let chunk_id = *self.locator.get(&id)?;
+        let clip = self.chunks.get(&chunk_id)?.clip(id)?;
+        self.touch_chunk(chunk_id);
+        Some(clip)
     }
 
     /// Clipとその所属LayerIdを検索
@@ -517,9 +564,18 @@ impl Timeline {
 
     pub fn get_clip_mut(&mut self, id: ClipId) -> Option<&mut Clip> {
         // clip内容の書き換えは配置に影響しない(position/durationを
-        // 変える場合は move_clip / set_clip_placement 経由にすること)
-        let chunk = self.chunks.get_mut(self.locator.get(&id)?)?;
-        chunk.clip_mut(id)
+        // 変える場合は move_clip / set_clip_placement 経由にすること)。
+        // アンロード中なら先にチャンクを読み込んでから返す
+        // （読み込みに失敗したらログに残して None）。
+        let chunk_id = *self.locator.get(&id)?;
+        if !self.is_clip_loaded(id) {
+            if let Err(e) = self.ensure_chunk_loaded(chunk_id) {
+                log::error!("failed to load chunk {chunk_id} for clip {id}: {e:#}");
+                return None;
+            }
+        }
+        self.touch_chunk(chunk_id);
+        self.chunks.get_mut(&chunk_id)?.clip_mut(id)
     }
 
     /// クリップの `position` を変更します。
@@ -530,6 +586,9 @@ impl Timeline {
         let placement = self
             .get_placement(clip_id)
             .ok_or_else(|| anyhow::anyhow!("Clip not found in any layer"))?;
+        // アンロード中のクリップは、読み込んでから操作を受け付ける
+        // （外部の実体が古い配置のまま残るのを防ぐため）。
+        self.ensure_clip_loaded(clip_id)?;
         let layer_id = placement.layer_id;
 
         let layer = self
@@ -562,6 +621,12 @@ impl Timeline {
         let Some(current) = self.get_placement(clip_id) else {
             return false;
         };
+        if !self.is_clip_loaded(clip_id) {
+            if let Err(e) = self.ensure_clip_loaded(clip_id) {
+                log::error!("failed to load chunk for clip {clip_id}: {e:#}");
+                return false;
+            }
+        }
         if current.position != position {
             if let Some(layer) = self.layers.get_mut(&current.layer_id) {
                 layer.remove_clip(clip_id);
@@ -656,6 +721,7 @@ impl Timeline {
             if !chunk.is_loaded() {
                 continue;
             }
+            let before = out.len();
             for (position, placement) in chunk.placements() {
                 if position >= range.end || placement.end(position) <= range.start {
                     continue;
@@ -667,6 +733,9 @@ impl Timeline {
                     continue;
                 };
                 out.push((layer, clip));
+            }
+            if out.len() > before {
+                self.touch_chunk(chunk_id);
             }
         }
         out
@@ -717,6 +786,250 @@ impl Timeline {
             .range(start_c..=end_c)
             .map(|(&id, _)| id)
             .collect()
+    }
+
+    // Clip: チャンクの常駐管理（読み込み／アンロード）
+
+    /// チャンク実体の外部ストレージを付け替えます。
+    ///
+    /// アンロード済みのチャンクがある間は付け替えないでください
+    /// （そのチャンクの実体は前のストレージにしかありません）。
+    pub fn set_chunk_store(&mut self, store: Option<Box<dyn ChunkStore>>) {
+        self.chunk_store = store;
+    }
+
+    /// チャンクの読み込み状態を返します。チャンクが無ければ `None`。
+    pub fn chunk_state(&self, chunk_id: ChunkId) -> Option<ChunkState> {
+        self.chunks.get(&chunk_id).map(|chunk| chunk.state())
+    }
+
+    /// クリップ実体が読み込まれているかどうかを返します。
+    pub fn is_clip_loaded(&self, clip_id: ClipId) -> bool {
+        self.locator
+            .get(&clip_id)
+            .and_then(|chunk_id| self.chunks.get(chunk_id))
+            .is_some_and(|chunk| chunk.is_loaded())
+    }
+
+    /// チャンクへのアクセスを記録します（アンロード判定用）。
+    fn touch_chunk(&self, chunk_id: ChunkId) {
+        let Ok(mut activity) = self.chunk_activity.lock_or_err() else {
+            log::warn!("timeline: chunk_activity lock poisoned");
+            return;
+        };
+        let entry = activity.entry(chunk_id).or_insert(ChunkActivity {
+            last_access: Instant::now(),
+            access_count: 0,
+        });
+        entry.last_access = Instant::now();
+        entry.access_count += 1;
+    }
+
+    /// チャンクが読み込み済みであることを保証します。
+    ///
+    /// アンロード中ならストレージから読み込みます。読み込み中は
+    /// `ChunkState::Loading` に遷移させ、再入した要求は弾きます。
+    /// チャンク自体が無ければ何もしません。
+    pub fn ensure_chunk_loaded(&mut self, chunk_id: ChunkId) -> EsotereelResult<()> {
+        let Some(chunk) = self.chunks.get(&chunk_id) else {
+            return Ok(());
+        };
+        match chunk.state() {
+            ChunkState::Loaded => {
+                self.touch_chunk(chunk_id);
+                Ok(())
+            }
+            ChunkState::Loading => {
+                anyhow::bail!("chunk {chunk_id} is already being loaded")
+            }
+            ChunkState::Unloaded => self.load_chunk(chunk_id),
+        }
+    }
+
+    /// クリップが属するチャンクが読み込み済みであることを保証します。
+    pub fn ensure_clip_loaded(&mut self, clip_id: ClipId) -> EsotereelResult<()> {
+        let Some(&chunk_id) = self.locator.get(&clip_id) else {
+            return Err(EsotereelError::ClipNotFound(clip_id).into());
+        };
+        self.ensure_chunk_loaded(chunk_id)
+    }
+
+    /// 範囲に触れるチャンクがすべて読み込み済みであることを保証します。
+    pub fn ensure_range_loaded(&mut self, range: Range<i64>) -> EsotereelResult<()> {
+        for chunk_id in self.candidate_chunk_ids(&range) {
+            self.ensure_chunk_loaded(chunk_id)?;
+        }
+        Ok(())
+    }
+
+    /// 実体の登録先チャンクが読み込み済みであることを保証します。
+    fn ensure_chunk_ready_for_insert(&mut self, chunk_id: ChunkId) -> EsotereelResult<()> {
+        match self.chunk_state(chunk_id) {
+            None | Some(ChunkState::Loaded) => Ok(()),
+            _ => self.ensure_chunk_loaded(chunk_id),
+        }
+    }
+
+    fn load_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<()> {
+        if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+            chunk.set_state(ChunkState::Loading);
+        }
+        let result = match self.chunk_store.as_mut() {
+            Some(store) => store.load_chunk(chunk_id),
+            None => Err(anyhow::anyhow!(
+                "no chunk store attached to load chunk {chunk_id}"
+            )),
+        };
+        match result {
+            Ok(clips) => {
+                if let Err(e) = self.validate_loaded_bodies(chunk_id, &clips) {
+                    if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+                        chunk.set_state(ChunkState::Unloaded);
+                    }
+                    return Err(e);
+                }
+                if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+                    chunk.set_clips(clips);
+                    chunk.set_state(ChunkState::Loaded);
+                    chunk.mark_clean();
+                }
+                self.touch_chunk(chunk_id);
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+                    chunk.set_state(ChunkState::Unloaded);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// ストレージから返った実体が配置と一致するか検証します。
+    ///
+    /// 配置に無い実体、欠けている実体、位置・duration・kind が配置と
+    /// 食い違う実体は、黙って取り込まずエラーにします。
+    fn validate_loaded_bodies(&self, chunk_id: ChunkId, clips: &[Clip]) -> EsotereelResult<()> {
+        let Some(chunk) = self.chunks.get(&chunk_id) else {
+            return Ok(());
+        };
+        if clips.len() != chunk.clip_count() {
+            anyhow::bail!(
+                "chunk store returned {} clips for chunk {chunk_id}, expected {}",
+                clips.len(),
+                chunk.clip_count()
+            );
+        }
+        for clip in clips {
+            let Some((position, placement)) = chunk.placement_of(clip.id) else {
+                anyhow::bail!(
+                    "chunk store returned clip {} which has no placement in chunk {chunk_id}",
+                    clip.id
+                );
+            };
+            if clip.position != position || clip.duration != placement.duration {
+                anyhow::bail!(
+                    "chunk store returned clip {} at ({}, {}), placement says ({position}, {})",
+                    clip.id,
+                    clip.position,
+                    clip.duration,
+                    placement.duration
+                );
+            }
+            match self.kind_table.resolve(placement.kind) {
+                Some(kind) if kind.full() == clip.kind_id.full() => {}
+                _ => {
+                    anyhow::bail!(
+                        "chunk store returned clip {} with kind {}, placement says otherwise",
+                        clip.id,
+                        clip.kind_id.full()
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// チャンクをアンロードします。
+    ///
+    /// 実体はストレージへ書き出してから落とします。書き出しに失敗したら
+    /// 実体はメモリに戻し、`Loaded` のままエラーを返します。
+    /// 既にアンロード済みなら何もしません。
+    pub fn unload_chunk(&mut self, chunk_id: ChunkId) -> EsotereelResult<()> {
+        let Some(chunk) = self.chunks.get(&chunk_id) else {
+            return Ok(());
+        };
+        match chunk.state() {
+            ChunkState::Unloaded => return Ok(()),
+            ChunkState::Loading => {
+                anyhow::bail!("chunk {chunk_id} is being loaded")
+            }
+            ChunkState::Loaded => {}
+        }
+        let Some(store) = self.chunk_store.as_mut() else {
+            anyhow::bail!("no chunk store attached to unload chunk {chunk_id}");
+        };
+        let clips = self
+            .chunks
+            .get_mut(&chunk_id)
+            .map(|chunk| chunk.take_clips())
+            .unwrap_or_default();
+        match store.store_chunk(chunk_id, &clips) {
+            Ok(()) => {
+                if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+                    chunk.set_state(ChunkState::Unloaded);
+                    chunk.mark_clean();
+                }
+                Ok(())
+            }
+            Err(e) => {
+                if let Some(chunk) = self.chunks.get_mut(&chunk_id) {
+                    chunk.set_clips(clips);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// 長く使われていないチャンクをまとめてアンロードし、その数を返します。
+    ///
+    /// 判定は `ChunkResidencyConfig` に従います: 最終アクセスからの経過が
+    /// `idle_timeout` を超え、かつ累積アクセス数が
+    /// `frequent_access_threshold`（0 なら無効）未満のチャンクが対象です。
+    pub fn unload_idle_chunks(
+        &mut self,
+        config: &ChunkResidencyConfig,
+    ) -> EsotereelResult<usize> {
+        let now = Instant::now();
+        let candidates: Vec<ChunkId> = {
+            let Ok(activity) = self.chunk_activity.lock_or_err() else {
+                log::warn!("timeline: chunk_activity lock poisoned");
+                return Ok(0);
+            };
+            self.chunks
+                .iter()
+                .filter(|(_, chunk)| chunk.is_loaded())
+                .filter(|entry| {
+                    let chunk_id = *entry.0;
+                    let Some(record) = activity.get(&chunk_id) else {
+                        // アクセス記録が無い = 作られてから未使用とみなす。
+                        return true;
+                    };
+                    if now.duration_since(record.last_access) < config.idle_timeout {
+                        return false;
+                    }
+                    config.frequent_access_threshold == 0
+                        || record.access_count < config.frequent_access_threshold
+                })
+                .map(|entry| *entry.0)
+                .collect()
+        };
+        let mut unloaded = 0;
+        for chunk_id in candidates {
+            self.unload_chunk(chunk_id)?;
+            unloaded += 1;
+        }
+        Ok(unloaded)
     }
 
     pub(crate) fn touch_upsert(&mut self, id: ClipId) {
@@ -794,6 +1107,8 @@ impl Timeline {
             chunks: BTreeMap::new(),
             locator: HashMap::new(),
             kind_table: KindTable::default(),
+            chunk_store: None,
+            chunk_activity: Mutex::new(HashMap::new()),
             changes: ChangeSet::default(),
         }
     }
@@ -802,6 +1117,15 @@ impl Timeline {
     /// IdGeneratorは触らない(new_clip_inとは別経路)。
     pub fn merge_fetched_clips(&mut self, entries: Vec<(LayerId, Clip)>) {
         for (layer_id, clip) in entries {
+            // 登録先チャンクがアンロード中なら先に読み込む。失敗したら
+            // このエントリは取り込まず、ログに残す。
+            if let Err(e) = self.ensure_chunk_ready_for_insert(chunk_of(clip.position)) {
+                log::error!(
+                    "failed to load chunk for fetched clip {}: {e:#}",
+                    clip.id
+                );
+                continue;
+            }
             // 既に保持しているクリップなら、旧所属側の参照と実体を先に外す
             // （チャンクをまたぐ移動で実体が二重にならないように）。
             if let Some(old) = self.get_placement(clip.id) {
@@ -819,6 +1143,15 @@ impl Timeline {
 
     /// ClipUpdates(差分同期)用: サーバー確定済みClipをupsertする。
     pub fn upsert_clip_from_network(&mut self, layer_id: LayerId, clip: Clip) {
+        // 登録先チャンクがアンロード中なら先に読み込む。失敗したら
+        // 取り込まず、ログに残す。
+        if let Err(e) = self.ensure_chunk_ready_for_insert(chunk_of(clip.position)) {
+            log::error!(
+                "failed to load chunk for upserted clip {}: {e:#}",
+                clip.id
+            );
+            return;
+        }
         // レイヤー跨ぎ移動に対応するため、旧所属レイヤーからこのClipIdの参照を消去する
         if let Some(old) = self.get_placement(clip.id) {
             if let Some(old_layer) = self.layers.get_mut(&old.layer_id) {
