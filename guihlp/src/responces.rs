@@ -1,6 +1,6 @@
 use std::{
     ops::Range,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, RwLock},
 };
 
@@ -13,14 +13,15 @@ use esotereel_lib::{
         NamespacedID, PluginLoader,
     },
     project::{
+        asset::AssetEntry,
         clip::{Clip, ClipBindingValue},
-        ids::{ClipId, LayerFolderId, LayerId, TimelineId},
+        ids::{AssetRef, ClipId, LayerFolderId, LayerId, TimelineId},
         layer::LayerMeta,
         layer_outline::{Meta, OutlineNode},
         timeline::TimelineMeta,
         Project,
     },
-    responces::ArchivedResponse,
+    responces::{ArchivedResponse, AssetAvailabilityWire, AssetEntryWire},
     util::result::{EsotereelError, EsotereelResult, LockExt},
     StreamState,
 };
@@ -569,8 +570,100 @@ pub(super) fn on_responce_recveve(
         ArchivedResponse::AutosaveRestored { generation_id } => {
             info!("autosave generation restored: {generation_id}");
         }
+        ArchivedResponse::AssetTableSync { entries } => {
+            let entries: Vec<AssetEntryWire> = deserialize_validated(entries);
+            info!("asset table sync received: {} entries", entries.len());
+            // 同期済みアセット表を差し替える（一覧表示用の FFI が読む）。
+            if let Ok(mut slot) = state.synced_assets.lock() {
+                *slot = entries.clone();
+            }
+            // ミラーのレジストリを権威側の内容へ収束させる。全量配信は
+            // プロジェクト開始時に限られ、その時点のミラーは ProjectMeta
+            // で作り直された直後なので、丸ごと置き換えてよい（ローカルで
+            // 登録した分もサーバー側の登録として増分で再配信される）。
+            let (project_arc, _) = project_and_callback(state);
+            let mut project_guard = project_arc.write_or_err()?;
+            if let Some(project) = project_guard.as_mut() {
+                let mirrored: Vec<AssetEntry> =
+                    entries.iter().filter_map(asset_entry_from_wire).collect();
+                project.assets_mut().replace_all(mirrored);
+            }
+        }
+        ArchivedResponse::AssetTableUpdated { upserts, removed } => {
+            let upserts: Vec<AssetEntryWire> = deserialize_validated(upserts);
+            let removed: Vec<String> = deserialize_validated(removed);
+            if let Ok(mut slot) = state.synced_assets.lock() {
+                for wire in &upserts {
+                    match slot.iter_mut().find(|existing| existing.id == wire.id) {
+                        Some(existing) => *existing = wire.clone(),
+                        None => slot.push(wire.clone()),
+                    }
+                }
+                if !removed.is_empty() {
+                    slot.retain(|wire| !removed.contains(&wire.id));
+                }
+            }
+            let (project_arc, _) = project_and_callback(state);
+            let mut project_guard = project_arc.write_or_err()?;
+            if let Some(project) = project_guard.as_mut() {
+                for wire in &upserts {
+                    if let Some(entry) = asset_entry_from_wire(wire) {
+                        project.assets_mut().upsert_entry(entry);
+                    }
+                }
+                for id in &removed {
+                    if let Ok(asset_id) = id.parse::<AssetRef>() {
+                        let _ = project.assets_mut().remove(asset_id);
+                    }
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// 配信されたアセット転送形をミラー側のレジストリエントリへ戻します。
+///
+/// fingerprint の hash 本体は配信に含まれないため、ミラー側では未計算
+/// として扱います（パスの解決に hash は不要で、後埋めはサーバー側の
+/// 役目です）。解釈できない ID は警告を残して除きます。
+fn asset_entry_from_wire(wire: &AssetEntryWire) -> Option<AssetEntry> {
+    use esotereel_lib::project::asset::{
+        AssetAvailability, AssetFingerprint, AssetLocation,
+    };
+    let id: AssetRef = match wire.id.parse() {
+        Ok(id) => id,
+        Err(error) => {
+            log::warn!(
+                "ignoring asset with unparseable id `{}` from server: {error}",
+                wire.id
+            );
+            return None;
+        }
+    };
+    let source = match &wire.availability {
+        AssetAvailabilityWire::External { path } => AssetAvailability::Available(
+            AssetLocation::External {
+                path: PathBuf::from(path),
+            },
+        ),
+        AssetAvailabilityWire::Managed { path } => AssetAvailability::Available(
+            AssetLocation::Managed {
+                path: PathBuf::from(path),
+            },
+        ),
+        AssetAvailabilityWire::Missing { previous_path } => AssetAvailability::Missing {
+            previous_path: PathBuf::from(previous_path),
+        },
+    };
+    Some(AssetEntry {
+        id,
+        name: wire.name.clone(),
+        source,
+        fingerprint: wire
+            .fingerprint_size
+            .map(|size| AssetFingerprint { size, hash: None }),
+    })
 }
 
 /// 配信された kind 名一覧を解釈します。解釈できない名前は警告を残して

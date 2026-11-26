@@ -23,7 +23,7 @@ use esotereel_lib::{
         MediaSec, Project, TimelineTick,
     },
     render::video::MediaFetchCache,
-    responces::{AutosaveGenerationWire, WireVersionStatus},
+    responces::{AssetEntryWire, AutosaveGenerationWire, WireVersionStatus},
     state::{CommonState, HostState},
     util::result::LockExt,
     HostRole,
@@ -72,6 +72,10 @@ pub struct ClientState {
 
     /// サーバーから届いたオートセーブ世代の一覧。
     pub autosave_generations: Arc<Mutex<Vec<AutosaveGenerationWire>>>,
+
+    /// サーバーから同期されたアセット表（表示順）。全量配信で
+    /// 置き換わり、増分配信で更新される。GUI のアセット一覧表示用。
+    pub synced_assets: Arc<Mutex<Vec<AssetEntryWire>>>,
 
     /// サーバーが現在開いているプロジェクトフォルダ（開く／保存の
     /// 応答で更新される）。プロジェクト設定タブの編集先に使う。
@@ -203,6 +207,7 @@ impl ClientState {
             project_opened: Arc::new(Mutex::new(None)),
             project_saved: Arc::new(Mutex::new(None)),
             autosave_generations: Arc::new(Mutex::new(Vec::new())),
+            synced_assets: Arc::new(Mutex::new(Vec::new())),
             current_project_folder: Arc::new(RwLock::new(None)),
             previous_session_abnormal,
             session_marker,

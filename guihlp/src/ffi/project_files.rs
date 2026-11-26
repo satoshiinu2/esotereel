@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use esotereel_lib::{
     requests::Request,
-    responces::WireVersionStatus,
+    responces::{AssetAvailabilityWire, WireVersionStatus},
     util::result::EsotereelError,
 };
 
@@ -356,5 +356,63 @@ pub extern "C" fn client_mark_clean_exit(ptr_state: *const ClientStateHandle) ->
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
         Ok(r) => FfiResultVoid::from_result(r),
         Err(panic) => FfiResultVoid::err_panic(panic),
+    }
+}
+
+/// 同期済みアセット1件です。`availability` は所在の種別で、
+/// 0=External、1=Managed、2=Missing。`path` は種別に応じたパス
+/// （Missing では以前のパス）です。
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CAssetEntry {
+    pub id: FfiOwnedString,
+    pub name: FfiOwnedString,
+    pub availability: u8,
+    pub path: FfiOwnedString,
+    pub fingerprint_size: FfiOption<u64>,
+    pub has_fingerprint_hash: bool,
+    pub in_use: bool,
+}
+
+pub type CAssetEntryArrayResult = FfiResult<FfiArray<CAssetEntry>>;
+
+/// サーバーから同期されたアセット表を、同期された表示順のまま
+/// 返します（第2段のアセット一覧表示用）。
+#[unsafe(no_mangle)]
+pub extern "C" fn client_synced_assets(
+    ptr_state: *const ClientStateHandle,
+) -> CAssetEntryArrayResult {
+    fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<FfiArray<CAssetEntry>> {
+        check_ptr(ptr_state)?;
+        let state = state_of(ptr_state);
+        let slot = state
+            .synced_assets
+            .lock()
+            .map_err(|_| anyhow::anyhow!("synced assets lock poisoned"))?;
+        let entries: Vec<CAssetEntry> = slot
+            .iter()
+            .map(|wire| {
+                let (availability, path) = match &wire.availability {
+                    AssetAvailabilityWire::External { path } => (0, path),
+                    AssetAvailabilityWire::Managed { path } => (1, path),
+                    AssetAvailabilityWire::Missing { previous_path } => (2, previous_path),
+                };
+                CAssetEntry {
+                    id: FfiOwnedString::from_string(wire.id.clone()),
+                    name: FfiOwnedString::from_string(wire.name.clone()),
+                    availability,
+                    path: FfiOwnedString::from_string(path.clone()),
+                    fingerprint_size: FfiOption::from(wire.fingerprint_size),
+                    has_fingerprint_hash: wire.has_fingerprint_hash,
+                    in_use: wire.in_use,
+                }
+            })
+            .collect();
+        Ok(FfiArray::from_vec(entries))
+    }
+    match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
+        Ok(Ok(v)) => FfiResult::ok(v),
+        Ok(Err(e)) => FfiResult::err(e),
+        Err(panic) => FfiResult::err_panic(panic),
     }
 }
