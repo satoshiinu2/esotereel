@@ -2,6 +2,7 @@
 #include "esotereel_gui_helper.h"
 #include "ffi/ClientState.h"
 #include "ffi/InternalServer.h"
+#include "ffi/ProjectFiles.h"
 #include "ffi/Requests.h"
 #include "ffi/Settings.h"
 #include "ffi/StringView.h"
@@ -63,6 +64,13 @@ int main(int argc, char **argv) {
         mainWindow = &w;
         w.show();
 
+        // 正常終了時にセッションマーカーを消す（異常終了検知用）。
+        QObject::connect(&app, &QApplication::aboutToQuit, []() {
+            if (state) {
+                ProjectFiles::markCleanExit(state);
+            }
+        });
+
         startInternalServer();
 
         return app.exec();
@@ -92,6 +100,11 @@ void onServerStart(bool ok, esotereel_gui_helper::FfiStringView addr_ffi) {
 }
 
 void onConnectedCallBack() {
-    // placeholder
+    // 前回セッションが異常終了していたら、復旧一覧を先に出す。
+    auto abnormal = ProjectFiles::previousSessionAbnormal(state);
+    if (abnormal.isOk() && abnormal.unwrap()) {
+        mainWindow->showRecoveryDialog();
+        return;
+    }
     state->requests().newProject();
 }

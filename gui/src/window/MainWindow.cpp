@@ -1,8 +1,11 @@
 #include "MainWindow.h"
 #include "WidgetManager.h"
 #include "ads_globals.h"
+#include "dialog/project/RecoveryDialog.h"
+#include "dialog/settings/AppSettingsDialog.h"
 #include "dialog/settings/SettingsDialog.h"
 #include "esotereel_gui_helper.h"
+#include "ffi/ProjectFiles.h"
 #include "ffi/Requests.h"
 #include "ffi/project/CommandQueue.h"
 #include "widget/clip_property/ClipPropertiesPanel.h"
@@ -13,8 +16,14 @@
 #include "widget/timeline/TimelineWidget.h"
 #include <DockManager.h>
 #include <QAction>
+#include <QCheckBox>
+#include <QDir>
+#include <QFileDialog>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QStatusBar>
 #include <QTimer>
 #include <QVector3D>
@@ -91,6 +100,17 @@ void MainWindow::setupConnections() {
 }
 
 void MainWindow::setupMenus(WidgetManager &widgetManager) {
+    QMenu *fileMenu = menuBar()->addMenu(tr("File"));
+    QAction *openAction = fileMenu->addAction(tr("Open Project..."));
+    connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
+    QAction *saveAction = fileMenu->addAction(tr("Save Project"));
+    connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
+    QAction *saveAsAction = fileMenu->addAction(tr("Save Project As..."));
+    connect(saveAsAction, &QAction::triggered, this, &MainWindow::saveProjectAs);
+    fileMenu->addSeparator();
+    QAction *recoveryAction = fileMenu->addAction(tr("Autosave Recovery..."));
+    connect(recoveryAction, &QAction::triggered, this, &MainWindow::showRecoveryDialog);
+
     QMenu *viewMenu = menuBar()->addMenu(tr("View"));
     widgetManager.addToMenu(viewMenu, widgetManager.getDock("Preview"));
     widgetManager.addToMenu(viewMenu, widgetManager.getDock("Timeline"));
@@ -100,6 +120,8 @@ void MainWindow::setupMenus(WidgetManager &widgetManager) {
     QMenu *toolsMenu = menuBar()->addMenu(tr("Tools"));
     QAction *settingsAction = toolsMenu->addAction(tr("Settings"));
     connect(settingsAction, &QAction::triggered, this, &MainWindow::openSettingsDialog);
+    QAction *appSettingsAction = toolsMenu->addAction(tr("App Settings..."));
+    connect(appSettingsAction, &QAction::triggered, this, &MainWindow::openAppSettingsDialog);
 }
 
 MainWindow::MainWindow(ClientState &network, QWidget *parent) : QMainWindow(parent), windowState{&network} {
@@ -136,6 +158,139 @@ void MainWindow::markDirtyTimeline(TimelineId timelineId) {
 void MainWindow::openSettingsDialog() {
     dialog::SettingsDialog settingsDialog(windowState, this);
     settingsDialog.exec();
+}
+
+void MainWindow::openAppSettingsDialog() {
+    dialog::AppSettingsDialog appSettingsDialog(windowState, this);
+    appSettingsDialog.exec();
+}
+
+void MainWindow::showRecoveryDialog() {
+    dialog::RecoveryDialog recoveryDialog(windowState, this);
+    recoveryDialog.exec();
+}
+
+void MainWindow::openProject() {
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Open Project Folder"));
+    if (dir.isEmpty()) {
+        return;
+    }
+    // まずバージョンだけ確認し、判定に応じて段階表示してから開く。
+    windowState.state->requests().inspectProject(dir);
+    pollForInspection(dir, 0);
+}
+
+void MainWindow::pollForInspection(const QString &path, int attempts) {
+    auto result = ProjectFiles::takeInspection(windowState.state);
+    if (result.isOk()) {
+        auto inspection = result.unwrap();
+        if (inspection.has_value() && inspection->path == path) {
+            confirmAndOpenProject(*inspection);
+            return;
+        }
+    }
+    if (attempts >= 50) {
+        statusBar()->showMessage(tr("Project inspection timed out: %1").arg(path));
+        return;
+    }
+    QTimer::singleShot(100, this, [this, path, attempts]() { pollForInspection(path, attempts + 1); });
+}
+
+void MainWindow::confirmAndOpenProject(const ProjectInspection &inspection) {
+    const QString version = tr("%1.%2.%3")
+                                .arg(inspection.versionMajor)
+                                .arg(inspection.versionMinor)
+                                .arg(inspection.versionRevision);
+    switch (inspection.status) {
+    case 0: // Compatible
+    case 1: // NewerRevision: そのまま開く
+        windowState.state->requests().openProject(inspection.path, false);
+        break;
+    case 2: { // NewerMinor: 警告＋バックアップボタン
+        QMessageBox box(this);
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(tr("Newer Project Version"));
+        box.setText(tr("This project was saved by a newer version (%1). "
+                       "Opening it here may lose newer data when saved.")
+                        .arg(version));
+        auto *backupButton = box.addButton(tr("Create Backup and Open"), QMessageBox::AcceptRole);
+        auto *openButton = box.addButton(tr("Open Without Backup"), QMessageBox::AcceptRole);
+        box.addButton(QMessageBox::Cancel);
+        box.exec();
+        if (box.clickedButton() == backupButton) {
+            windowState.state->requests().openProject(inspection.path, true);
+        } else if (box.clickedButton() == openButton) {
+            windowState.state->requests().openProject(inspection.path, false);
+        }
+        break;
+    }
+    default: { // NewerMajor: チェックボックス確認付きの強い警告＋バックアップボタン
+        QDialog dialog(this);
+        dialog.setWindowTitle(tr("Much Newer Project Version"));
+        auto *layout = new QVBoxLayout(&dialog);
+        auto *label = new QLabel(tr("This project was saved by a much newer major version (%1). "
+                                    "This build may not understand its format. "
+                                    "Opening it is strongly discouraged.")
+                                     .arg(version));
+        label->setWordWrap(true);
+        layout->addWidget(label);
+        auto *acknowledge = new QCheckBox(tr("I understand the risk and want to open it anyway"));
+        layout->addWidget(acknowledge);
+        auto *buttons = new QHBoxLayout();
+        auto *backupButton = new QPushButton(tr("Create Backup and Open"));
+        auto *openButton = new QPushButton(tr("Open Without Backup"));
+        auto *cancelButton = new QPushButton(tr("Cancel"));
+        backupButton->setEnabled(false);
+        openButton->setEnabled(false);
+        connect(acknowledge, &QCheckBox::toggled, backupButton, &QPushButton::setEnabled);
+        connect(acknowledge, &QCheckBox::toggled, openButton, &QPushButton::setEnabled);
+        bool withBackup = true;
+        connect(backupButton, &QPushButton::clicked, &dialog,
+                [&dialog, &withBackup]() {
+                    withBackup = true;
+                    dialog.accept();
+                });
+        connect(openButton, &QPushButton::clicked, &dialog,
+                [&dialog, &withBackup]() {
+                    withBackup = false;
+                    dialog.accept();
+                });
+        connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+        buttons->addWidget(backupButton);
+        buttons->addWidget(openButton);
+        buttons->addWidget(cancelButton);
+        layout->addLayout(buttons);
+        if (dialog.exec() == QDialog::Accepted) {
+            windowState.state->requests().openProject(inspection.path, withBackup);
+        }
+        break;
+    }
+    }
+}
+
+void MainWindow::saveProject() {
+    windowState.state->requests().saveProject(false);
+}
+
+void MainWindow::saveProjectAs() {
+    const QString dir = QFileDialog::getExistingDirectory(this, tr("Save Project As"));
+    if (dir.isEmpty()) {
+        return;
+    }
+    bool overwrite = false;
+    const bool nonEmpty =
+        !QDir(dir).entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty();
+    if (nonEmpty) {
+        const auto answer = QMessageBox::question(
+            this, tr("Folder Not Empty"),
+            tr("The selected folder is not empty. Save anyway and overwrite its contents?"),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            return;
+        }
+        overwrite = true;
+    }
+    windowState.state->requests().saveProjectAs(dir, overwrite);
 }
 
 void MainWindow::checkAsyncError() {

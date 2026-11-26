@@ -19,6 +19,12 @@ class Requests {
   public:
     explicit Requests(const ClientState *network);
     void newProject();
+    void inspectProject(const QString &path);
+    void openProject(const QString &path, bool backup);
+    void saveProject(bool overwrite);
+    void saveProjectAs(const QString &path, bool overwrite);
+    void listAutosaveGenerations();
+    void restoreAutosaveGeneration(const QString &generationId);
     void loadStream(QString path) noexcept;
     void fetchFrame(TimelineId timelineIdx, TimelineTick playhead,
                     std::pair<TimelineTick, TimelineTick> visible_range) noexcept;

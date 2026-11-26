@@ -12,6 +12,34 @@ void Requests::newProject() {
     esotereel_gui_helper::req_new_project(ptr_network);
 }
 
+void Requests::inspectProject(const QString &path) {
+    QByteArray pathUtf8 = path.toUtf8();
+    esotereel_gui_helper::req_inspect_project(ptr_network, StringView::fromQUtf8String(pathUtf8));
+}
+
+void Requests::openProject(const QString &path, bool backup) {
+    QByteArray pathUtf8 = path.toUtf8();
+    esotereel_gui_helper::req_open_project(ptr_network, StringView::fromQUtf8String(pathUtf8), backup);
+}
+
+void Requests::saveProject(bool overwrite) {
+    esotereel_gui_helper::req_save_project(ptr_network, overwrite);
+}
+
+void Requests::saveProjectAs(const QString &path, bool overwrite) {
+    QByteArray pathUtf8 = path.toUtf8();
+    esotereel_gui_helper::req_save_project_as(ptr_network, StringView::fromQUtf8String(pathUtf8), overwrite);
+}
+
+void Requests::listAutosaveGenerations() {
+    esotereel_gui_helper::req_list_autosave_generations(ptr_network);
+}
+
+void Requests::restoreAutosaveGeneration(const QString &generationId) {
+    QByteArray idUtf8 = generationId.toUtf8();
+    esotereel_gui_helper::req_restore_autosave_generation(ptr_network, StringView::fromQUtf8String(idUtf8));
+}
+
 void Requests::loadStream(QString path) noexcept {
     QByteArray pathUtf8 = path.toUtf8();
     auto pathView = StringView::fromQUtf8String(pathUtf8);

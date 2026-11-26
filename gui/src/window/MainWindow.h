@@ -14,7 +14,8 @@ enum class Direction;
 
 namespace esotereel {
 class ClientState;
-}
+struct ProjectInspection;
+} // namespace esotereel
 
 namespace esotereel::window {
 using CameraInfo = esotereel_gui_helper::CameraInfo;
@@ -46,12 +47,23 @@ class MainWindow : public QMainWindow {
 
     void markDirtyTimeline(TimelineId timelineId);
 
+    // 異常終了検知時に復旧一覧ダイアログを出す（main.cpp の接続時処理から）。
+    void showRecoveryDialog();
+
   protected:
     WindowGState windowState;
 
   private slots:
     void openSettingsDialog();
+    void openAppSettingsDialog();
+    void openProject();
+    void saveProject();
+    void saveProjectAs();
     void checkAsyncError();
+
+  private:
+    void pollForInspection(const QString &path, int attempts);
+    void confirmAndOpenProject(const ProjectInspection &inspection);
 
   private:
     void setupWindowState();
