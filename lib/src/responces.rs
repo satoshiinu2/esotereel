@@ -138,6 +138,17 @@ pub enum Response {
     AutosaveRestored {
         generation_id: String,
     },
+    /// アセット表の全量配信（プロジェクト開始時）。レジストリの
+    /// 表示順そのままの並びです。
+    AssetTableSync {
+        entries: Vec<AssetEntryWire>,
+    },
+    /// アセット表への増分配信。`upserts` は新規・変更分、
+    /// `removed` は削除されたアセット ID です。
+    AssetTableUpdated {
+        upserts: Vec<AssetEntryWire>,
+        removed: Vec<String>,
+    },
 }
 
 /// 保存形式のバージョン（major.minor.revision）の転送形です。
@@ -201,6 +212,69 @@ impl From<crate::project::autosave::AutosaveGeneration> for AutosaveGenerationWi
             created_at_ms: generation.created_at_ms,
             size_bytes: generation.size_bytes,
             file_count: generation.file_count as u64,
+        }
+    }
+}
+
+/// アセットの所在の転送形です（`asset::AssetAvailability` に対応）。
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[archive_attr(derive(CheckBytes))]
+pub enum AssetAvailabilityWire {
+    /// プロジェクト外の実ファイルを参照している。
+    External { path: String },
+    /// アプリのデータ領域で管理しているファイル。
+    Managed { path: String },
+    /// 実ファイルが見つからない。以前のパスだけが残っている。
+    Missing { previous_path: String },
+}
+
+/// アセット1件の転送形です。GUI の一覧表示に必要な範囲だけを載せ、
+/// fingerprint の hash 本体は載せません（有無だけです）。
+#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
+#[archive_attr(derive(CheckBytes))]
+pub struct AssetEntryWire {
+    /// `AssetRef`（UUID）の文字列表現。
+    pub id: String,
+    pub name: String,
+    pub availability: AssetAvailabilityWire,
+    /// fingerprint のサイズ。fingerprint 自体が無ければ `None`。
+    pub fingerprint_size: Option<u64>,
+    /// fingerprint の hash が計算済みかどうか。
+    pub has_fingerprint_hash: bool,
+    /// いずれかのクリップがメディア source として参照しているか。
+    pub in_use: bool,
+}
+
+impl AssetEntryWire {
+    /// レジストリエントリから転送形を作ります。`in_use` はクリップ側の
+    /// 走査が要るため、呼び出し側（core）が判定して渡します。
+    pub fn from_entry(entry: &crate::project::asset::AssetEntry, in_use: bool) -> Self {
+        use crate::project::asset::{AssetAvailability, AssetLocation};
+        let availability = match &entry.source {
+            AssetAvailability::Available(AssetLocation::External { path }) => {
+                AssetAvailabilityWire::External {
+                    path: path.to_string_lossy().into_owned(),
+                }
+            }
+            AssetAvailability::Available(AssetLocation::Managed { path }) => {
+                AssetAvailabilityWire::Managed {
+                    path: path.to_string_lossy().into_owned(),
+                }
+            }
+            AssetAvailability::Missing { previous_path } => AssetAvailabilityWire::Missing {
+                previous_path: previous_path.to_string_lossy().into_owned(),
+            },
+        };
+        Self {
+            id: entry.id.to_string(),
+            name: entry.name.clone(),
+            availability,
+            fingerprint_size: entry.fingerprint.as_ref().map(|fp| fp.size),
+            has_fingerprint_hash: entry
+                .fingerprint
+                .as_ref()
+                .is_some_and(|fp| fp.hash.is_some()),
+            in_use,
         }
     }
 }

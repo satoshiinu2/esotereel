@@ -118,6 +118,65 @@ impl AssetRegistry {
         Ok(())
     }
 
+    /// 表示名を変更します。
+    pub fn rename(&mut self, id: AssetRef, name: String) -> anyhow::Result<()> {
+        let entry = self
+            .entries
+            .get_mut(&id)
+            .ok_or_else(|| EsotereelError::AssetNotFound(id))?;
+        entry.name = name;
+        Ok(())
+    }
+
+    /// 参照先を外部ファイルへ付け替えます。
+    ///
+    /// 付け替え先は別のファイルかもしれないため、fingerprint は
+    /// サイズを取り直して hash は未計算に戻します（hash は登録時と
+    /// 同じ後埋め経路で再計算されます）。
+    pub fn relink_external(&mut self, id: AssetRef, path: &Path) -> anyhow::Result<()> {
+        let entry = self
+            .entries
+            .get_mut(&id)
+            .ok_or_else(|| EsotereelError::AssetNotFound(id))?;
+        entry.source = AssetAvailability::Available(AssetLocation::External {
+            path: path.to_path_buf(),
+        });
+        entry.fingerprint = fingerprint_for(path);
+        Ok(())
+    }
+
+    /// エントリを登録または置き換えます（クライアント側ミラーが
+    /// 権威側からの増分配信を適用するためのものです）。
+    ///
+    /// 既存の ID なら表示順はそのままに中身だけ差し替え、新規の ID
+    /// なら末尾へ追加します。
+    pub fn upsert_entry(&mut self, entry: AssetEntry) {
+        let id = entry.id;
+        match self.entries.entry(id) {
+            hash_map::Entry::Occupied(mut occupied) => {
+                *occupied.get_mut() = entry;
+            }
+            hash_map::Entry::Vacant(vacant) => {
+                vacant.insert(entry);
+                self.order.push(id);
+            }
+        }
+    }
+
+    /// 全エントリを、渡された一覧の内容と順序で置き換えます
+    /// （クライアント側ミラーが権威側からの全量配信へ収束するための
+    /// ものです）。
+    pub fn replace_all(&mut self, entries: Vec<AssetEntry>) {
+        self.entries.clear();
+        self.order.clear();
+        for entry in entries {
+            let id = entry.id;
+            if self.entries.insert(id, entry).is_none() {
+                self.order.push(id);
+            }
+        }
+    }
+
     /// fingerprint の hash がまだ無いエントリについて、ファイルを
     /// 読んで BLAKE3 ハッシュを計算し、埋めます。
     ///

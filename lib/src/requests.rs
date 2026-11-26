@@ -120,4 +120,19 @@ pub enum Request {
     RestoreAutosaveGeneration {
         generation_id: String,
     },
+    /// アセットの表示名を変更する。
+    RenameAsset {
+        asset_id: String,
+        name: String,
+    },
+    /// アセットをレジストリから削除する。クリップが参照している
+    /// アセットは失敗する。
+    RemoveAsset {
+        asset_id: String,
+    },
+    /// アセットの参照先を別の外部ファイルへ付け替える。
+    RelinkAsset {
+        asset_id: String,
+        path: String,
+    },
 }
