@@ -18,6 +18,16 @@ RequestExecutionLevel admin
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "Japanese"
 
+; NSIS is a 32-bit process, so without this the registry writes below land in
+; HKLM\Software\WOW6432Node, where the 64-bit app never looks for them.
+Function .onInit
+    SetRegView 64
+FunctionEnd
+
+Function un.onInit
+    SetRegView 64
+FunctionEnd
+
 Section "Esotereel" SecMain
     SetOutPath "$INSTDIR"
 
