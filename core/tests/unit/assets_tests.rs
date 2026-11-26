@@ -62,9 +62,28 @@ fn complete_requires_the_full_declared_size() {
     assert!(manager.complete(asset_id).is_err());
 
     manager.write_chunk(asset_id, 3, b"de").unwrap();
-    let (name, path) = manager.complete(asset_id).unwrap();
+    let (name, path, hash) = manager.complete(asset_id).unwrap();
     assert_eq!(name, "clip.mp4");
     assert_eq!(fs::metadata(&path).unwrap().len(), 5);
+    assert_eq!(hash, *blake3::hash(b"abcde").as_bytes());
+
+    let _ = fs::remove_dir_all(&working_dir);
+}
+
+/// 順不同の受信でも、完了時のハッシュはファイル内容と一致すること。
+///
+/// 後ろのチャンクが先に届くと受信時の incremental 計算は使えず、
+/// 完了時にファイルを読み直して計算するフォールバックに入る。
+#[test]
+fn complete_hashes_out_of_order_upload_correctly() {
+    let (mut manager, working_dir) = manager_in_temp_dir("hash-ooo");
+    let asset_id = AssetRef::new_v4();
+
+    manager.begin(asset_id, "clip.mp4", 5, 0).unwrap();
+    manager.write_chunk(asset_id, 3, b"de").unwrap();
+    manager.write_chunk(asset_id, 0, b"abc").unwrap();
+    let (_, _, hash) = manager.complete(asset_id).unwrap();
+    assert_eq!(hash, *blake3::hash(b"abcde").as_bytes());
 
     let _ = fs::remove_dir_all(&working_dir);
 }

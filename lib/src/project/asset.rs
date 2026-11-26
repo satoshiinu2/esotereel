@@ -118,6 +118,35 @@ impl AssetRegistry {
         Ok(())
     }
 
+    /// fingerprint の hash を埋めます（アップロード完了時の BLAKE3 等）。
+    ///
+    /// size は登録時に記録済みの値を残します。fingerprint 自体が無い
+    /// 場合は、エントリのパスを stat して size を補います。
+    pub fn set_fingerprint_hash(
+        &mut self,
+        id: AssetRef,
+        hash: [u8; 32],
+    ) -> anyhow::Result<()> {
+        let entry = self
+            .entries
+            .get_mut(&id)
+            .ok_or_else(|| EsotereelError::AssetNotFound(id))?;
+        match &mut entry.fingerprint {
+            Some(fingerprint) => fingerprint.hash = Some(hash),
+            None => {
+                let size = match &entry.source {
+                    AssetAvailability::Available(AssetLocation::External { path })
+                    | AssetAvailability::Available(AssetLocation::Managed { path }) => {
+                        std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+                    }
+                    AssetAvailability::Missing { .. } => 0,
+                };
+                entry.fingerprint = Some(AssetFingerprint { size, hash: Some(hash) });
+            }
+        }
+        Ok(())
+    }
+
     pub fn resolve(&self, id: AssetRef) -> anyhow::Result<&Path> {
         let entry = self
             .entries

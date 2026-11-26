@@ -17,6 +17,12 @@ struct UploadSession {
     client_id: u32,
     /// 到着済み接頭辞と完了/中断を読み側と共有する進捗。
     progress: Arc<UploadProgress>,
+    /// 受信しながら回す BLAKE3 ハッシュ。先頭から連続して届いた
+    /// 接頭辞だけを対象にし、接頭辞が途切れた場合は `None` になり
+    /// 完了時にファイルを読み直して計算します。
+    hasher: Option<blake3::Hasher>,
+    /// ハッシュ済みの先頭からの連続バイト数。
+    hashed_len: u64,
 }
 
 impl Drop for UploadSession {
@@ -79,6 +85,8 @@ impl UploadManager {
                 total_size,
                 client_id,
                 progress: Arc::new(UploadProgress::new(total_size)),
+                hasher: Some(blake3::Hasher::new()),
+                hashed_len: 0,
             },
         );
         Ok(())
@@ -144,14 +152,35 @@ impl UploadManager {
         }
         file.write_all(data)?;
         session.progress.record_range(offset, data.len() as u64);
+
+        // 受信しながら BLAKE3 を回す。対象は先頭から連続した接頭辞だけ。
+        // 順不同で後ろが先に届いた分はハッシュせず、完了時の読み直しに任せる。
+        // ハッシュ済み範囲への書き込み（再送で内容が変わりうる）は
+        // incremental な計算を無効化し、完了時の読み直しへ落とす。
+        let mut invalidate = false;
+        if let Some(hasher) = session.hasher.as_mut() {
+            if offset == session.hashed_len {
+                hasher.update(data);
+                session.hashed_len += data.len() as u64;
+            } else if offset < session.hashed_len {
+                invalidate = true;
+            }
+        }
+        if invalidate {
+            session.hasher = None;
+        }
         Ok(())
     }
 
-    /// アップロードの完了を検証し、登録用に（ファイル名, 保存先パス）を返す。
+    /// アップロードの完了を検証し、登録用に（ファイル名, 保存先パス, BLAKE3 ハッシュ）を返す。
+    ///
+    /// ハッシュは受信しながら計算したものを使い、順不同の受信で接頭辞が
+    /// 途切れた場合だけ完了時にファイルを読み直して計算します
+    /// （順序通りの受信では追加 I/O は発生しません）。
     ///
     /// 宣言された総サイズと受信量・実ファイルサイズが一致しない場合はエラーにし、
     /// セッションは残す（不足分のチャンクを送って再試行できる）。
-    pub fn complete(&mut self, asset_id: AssetRef) -> anyhow::Result<(String, PathBuf)> {
+    pub fn complete(&mut self, asset_id: AssetRef) -> anyhow::Result<(String, PathBuf, [u8; 32])> {
         let session = self
             .sessions
             .get(&asset_id)
@@ -179,12 +208,38 @@ impl UploadManager {
 
         session.progress.finish();
 
+        let hash = match &session.hasher {
+            Some(hasher) if session.hashed_len == session.total_size => {
+                *hasher.finalize().as_bytes()
+            }
+            _ => hash_file(&session.path)?,
+        };
+
         let session = self
             .sessions
             .remove(&asset_id)
             .ok_or_else(|| anyhow::anyhow!("asset `{asset_id}` has no active upload"))?;
-        Ok((session.file_name.clone(), session.path.clone()))
+        Ok((session.file_name.clone(), session.path.clone(), hash))
     }
+}
+
+/// ファイル全体の BLAKE3 ハッシュを計算します。
+///
+/// 順不同の受信で受信時の incremental 計算が使えなかった場合の
+/// フォールバックです。
+fn hash_file(path: &Path) -> anyhow::Result<[u8; 32]> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buf[..read]);
+    }
+    Ok(*hasher.finalize().as_bytes())
 }
 
 /// ファイル名として受け付けられるのは、パス区切りや親ディレクトリ参照を

@@ -195,7 +195,7 @@ pub fn on_request_receive(
                 let add_clip = deserialize_add_clip(add_clip)?;
                 // 先にアップロード側で完了を検証してセッションを閉じ、
                 // その後でプロジェクトの台帳へ登録する（ロックの保持範囲を分ける）。
-                let (name, path) = {
+                let (name, path, hash) = {
                     let mut uploads = uploads.lock_or_err()?;
                     uploads.complete(asset_uuid)?
                 };
@@ -204,6 +204,9 @@ pub fn on_request_receive(
                     .as_mut()
                     .ok_or_else(|| anyhow::anyhow!("no active project"))?;
                 project.register_managed_asset(asset_uuid, name, path.clone())?;
+                project
+                    .assets_mut()
+                    .set_fingerprint_hash(asset_uuid, hash)?;
                 let mut clip_added = false;
                 if let Some(add_clip) = add_clip {
                     let source = path

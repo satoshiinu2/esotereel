@@ -8,6 +8,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 anyhow = "1.0"
+blake3 = "1"
 esotereel_lib = { package = "esotereel_lib", path = "../lib" }
 rkyv = { version = "0.7", features = ["validation"] }
 log = "0.4"
