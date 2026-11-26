@@ -4,7 +4,12 @@ use std::process::Command;
 
 include!("ffi_types.rs");
 
-const gen_header_path: &'static str = "build/include";
+fn gen_header_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("guihlp must have a parent directory")
+        .join("build/include/esotereel_gui_helper.h")
+}
 
 fn main() {
     let out_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/generated");
@@ -15,15 +20,18 @@ fn main() {
     generate_option_types(&out_dir);
     generate_array_types(&out_dir);
 
+    let header_path = gen_header_path();
+    std::fs::create_dir_all(
+        header_path
+            .parent()
+            .expect("header path must have a parent directory"),
+    )
+    .expect("failed to create header directory");
+
     let status = Command::new("cbindgen")
-        .args(&[
-            "--config",
-            "cbindgen.toml",
-            "--crate",
-            "esotereel_gui_helper",
-            "--output",
-            gen_header_path,
-        ])
+        .args(["--config", "cbindgen.toml", "--crate", "esotereel_gui_helper"])
+        .arg("--output")
+        .arg(&header_path)
         .status()
         .expect("Failed to run cbindgen");
 
@@ -32,13 +40,13 @@ fn main() {
     }
 
     // 🫩
-    fix_header_file();
+    fix_header_file(&header_path);
 }
 
 /// C++ヘッダーファイルの後処理：前方宣言を追加
-fn fix_header_file() {
+fn fix_header_file(header_path: &Path) {
     let mut header =
-        std::fs::read_to_string(gen_header_path).expect("failed to read generated header");
+        std::fs::read_to_string(header_path).expect("failed to read generated header");
 
     // CFieldValueMapEntry の定義を取り出す
     let entry_start = header
@@ -124,7 +132,7 @@ fn fix_header_file() {
 
     header.insert_str(pos, "struct CFieldValue;\nstruct CFieldValueMapEntry;\n\n");
 
-    std::fs::write(gen_header_path, header).expect("failed to write generated header");
+    std::fs::write(header_path, header).expect("failed to write generated header");
 }
 fn generate_result_types(out_dir: &Path) {
     let mut out = String::new();
