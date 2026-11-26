@@ -1,4 +1,6 @@
 #include "ClipPropertiesPanel.h"
+#include "ffi/Assets.h"
+#include "ffi/Requests.h"
 #include "ffi/project/ClipProperty.h"
 #include "ffi/project/Project.h"
 #include "ffi/project/Timeline.h"
@@ -81,6 +83,20 @@ QWidget *ClipPropertiesPanel::buildRow(const ClipPropertySchema &field) {
         }
         commandQueue.sendAll();
         pendingUpdates.insert(key);
+    };
+    // AssetRef 型フィールドのピッカー用: 同期済みアセット一覧と、
+    // ファイルからの新規登録（登録経路はドロップと同じ RegisterAssetReference）。
+    binding.listAssets = [this]() -> QVector<esotereel::AssetEntry> {
+        auto result = esotereel::Assets::list(state);
+        if (result.isError()) {
+            auto err = result.getError();
+            qWarning() << "ClipPropertiesPanel: listAssets failed:" << QString::fromStdString(*err);
+            return {};
+        }
+        return result.unwrap();
+    };
+    binding.registerAssetFile = [this](const QString &path) -> std::optional<std::array<uint8_t, 16>> {
+        return esotereel::Requests(state).registerAssetReference(path);
     };
 
     QWidget *control = widget::FieldControlFactory::createControl(field, binding);
@@ -275,6 +291,8 @@ void ClipPropertiesPanel::refreshChangedFields() {
             if (qstringValue.has_value()) {
                 lineEdit->setText(qstringValue.value());
             }
+        } else if (auto *assetEditor = qobject_cast<widget::AssetRefEditorWidget *>(control)) {
+            assetEditor->refreshFromBinding();
         } else if (const auto values = value.asArray()) {
             const auto components = control->findChildren<QDoubleSpinBox *>(QString(), Qt::FindDirectChildrenOnly);
             for (qsizetype index = 0; index < components.size() && index < static_cast<qsizetype>(values->size());

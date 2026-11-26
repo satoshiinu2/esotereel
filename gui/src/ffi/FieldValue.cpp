@@ -1,6 +1,7 @@
 #include "FieldValue.h"
 #include "esotereel_gui_helper.h"
 #include "ffi/StringView.h"
+#include <algorithm>
 
 namespace esotereel {
 
@@ -72,6 +73,13 @@ FieldValue::Variant convertFieldValue(const CFieldValue &value) {
             result.emplace(OwnedString::intoStdString(entry.key), FieldValue::fromC(entry.value));
         }
 
+        return result;
+    }
+
+    case CFieldValueTag::AssetRef: {
+        AssetRefValue result;
+        std::copy(std::begin(value.data.asset_ref_value.bytes), std::end(value.data.asset_ref_value.bytes),
+                  result.bytes.begin());
         return result;
     }
     }
@@ -169,6 +177,10 @@ CFieldValue FieldValue::toC() const {
                     len,
                     len,
                 };
+
+            } else if constexpr (std::is_same_v<T, AssetRefValue>) {
+                result.tag = CFieldValueTag::AssetRef;
+                std::copy(arg.bytes.begin(), arg.bytes.end(), std::begin(result.data.asset_ref_value.bytes));
             }
         },
         value_);
@@ -182,6 +194,7 @@ void FieldValue::freeC(CFieldValue &value) {
     case CFieldValueTag::Int:
     case CFieldValueTag::Float:
     case CFieldValueTag::Color:
+    case CFieldValueTag::AssetRef:
         break;
 
     case CFieldValueTag::Enum:

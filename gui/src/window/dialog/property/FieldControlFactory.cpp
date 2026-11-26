@@ -7,15 +7,163 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDoubleSpinBox>
+#include <QFileDialog>
+#include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QVBoxLayout>
 
 namespace esotereel::window::widget {
 
 using esotereel::FieldValue;
 using SettingsFieldType = esotereel_gui_helper::SettingsFieldType;
+
+namespace {
+
+bool isNilAssetRef(const std::array<uint8_t, 16> &bytes) {
+    return std::all_of(bytes.begin(), bytes.end(), [](uint8_t byte) { return byte == 0; });
+}
+
+QString assetAvailabilityText(uint8_t availability) {
+    switch (availability) {
+    case 1:
+        return QObject::tr("Managed");
+    case 2:
+        return QObject::tr("Missing");
+    default:
+        return QObject::tr("External");
+    }
+}
+
+QString assetDisplayText(const esotereel::AssetEntry &entry) {
+    return QStringLiteral("%1 (%2)").arg(entry.name, assetAvailabilityText(entry.availability));
+}
+
+} // namespace
+
+AssetRefEditorWidget::AssetRefEditorWidget(const FieldBinding &binding, QWidget *parent)
+    : QWidget(parent), binding_(binding) {
+    auto *layout = new QHBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    label_ = new QLabel(this);
+    layout->addWidget(label_, 1);
+    auto *selectButton = new QPushButton(tr("Select..."), this);
+    layout->addWidget(selectButton);
+    connect(selectButton, &QPushButton::clicked, this, &AssetRefEditorWidget::openPicker);
+    refreshFromBinding();
+}
+
+void AssetRefEditorWidget::refreshFromBinding() {
+    const auto ref = binding_.getValue().asAssetRef();
+    if (!ref.has_value()) {
+        qWarning() << "AssetRefEditorWidget: expected AssetRef value but got different type";
+        label_->setText(tr("?"));
+        return;
+    }
+    if (isNilAssetRef(*ref)) {
+        label_->setText(tr("(No asset selected)"));
+        return;
+    }
+    if (binding_.listAssets) {
+        for (const auto &entry : binding_.listAssets()) {
+            if (entry.id == *ref) {
+                label_->setText(assetDisplayText(entry));
+                return;
+            }
+        }
+    }
+    label_->setText(tr("Unknown asset"));
+}
+
+void AssetRefEditorWidget::openPicker() {
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Select Asset"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *list = new QListWidget(&dialog);
+    layout->addWidget(list);
+
+    // 参照は文字列化せず、UUID のバイト列のまま項目に持たせる。
+    const std::function<void()> refreshList = [this, list]() {
+        list->clear();
+        if (!binding_.listAssets) {
+            return;
+        }
+        for (const auto &entry : binding_.listAssets()) {
+            auto *item = new QListWidgetItem(assetDisplayText(entry), list);
+            item->setData(Qt::UserRole,
+                          QByteArray(reinterpret_cast<const char *>(entry.id.data()),
+                                     static_cast<int>(entry.id.size())));
+        }
+    };
+    refreshList();
+    if (const auto current = binding_.getValue().asAssetRef()) {
+        for (int i = 0; i < list->count(); ++i) {
+            const QByteArray bytes = list->item(i)->data(Qt::UserRole).toByteArray();
+            if (bytes.size() == 16 && std::equal(bytes.begin(), bytes.end(), current->begin())) {
+                list->setCurrentRow(i);
+            }
+        }
+    }
+
+    const std::function<void(QListWidgetItem *)> acceptItem = [this, &dialog](QListWidgetItem *item) {
+        if (!item) {
+            return;
+        }
+        const QByteArray bytes = item->data(Qt::UserRole).toByteArray();
+        if (bytes.size() != 16) {
+            return;
+        }
+        std::array<uint8_t, 16> ref{};
+        std::copy(bytes.begin(), bytes.end(), ref.begin());
+        binding_.setValue(FieldValue::fromAssetRef(ref));
+        refreshFromBinding();
+        dialog.accept();
+    };
+
+    auto *buttons = new QHBoxLayout();
+    if (binding_.registerAssetFile) {
+        auto *registerButton = new QPushButton(tr("Register from File..."), &dialog);
+        buttons->addWidget(registerButton);
+        connect(registerButton, &QPushButton::clicked, &dialog, [this, &dialog, list, refreshList]() {
+            const QString path = QFileDialog::getOpenFileName(&dialog, tr("Register Asset File"));
+            if (path.isEmpty()) {
+                return;
+            }
+            const auto registered = binding_.registerAssetFile(path);
+            refreshList();
+            if (registered.has_value()) {
+                for (int i = 0; i < list->count(); ++i) {
+                    const QByteArray bytes = list->item(i)->data(Qt::UserRole).toByteArray();
+                    if (bytes.size() == 16 && std::equal(bytes.begin(), bytes.end(), registered->begin())) {
+                        list->setCurrentRow(i);
+                    }
+                }
+            }
+        });
+    }
+    auto *clearButton = new QPushButton(tr("Clear"), &dialog);
+    buttons->addWidget(clearButton);
+    buttons->addStretch();
+    auto *cancelButton = new QPushButton(tr("Cancel"), &dialog);
+    buttons->addWidget(cancelButton);
+    auto *okButton = new QPushButton(tr("OK"), &dialog);
+    buttons->addWidget(okButton);
+    layout->addLayout(buttons);
+
+    connect(clearButton, &QPushButton::clicked, &dialog, [this, &dialog]() {
+        binding_.setValue(FieldValue::fromAssetRef(std::array<uint8_t, 16>{}));
+        refreshFromBinding();
+        dialog.accept();
+    });
+    connect(cancelButton, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(okButton, &QPushButton::clicked, &dialog, [list, acceptItem]() { acceptItem(list->currentItem()); });
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, acceptItem);
+
+    dialog.exec();
+}
 
 QStringList FieldControlFactory::guessEnumOptions(const QString &key, const QString &currentValue) {
     QStringList options;
@@ -153,6 +301,10 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
                              });
         }
         return container;
+    }
+
+    if (field.kindType == SettingsFieldType::AssetRef) {
+        return new AssetRefEditorWidget(binding);
     }
 
     if (field.kindType == SettingsFieldType::Map) {

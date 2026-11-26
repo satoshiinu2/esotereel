@@ -49,6 +49,20 @@ esotereel_gui_helper::CAssetRef toCAssetRef(const std::array<uint8_t, 16> &asset
 }
 } // namespace
 
+std::optional<std::array<uint8_t, 16>> Requests::registerAssetReference(const QString &path) {
+    QByteArray pathUtf8 = path.toUtf8();
+    auto result = esotereel_gui_helper::req_register_asset_reference(ptr_network,
+                                                                     StringView::fromQUtf8String(pathUtf8));
+    if (!result.is_ok) {
+        // エラー文字列は Rust 側の所有なので、取り込んで解放する。
+        (void)OwnedString::intoStdString(result.value.err);
+        return std::nullopt;
+    }
+    std::array<uint8_t, 16> assetId{};
+    std::copy(std::begin(result.value.ok.bytes), std::end(result.value.ok.bytes), assetId.begin());
+    return assetId;
+}
+
 void Requests::renameAsset(const std::array<uint8_t, 16> &assetId, const QString &name) {
     QByteArray nameUtf8 = name.toUtf8();
     esotereel_gui_helper::req_rename_asset(ptr_network, toCAssetRef(assetId),

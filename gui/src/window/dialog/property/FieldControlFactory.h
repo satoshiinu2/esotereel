@@ -1,11 +1,18 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
 #include <QWidget>
+#include <array>
+#include <cstdint>
 #include <functional>
+#include <optional>
 
+#include "ffi/Assets.h"
 #include "ffi/Settings.h"
 #include "ffi/project/ClipProperty.h"
+
+class QLabel;
 
 namespace esotereel::window::widget {
 
@@ -16,6 +23,27 @@ namespace esotereel::window::widget {
 struct FieldBinding {
     std::function<esotereel::FieldValue()> getValue;
     std::function<void(const esotereel::FieldValue &)> setValue;
+    // AssetRef 型フィールド用（任意）。同期済みアセット一覧の取得と、
+    // ファイルからの新規登録。未設定のバインディング（設定ダイアログ等）では
+    // ピッカーは空の一覧になり、登録ボタンは出ない。
+    std::function<QVector<esotereel::AssetEntry>()> listAssets;
+    std::function<std::optional<std::array<uint8_t, 16>>(const QString &path)> registerAssetFile;
+};
+
+// AssetRef 型フィールドのエディタ。現在の参照先（名前と状態）を表示し、
+// ボタンでピッカーを開く。値の再読み込みは refreshFromBinding()。
+class AssetRefEditorWidget : public QWidget {
+    Q_OBJECT
+  public:
+    AssetRefEditorWidget(const FieldBinding &binding, QWidget *parent = nullptr);
+
+    void refreshFromBinding();
+
+  private:
+    void openPicker();
+
+    FieldBinding binding_;
+    QLabel *label_ = nullptr;
 };
 
 // SettingsDialog::createControlForField から切り出した「1フィールド分のコントロールを作る」部分。

@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariant>
+#include <array>
 #include <cstdint>
 
 namespace esotereel {
@@ -27,13 +28,20 @@ struct RgbaColor {
     float a;
 };
 
+// アセット参照。UUID の16バイトを文字列化せずそのまま保持する。
+// 全ゼロは未設定（nil UUID）。
+struct AssetRefValue {
+    std::array<uint8_t, 16> bytes{};
+};
+
 class FieldValue {
   public:
     using Array = std::vector<FieldValue>;
     using Map = std::map<std::string, FieldValue>;
     using Path = PathValue;
 
-    using Variant = std::variant<bool, std::int64_t, double, EnumValue, std::string, Path, RgbaColor, Array, Map>;
+    using Variant =
+        std::variant<bool, std::int64_t, double, EnumValue, std::string, Path, RgbaColor, Array, Map, AssetRefValue>;
 
     FieldValue() = default;
 
@@ -81,6 +89,9 @@ class FieldValue {
     }
     static FieldValue fromMap(const Map &value) {
         return FieldValue(value);
+    }
+    static FieldValue fromAssetRef(const std::array<uint8_t, 16> &bytes) {
+        return FieldValue(AssetRefValue{bytes});
     }
 
     const Variant &variant() const noexcept {
@@ -161,6 +172,13 @@ class FieldValue {
     std::optional<Map> asMap() const {
         if (const auto *v = std::get_if<Map>(&value_)) {
             return *v;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<std::array<uint8_t, 16>> asAssetRef() const {
+        if (const auto *v = std::get_if<AssetRefValue>(&value_)) {
+            return v->bytes;
         }
         return std::nullopt;
     }

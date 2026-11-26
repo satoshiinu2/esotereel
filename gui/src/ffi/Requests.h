@@ -3,6 +3,7 @@
 #include <QString>
 #include <array>
 #include <cstdint>
+#include <optional>
 
 #include "ClientState.h"
 #include "esotereel_gui_helper.h"
@@ -28,6 +29,8 @@ class Requests {
     void listAutosaveGenerations();
     void restoreAutosaveGeneration(const QString &generationId);
     // アセット ID は UUID の16バイトを文字列化せずそのまま渡す。
+    // ファイルを新規アセットとして登録し、採番された参照（UUID の16バイト）を返す。失敗時は nullopt。
+    std::optional<std::array<uint8_t, 16>> registerAssetReference(const QString &path);
     void renameAsset(const std::array<uint8_t, 16> &assetId, const QString &name);
     void removeAsset(const std::array<uint8_t, 16> &assetId);
     void relinkAsset(const std::array<uint8_t, 16> &assetId, const QString &path);
