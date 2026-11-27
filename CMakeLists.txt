@@ -108,7 +108,7 @@ else()
     set(GUI_HLP_LINK_LIB "${GUI_HLP_LIB}")
 endif()
 set(CORE_BIN "${RUST_TARGET_DIR}/esotereel_core")
-file(GLOB_RECURSE RUST_SRC_FILES
+file(GLOB_RECURSE RUST_SRC_FILES CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/core/src/*"
     "${CMAKE_SOURCE_DIR}/lib/src/*"
     "${CMAKE_SOURCE_DIR}/guihlp/src/*"
