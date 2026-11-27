@@ -1,13 +1,14 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use esotereel_lib::{
-    project::ids::{LayerFolderId, LayerId, TimelineId},
+    project::ids::{AssetRef, LayerFolderId, LayerId, TimelineId},
     util::result::EsotereelError,
 };
 
 use crate::{
     commands::CommandQueue,
     ffi::{
+        project_files::CAssetRef,
         result::FfiResultVoid,
         state::{ClientStateHandle, OptionProject},
         stringview::FfiStringView,
@@ -257,6 +258,57 @@ pub unsafe extern "C" fn req_cmd_add_clip_with_source(
             position,
             layer_id,
             source_path,
+        )
+    })))
+}
+
+/// 登録済みアセットの参照（16 バイトのまま）からクリップを追加します。
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn req_cmd_add_clip_from_asset(
+    ptr_queue: *mut CommandQueue,
+    ptr_state: *const ClientStateHandle,
+    timeline_id: TimelineId,
+    position: i64,
+    layer_id: LayerId,
+    asset_id: CAssetRef,
+) -> FfiResultVoid {
+    fn inner(
+        ptr_queue: *mut CommandQueue,
+        ptr_state: *const ClientStateHandle,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+        asset_id: CAssetRef,
+    ) -> anyhow::Result<()> {
+        if ptr_queue.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_queue".to_string()));
+        }
+        if ptr_state.is_null() {
+            anyhow::bail!(EsotereelError::NullPointer("ptr_state".to_string()));
+        }
+
+        let state = ClientStateHandle::from_ptr(ptr_state);
+
+        let queue = unsafe { &mut *ptr_queue };
+        queue.req_cmd_add_clip_from_asset(
+            &state,
+            timeline_id,
+            position,
+            layer_id,
+            AssetRef::from_bytes(asset_id.bytes),
+        )?;
+
+        Ok(())
+    }
+
+    FfiResultVoid::from_panic_result_result(catch_unwind(AssertUnwindSafe(|| {
+        inner(
+            ptr_queue,
+            ptr_state,
+            timeline_id,
+            position,
+            layer_id,
+            asset_id,
         )
     })))
 }

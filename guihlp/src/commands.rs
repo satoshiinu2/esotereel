@@ -5,7 +5,7 @@ use esotereel_lib::{
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
-        ids::{LayerFolderId, LayerId, TimelineId},
+        ids::{AssetRef, LayerFolderId, LayerId, TimelineId},
     },
     requests::{AddClipFromAsset, Request},
     util::result::{EsotereelError, LockExt},
@@ -195,6 +195,49 @@ impl CommandQueue {
         self.enqueue_request(Request::RegisterAssetReference {
             asset_id: asset_ref.to_string(),
             path: source_path.to_string(),
+            add_clip: Some(AddClipFromAsset {
+                timeline_id,
+                layer_id,
+                position,
+                duration: 50,
+                kind_id,
+            }),
+        });
+
+        Ok(())
+    }
+
+    /// 登録済みアセットの参照からクリップを追加します。
+    ///
+    /// パスはクライアント側ミラーのレジストリから ID で解決します。
+    /// ミラーのパスはサーバーから同期された表のものと一致するため、
+    /// サーバー側の `register_external_asset` は冪等に成功し、クリップ
+    /// 追加では `clip_add_core` が同じ ID を `AssetRef` 値として確定させ
+    /// ます。二重登録や ID の取り違えは起きません。Missing のアセットは
+    /// 解決が失敗してここで見える失敗になります。
+    pub fn req_cmd_add_clip_from_asset(
+        &mut self,
+        state: &ClientState,
+        timeline_id: TimelineId,
+        position: i64,
+        layer_id: LayerId,
+        asset_id: AssetRef,
+    ) -> anyhow::Result<()> {
+        let loader = state.plugin_loader.read_or_err()?;
+        let kind_id = media_clip_kind_id(&loader)?;
+        drop(loader);
+
+        let project_arc = state.project_arc();
+        let project_guard = project_arc.read_or_err()?;
+        let project = project_guard
+            .as_ref()
+            .ok_or(EsotereelError::ProjectNotFound)?;
+        let path = project.assets().resolve(asset_id)?.to_path_buf();
+        drop(project_guard);
+
+        self.enqueue_request(Request::RegisterAssetReference {
+            asset_id: asset_id.to_string(),
+            path: path.to_string_lossy().into_owned(),
             add_clip: Some(AddClipFromAsset {
                 timeline_id,
                 layer_id,
