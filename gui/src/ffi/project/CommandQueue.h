@@ -2,6 +2,7 @@
 
 #include <QDebug>
 #include <QString>
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -51,6 +52,8 @@ class CommandQueue {
 
     Result<void> addClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId) noexcept;
     Result<void> addVideoClipAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId, const std::string &sourcePath) noexcept;
+    Result<void> addClipFromAssetAt(TimelineId timelineIdx, TimelineTick position, uint64_t layerId,
+                                    const std::array<uint8_t, 16> &assetId) noexcept;
     void addLayer(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,
                   const std::string &name) noexcept;
     void addFolder(TimelineId timelineIdx, std::optional<uint64_t> parentLayerId, std::optional<uint32_t> insertIndex,

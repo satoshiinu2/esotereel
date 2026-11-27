@@ -10,6 +10,10 @@ class QTableWidget;
 
 namespace esotereel::window {
 
+// Assets パネルからタイムラインへのドラッグで使う MIME 型。
+// ペイロードは CAssetRef の16バイトを文字列化せずそのまま載せる。
+inline constexpr char kAssetRefMimeType[] = "application/x-esotereel-asset-ref";
+
 // サーバーから同期されたアセット一覧を表示するドックパネル。
 // 一覧の実データは guihlp 側の同期済みアセット表で、このパネルは
 // reload() のたびに読み直して表示するだけ。変更（名前変更・削除・

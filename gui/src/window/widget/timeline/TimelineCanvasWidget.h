@@ -137,6 +137,7 @@ class TimelineCanvasWidget : public QWidget {
     void dropEvent(QDropEvent *e) override;
 
     friend bool esotereel::window::handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event);
+    friend bool esotereel::window::handleAssetDrop(TimelineCanvasWidget *canvas, const QDropEvent *event);
 
   private:
     // objects
@@ -170,6 +171,10 @@ class TimelineCanvasWidget : public QWidget {
     std::tuple<Clip, uint64_t> findClipAt(const Project &project, const QPoint &local) const;
     void postRender();
     void updateSnapshot() const;
+
+    // ドロップ位置から (frame, layerId) を解決する。置けない位置なら nullopt。
+    // 内部で updateSnapshot() を呼ぶため、Project ガード保持中には呼ばないこと。
+    std::optional<std::pair<TimelineTick, LayerId>> resolveDropTarget(const QPoint &localPos);
 
     void drawLayers(const Project &project, QPainter &p, const QRect &r) const;
     QColor rowContentBackgroundColor(size_t rowIdx) const noexcept;

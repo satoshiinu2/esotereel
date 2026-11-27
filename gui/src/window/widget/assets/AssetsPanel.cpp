@@ -8,12 +8,45 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <array>
+#include <functional>
+#include <optional>
 
 namespace esotereel::window {
 namespace {
+
+// ドラッグ専用の表。行のドラッグでカスタム MIME 型に CAssetRef の
+// 16バイトを載せる。assetRefForRow が空を返す行（Missing 等）は
+// mimeData が nullptr を返し、ドラッグが始まらない。
+class AssetTableWidget : public QTableWidget {
+  public:
+    using QTableWidget::QTableWidget;
+
+    // 行 → ドラッグするアセット参照。ドラッグ不可の行は空を返す。
+    std::function<std::optional<std::array<uint8_t, 16>>(int row)> assetRefForRow;
+
+    QStringList mimeTypes() const override { return {QString::fromLatin1(kAssetRefMimeType)}; }
+
+    QMimeData *mimeData(const QList<QTableWidgetItem *> &items) const override {
+        if (items.isEmpty() || !assetRefForRow) {
+            return nullptr;
+        }
+        const auto ref = assetRefForRow(items.first()->row());
+        if (!ref.has_value()) {
+            return nullptr;
+        }
+        auto *mime = new QMimeData;
+        mime->setData(QString::fromLatin1(kAssetRefMimeType),
+                      QByteArray(reinterpret_cast<const char *>(ref->data()),
+                                 static_cast<qsizetype>(ref->size())));
+        return mime;
+    }
+};
+
 
 QString stateText(uint8_t availability) {
     switch (availability) {
@@ -50,11 +83,25 @@ AssetsPanel::AssetsPanel(ClientState *state, QWidget *parent) : QWidget(parent),
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(4, 4, 4, 4);
 
-    table = new QTableWidget(0, 4, this);
+    auto *assetTable = new AssetTableWidget(0, 4, this);
+    table = assetTable;
     table->setHorizontalHeaderLabels({tr("Name"), tr("State"), tr("Size"), tr("Usage")});
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setDragEnabled(true);
+    table->setDragDropMode(QAbstractItemView::DragOnly);
+    assetTable->assetRefForRow = [this](int row) -> std::optional<std::array<uint8_t, 16>> {
+        if (row < 0 || row >= entries.size()) {
+            return std::nullopt;
+        }
+        const AssetEntry &entry = entries[row];
+        if (entry.availability == 2) {
+            // Missing は実体が無いので配置できない。
+            return std::nullopt;
+        }
+        return entry.id;
+    };
     table->verticalHeader()->setVisible(false);
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     mainLayout->addWidget(table);

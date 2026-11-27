@@ -4,6 +4,8 @@
 #include "ffi/Result.h"
 #include "ffi/StringView.h"
 #include "ffi/project/RenderRows.h"
+#include <algorithm>
+#include <array>
 #include <cstdint>
 
 namespace esotereel {
@@ -38,6 +40,14 @@ Result<void> CommandQueue::addVideoClipAt(TimelineId timelineId, TimelineTick po
     return Result<void>(esotereel_gui_helper::req_cmd_add_clip_with_source(
         ptr_queue, ptr_state, timelineId, position, layerId,
         StringView::fromStdString(sourcePath)));
+}
+
+Result<void> CommandQueue::addClipFromAssetAt(TimelineId timelineId, TimelineTick position, LayerId layerId,
+                                              const std::array<uint8_t, 16> &assetId) noexcept {
+    esotereel_gui_helper::CAssetRef ref{};
+    std::copy(assetId.begin(), assetId.end(), std::begin(ref.bytes));
+    return Result<void>(esotereel_gui_helper::req_cmd_add_clip_from_asset(ptr_queue, ptr_state, timelineId,
+                                                                          position, layerId, ref));
 }
 
 void CommandQueue::addLayer(TimelineId timelineId, std::optional<uint64_t> parentLayerId,

@@ -17,4 +17,8 @@ QStringList extractDropFilePaths(const QMimeData *mimeData);
 /// TimelineCanvasWidget の friend 関数として宣言する。
 bool handleVideoFileDrop(TimelineCanvasWidget *canvas, const QDropEvent *event);
 
+/// Assets パネルからドラッグされたアセット参照を、タイムライン上の
+/// ドロップ位置にクリップとして追加する。
+bool handleAssetDrop(TimelineCanvasWidget *canvas, const QDropEvent *event);
+
 } // namespace esotereel::window

@@ -3,6 +3,8 @@
 #include "ffi/Requests.h"
 #include "ffi/project/Clip.h"
 #include "ffi/project/CommandQueue.h"
+#include "window/widget/assets/AssetsPanel.h"
+#include <QMimeData>
 #include <tuple>
 
 namespace esotereel::window {
@@ -48,8 +50,17 @@ void TimelineCanvasWidget::advancePlaybackFrame() {
 
 TimelineCanvasWidget::~TimelineCanvasWidget() = default;
 
+// アセット参照のドロップ（Assets パネルからのドラッグ）を受け付けるか。
+// ペイロードは CAssetRef の16バイトそのもの。
+bool hasAssetRefDrop(const QMimeData *mimeData) {
+    if (!mimeData->hasFormat(QString::fromLatin1(kAssetRefMimeType))) {
+        return false;
+    }
+    return mimeData->data(QString::fromLatin1(kAssetRefMimeType)).size() == 16;
+}
+
 void TimelineCanvasWidget::dragEnterEvent(QDragEnterEvent *e) {
-    if (e->mimeData()->hasUrls()) {
+    if (e->mimeData()->hasUrls() || hasAssetRefDrop(e->mimeData())) {
         e->acceptProposedAction();
     } else {
         e->ignore();
@@ -57,7 +68,7 @@ void TimelineCanvasWidget::dragEnterEvent(QDragEnterEvent *e) {
 }
 
 void TimelineCanvasWidget::dragMoveEvent(QDragMoveEvent *e) {
-    if (e->mimeData()->hasUrls()) {
+    if (e->mimeData()->hasUrls() || hasAssetRefDrop(e->mimeData())) {
         e->acceptProposedAction();
     } else {
         e->ignore();
@@ -71,6 +82,9 @@ void TimelineCanvasWidget::dragLeaveEvent(QDragLeaveEvent *e) {
 void TimelineCanvasWidget::dropEvent(QDropEvent *e) {
     if (e->mimeData()->hasUrls()) {
         handleVideoFileDrop(this, e);
+        e->acceptProposedAction();
+    } else if (hasAssetRefDrop(e->mimeData())) {
+        handleAssetDrop(this, e);
         e->acceptProposedAction();
     } else {
         e->ignore();
