@@ -522,9 +522,12 @@ pub fn on_request_receive(
 
             // エンジンと権限は実行するプラグインの宣言から解決する
             let script_engine = state.common.script_engine_for::<ServerState>(plugin_id)?;
-            let allow_cross_plugin = {
+            let (allow_cross_plugin, allow_property_read) = {
                 let loader = loader_arc.read_or_err()?;
-                loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+                (
+                    loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin),
+                    loader.plugin_allows(plugin_id, PluginPermission::PropertyRead),
+                )
             };
 
             let context = PluginActionContext::new(
@@ -533,6 +536,7 @@ pub fn on_request_receive(
                 *timeline_id,
                 plugin_id.to_owned(),
                 allow_cross_plugin,
+                allow_property_read,
             );
 
             // スクリプトはクローンして所有し、PluginLoader の read ガードは

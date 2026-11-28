@@ -47,6 +47,9 @@ pub struct PluginActionContext<N: NetworkHandler> {
     /// `cross_plugin` 権限の有無。他プラグイン所有のプロパティへの
     /// 書き込みを許可するか。
     allow_cross_plugin: bool,
+    /// `property_read` 権限の有無。他プラグイン所有のプロパティの
+    /// 読み取りを許可するか。
+    allow_property_read: bool,
 }
 
 impl<N: NetworkHandler> Clone for PluginActionContext<N> {
@@ -58,6 +61,7 @@ impl<N: NetworkHandler> Clone for PluginActionContext<N> {
             network: Arc::clone(&self.network),
             plugin_id: self.plugin_id.clone(),
             allow_cross_plugin: self.allow_cross_plugin,
+            allow_property_read: self.allow_property_read,
         }
     }
 }
@@ -69,6 +73,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
         timeline_id: TimelineId,
         plugin_id: String,
         allow_cross_plugin: bool,
+        allow_property_read: bool,
     ) -> Self {
         Self {
             project,
@@ -77,6 +82,7 @@ impl<N: NetworkHandler> PluginActionContext<N> {
             packets: Arc::new(Mutex::new(Vec::new())),
             plugin_id,
             allow_cross_plugin,
+            allow_property_read,
         }
     }
 
@@ -142,6 +148,50 @@ impl<N: NetworkHandler> PluginActionContext<N> {
 
         clip.set_property_path(&prop_path, ClipBindingValue::Static(normalized))
             .map_err(|e| Box::<rhai::EvalAltResult>::from(format!("failed to set property: {e}")))
+    }
+
+    /// クリップのプロパティをパス指定で取得します。
+    ///
+    /// Rhai スクリプトから `get_property(clip_id, "std:media#media/source_offset")` のように
+    /// 呼び出し、`set_property` が受け付けるのと同じ表現の値を返します。
+    /// パスが指す値が存在しない場合は unit を返します。
+    ///
+    /// 自プラグインが所有するプロパティの読み取りは無条件に許可し、
+    /// 他プラグインが所有するプロパティは `property_read` 権限がなければ拒否します。
+    pub fn get_clip_property(
+        &self,
+        clip_id: u64,
+        path: &str,
+    ) -> Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+        let prop_path = PropertyPath::parse(path).map_err(|e| {
+            Box::<rhai::EvalAltResult>::from(format!("invalid property path `{path}`: {e}"))
+        })?;
+
+        let owner_plugin = prop_path.root().owner().plugin_id();
+        if owner_plugin != self.plugin_id && !self.allow_property_read {
+            return Err(Box::<rhai::EvalAltResult>::from(format!(
+                "permission denied: reading properties of plugin `{owner_plugin}` requires the `property_read` permission"
+            )));
+        }
+
+        let project_guard = self.project.read_or_err().map_err(|_| {
+            Box::<rhai::EvalAltResult>::from("project lock poisoned")
+        })?;
+        let project = project_guard
+            .as_ref()
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from("project not found"))?;
+
+        let timeline = project
+            .timeline_ref(self.timeline_id)
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from("timeline not found"))?;
+
+        let clip = timeline
+            .get_clip(clip_id)
+            .ok_or_else(|| Box::<rhai::EvalAltResult>::from(format!("clip {clip_id} not found")))?;
+
+        Ok(clip
+            .get_property_path(&prop_path)
+            .map_or(rhai::Dynamic::UNIT, super::bridge::field_value_to_dynamic))
     }
 }
 
@@ -539,15 +589,18 @@ pub(crate) fn register_render_api(engine: &mut rhai::Engine, permissions: &[Plug
 /// クライアント/サーバー用の関数を登録
 ///
 /// アクション系は権限でゲートする: `set_property` は `property_write`、
-/// `undo` / `redo` は `history` がある場合だけ登録する。どちらの権限も
-/// 無いプラグインには ActionContext 自体を登録しない。
+/// `undo` / `redo` は `history` がある場合だけ登録する。`get_property` は
+/// 自プラグインの読み取りに権限が要らないため常時登録し、他プラグインの
+/// 読み取りは実行時に `property_read` でゲートする。どの権限も無い
+/// プラグインには ActionContext 自体を登録しない。
 pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine, permissions: &[PluginPermission]) {
     type NetworkHandlerT<T: HostState> = <T as HostState>::NetworkHandler;
     register_render_api(engine, permissions);
 
     let property_write = allows(permissions, PluginPermission::PropertyWrite);
+    let property_read = allows(permissions, PluginPermission::PropertyRead);
     let history = allows(permissions, PluginPermission::History);
-    if !property_write && !history {
+    if !property_write && !property_read && !history {
         return;
     }
 
@@ -558,6 +611,18 @@ pub fn register_fn_for<T: HostState>(engine: &mut rhai::Engine, permissions: &[P
     engine.register_get(
         "network",
         |ctx: &mut PluginActionContext<NetworkHandlerT<T>>| ctx.network(),
+    );
+
+    // `ctx.get_property(clip_id, path)` — 自プラグイン分は無条件、
+    // 他プラグイン分はコンテキスト側で `property_read` を確認する
+    engine.register_fn(
+        "get_property",
+        |ctx: &mut PluginActionContext<NetworkHandlerT<T>>,
+         clip_id: u64,
+         path: &str|
+         -> Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
+            ctx.get_clip_property(clip_id, path)
+        },
     );
 
     if history {
@@ -633,3 +698,7 @@ mod render_tests;
 #[cfg(test)]
 #[path = "../../../tests/unit/plugin/script/api_normalization_tests.rs"]
 mod normalization_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/unit/plugin/script/api_property_read_tests.rs"]
+mod property_read_tests;

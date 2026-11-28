@@ -192,9 +192,12 @@ pub unsafe extern "C" fn toolbar_handle_action(
         // PluginActionContextを作成
         let project = state.project_arc();
         let plugin_id = button_id.plugin_id();
-        let allow_cross_plugin = {
+        let (allow_cross_plugin, allow_property_read) = {
             let loader = state.common.plugin_loader.read_or_err()?;
-            loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin)
+            (
+                loader.plugin_allows(plugin_id, PluginPermission::CrossPlugin),
+                loader.plugin_allows(plugin_id, PluginPermission::PropertyRead),
+            )
         };
         let context = PluginActionContext::new(
             Arc::clone(&network),
@@ -202,6 +205,7 @@ pub unsafe extern "C" fn toolbar_handle_action(
             timeline_id,
             plugin_id.to_owned(),
             allow_cross_plugin,
+            allow_property_read,
         );
 
         // スクリプトはクローンして所有し、PluginLoader の read ガードは
