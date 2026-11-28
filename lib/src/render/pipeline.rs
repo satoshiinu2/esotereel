@@ -1,4 +1,4 @@
-use crate::render::RenderBatch;
+use crate::{plugin::shader::compile_and_validate, render::RenderBatch};
 use glam::Mat4;
 use wgpu::util::DeviceExt;
 
@@ -139,9 +139,20 @@ impl WgpuRenderResources {
             mapped_at_creation: false,
         });
 
+        // 組み込みシェーダもプラグインと同じ経路で wesl 解決し、共通モジュール
+        // （core::common / core::uniforms）から型定義を取り込む。同梱物同士の
+        // 不整合は回復不能なので、失敗はここで見える形で止める。
+        let shape_wgsl = compile_and_validate(
+            "package::shape",
+            &[(
+                "package::shape".to_string(),
+                include_str!("shape.wgsl").to_string(),
+            )],
+        )
+        .expect("built-in shape shader must compile against the core shader library");
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shape"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shape.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(shape_wgsl.into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
