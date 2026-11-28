@@ -3,28 +3,88 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{project::ids::AssetRef, util::result::EsotereelError};
+use rkyv::{
+    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+};
+
+use crate::{
+    project::ids::AssetRef,
+    util::{result::EsotereelError, rkyv_with::PathAsString},
+};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub struct AssetFingerprint {
     pub size: u64,
     pub hash: Option<[u8; 32]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub enum AssetLocation {
-    External { path: PathBuf },
-    Managed { path: PathBuf },
+    External {
+        #[with(PathAsString)]
+        path: PathBuf,
+    },
+    Managed {
+        #[with(PathAsString)]
+        path: PathBuf,
+    },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub enum AssetAvailability {
     Available(AssetLocation),
-    Missing { previous_path: PathBuf },
+    Missing {
+        #[with(PathAsString)]
+        previous_path: PathBuf,
+    },
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub struct AssetEntry {
     pub id: AssetRef,
     pub name: String,

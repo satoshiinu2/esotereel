@@ -20,6 +20,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rkyv::{
+    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -28,7 +31,18 @@ use crate::project::save::{LoadedProject, SaveError, load_project, save_project}
 use crate::settings::AppSettings;
 
 /// オートセーブの1世代分の情報です。復旧一覧に表示する内容です。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub struct AutosaveGeneration {
     /// 世代 ID（`<unix ミリ秒>-<連番>`）。辞書順＝作成順です。
     pub id: String,

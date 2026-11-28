@@ -341,6 +341,7 @@ dependencies = [
  "bytecheck_derive",
  "ptr_meta",
  "simdutf8",
+ "uuid",
 ]
 
 [[package]]

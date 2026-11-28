@@ -6,10 +6,13 @@ use crate::plugin::property::PropertyKey;
 use crate::util::result::EsotereelError;
 use crate::project::{
     Clip, TimelineTick,
+    asset::AssetEntry,
+    autosave::AutosaveGeneration,
     clip::ClipBindingValue,
-    ids::{ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
+    ids::{AssetRef, ClipId, LayerFolderId, LayerId, ResourceId, TimelineId},
     layer::LayerMeta,
     layer_outline::{Meta, OutlineNode},
+    save::{ProjectVersion, VersionStatus},
     timeline::TimelineMeta,
 };
 
@@ -105,16 +108,16 @@ pub enum Response {
     /// プロジェクトフォルダの事前確認結果（バージョン判定）。
     ProjectInspected {
         path: String,
-        version: ProjectVersionWire,
-        status: WireVersionStatus,
+        version: ProjectVersion,
+        status: VersionStatus,
         project_id: String,
     },
     /// プロジェクトフォルダを開いた結果。メタ情報と kind 表は
     /// 別途 `ProjectMeta` / `KindTableSync` で届く。
     ProjectOpened {
         path: String,
-        version: ProjectVersionWire,
-        status: WireVersionStatus,
+        version: ProjectVersion,
+        status: VersionStatus,
     },
     /// プロジェクトを保存した先のフォルダ。
     ProjectSaved {
@@ -131,7 +134,7 @@ pub enum Response {
     },
     /// オートセーブ世代の一覧。
     AutosaveGenerations {
-        generations: Vec<AutosaveGenerationWire>,
+        generations: Vec<AutosaveGeneration>,
     },
     /// オートセーブ世代から復元して開いた通知。メタ情報と kind 表は
     /// 別途届く。
@@ -139,144 +142,22 @@ pub enum Response {
         generation_id: String,
     },
     /// アセット表の全量配信（プロジェクト開始時）。レジストリの
-    /// 表示順そのままの並びです。
+    /// 表示順そのままの並びです。`in_use` はいずれかのクリップが
+    /// メディア source として参照しているアセットの ID 集合です
+    /// （使用判定はクリップ側の走査が要るため、エントリ本体とは
+    /// 別に載せます）。
     AssetTableSync {
-        entries: Vec<AssetEntryWire>,
+        entries: Vec<AssetEntry>,
+        in_use: Vec<AssetRef>,
     },
     /// アセット表への増分配信。`upserts` は新規・変更分、
+    /// `in_use` は `upserts` のうち使用中のものの ID 集合、
     /// `removed` は削除されたアセット ID です。
     AssetTableUpdated {
-        upserts: Vec<AssetEntryWire>,
-        removed: Vec<String>,
+        upserts: Vec<AssetEntry>,
+        in_use: Vec<AssetRef>,
+        removed: Vec<AssetRef>,
     },
-}
-
-/// 保存形式のバージョン（major.minor.revision）の転送形です。
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
-pub struct ProjectVersionWire {
-    pub major: u32,
-    pub minor: u32,
-    pub revision: u32,
-}
-
-/// 読み取り側のバージョンに対する、ファイルのバージョンの新しさです。
-/// `save::VersionStatus` の転送形です。
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
-pub enum WireVersionStatus {
-    Compatible,
-    NewerRevision,
-    NewerMinor,
-    NewerMajor,
-}
-
-impl From<crate::project::save::VersionStatus> for WireVersionStatus {
-    fn from(status: crate::project::save::VersionStatus) -> Self {
-        use crate::project::save::VersionStatus;
-        match status {
-            VersionStatus::Compatible => Self::Compatible,
-            VersionStatus::NewerRevision => Self::NewerRevision,
-            VersionStatus::NewerMinor => Self::NewerMinor,
-            VersionStatus::NewerMajor => Self::NewerMajor,
-        }
-    }
-}
-
-impl From<crate::project::save::ProjectVersion> for ProjectVersionWire {
-    fn from(version: crate::project::save::ProjectVersion) -> Self {
-        Self {
-            major: version.major,
-            minor: version.minor,
-            revision: version.revision,
-        }
-    }
-}
-
-/// オートセーブ世代1件の転送形です（`autosave::AutosaveGeneration` と同内容）。
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
-pub struct AutosaveGenerationWire {
-    pub id: String,
-    pub project_id: String,
-    pub created_at_ms: u64,
-    pub size_bytes: u64,
-    pub file_count: u64,
-}
-
-impl From<crate::project::autosave::AutosaveGeneration> for AutosaveGenerationWire {
-    fn from(generation: crate::project::autosave::AutosaveGeneration) -> Self {
-        Self {
-            id: generation.id,
-            project_id: generation.project_id.to_string(),
-            created_at_ms: generation.created_at_ms,
-            size_bytes: generation.size_bytes,
-            file_count: generation.file_count as u64,
-        }
-    }
-}
-
-/// アセットの所在の転送形です（`asset::AssetAvailability` に対応）。
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
-pub enum AssetAvailabilityWire {
-    /// プロジェクト外の実ファイルを参照している。
-    External { path: String },
-    /// アプリのデータ領域で管理しているファイル。
-    Managed { path: String },
-    /// 実ファイルが見つからない。以前のパスだけが残っている。
-    Missing { previous_path: String },
-}
-
-/// アセット1件の転送形です。GUI の一覧表示に必要な範囲だけを載せ、
-/// fingerprint の hash 本体は載せません（有無だけです）。
-#[derive(Archive, Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
-#[archive_attr(derive(CheckBytes))]
-pub struct AssetEntryWire {
-    /// `AssetRef`（UUID）の文字列表現。
-    pub id: String,
-    pub name: String,
-    pub availability: AssetAvailabilityWire,
-    /// fingerprint のサイズ。fingerprint 自体が無ければ `None`。
-    pub fingerprint_size: Option<u64>,
-    /// fingerprint の hash が計算済みかどうか。
-    pub has_fingerprint_hash: bool,
-    /// いずれかのクリップがメディア source として参照しているか。
-    pub in_use: bool,
-}
-
-impl AssetEntryWire {
-    /// レジストリエントリから転送形を作ります。`in_use` はクリップ側の
-    /// 走査が要るため、呼び出し側（core）が判定して渡します。
-    pub fn from_entry(entry: &crate::project::asset::AssetEntry, in_use: bool) -> Self {
-        use crate::project::asset::{AssetAvailability, AssetLocation};
-        let availability = match &entry.source {
-            AssetAvailability::Available(AssetLocation::External { path }) => {
-                AssetAvailabilityWire::External {
-                    path: path.to_string_lossy().into_owned(),
-                }
-            }
-            AssetAvailability::Available(AssetLocation::Managed { path }) => {
-                AssetAvailabilityWire::Managed {
-                    path: path.to_string_lossy().into_owned(),
-                }
-            }
-            AssetAvailability::Missing { previous_path } => AssetAvailabilityWire::Missing {
-                previous_path: previous_path.to_string_lossy().into_owned(),
-            },
-        };
-        Self {
-            id: entry.id.to_string(),
-            name: entry.name.clone(),
-            availability,
-            fingerprint_size: entry.fingerprint.as_ref().map(|fp| fp.size),
-            has_fingerprint_hash: entry
-                .fingerprint
-                .as_ref()
-                .is_some_and(|fp| fp.hash.is_some()),
-            in_use,
-        }
-    }
 }
 
 #[cfg(test)]

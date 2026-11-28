@@ -9,9 +9,12 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Arc;
 
 use esotereel_lib::{
-    project::ids::AssetRef,
+    project::{
+        asset::{AssetAvailability, AssetLocation},
+        ids::AssetRef,
+        save::VersionStatus,
+    },
     requests::Request,
-    responces::{AssetAvailabilityWire, WireVersionStatus},
     util::result::{EsotereelError, LockExt},
 };
 
@@ -40,14 +43,14 @@ fn check_ptr(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// `WireVersionStatus` の C 表現です。
+/// `VersionStatus` の C 表現です。
 /// 0=Compatible、1=NewerRevision、2=NewerMinor、3=NewerMajor。
-fn status_code(status: WireVersionStatus) -> u8 {
+fn status_code(status: VersionStatus) -> u8 {
     match status {
-        WireVersionStatus::Compatible => 0,
-        WireVersionStatus::NewerRevision => 1,
-        WireVersionStatus::NewerMinor => 2,
-        WireVersionStatus::NewerMajor => 3,
+        VersionStatus::Compatible => 0,
+        VersionStatus::NewerRevision => 1,
+        VersionStatus::NewerMinor => 2,
+        VersionStatus::NewerMajor => 3,
     }
 }
 
@@ -408,10 +411,10 @@ pub extern "C" fn client_take_autosave_generations(
             .drain(..)
             .map(|generation| CAutosaveGeneration {
                 id: FfiOwnedString::from_string(generation.id),
-                project_id: FfiOwnedString::from_string(generation.project_id),
+                project_id: FfiOwnedString::from_string(generation.project_id.to_string()),
                 created_at_ms: generation.created_at_ms,
                 size_bytes: generation.size_bytes,
-                file_count: generation.file_count,
+                file_count: generation.file_count as u64,
             })
             .collect();
         Ok(FfiArray::from_vec(generations))
@@ -498,41 +501,39 @@ pub extern "C" fn client_synced_assets(
     fn inner(ptr_state: *const ClientStateHandle) -> anyhow::Result<FfiArray<CAssetEntry>> {
         check_ptr(ptr_state)?;
         let state = state_of(ptr_state);
+        let in_use = state
+            .synced_assets_in_use
+            .lock()
+            .map_err(|_| anyhow::anyhow!("synced assets in use lock poisoned"))?
+            .clone();
         let slot = state
             .synced_assets
             .lock()
             .map_err(|_| anyhow::anyhow!("synced assets lock poisoned"))?;
         let entries: Vec<CAssetEntry> = slot
             .iter()
-            .filter_map(|wire| {
-                // 配信形の ID は文字列だが、FFI ではバイト列で渡す。
-                // 解釈できない ID はミラー側の変換と同じく警告して除く。
-                let id: AssetRef = match wire.id.parse() {
-                    Ok(id) => id,
-                    Err(error) => {
-                        log::warn!(
-                            "ignoring asset with unparseable id `{}` from server: {error}",
-                            wire.id
-                        );
-                        return None;
-                    }
+            .map(|entry| {
+                let (availability, path) = match &entry.source {
+                    AssetAvailability::Available(AssetLocation::External { path }) => (0, path),
+                    AssetAvailability::Available(AssetLocation::Managed { path }) => (1, path),
+                    AssetAvailability::Missing { previous_path } => (2, previous_path),
                 };
-                let (availability, path) = match &wire.availability {
-                    AssetAvailabilityWire::External { path } => (0, path),
-                    AssetAvailabilityWire::Managed { path } => (1, path),
-                    AssetAvailabilityWire::Missing { previous_path } => (2, previous_path),
-                };
-                Some(CAssetEntry {
+                CAssetEntry {
                     id: CAssetRef {
-                        bytes: *id.as_bytes(),
+                        bytes: *entry.id.as_bytes(),
                     },
-                    name: FfiOwnedString::from_string(wire.name.clone()),
+                    name: FfiOwnedString::from_string(entry.name.clone()),
                     availability,
-                    path: FfiOwnedString::from_string(path.clone()),
-                    fingerprint_size: FfiOption::from(wire.fingerprint_size),
-                    has_fingerprint_hash: wire.has_fingerprint_hash,
-                    in_use: wire.in_use,
-                })
+                    path: FfiOwnedString::from_string(path.to_string_lossy().into_owned()),
+                    fingerprint_size: FfiOption::from(
+                        entry.fingerprint.as_ref().map(|fingerprint| fingerprint.size),
+                    ),
+                    has_fingerprint_hash: entry
+                        .fingerprint
+                        .as_ref()
+                        .is_some_and(|fingerprint| fingerprint.hash.is_some()),
+                    in_use: in_use.contains(&entry.id),
+                }
             })
             .collect();
         Ok(FfiArray::from_vec(entries))

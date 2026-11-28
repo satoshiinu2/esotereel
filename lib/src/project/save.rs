@@ -24,6 +24,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use rkyv::{
+    Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -49,7 +52,21 @@ pub const CURRENT_PROJECT_VERSION: ProjectVersion = ProjectVersion {
 };
 
 /// プロジェクトファイル形式のバージョン（major.minor.revision の3要素）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    Archive,
+    RkyvDeserialize,
+    RkyvSerialize,
+)]
+#[archive_attr(derive(CheckBytes))]
 pub struct ProjectVersion {
     pub major: u32,
     pub minor: u32,
@@ -65,7 +82,10 @@ impl std::fmt::Display for ProjectVersion {
 /// ファイルのバージョンが読み取り側に対してどういう位置にあるか。
 ///
 /// 判定だけを lib で行い、ダイアログの表示は呼び出し側（GUI）の責務です。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 永続化はされないため serde の derive は付けず、プロトコル転送用に
+/// rkyv の derive だけを付けます。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Archive, RkyvDeserialize, RkyvSerialize)]
+#[archive_attr(derive(CheckBytes))]
 pub enum VersionStatus {
     /// ファイルが読み取り側と同じか古い。通常通り開けます。
     Compatible,

@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     ops::Range,
     sync::{Arc, Mutex, RwLock},
 };
@@ -19,11 +19,13 @@ use esotereel_lib::{
     },
     prebootstrap::PreBootstrapSettings,
     project::{
-        ids::{ResourceId, TimelineId},
+        asset::AssetEntry,
+        autosave::AutosaveGeneration,
+        ids::{AssetRef, ResourceId, TimelineId},
+        save::VersionStatus,
         MediaSec, Project, TimelineTick,
     },
     render::video::MediaFetchCache,
-    responces::{AssetEntryWire, AutosaveGenerationWire, WireVersionStatus},
     state::{CommonState, HostState},
     util::result::LockExt,
     HostRole,
@@ -71,11 +73,16 @@ pub struct ClientState {
     pub project_saved: Arc<Mutex<Option<String>>>,
 
     /// サーバーから届いたオートセーブ世代の一覧。
-    pub autosave_generations: Arc<Mutex<Vec<AutosaveGenerationWire>>>,
+    pub autosave_generations: Arc<Mutex<Vec<AutosaveGeneration>>>,
 
     /// サーバーから同期されたアセット表（表示順）。全量配信で
     /// 置き換わり、増分配信で更新される。GUI のアセット一覧表示用。
-    pub synced_assets: Arc<Mutex<Vec<AssetEntryWire>>>,
+    pub synced_assets: Arc<Mutex<Vec<AssetEntry>>>,
+
+    /// 同期されたアセットのうち、クリップから使用中のものの ID 集合。
+    /// 使用判定はサーバー側の走査結果が配信に同梱されるため、
+    /// エントリ本体とは別に保持します。
+    pub synced_assets_in_use: Arc<Mutex<HashSet<AssetRef>>>,
 
     /// サーバーが現在開いているプロジェクトフォルダ（開く／保存の
     /// 応答で更新される）。プロジェクト設定タブの編集先に使う。
@@ -95,7 +102,7 @@ pub struct ProjectInspection {
     pub version_major: u32,
     pub version_minor: u32,
     pub version_revision: u32,
-    pub status: WireVersionStatus,
+    pub status: VersionStatus,
     pub project_id: String,
 }
 
@@ -106,7 +113,7 @@ pub struct ProjectOpenedInfo {
     pub version_major: u32,
     pub version_minor: u32,
     pub version_revision: u32,
-    pub status: WireVersionStatus,
+    pub status: VersionStatus,
 }
 
 fn core_settings_schema() -> anyhow::Result<Vec<PropertySchema>> {
@@ -208,6 +215,7 @@ impl ClientState {
             project_saved: Arc::new(Mutex::new(None)),
             autosave_generations: Arc::new(Mutex::new(Vec::new())),
             synced_assets: Arc::new(Mutex::new(Vec::new())),
+            synced_assets_in_use: Arc::new(Mutex::new(HashSet::new())),
             current_project_folder: Arc::new(RwLock::new(None)),
             previous_session_abnormal,
             session_marker,

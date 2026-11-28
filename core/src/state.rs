@@ -12,9 +12,10 @@ use esotereel_lib::{
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
     plugin::PluginLoader,
+    project::asset::AssetEntry,
+    project::ids::AssetRef,
     project::ids::ResourceId,
     project::ids::TimelineId,
-    responces::AssetEntryWire,
     state::{CommonState, HostState},
     HostRole,
 };
@@ -52,10 +53,11 @@ pub struct ServerState {
     /// `KindTableAppended` で配るために使います。
     pub kind_sync_len: Arc<Mutex<usize>>,
 
-    /// クライアントへ配信済みのアセット表（アセット ID → 転送形）です。
-    /// 現在のレジストリとの差分だけを `AssetTableUpdated` で配るために
-    /// 使います。プロジェクトが差し替わったら全量配信側で作り直します。
-    pub asset_sync_snapshot: Arc<Mutex<HashMap<String, AssetEntryWire>>>,
+    /// クライアントへ配信済みのアセット表（アセット ID → エントリと
+    /// 使用中フラグ）です。現在のレジストリとの差分だけを
+    /// `AssetTableUpdated` で配るために使います。プロジェクトが
+    /// 差し替わったら全量配信側で作り直します。
+    pub asset_sync_snapshot: Arc<Mutex<HashMap<AssetRef, (AssetEntry, bool)>>>,
 }
 
 impl ServerState {
