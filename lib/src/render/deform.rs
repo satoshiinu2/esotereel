@@ -9,6 +9,9 @@
 //! シェーダが見つからない・compute でないエントリは警告を出して読み飛ばし、
 //! 残りのエントリで変形を続行します。パラメータのパッキングに失敗した場合は
 //! そのバッチの変形全体を中止し、変形なしで描画します。
+//!
+//! 四隅オフセット変形（`render::corner`）もこの経路に乗り、クリップの
+//! スタック先頭に `std:corner_deform` のエントリを合成してから実行します。
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -22,7 +25,10 @@ use crate::{
         },
     },
     project::clip::ShaderStackEntry,
-    render::{RenderBatch, RenderContext, video::builder::ClipDeformation, wgpuutil::WGpuUtil},
+    render::{
+        RenderBatch, RenderContext, corner::corner_deform_shader_id,
+        video::builder::ClipDeformation, wgpuutil::WGpuUtil,
+    },
     util::result::LockExt,
 };
 
@@ -50,17 +56,48 @@ pub fn apply_shader_stacks(
             log::warn!("plugin_loader lock poisoned, skipping shader stacks");
             return;
         };
-        deformations
+        let mut definitions: HashMap<NamespacedID, Arc<ShaderDefinition>> = deformations
             .iter()
             .flat_map(|d| d.shader_stack.iter().map(|e| &e.shader_id))
             .filter_map(|id| loader.get_shader(id).map(|def| (id.clone(), def)))
-            .collect()
+            .collect();
+        // 四隅変形の対象がある場合は、そのシェーダ定義も集める。
+        if deformations.iter().any(|d| d.corner_offsets.is_some()) {
+            if let Some(id) = corner_deform_shader_id() {
+                if let Some(def) = loader.get_shader(&id) {
+                    definitions.insert(id, def);
+                }
+            }
+        }
+        definitions
     };
 
     for deformation in deformations {
         // スタックに載せられるのは compute シェーダだけです。
         // 見つからない定義と render 用シェーダは警告して読み飛ばします。
-        let mut entries: Vec<(&ShaderStackEntry, Arc<ShaderDefinition>)> = Vec::new();
+        let mut entries: Vec<(ShaderStackEntry, Arc<ShaderDefinition>)> = Vec::new();
+
+        // 四隅変形はスタックの先頭に合成し、利用者のスタックより先に適用する。
+        if let Some(offsets) = deformation.corner_offsets {
+            match corner_deform_shader_id().and_then(|id| {
+                definitions.get(&id).map(|def| (id, def))
+            }) {
+                Some((id, definition)) => {
+                    if matches!(definition.kind, ShaderKind::Compute { .. }) {
+                        entries.push((offsets.stack_entry(id), Arc::clone(definition)));
+                    } else {
+                        log::warn!(
+                            "shader `{}` is not a compute shader, skipping corner deformation",
+                            definition.id.full()
+                        );
+                    }
+                }
+                None => log::warn!(
+                    "corner deform shader not found, skipping corner deformation"
+                ),
+            }
+        }
+
         for entry in deformation.shader_stack {
             let Some(definition) = definitions.get(&entry.shader_id) else {
                 log::warn!(
@@ -76,7 +113,7 @@ pub fn apply_shader_stacks(
                 );
                 continue;
             }
-            entries.push((entry, Arc::clone(&definition)));
+            entries.push((entry.clone(), Arc::clone(definition)));
         }
         if entries.is_empty() {
             continue;

@@ -152,3 +152,61 @@ fn wave_compute_deforms_vertices() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires a wgpu adapter; run explicitly to verify compute deform dispatch"]
+fn corner_compute_deforms_vertices() {
+    use crate::render::corner::{CornerOffsets, corner_deform_shader_id};
+
+    let mut loader = PluginLoader::new();
+    loader
+        .load_additional_plugin(Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../plugins/std"
+        )))
+        .unwrap();
+    let id = corner_deform_shader_id().unwrap();
+    let definition = loader.get_shader(&id).unwrap();
+
+    let (device, queue) = create_device();
+
+    // 単位クワッドの4隅＋中心。tex_coords が正規化座標 (u, v) を兼ねる。
+    let mut input = Vertex::rect(0.0, 0.0, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]).to_vec();
+    input.push(Vertex {
+        position: [0.5, 0.5, 0.0],
+        color: [1.0, 1.0, 1.0, 1.0],
+        tex_coords: [0.5, 0.5],
+    });
+    let input_bytes = bytemuck::cast_slice(&input);
+
+    let offsets = CornerOffsets {
+        top_left: [0.5, 0.0],
+        top_right: [0.0, 0.5],
+        bottom_right: [-0.5, 0.0],
+        bottom_left: [0.0, -0.5],
+    };
+    let entry = offsets.stack_entry(id);
+    let params = pack_params(&definition, &HashMap::new(), &entry.properties).unwrap();
+
+    let mut runner = ComputeStackRunner::new();
+    let out = runner
+        .run(
+            &device,
+            &queue,
+            input_bytes,
+            &[ComputePass {
+                definition: &definition,
+                params,
+            }],
+        )
+        .unwrap();
+    let result = read_vertices(&device, &queue, &out, input.len());
+    // rect の頂点順は (0,0), (1,0), (0,1), (1,0), (1,1), (0,1)
+    assert_eq!(result[0].position, [0.5, 0.0, 0.0]);
+    assert_eq!(result[1].position, [1.0, 0.5, 0.0]);
+    assert_eq!(result[2].position, [0.0, 0.5, 0.0]);
+    assert_eq!(result[4].position, [0.5, 1.0, 0.0]);
+    // 中心は四隅オフセットの平均（この組み合わせでは 0）だけ移動する
+    assert_eq!(result[6].position, [0.5, 0.5, 0.0]);
+}
+

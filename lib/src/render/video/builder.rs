@@ -9,7 +9,7 @@ use crate::{
         script::api::PluginRenderContext,
     },
     project::{Clip, Project, clip::ShaderStackEntry},
-    render::{RenderContext, vertex::Vertex},
+    render::{RenderContext, corner::CornerOffsets, vertex::Vertex},
     util::result::LockExt,
 };
 use glam::Mat4;
@@ -46,6 +46,10 @@ pub struct ClipDeformation<'a> {
     /// クリップのシェーダスタック（適用順）。クリップ本体からの借用で、
     /// フレーム構築中だけ使われる。
     pub shader_stack: &'a [ShaderStackEntry],
+    /// 四隅オフセット変形の入力です。`corner-deformable` 能力を持つ
+    /// プロパティが宣言され、オフセットが非ゼロの場合だけ `Some` です。
+    /// 描画側で compute シェーダのスタックエントリへ変換されます。
+    pub corner_offsets: Option<CornerOffsets>,
 }
 
 /// レンダリングコンテキストから頂点バッチを構築します。
@@ -194,18 +198,54 @@ pub fn build_vertices<'a>(ctx: &RenderContext<'a>) -> VertexBuildOutput<'a> {
             ctx.media_fetch_cache.record_init_request(path);
         }
 
-        // シェーダスタックを持つクリップは、生成したバッチ範囲を変形対象として記録する。
-        if !clip.shader_stack.is_empty() && batches.len() > batch_start {
+        // 四隅オフセットは能力ベースで解決する。宣言が無いクリップは対象外で、
+        // 値が不正な場合は警告して変形なしで描画する（見える失敗）。
+        let corner_offsets = resolve_corner_offsets(clip, &runtime_def);
+
+        // シェーダスタックを持つクリップと四隅変形の対象クリップは、
+        // 生成したバッチ範囲を変形対象として記録する。
+        if (!clip.shader_stack.is_empty() || corner_offsets.is_some())
+            && batches.len() > batch_start
+        {
             deformations.push(ClipDeformation {
                 batch_range: batch_start..batches.len(),
                 media_time,
                 shader_stack: &clip.shader_stack,
+                corner_offsets,
             });
         }
     }
     VertexBuildOutput {
         batches,
         deformations,
+    }
+}
+
+/// クリップの四隅オフセットを `corner-deformable` 能力から解決します。
+///
+/// 能力を持つプロパティが構成に無い場合は `None`（対象外）。値が無い場合は
+/// スキーマのデフォルトを使い、全隅ゼロなら変形不要として `None` を返します。
+/// 値の形式が不正な場合は警告ログを出して `None` を返します。
+fn resolve_corner_offsets(
+    clip: &Clip,
+    runtime_def: &crate::plugin::clip::component::RuntimeDefinition,
+) -> Option<CornerOffsets> {
+    let schema = runtime_def.property_by_capability(&ComponentCapability::CornerDeformable)?;
+    let value = clip
+        .properties
+        .get(&schema.key)
+        .and_then(|v| v.in_frame_of())
+        .unwrap_or(&schema.default);
+    match CornerOffsets::from_property(schema, value) {
+        Ok(offsets) if !offsets.is_identity() => Some(offsets),
+        Ok(_) => None,
+        Err(e) => {
+            log::warn!(
+                "invalid corner deform property for clip {}: {e}",
+                clip.id
+            );
+            None
+        }
     }
 }
 
