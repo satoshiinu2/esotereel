@@ -155,7 +155,7 @@ default = 10.0
 | `core:view_projection` | `mat4x4<f32>` |
 | `core:transform` | `mat4x4<f32>` |
 
-WGSL は wesl でモジュール解決されます。`shaders/` 配下の `.wgsl` / `.wesl` ファイルは `package::` モジュールとして登録され、自プラグイン内のモジュールを `import package::...` や相対 import で参照できます。また、lib が提供する `core::common` モジュール（頂点定義 `ClipVertex` と `CLIP_VERTEX_FLOATS`）を `import core::common::CLIP_VERTEX_FLOATS;` のように取り込めます。読み込み時に wesl 解決と naga 検証を行い、失敗した場合はそのプラグイン全体の読み込みがエラーになります（他プラグインには影響しません）。
+WGSL は wesl でモジュール解決されます。`shaders/` 配下の `.wgsl` / `.wesl` ファイルは `package::` モジュールとして登録され、自プラグイン内のモジュールを `import package::...` や相対 import で参照できます。また、lib が提供する共通モジュールを取り込めます。`core::common` は頂点定義（`ClipVertex`、`ClipVertexInput`、`ClipVertexOutput` と `CLIP_VERTEX_FLOATS`）、`core::uniforms` はユニフォーム定義（`ScreenUniform`、`TransformUniform`）を提供し、`import core::common::CLIP_VERTEX_FLOATS;` のように使います。これらの定義は lib 側の単一の定義元（`lib/shaders/core/`）にあり、読み込み時にホスト側の型レイアウト（`Vertex`、`ScreenUniform` 等）と一致するかも検証されます（不一致は読み込みエラーになります）。読み込み時に wesl 解決と naga 検証を行い、失敗した場合はそのプラグイン全体の読み込みがエラーになります（他プラグインには影響しません）。
 
 compute シェーダはクリップの「シェーダスタック」に載せて使います。スタックはクリップが保持する順序付きリストで、各エントリはシェーダ参照（名前空間付き ID）と、そのシェーダ固有プロパティの値の組です。描画時にはスタック先頭から順に compute パスが適用され、変形済みの頂点が通常のパイプラインで描画されます（変換行列は変形後に 1 回だけ適用されます）。`core:` パラメータには、`core:time` としてクリップのメディア時刻、`core:transform` としてバッチの変換行列、`core:view_projection` と `core:screen_size` としてフレーム共通の値が lib から供給されます。
 

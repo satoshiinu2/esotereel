@@ -87,3 +87,10 @@ fn std_plugin_shader_is_loaded_and_compiled() {
     assert_eq!(def.properties.len(), 4);
     assert!(def.compiled_wgsl.contains("deform_main"));
 }
+
+#[test]
+fn core_library_layout_matches_host_types() {
+    // 共通モジュールの型定義がホスト側の Vertex / ScreenUniform 等と
+    // 一致していること（読み込み時検証の契約そのもの）を固定する。
+    crate::plugin::shader::validate_core_library_layout().unwrap();
+}
