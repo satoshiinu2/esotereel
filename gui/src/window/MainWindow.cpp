@@ -217,11 +217,11 @@ void MainWindow::confirmAndOpenProject(const ProjectInspection &inspection) {
                                 .arg(inspection.versionMinor)
                                 .arg(inspection.versionRevision);
     switch (inspection.status) {
-    case 0: // Compatible
-    case 1: // NewerRevision: そのまま開く
+    case CVersionStatus::Compatible:
+    case CVersionStatus::NewerRevision: // そのまま開く
         windowState.state->requests().openProject(inspection.path, false);
         break;
-    case 2: { // NewerMinor: 警告＋バックアップボタン
+    case CVersionStatus::NewerMinor: { // 警告＋バックアップボタン
         QMessageBox box(this);
         box.setIcon(QMessageBox::Warning);
         box.setWindowTitle(tr("Newer Project Version"));
@@ -239,7 +239,8 @@ void MainWindow::confirmAndOpenProject(const ProjectInspection &inspection) {
         }
         break;
     }
-    default: { // NewerMajor: チェックボックス確認付きの強い警告＋バックアップボタン
+    case CVersionStatus::NewerMajor:
+    default: { // チェックボックス確認付きの強い警告＋バックアップボタン
         QDialog dialog(this);
         dialog.setWindowTitle(tr("Much Newer Project Version"));
         auto *layout = new QVBoxLayout(&dialog);
