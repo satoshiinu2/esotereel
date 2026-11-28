@@ -15,6 +15,47 @@ pub struct PathAsString;
 
 pub struct UuidAsBytes;
 
+pub struct HashAsBytes;
+
+impl ArchiveWith<blake3::Hash> for HashAsBytes {
+    type Archived = <[u8; 32] as rkyv::Archive>::Archived;
+    type Resolver = <[u8; 32] as rkyv::Archive>::Resolver;
+
+    unsafe fn resolve_with(
+        field: &blake3::Hash,
+        pos: usize,
+        resolver: Self::Resolver,
+        out: *mut Self::Archived,
+    ) {
+        unsafe {
+            rkyv::Archive::resolve(field.as_bytes(), pos, resolver, out);
+        }
+    }
+}
+
+impl<S: rkyv::ser::Serializer + ?Sized> SerializeWith<blake3::Hash, S> for HashAsBytes {
+    fn serialize_with(
+        field: &blake3::Hash,
+        serializer: &mut S,
+    ) -> Result<<Self as ArchiveWith<blake3::Hash>>::Resolver, S::Error> {
+        rkyv::Serialize::serialize(field.as_bytes(), serializer)
+    }
+}
+
+impl<D: Fallible + ?Sized>
+    DeserializeWith<<[u8; 32] as rkyv::Archive>::Archived, blake3::Hash, D> for HashAsBytes
+{
+    fn deserialize_with(
+        archived: &<[u8; 32] as rkyv::Archive>::Archived,
+        deserializer: &mut D,
+    ) -> Result<blake3::Hash, D::Error> {
+        Ok(blake3::Hash::from_bytes(rkyv::Deserialize::deserialize(
+            archived,
+            deserializer,
+        )?))
+    }
+}
+
 impl ArchiveWith<Uuid> for UuidAsBytes {
     type Archived = <[u8; 16] as rkyv::Archive>::Archived;
     type Resolver = <[u8; 16] as rkyv::Archive>::Resolver;

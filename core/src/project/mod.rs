@@ -247,7 +247,7 @@ fn legacy_source_string_to_asset_ref(
 /// 書き換えて `true` を返します。登録に失敗した場合は文字列のままにして
 /// `false` を返します（次にプロジェクトを開いたときの変換で再試行されます）。
 /// クリップ作成経路（`clip_add_core`）と、旧形式プロジェクトを開くときの
-/// 変換（`crate::project_files::convert_legacy_media_sources`）の共通処理です。
+/// 変換（`crate::save::convert_legacy_media_sources`）の共通処理です。
 pub(crate) fn resolve_source_to_asset_ref(
     assets: &mut AssetRegistry,
     properties: &mut HashMap<PropertyKey, ClipBindingValue>,

@@ -22,13 +22,13 @@ use esotereel_lib::{
     },
     project::{
         Project,
-        asset::hash_file_blake3,
-        autosave::{list_autosave_generations, restore_autosave_generation},
+        asset::{AssetEntry, hash_file_blake3},
+        autosave::{AutosaveGeneration, list_autosave_generations, restore_autosave_generation},
         clip::get_property_path_from_map,
         ids::{AssetRef, ClipId, TimelineId},
         save::{backup_project_folder, inspect_project, load_project, save_project},
     },
-    responces::{AssetEntryWire, AutosaveGenerationWire, Response},
+    responces::Response,
     settings::AppSettings,
     util::result::{EsotereelError, LockExt, MutexExt},
 };
@@ -251,13 +251,13 @@ pub fn convert_legacy_media_sources(project: &mut Project, loader: &PluginLoader
     converted
 }
 
-/// 現在のアセット表を転送形で組み立てます。
+/// 現在のアセット表を、エントリと使用中フラグの組で組み立てます。
 ///
-/// `in_use` は読み込み済みチャンクの走査で判定し、配信済みスナップ
+/// 使用中フラグは読み込み済みチャンクの走査で判定し、配信済みスナップ
 /// ショットで使用中だったものは維持します（未読み込みチャンクの
 /// クリップを取りこぼして「未使用」に倒れないようにするため。
 /// 正確な判定は全量配信と削除時の再確認で行います）。
-fn current_asset_wires(state: &ServerState) -> Vec<AssetEntryWire> {
+fn current_asset_entries(state: &ServerState) -> Vec<(AssetEntry, bool)> {
     let entries = {
         let Ok(project_guard) = state.project.read_or_err() else {
             return Vec::new();
@@ -272,7 +272,7 @@ fn current_asset_wires(state: &ServerState) -> Vec<AssetEntryWire> {
         project
             .assets()
             .iter()
-            .map(|entry| AssetEntryWire::from_entry(entry, used.contains(&entry.id)))
+            .map(|entry| (entry.clone(), used.contains(&entry.id)))
             .collect::<Vec<_>>()
     };
     let Ok(snapshot) = state.asset_sync_snapshot.lock_or_err() else {
@@ -280,13 +280,12 @@ fn current_asset_wires(state: &ServerState) -> Vec<AssetEntryWire> {
     };
     entries
         .into_iter()
-        .map(|mut wire| {
-            if !wire.in_use {
-                if let Some(previous) = snapshot.get(&wire.id) {
-                    wire.in_use = previous.in_use;
-                }
-            }
-            wire
+        .map(|(entry, in_use)| {
+            let in_use = in_use
+                || snapshot
+                    .get(&entry.id)
+                    .is_some_and(|(_, previous_in_use)| *previous_in_use);
+            (entry, in_use)
         })
         .collect()
 }
@@ -296,7 +295,7 @@ fn current_asset_wires(state: &ServerState) -> Vec<AssetEntryWire> {
 ///
 /// `in_use` は全チャンクを読み込んでから判定する正確な値です。
 pub fn send_asset_table_sync(state: &ServerState, client_id: u32) -> anyhow::Result<()> {
-    let entries = {
+    let entries: Vec<(AssetEntry, bool)> = {
         let mut project_guard = state.project.write_or_err()?;
         let project = project_guard
             .as_mut()
@@ -307,16 +306,22 @@ pub fn send_asset_table_sync(state: &ServerState, client_id: u32) -> anyhow::Res
         project
             .assets()
             .iter()
-            .map(|entry| AssetEntryWire::from_entry(entry, used.contains(&entry.id)))
-            .collect::<Vec<_>>()
+            .map(|entry| (entry.clone(), used.contains(&entry.id)))
+            .collect()
     };
     *state.asset_sync_snapshot.lock_or_err()? = entries
         .iter()
-        .map(|wire| (wire.id.clone(), wire.clone()))
+        .map(|(entry, in_use)| (entry.id, (entry.clone(), *in_use)))
         .collect();
+    let in_use: Vec<AssetRef> = entries
+        .iter()
+        .filter(|(_, in_use)| *in_use)
+        .map(|(entry, _)| entry.id)
+        .collect();
+    let entries: Vec<AssetEntry> = entries.into_iter().map(|(entry, _)| entry).collect();
     state
         .network
-        .send(client_id, &Response::AssetTableSync { entries });
+        .send(client_id, &Response::AssetTableSync { entries, in_use });
     Ok(())
 }
 
@@ -324,36 +329,46 @@ pub fn send_asset_table_sync(state: &ServerState, client_id: u32) -> anyhow::Res
 /// 全クライアントへ配信します。
 ///
 /// 変更イベントのたびと、アセットを直接触るリクエストの成功後に
-/// 呼ばれます。差分の検出は転送形の比較なので、登録・名前変更・
-/// fingerprint の後埋めなど、どの経路の変更でも拾えます。
+/// 呼ばれます。差分の検出はエントリと使用中フラグの組の比較なので、
+/// 登録・名前変更・fingerprint の後埋めなど、どの経路の変更でも
+/// 拾えます。
 pub fn broadcast_asset_updates(state: &ServerState) {
-    let entries = current_asset_wires(state);
+    let entries = current_asset_entries(state);
     let Ok(mut snapshot) = state.asset_sync_snapshot.lock_or_err() else {
         return;
     };
-    let mut upserts: Vec<AssetEntryWire> = Vec::new();
-    let mut current_ids: HashSet<&str> = HashSet::new();
-    for wire in &entries {
-        current_ids.insert(wire.id.as_str());
-        match snapshot.get(&wire.id) {
-            Some(previous) if previous == wire => {}
-            _ => upserts.push(wire.clone()),
+    let mut upserts: Vec<AssetEntry> = Vec::new();
+    let mut upsert_in_use: Vec<AssetRef> = Vec::new();
+    let mut current_ids: HashSet<AssetRef> = HashSet::new();
+    for (entry, in_use) in &entries {
+        current_ids.insert(entry.id);
+        match snapshot.get(&entry.id) {
+            Some((previous_entry, previous_in_use))
+                if previous_entry == entry && previous_in_use == in_use => {}
+            _ => {
+                upserts.push(entry.clone());
+                if *in_use {
+                    upsert_in_use.push(entry.id);
+                }
+            }
         }
     }
-    let removed: Vec<String> = snapshot
+    let removed: Vec<AssetRef> = snapshot
         .keys()
-        .filter(|id| !current_ids.contains(id.as_str()))
-        .cloned()
+        .filter(|id| !current_ids.contains(id))
+        .copied()
         .collect();
     *snapshot = entries
         .into_iter()
-        .map(|wire| (wire.id.clone(), wire))
+        .map(|(entry, in_use)| (entry.id, (entry, in_use)))
         .collect();
     drop(snapshot);
     if !upserts.is_empty() || !removed.is_empty() {
-        state
-            .network
-            .send_all(&Response::AssetTableUpdated { upserts, removed });
+        state.network.send_all(&Response::AssetTableUpdated {
+            upserts,
+            in_use: upsert_in_use,
+            removed,
+        });
     }
 }
 
@@ -489,8 +504,8 @@ pub fn handle_inspect_project(state: &ServerState, client_id: u32, path: &str) {
                 client_id,
                 &Response::ProjectInspected {
                     path: path.to_string(),
-                    version: version.into(),
-                    status: status.into(),
+                    version,
+                    status,
                     project_id: project_id.to_string(),
                 },
             );
@@ -508,8 +523,8 @@ pub fn handle_open_project(state: &Arc<ServerState>, client_id: u32, path: &str,
             log::info!("project backup created at {}", backup_dir.display());
         }
         let loaded = load_project(&dir)?;
-        let version = loaded.version.into();
-        let status = loaded.status.into();
+        let version = loaded.version;
+        let status = loaded.status;
         let mut project = loaded.project;
         // 旧形式の文字列 source は、開くときに AssetRef 値へ変換する。
         let converted = {
@@ -674,10 +689,10 @@ fn prepare_save_target(
 
 /// オートセーブ世代の一覧を返します。
 pub fn handle_list_autosave_generations(state: &ServerState, client_id: u32) {
-    let result = (|| -> anyhow::Result<Vec<AutosaveGenerationWire>> {
+    let result = (|| -> anyhow::Result<Vec<AutosaveGeneration>> {
         let data_dir = state.dir.data_dir()?;
         let generations = list_autosave_generations(&data_dir, None)?;
-        Ok(generations.into_iter().map(Into::into).collect())
+        Ok(generations)
     })();
     match result {
         Ok(generations) => {

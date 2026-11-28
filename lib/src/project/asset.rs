@@ -5,11 +5,15 @@ use std::{
 
 use rkyv::{
     Archive, CheckBytes, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize, bytecheck,
+    with::Map,
 };
 
 use crate::{
     project::ids::AssetRef,
-    util::{result::EsotereelError, rkyv_with::PathAsString},
+    util::{
+        result::EsotereelError,
+        rkyv_with::{HashAsBytes, PathAsString},
+    },
 };
 use uuid::Uuid;
 
@@ -27,6 +31,7 @@ use uuid::Uuid;
 #[archive_attr(derive(CheckBytes))]
 pub struct AssetFingerprint {
     pub size: u64,
+    #[with(Map<HashAsBytes>)]
     pub hash: Option<blake3::Hash>,
 }
 

@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::plugin::{ComponentCapability, parse_component_definitions};
+
 const KIND: &str = r#"
 [[kinds]]
 id = "video"

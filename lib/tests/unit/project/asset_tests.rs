@@ -96,7 +96,7 @@ fn fill_fingerprint_hash_computes_blake3_once() {
     let entry = registry.get(id).unwrap();
     assert_eq!(
         entry.fingerprint.as_ref().and_then(|f| f.hash),
-        Some(*blake3::hash(bytes).as_bytes()),
+        Some(blake3::hash(bytes)),
         "BLAKE3 ハッシュが埋まるべき"
     );
 

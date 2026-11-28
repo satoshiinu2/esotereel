@@ -151,7 +151,7 @@ fn sample_project() -> (Project, crate::project::ids::TimelineId) {
             },
             fingerprint: Some(AssetFingerprint {
                 size: 4096,
-                hash: Some([7u8; 32]),
+                hash: Some(blake3::Hash::from_bytes([7u8; 32])),
             }),
         })
         .unwrap();
