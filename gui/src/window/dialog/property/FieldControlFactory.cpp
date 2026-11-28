@@ -15,6 +15,7 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <limits>
 
 namespace esotereel::window::widget {
 
@@ -198,11 +199,19 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
 
     if (field.kindType == SettingsFieldType::Int) {
         auto *spinBox = new QSpinBox();
-        spinBox->setRange(0, 1000); // TODO: schemaにmin/maxが乗ったらそちらを使う
+        // TODO: schemaにmin/maxが乗ったらそちらを使う。それまでは表現できる全範囲。
+        spinBox->setRange(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
 
         auto intValue = currentValue.asInt();
         if (intValue.has_value()) {
-            spinBox->setValue(intValue.value());
+            const auto clamped = std::clamp(intValue.value(),
+                                            static_cast<std::int64_t>(spinBox->minimum()),
+                                            static_cast<std::int64_t>(spinBox->maximum()));
+            if (clamped != intValue.value()) {
+                qWarning() << "FieldControlFactory: Int value for" << field.key
+                           << "is out of the editable range";
+            }
+            spinBox->setValue(static_cast<int>(clamped));
         } else {
             qWarning() << "FieldControlFactory: expected Int value for" << field.key << "but got different type";
         }
