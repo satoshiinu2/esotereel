@@ -167,6 +167,10 @@ pub enum PluginPermission {
     /// コンポーネントが所有するプロパティに限る。
     #[serde(rename = "property_write")]
     PropertyWrite,
+    /// 他プラグインのプロパティの読み取り（`get_property`）。
+    /// 自プラグインのプロパティの読み取りには不要。
+    #[serde(rename = "property_read")]
+    PropertyRead,
     /// 履歴操作（`undo` / `redo` パケットの発行）。
     #[serde(rename = "history")]
     History,
