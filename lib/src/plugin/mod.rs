@@ -1142,3 +1142,7 @@ mod archive_tests;
 #[cfg(test)]
 #[path = "../../tests/unit/plugin/shader_loading_tests.rs"]
 mod shader_loading_tests;
+
+#[cfg(test)]
+#[path = "../../tests/unit/plugin/manifest_tests.rs"]
+mod manifest_tests;
