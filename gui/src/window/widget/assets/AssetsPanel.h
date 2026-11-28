@@ -5,6 +5,12 @@
 
 #include "ffi/Assets.h"
 
+class QDragEnterEvent;
+class QDragLeaveEvent;
+class QDragMoveEvent;
+class QDropEvent;
+class QLabel;
+class QMimeData;
 class QPushButton;
 class QTableWidget;
 
@@ -27,6 +33,12 @@ class AssetsPanel : public QWidget {
     // 同期済みアセット表を読み直して表示を更新する。
     void reload();
 
+  protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dragLeaveEvent(QDragLeaveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
   private:
     void updateButtonStates();
     const AssetEntry *selectedEntry() const;
@@ -35,13 +47,26 @@ class AssetsPanel : public QWidget {
     void onRemoveClicked();
     void onRelinkClicked();
 
+    // テーブル上も含めたドロップ処理の共通実装。パネル自身のアセット
+    // 参照ドラッグ（kAssetRefMimeType）は対象外で、ローカルファイルの
+    // URL を持つドロップだけを受け付ける。
+    bool canRegisterDrop(const QMimeData *mimeData) const;
+    void handleDragEnter(QDragEnterEvent *event);
+    void handleDragMove(QDragMoveEvent *event);
+    void handleDragLeave(QDragLeaveEvent *event);
+    void handleDrop(QDropEvent *event);
+    void registerDroppedFiles(const QStringList &paths);
+    void setDropHighlighted(bool highlighted);
+
     ClientState *state;
     QVector<AssetEntry> entries;
 
     QTableWidget *table;
+    QLabel *emptyHintLabel;
     QPushButton *renameButton;
     QPushButton *removeButton;
     QPushButton *relinkButton;
+    bool dropHighlighted = false;
 };
 
 } // namespace esotereel::window
