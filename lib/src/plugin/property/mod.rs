@@ -105,6 +105,16 @@ component_capabilities! {
     MediaOffsetProvider: "media-offset-provider", CapabilityCall::Marker;
     /// ファイルのドロップ時に初期プロパティを生成する。
     FileDropHandler: "file-drop-handler", CapabilityCall::FileDrop { fn_name: "handle_file_drop" };
+    /// 四隅オフセットによるクワッド変形を提供する（グループ型プロパティとして）。
+    CornerDeformable: "corner-deformable", CapabilityCall::Marker;
+    /// 左上の隅オフセットを提供する（マップ型プロパティのメンバーとして）。
+    CornerTopLeft: "corner-top-left", CapabilityCall::Marker;
+    /// 右上の隅オフセットを提供する（マップ型プロパティのメンバーとして）。
+    CornerTopRight: "corner-top-right", CapabilityCall::Marker;
+    /// 右下の隅オフセットを提供する（マップ型プロパティのメンバーとして）。
+    CornerBottomRight: "corner-bottom-right", CapabilityCall::Marker;
+    /// 左下の隅オフセットを提供する（マップ型プロパティのメンバーとして）。
+    CornerBottomLeft: "corner-bottom-left", CapabilityCall::Marker;
 }
 
 pub mod key;

@@ -15,6 +15,7 @@ use glam::Mat4;
 
 use crate::render::{vertex::Vertex, video::builder::build_vertices, wgpuutil::WGpuUtil};
 
+pub mod corner;
 pub mod deform;
 pub mod pipeline;
 pub mod uniform;
