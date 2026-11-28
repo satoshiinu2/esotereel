@@ -1,0 +1,15 @@
+[[components]]
+id = "corner_deform"
+name = "Corner Deform"
+properties = [
+  { key = "corner_deform", label = "Corner Deform",
+    kind = { type = "group" },
+    fields = [
+      { key = "top_left", label = "Top Left", kind = { type = "array", item_kind = { type = "float", step = 0.01 } }, default = [0.0, 0.0], capability = "corner-top-left" },
+      { key = "top_right", label = "Top Right", kind = { type = "array", item_kind = { type = "float", step = 0.01 } }, default = [0.0, 0.0], capability = "corner-top-right" },
+      { key = "bottom_right", label = "Bottom Right", kind = { type = "array", item_kind = { type = "float", step = 0.01 } }, default = [0.0, 0.0], capability = "corner-bottom-right" },
+      { key = "bottom_left", label = "Bottom Left", kind = { type = "array", item_kind = { type = "float", step = 0.01 } }, default = [0.0, 0.0], capability = "corner-bottom-left" },
+    ],
+    capability = "corner-deformable",
+    default = { top_left = [0.0, 0.0], top_right = [0.0, 0.0], bottom_right = [0.0, 0.0], bottom_left = [0.0, 0.0] } },
+]

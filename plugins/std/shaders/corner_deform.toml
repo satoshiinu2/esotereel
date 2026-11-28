@@ -1,0 +1,62 @@
+# 四隅オフセットによるクワッド変形（コーナーピン）の compute シェーダ定義。
+# テキストのようにメッシュ化が重いクリップ向けで、lib が
+# `corner-deformable` 能力を持つクリップについてシェーダスタックの
+# 先頭へ自動で合成する。利用者がスタックへ直接載せることもできる。
+id = "corner_deform"
+name = "Corner Deform (Compute)"
+source = "corner_deform.wgsl"
+
+kind = "compute"
+entry_compute = "deform_main"
+
+# パラメータ宣言。宣言順に Params 構造体（@group(0)）へ詰められる。
+# Params はスカラーしか詰められないため、各隅は x/y の2プロパティに分ける。
+# オフセットはクリップのローカル座標系（変換行列の適用前）での値。
+
+[[properties]]
+key = "top_left_x"
+label = "Top Left X"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "top_left_y"
+label = "Top Left Y"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "top_right_x"
+label = "Top Right X"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "top_right_y"
+label = "Top Right Y"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "bottom_right_x"
+label = "Bottom Right X"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "bottom_right_y"
+label = "Bottom Right Y"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "bottom_left_x"
+label = "Bottom Left X"
+kind = { type = "float", step = 0.01 }
+default = 0.0
+
+[[properties]]
+key = "bottom_left_y"
+label = "Bottom Left Y"
+kind = { type = "float", step = 0.01 }
+default = 0.0
