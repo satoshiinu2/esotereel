@@ -39,6 +39,8 @@ include = [
     "CAutosaveGenerationArrayResult",
     "CAppSettingArrayResult",
     "CFieldValueTag",
+    "CSettingScope",
+    "CVersionStatus",
     "CFieldValueData",
     "CFieldValueMap",
     "CFieldValueMapEntry",

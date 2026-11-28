@@ -44,13 +44,23 @@ fn check_ptr(ptr_state: *const ClientStateHandle) -> anyhow::Result<()> {
 }
 
 /// `VersionStatus` の C 表現です。
-/// 0=Compatible、1=NewerRevision、2=NewerMinor、3=NewerMajor。
-fn status_code(status: VersionStatus) -> u8 {
-    match status {
-        VersionStatus::Compatible => 0,
-        VersionStatus::NewerRevision => 1,
-        VersionStatus::NewerMinor => 2,
-        VersionStatus::NewerMajor => 3,
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CVersionStatus {
+    Compatible = 0,
+    NewerRevision = 1,
+    NewerMinor = 2,
+    NewerMajor = 3,
+}
+
+impl From<VersionStatus> for CVersionStatus {
+    fn from(status: VersionStatus) -> Self {
+        match status {
+            VersionStatus::Compatible => CVersionStatus::Compatible,
+            VersionStatus::NewerRevision => CVersionStatus::NewerRevision,
+            VersionStatus::NewerMinor => CVersionStatus::NewerMinor,
+            VersionStatus::NewerMajor => CVersionStatus::NewerMajor,
+        }
     }
 }
 
@@ -63,7 +73,7 @@ pub struct CProjectInspection {
     pub version_major: u32,
     pub version_minor: u32,
     pub version_revision: u32,
-    pub status: u8,
+    pub status: CVersionStatus,
 }
 
 /// プロジェクトを開いた結果です。
@@ -74,7 +84,7 @@ pub struct CProjectOpened {
     pub version_major: u32,
     pub version_minor: u32,
     pub version_revision: u32,
-    pub status: u8,
+    pub status: CVersionStatus,
 }
 
 /// オートセーブ世代1件です。
@@ -338,7 +348,7 @@ pub extern "C" fn client_take_project_inspection(
             version_major: inspection.version_major,
             version_minor: inspection.version_minor,
             version_revision: inspection.version_revision,
-            status: status_code(inspection.status),
+            status: CVersionStatus::from(inspection.status),
         }))
     }
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {
@@ -364,7 +374,7 @@ pub extern "C" fn client_take_project_opened(
             version_major: opened.version_major,
             version_minor: opened.version_minor,
             version_revision: opened.version_revision,
-            status: status_code(opened.status),
+            status: CVersionStatus::from(opened.status),
         }))
     }
     match catch_unwind(AssertUnwindSafe(|| inner(ptr_state))) {

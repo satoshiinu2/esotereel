@@ -246,7 +246,8 @@ pub enum SettingValueKind {
     Bool,
 }
 
-/// 設定値です（層ファイルの読み書きと、エディタ表示用）。
+/// 設定値です（層ファイルの読み書きに使います）。
+/// GUI へは guihlp の FFI で `FieldValue` に変換して渡します。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingValue {
     Int(i64),
@@ -261,24 +262,6 @@ impl SettingValue {
             SettingValue::Int(_) => SettingValueKind::Int,
             SettingValue::UInt(_) => SettingValueKind::UInt,
             SettingValue::Bool(_) => SettingValueKind::Bool,
-        }
-    }
-
-    /// エディタ表示・入力用の文字列表現を返します。
-    pub fn to_display_string(&self) -> String {
-        match self {
-            SettingValue::Int(value) => value.to_string(),
-            SettingValue::UInt(value) => value.to_string(),
-            SettingValue::Bool(value) => value.to_string(),
-        }
-    }
-
-    /// 文字列表現から、型に合わせて値を解釈します。
-    pub fn parse_as(kind: SettingValueKind, text: &str) -> Option<SettingValue> {
-        match kind {
-            SettingValueKind::Int => text.parse().ok().map(SettingValue::Int),
-            SettingValueKind::UInt => text.parse().ok().map(SettingValue::UInt),
-            SettingValueKind::Bool => text.parse().ok().map(SettingValue::Bool),
         }
     }
 }
