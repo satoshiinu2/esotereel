@@ -3,7 +3,6 @@ use std::ops::Range;
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
 use crate::plugin::property::PropertyKey;
-use crate::util::result::EsotereelError;
 use crate::project::{
     Clip, TimelineTick,
     asset::AssetEntry,
@@ -15,6 +14,7 @@ use crate::project::{
     save::{ProjectVersion, VersionStatus},
     timeline::TimelineMeta,
 };
+use crate::util::result::EsotereelError;
 
 /// サーバーからクライアントへ送信されるレスポンスの種類です。
 ///
@@ -120,27 +120,18 @@ pub enum Response {
         status: VersionStatus,
     },
     /// プロジェクトを保存した先のフォルダ。
-    ProjectSaved {
-        path: String,
-    },
+    ProjectSaved { path: String },
     /// kind 表の全量配信（プロジェクト開始時）。インデックスが連番。
-    KindTableSync {
-        entries: Vec<String>,
-    },
+    KindTableSync { entries: Vec<String> },
     /// kind 表への追加採番の配信。`start` が先頭エントリの連番。
-    KindTableAppended {
-        start: u32,
-        entries: Vec<String>,
-    },
+    KindTableAppended { start: u32, entries: Vec<String> },
     /// オートセーブ世代の一覧。
     AutosaveGenerations {
         generations: Vec<AutosaveGeneration>,
     },
     /// オートセーブ世代から復元して開いた通知。メタ情報と kind 表は
     /// 別途届く。
-    AutosaveRestored {
-        generation_id: String,
-    },
+    AutosaveRestored { generation_id: String },
     /// アセット表の全量配信（プロジェクト開始時）。レジストリの
     /// 表示順そのままの並びです。`in_use` はいずれかのクリップが
     /// メディア source として参照しているアセットの ID 集合です

@@ -10,7 +10,7 @@
 //! `ChunkResidencyConfig` へ供給します。
 
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -19,12 +19,14 @@ use esotereel_lib::{
     util::result::LockExt,
 };
 
-use crate::{project_files::load_app_settings, state::ServerState};
+use crate::{save, state::ServerState};
 
 /// オートセーブの定期ループです。サーバー起動時に spawn します。
 pub async fn autosave_loop(state: Arc<ServerState>) {
     loop {
-        let interval = load_app_settings(&state).autosave_interval_secs.max(5);
+        let interval = save::load_app_settings(&state)
+            .autosave_interval_secs
+            .max(5);
         tokio::time::sleep(Duration::from_secs(interval)).await;
         let tick_state = Arc::clone(&state);
         let _ = tokio::task::spawn_blocking(move || run_autosave_tick(&tick_state)).await;
@@ -32,7 +34,7 @@ pub async fn autosave_loop(state: Arc<ServerState>) {
 }
 
 fn run_autosave_tick(state: &ServerState) {
-    let settings = load_app_settings(state);
+    let settings = save::load_app_settings(state);
     unload_idle_chunks(state, &settings);
     write_generation_if_dirty(state, &settings);
 }
@@ -63,7 +65,9 @@ fn unload_idle_chunks(state: &ServerState, settings: &esotereel_lib::settings::A
         match timeline.unload_idle_chunks(&config) {
             Ok(0) => {}
             Ok(count) => {
-                log::info!("autosave tick: unloaded {count} idle chunk(s) of timeline {timeline_id}");
+                log::info!(
+                    "autosave tick: unloaded {count} idle chunk(s) of timeline {timeline_id}"
+                );
             }
             Err(error) => {
                 log::error!(
@@ -81,6 +85,7 @@ fn write_generation_if_dirty(state: &ServerState, settings: &esotereel_lib::sett
     if !state.project_dirty.swap(false, Ordering::SeqCst) {
         return;
     }
+    // ? 演算子による早期リターンの範囲を限定するためクロージャーを使用
     let result = (|| -> anyhow::Result<()> {
         let data_dir = state.dir.data_dir()?;
         let mut project_guard = state.project.write_or_err()?;

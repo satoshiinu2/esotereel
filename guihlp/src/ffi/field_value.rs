@@ -2,10 +2,8 @@ use esotereel_lib::{
     plugin::property::value::FieldValue, project::ids::AssetRef, util::color::RgbaColor,
 };
 
-use crate::ffi::{
-    project_files::CAssetRef,
-    stringview::{FfiOwnedString, FfiOwnedStringArray},
-};
+use crate::ffi::stringview::FfiOwnedStringArray;
+use crate::ffi::{project_files::CAssetRef, stringview::FfiOwnedString};
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,4 +354,3 @@ impl CFieldValue {
         }
     }
 }
-

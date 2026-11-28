@@ -3,13 +3,7 @@ use std::collections::HashMap;
 use anyhow::Context;
 
 use crate::{
-    plugin::{
-        clip::component::{
-            ComponentCapability, ComponentDefinition, parse_component_definitions,
-            resolve_namespaced,
-        },
-        NamespacedID,
-    },
+    plugin::{NamespacedID, clip::component::resolve_namespaced},
     project::clip::ClipKind,
 };
 

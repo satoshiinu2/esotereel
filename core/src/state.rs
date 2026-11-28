@@ -2,13 +2,14 @@ use std::{
     collections::HashMap,
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc, Mutex, RwLock,
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 
 use dashmap::DashMap;
 use esotereel_lib::{
+    HostRole,
     decode::videostreamer::VideoStreamer,
     dirs::Directories,
     plugin::PluginLoader,
@@ -17,7 +18,6 @@ use esotereel_lib::{
     project::ids::ResourceId,
     project::ids::TimelineId,
     state::{CommonState, HostState},
-    HostRole,
 };
 use tokio::sync::Notify;
 

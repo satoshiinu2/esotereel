@@ -4,8 +4,7 @@ use crate::ffi::stringview::FfiStringView;
 use esotereel_core::server_network_start;
 use esotereel_lib::dirs::Directories;
 use esotereel_lib::util::result::EsotereelError;
-use std::f32::consts::E;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 
 pub type OnServerReadyCFn = extern "C" fn(bool, FfiStringView); // 起動成功したか

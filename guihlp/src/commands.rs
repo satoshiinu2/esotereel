@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use esotereel_lib::{
-    plugin::{clip::component::ComponentCapability, NamespacedID, PluginLoader},
+    plugin::{NamespacedID, PluginLoader, clip::component::ComponentCapability},
     project::{
         clip::ClipBindingValue,
         command::{ClipMoveCtx, ClipResizeCtx, CommandRequest},
@@ -12,7 +12,6 @@ use esotereel_lib::{
 };
 
 use crate::network::ClientNetworkHandler;
-use crate::slice_from_ptr_or_empty;
 use crate::state::ClientState;
 
 #[derive(Debug)]
@@ -28,7 +27,8 @@ pub struct CommandQueue {
 
 impl CommandQueue {
     pub fn enqueue(&mut self, timeline_id: TimelineId, command: CommandRequest) {
-        self.pending.push_back(PendingRequest::Command((timeline_id, command)));
+        self.pending
+            .push_back(PendingRequest::Command((timeline_id, command)));
     }
 
     pub fn enqueue_request(&mut self, request: Request) {

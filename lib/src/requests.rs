@@ -2,12 +2,12 @@ use std::{collections::VecDeque, ops::Range};
 
 use rkyv::{Archive, CheckBytes, Deserialize, Serialize, bytecheck};
 
+use crate::plugin::NamespacedID;
 use crate::project::{
     MediaSec, TimelineTick,
     command::CommandRequest,
     ids::{LayerId, ResourceId, TimelineId},
 };
-use crate::plugin::NamespacedID;
 
 /// Asset を利用して新しいクリップを作成するための情報です。
 #[derive(Debug, Archive, Deserialize, Serialize)]
@@ -62,9 +62,7 @@ pub enum Request {
         add_clip: Option<AddClipFromAsset>,
     },
     /// メディアストリームの初期化。
-    InitStream {
-        path: String,
-    },
+    InitStream { path: String },
     /// 指定範囲のストリームデータを取得。
     FetchStreamData {
         resource_id: ResourceId,
@@ -85,54 +83,30 @@ pub enum Request {
         timeline_id: TimelineId,
     },
     /// 操作を元に戻す（Undo）。
-    Undo {
-        timeline_id: TimelineId,
-    },
+    Undo { timeline_id: TimelineId },
     /// 操作をやり直す（Redo）。
-    Redo {
-        timeline_id: TimelineId,
-    },
+    Redo { timeline_id: TimelineId },
     /// プロジェクトフォルダを開かずにバージョンだけを確認。
-    InspectProject {
-        path: String,
-    },
+    InspectProject { path: String },
     /// プロジェクトフォルダを開く。`backup` が真なら開く前に
     /// フォルダのバックアップ複製を作る。
-    OpenProject {
-        path: String,
-        backup: bool,
-    },
+    OpenProject { path: String, backup: bool },
     /// 現在のプロジェクトフォルダへ保存する。フォルダに別の
     /// プロジェクトが入っている場合は `overwrite` が無いと失敗する。
-    SaveProject {
-        overwrite: bool,
-    },
+    SaveProject { overwrite: bool },
     /// 指定フォルダへ名前を付けて保存し、以降はそのフォルダを
     /// プロジェクトフォルダとする。空でないフォルダへは
     /// `overwrite` が無いと失敗する。
-    SaveProjectAs {
-        path: String,
-        overwrite: bool,
-    },
+    SaveProjectAs { path: String, overwrite: bool },
     /// オートセーブ世代の一覧を取得（全プロジェクト分）。
     ListAutosaveGenerations,
     /// オートセーブ世代から復元して開く。
-    RestoreAutosaveGeneration {
-        generation_id: String,
-    },
+    RestoreAutosaveGeneration { generation_id: String },
     /// アセットの表示名を変更する。
-    RenameAsset {
-        asset_id: String,
-        name: String,
-    },
+    RenameAsset { asset_id: String, name: String },
     /// アセットをレジストリから削除する。クリップが参照している
     /// アセットは失敗する。
-    RemoveAsset {
-        asset_id: String,
-    },
+    RemoveAsset { asset_id: String },
     /// アセットの参照先を別の外部ファイルへ付け替える。
-    RelinkAsset {
-        asset_id: String,
-        path: String,
-    },
+    RelinkAsset { asset_id: String, path: String },
 }

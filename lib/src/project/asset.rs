@@ -27,7 +27,7 @@ use uuid::Uuid;
 #[archive_attr(derive(CheckBytes))]
 pub struct AssetFingerprint {
     pub size: u64,
-    pub hash: Option<[u8; 32]>,
+    pub hash: Option<blake3::Hash>,
 }
 
 #[derive(
@@ -255,9 +255,7 @@ impl AssetRegistry {
         }
         let path = match &entry.source {
             AssetAvailability::Available(AssetLocation::External { path })
-            | AssetAvailability::Available(AssetLocation::Managed { path }) => {
-                path.clone()
-            }
+            | AssetAvailability::Available(AssetLocation::Managed { path }) => path.clone(),
             AssetAvailability::Missing { previous_path } => {
                 anyhow::bail!("asset `{id}` is missing (previous path: {previous_path:?})")
             }
@@ -271,11 +269,7 @@ impl AssetRegistry {
     ///
     /// size は登録時に記録済みの値を残します。fingerprint 自体が無い
     /// 場合は、エントリのパスを stat して size を補います。
-    pub fn set_fingerprint_hash(
-        &mut self,
-        id: AssetRef,
-        hash: [u8; 32],
-    ) -> anyhow::Result<()> {
+    pub fn set_fingerprint_hash(&mut self, id: AssetRef, hash: blake3::Hash) -> anyhow::Result<()> {
         let entry = self
             .entries
             .get_mut(&id)
@@ -290,7 +284,10 @@ impl AssetRegistry {
                     }
                     AssetAvailability::Missing { .. } => 0,
                 };
-                entry.fingerprint = Some(AssetFingerprint { size, hash: Some(hash) });
+                entry.fingerprint = Some(AssetFingerprint {
+                    size,
+                    hash: Some(hash),
+                });
             }
         }
         Ok(())
@@ -371,7 +368,7 @@ impl AssetRegistry {
 /// External アセットのバックグラウンドでの後埋めや、アップロード完了時の
 /// フォールバック（順不同の受信で受信時の incremental 計算が使えなかった
 /// 場合）で使います。
-pub fn hash_file_blake3(path: &Path) -> std::io::Result<[u8; 32]> {
+pub fn hash_file_blake3(path: &Path) -> std::io::Result<blake3::Hash> {
     use std::io::Read;
     let mut file = std::fs::File::open(path)?;
     let mut hasher = blake3::Hasher::new();
@@ -383,7 +380,7 @@ pub fn hash_file_blake3(path: &Path) -> std::io::Result<[u8; 32]> {
         }
         hasher.update(&buf[..read]);
     }
-    Ok(*hasher.finalize().as_bytes())
+    Ok(hasher.finalize())
 }
 
 /// 登録時にファイルのサイズを記録します。

@@ -1,6 +1,5 @@
 #include "FieldControlFactory.h"
 
-#include <algorithm>
 #include <QCheckBox>
 #include <QColor>
 #include <QColorDialog>
@@ -8,13 +7,14 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
-#include <QHBoxLayout>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
+#include <algorithm>
 
 namespace esotereel::window::widget {
 
@@ -93,13 +93,13 @@ void AssetRefEditorWidget::openPicker() {
         }
         for (const auto &entry : binding_.listAssets()) {
             auto *item = new QListWidgetItem(assetDisplayText(entry), list);
-            item->setData(Qt::UserRole,
-                          QByteArray(reinterpret_cast<const char *>(entry.id.data()),
-                                     static_cast<int>(entry.id.size())));
+            item->setData(Qt::UserRole, QByteArray(reinterpret_cast<const char *>(entry.id.data()),
+                                                   static_cast<int>(entry.id.size())));
         }
     };
     refreshList();
     if (const auto current = binding_.getValue().asAssetRef()) {
+
         for (int i = 0; i < list->count(); ++i) {
             const QByteArray bytes = list->item(i)->data(Qt::UserRole).toByteArray();
             if (bytes.size() == 16 && std::equal(bytes.begin(), bytes.end(), current->begin())) {
@@ -294,9 +294,8 @@ QWidget *FieldControlFactory::createControl(const SettingsField &field, const Fi
                                  auto latest = binding.getValue().asArray();
                                  if (!latest || index >= latest->size())
                                      return;
-                                 (*latest)[index] = isInteger
-                                     ? FieldValue::fromInt(static_cast<std::int64_t>(number))
-                                     : FieldValue::fromFloat(number);
+                                 (*latest)[index] = isInteger ? FieldValue::fromInt(static_cast<std::int64_t>(number))
+                                                              : FieldValue::fromFloat(number);
                                  binding.setValue(FieldValue::fromArray(*latest));
                              });
         }

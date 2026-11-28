@@ -5,31 +5,31 @@ use std::{
 };
 
 use esotereel_lib::{
+    StreamState,
     decode::videostreamer::VideoStreamer,
     plugin::{
-        clip::component::Scheduler, script::api::PluginActionContext, NamespacedID, PluginLoader,
-        PluginPermission,
+        NamespacedID, PluginLoader, PluginPermission, clip::component::Scheduler,
+        script::api::PluginActionContext,
     },
     project::{
+        Project,
         command::{CommandHistory, CommandRequest},
         ids::TimelineId,
-        Project,
     },
     requests::{AddClipFromAsset, ArchivedAddClipFromAsset, ArchivedRequest, Request},
     responces::Response,
     util::result::{EsotereelError, EsotereelResult, LockExt, MutexExt},
-    StreamState,
 };
 use uuid::Uuid;
 
 use crate::{
     network::ServerNetworkHandler,
     project::{
-        clip_add_core,
+        MediaPropertyPaths, clip_add_core,
         commands::command_to_history,
-        history::{execute_command_with_history, redo_command, undo_command, HistoryStack},
-        MediaPropertyPaths,
+        history::{HistoryStack, execute_command_with_history, redo_command, undo_command},
     },
+    save,
     state::ServerState,
 };
 
@@ -60,7 +60,7 @@ pub fn on_request_receive(
             // 設定のチャンク幅が実行時幅と違う場合は、黙って無視せず
             // 警告を残す（実行時幅は CHUNK_TICKS 固定で、設定キーは
             // 新規プロジェクトの既定値として宣言されている）。
-            let settings = crate::project_files::load_app_settings(state);
+            let settings = save::load_app_settings(state);
             if settings.chunk_default_width_ticks != esotereel_lib::project::chunk::CHUNK_TICKS {
                 log::warn!(
                     "settings chunk.default_width_ticks={} differs from the runtime chunk width {}; dynamic chunk width is not supported yet",
@@ -71,8 +71,7 @@ pub fn on_request_receive(
 
             // 新規プロジェクトは仮フォルダ（data_dir/temp/<ID>）で開始し、
             // 標準形式で書き出してからチャンクストアを付けます。
-            let folder = match crate::project_files::temp_project_folder(state, new_project.id())
-            {
+            let folder = match save::temp_project_folder(state, new_project.id()) {
                 Ok(folder) => {
                     new_project.attach_folder_chunk_stores(&folder);
                     if let Err(error) =
@@ -91,7 +90,7 @@ pub fn on_request_receive(
                 }
             };
 
-            crate::project_files::install_project(state, client_id, new_project, folder)?;
+            save::install_project(state, client_id, new_project, folder)?;
             state
                 .project_dirty
                 .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -116,39 +115,35 @@ pub fn on_request_receive(
 
             let cmd = Response::ProjectMeta { timelines };
             network.send(client_id, &cmd);
-            crate::project_files::send_kind_table_sync(state, client_id)?;
-            crate::project_files::send_asset_table_sync(state, client_id)?;
+            save::send_kind_table_sync(state, client_id)?;
+            save::send_asset_table_sync(state, client_id)?;
         }
         ArchivedRequest::InspectProject { path } => {
-            crate::project_files::handle_inspect_project(state, client_id, path);
+            save::handle_inspect_project(state, client_id, path);
         }
         ArchivedRequest::OpenProject { path, backup } => {
-            crate::project_files::handle_open_project(state, client_id, path, *backup);
+            save::handle_open_project(state, client_id, path, *backup);
         }
         ArchivedRequest::SaveProject { overwrite } => {
-            crate::project_files::handle_save_project(state, client_id, *overwrite);
+            save::handle_save_project(state, client_id, *overwrite);
         }
         ArchivedRequest::SaveProjectAs { path, overwrite } => {
-            crate::project_files::handle_save_project_as(state, client_id, path, *overwrite);
+            save::handle_save_project_as(state, client_id, path, *overwrite);
         }
         ArchivedRequest::ListAutosaveGenerations => {
-            crate::project_files::handle_list_autosave_generations(state, client_id);
+            save::handle_list_autosave_generations(state, client_id);
         }
         ArchivedRequest::RestoreAutosaveGeneration { generation_id } => {
-            crate::project_files::handle_restore_autosave_generation(
-                state,
-                client_id,
-                generation_id,
-            );
+            save::handle_restore_autosave_generation(state, client_id, generation_id);
         }
         ArchivedRequest::RenameAsset { asset_id, name } => {
-            crate::project_files::handle_rename_asset(state, client_id, asset_id, name);
+            save::handle_rename_asset(state, client_id, asset_id, name);
         }
         ArchivedRequest::RemoveAsset { asset_id } => {
-            crate::project_files::handle_remove_asset(state, client_id, asset_id);
+            save::handle_remove_asset(state, client_id, asset_id);
         }
         ArchivedRequest::RelinkAsset { asset_id, path } => {
-            crate::project_files::handle_relink_asset(state, client_id, asset_id, path);
+            save::handle_relink_asset(state, client_id, asset_id, path);
         }
         ArchivedRequest::RegisterAssetReference {
             asset_id,
@@ -192,9 +187,9 @@ pub fn on_request_receive(
                         },
                     );
                     // External 登録時は fingerprint の hash を後埋めする。
-                    crate::project_files::spawn_fingerprint_backfill(state);
+                    save::spawn_fingerprint_backfill(state);
                     // 登録を他のクライアントへも増分配信する。
-                    crate::project_files::broadcast_asset_updates(state);
+                    save::broadcast_asset_updates(state);
                     if clip_added {
                         network.notify_dirty();
                     }
@@ -280,7 +275,7 @@ pub fn on_request_receive(
                         },
                     );
                     // 登録を他のクライアントへも増分配信する。
-                    crate::project_files::broadcast_asset_updates(state);
+                    save::broadcast_asset_updates(state);
                     if clip_added {
                         network.notify_dirty();
                     }
@@ -359,8 +354,7 @@ pub fn on_request_receive(
                                 .ok_or(EsotereelError::TimelineNotFound(*timeline_id))?
                                 .get_clip(clips[0].clip_id)
                                 .ok_or(EsotereelError::ClipNotFound(clips[0].clip_id))?;
-                            let runtime_def =
-                                loader.resolve_component_definition(&clip.kind_id)?;
+                            let runtime_def = loader.resolve_component_definition(&clip.kind_id)?;
                             Ok(MediaPropertyPaths::resolve(&runtime_def))
                         })();
                         match resolved {
@@ -858,11 +852,8 @@ fn add_clip_from_asset(
     source_path: &str,
 ) -> anyhow::Result<()> {
     let loader_guard = loader_arc.read_or_err()?;
-    let properties = Scheduler::new().file_drop_properties(
-        &loader_guard,
-        &add_clip.kind_id,
-        source_path,
-    )?;
+    let properties =
+        Scheduler::new().file_drop_properties(&loader_guard, &add_clip.kind_id, source_path)?;
     let media_paths = loader_guard
         .resolve_component_definition(&add_clip.kind_id)
         .map(|def| MediaPropertyPaths::resolve(&def))

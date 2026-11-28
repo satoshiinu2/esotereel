@@ -184,7 +184,10 @@ impl UploadManager {
     ///
     /// 宣言された総サイズと受信量・実ファイルサイズが一致しない場合はエラーにし、
     /// セッションは残す（不足分のチャンクを送って再試行できる）。
-    pub fn complete(&mut self, asset_id: AssetRef) -> anyhow::Result<(String, PathBuf, [u8; 32])> {
+    pub fn complete(
+        &mut self,
+        asset_id: AssetRef,
+    ) -> anyhow::Result<(String, PathBuf, blake3::Hash)> {
         let session = self
             .sessions
             .get(&asset_id)
@@ -213,9 +216,7 @@ impl UploadManager {
         session.progress.finish();
 
         let hash = match &session.hasher {
-            Some(hasher) if session.hashed_len == session.total_size => {
-                *hasher.finalize().as_bytes()
-            }
+            Some(hasher) if session.hashed_len == session.total_size => hasher.finalize(),
             _ => hash_file_blake3(&session.path)?,
         };
 
